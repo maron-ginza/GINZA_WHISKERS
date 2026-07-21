@@ -1,0 +1,31 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { fetchPublishedArticles } from '../../lib/payload'
+
+let articles: Awaited<ReturnType<typeof fetchPublishedArticles>> = []
+let fetchError: string | null = null
+
+try {
+  articles = await fetchPublishedArticles('ja')
+} catch (err) {
+  // Payload未起動時（ローカル開発・このサンドボックス環境）はビルドを止めずに空表示する
+  fetchError = err instanceof Error ? err.message : String(err)
+}
+---
+
+<BaseLayout title="Discover GINZA" locale="ja">
+  <section>
+    <h1>台帳（Ledger）</h1>
+    {fetchError && <p class="notice">記事の取得に失敗しました（CMS未起動の可能性）: {fetchError}</p>}
+    <ul>
+      {
+        articles.map((article) => (
+          <li>
+            <a href={`/ja/articles/${article.slug}`}>{article.title}</a>
+            {article.accessionNumber && <span> — {article.accessionNumber}</span>}
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</BaseLayout>

@@ -1,0 +1,30 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { fetchPublishedArticles } from '../../lib/payload'
+
+let articles: Awaited<ReturnType<typeof fetchPublishedArticles>> = []
+let fetchError: string | null = null
+
+try {
+  articles = await fetchPublishedArticles('en')
+} catch (err) {
+  fetchError = err instanceof Error ? err.message : String(err)
+}
+---
+
+<BaseLayout title="Discover GINZA" locale="en">
+  <section>
+    <h1>Ledger</h1>
+    {fetchError && <p class="notice">Failed to fetch articles (CMS may not be running): {fetchError}</p>}
+    <ul>
+      {
+        articles.map((article) => (
+          <li>
+            <a href={`/en/articles/${article.slug}`}>{article.title}</a>
+            {article.accessionNumber && <span> — {article.accessionNumber}</span>}
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</BaseLayout>

@@ -1,0 +1,60 @@
+---
+import type { Locale } from '../lib/payload'
+
+interface Props {
+  title: string
+  locale: Locale
+}
+
+const { title, locale } = Astro.props
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <header class="site-header">
+      <a href={`/${locale}/`} class="brand">Discover GINZA</a>
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+
+<style is:global>
+  /* CLAUDE.md 第5章「台紙・アーカイブ」で確定したデザイントークン */
+  :root {
+    --color-ground: #e7ded0;
+    --color-card: #f8f3e8;
+    --color-ink: #241f18;
+    --color-ink-muted: #786c58;
+    --color-accent: #1f3f38;
+    --color-accent-tint: #4d7a70;
+    --font-display: 'Noto Serif JP', serif;
+    --font-body: 'Noto Sans JP', sans-serif;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+  }
+
+  .site-header {
+    padding: 1.5rem 2rem;
+  }
+
+  .brand {
+    font-family: var(--font-display);
+    color: var(--color-ink);
+    text-decoration: none;
+    font-size: 1.25rem;
+    letter-spacing: 0.05em;
+  }
+</style>

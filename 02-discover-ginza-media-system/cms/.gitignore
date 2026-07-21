@@ -1,0 +1,6 @@
+node_modules
+.next
+.env
+*.log
+payload-types.ts
+tsconfig.tsbuildinfo
