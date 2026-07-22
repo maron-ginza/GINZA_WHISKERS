@@ -32,7 +32,7 @@ export const Articles: CollectionConfig = {
   slug: 'articles',
   admin: {
     useAsTitle: 'title',
-    defaultColumns: ['title', 'status', 'accessionNumber', 'historicalPeriod', 'updatedAt'],
+    defaultColumns: ['title', 'reviewStatus', 'accessionNumber', 'historicalPeriod', 'updatedAt'],
   },
   versions: {
     drafts: true,
@@ -40,7 +40,8 @@ export const Articles: CollectionConfig = {
   },
   fields: [
     {
-      name: 'status',
+      name: 'reviewStatus',
+      label: 'Status',
       type: 'select',
       required: true,
       defaultValue: 'draft',
@@ -51,7 +52,8 @@ export const Articles: CollectionConfig = {
         { label: '公開済み (Published)', value: 'published' },
       ],
       admin: {
-        description: 'ARCHITECTURE_DRAFT.md 2.5節 承認キューの状態遷移',
+        description:
+          'ARCHITECTURE_DRAFT.md 2.5節 承認キューの状態遷移。フィールド名はPayload内部の`_status`（versions/drafts機能の予約フィールド）とのPostgres enum型衝突を避けるため`reviewStatus`とする',
       },
     },
     {
@@ -249,7 +251,8 @@ export const Articles: CollectionConfig = {
           if (classified) data.historicalPeriod = classified
         }
 
-        const isNewlyApproved = data.status === 'approved' && originalDoc?.status !== 'approved'
+        const isNewlyApproved =
+          data.reviewStatus === 'approved' && originalDoc?.reviewStatus !== 'approved'
 
         if (isNewlyApproved && !originalDoc?.accessionNumber) {
           const year = data.representedYear ?? new Date().getFullYear()

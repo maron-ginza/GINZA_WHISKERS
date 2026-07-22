@@ -5,6 +5,7 @@ import { postgresAdapter } from '@payloadcms/db-postgres'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { s3Storage } from '@payloadcms/storage-s3'
 import { buildConfig } from 'payload'
+import sharp from 'sharp'
 
 import { Articles } from './collections/Articles'
 import { ImageAssets } from './collections/ImageAssets'
@@ -23,6 +24,7 @@ export default buildConfig({
   collections: [Users, Articles, Sources, ImageAssets, Tags],
   endpoints: [generateDraftEndpoint],
   editor: lexicalEditor(),
+  sharp,
   secret: process.env.PAYLOAD_SECRET || '',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
@@ -39,7 +41,9 @@ export default buildConfig({
   }),
   plugins: [
     // Cloudflare R2 (S3互換API) — TECH_SELECTION_DRAFT.md 3節
+    // R2認証情報が未設定のローカル開発環境では無効化する（ImageAssetsはローカルディスクへフォールバック）
     s3Storage({
+      enabled: Boolean(process.env.R2_BUCKET),
       collections: {
         'image-assets': true,
       },

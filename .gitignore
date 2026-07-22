@@ -1,1 +1,5 @@
 .DS_Store
+
+# ImageAssetsのローカルディスクフォールバック先（R2未設定時のアップロード実体。
+# 個人の検証用画像を含むため追跡しない）
+02-discover-ginza-media-system/media/

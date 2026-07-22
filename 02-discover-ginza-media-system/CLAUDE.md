@@ -176,8 +176,43 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
 
 ## 12. 現在のステータス
 
-- **フェーズ**：要件定義完了直後（開発憲章 v1 ドラフト段階）
+- **フェーズ**：Phase 2（ローカル実起動検証）完了
 - **直近の意思決定**：
+  - 2026-07-22: Phase 2としてローカル実行環境（Docker Desktop／Postgres
+    コンテナ／Payload devサーバー）を構築し、管理画面からTags→Sources→
+    Articlesの順でサンプルデータ登録を実地検証した。`historicalPeriod`
+    自動分類（`representedYear: 1923` → `明治・大正`）・`accessionNumber`
+    自動採番（`status`が`approved`に変わった際に`GW・1923・001`を採番）の
+    両フックとも、実データ・実DBで動作することを確認した。
+  - 2026-07-22: Articlesのカスタムフィールド`status`を`reviewStatus`に
+    リネームした。原因はPayloadの`versions.drafts`機能が内部で予約する
+    バージョン管理用フィールド`_status`（値はdraft/publishedの2値固定）と、
+    こちらが定義した4値（draft/review/approved/published）のカスタム
+    `status`フィールドが、Postgresのenum型命名時に同名`enum_articles_status`
+    へ衝突し、`_status`側の2値しか反映されない状態になっていたため
+    （`status`を`approved`に更新しようとして
+    `invalid input value for enum enum_articles_status: "approved"`が
+    発生し発覚）。`\d articles`で両カラムが同一enum型を指していることを
+    確認して特定した。リネーム後は`enum_articles_review_status`（4値）と
+    `enum_articles_status`（`_status`専用、2値）が独立した型として生成
+    されることを確認済み。今後、`versions.drafts`を使うコレクションで
+    ステータス系フィールドを追加する場合は、フィールド名を`status`その
+    ものにせず`reviewStatus`等の別名にすることで同種の衝突を避ける
+    （手順は付録D参照）。
+  - 2026-07-22: 上記リネームは列・enum型の非互換な変更を伴うため、
+    ローカルPostgresコンテナをボリュームごと削除・再作成した
+    （`docker compose down -v` → `up -d`）。検証用のダミーデータ
+    （Tags/Sources/Articles各1件、管理者アカウント）は破棄し、リセット後に
+    作り直した。ローカル検証環境のみの対応であり、本番（Railway想定）での
+    スキーマ移行手順は別途検討が必要（未決事項）。
+  - 2026-07-22: Articles新規作成画面でSlugフィールドが読み取り専用・
+    入力不可に見える事象が発生したが、コード上`slug`フィールドに
+    `readOnly`・`disabled`・カスタムコンポーネントは設定されておらず、
+    サーバーログにもエラーは無かった。DBリセット＋フィールド名変更に伴う
+    管理画面JSバンドル更新後のブラウザ側キャッシュが原因と推測され、
+    ハードリロード（Cmd+Shift+R）とドキュメントの再作成により解消し、
+    Slug入力・Article保存とも正常動作を確認した。恒久的なコード修正は
+    行っていない（＝再発時はまずブラウザキャッシュを疑う。付録D参照）。
   - 2026-07-20: Project 02の要件を定義。サイト＋配信システムの両輪、
     01は窓口・02が中心的出版プラットフォームという位置づけ、note.comは
     廃止せず並走する外部チャネルとして維持、と確定。
@@ -232,12 +267,15 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
     検証済み）。Docker Postgresでの実起動・管理画面疎通は未検証。詳細は
     付録A・B。
 - **未決事項**：翻訳ワークフロー、リリース前チェックリストの具体項目、
-  02固有のDaily PMO進捗率算出方法。付録Cに実装レベルの既知の未完了事項を
-  記載。
-- **次のマイルストーン**：Docker Postgresが使えるローカル環境（または
-  Railway）でPayload管理画面を実起動し、コレクションの保存・
-  `historicalPeriod`自動分類・`accessionNumber`自動採番フックを実地検証する。
-- **最終更新日**：2026-07-21
+  02固有のDaily PMO進捗率算出方法、本番（Railway想定）環境での破壊的
+  スキーマ変更のマイグレーション手順（ローカルはDBボリューム再作成で
+  対応したが、本番では使えない対応のため別途検討が必要）。付録Cに実装
+  レベルの既知の未完了事項を記載。
+- **次のマイルストーン**：`ImageAssets`のアップロード動作（R2未設定時の
+  ローカルディスクへのフォールバック）を実地検証し、続けてAstro側
+  （`site/`）から稼働中のPayload CMSへのライブ疎通（`fetchPublishedArticles`
+  の実データ取得）を確認する。
+- **最終更新日**：2026-07-22
 
 ---
 
@@ -283,10 +321,15 @@ npm run build           # astro check + astro build。DB未起動でも空デー
   実際に生成することを確認（CMS未起動時はfetchエラーを握りつぶし空表示する
   フォールバックも動作確認済み）
 
-未検証（Docker Postgresが使えるローカル環境での確認が必要）：
+2026-07-22のPhase 2セッションで検証済み：
 - Payload管理画面の実際の起動・ログイン・コレクションの保存
+  （Tags→Sources→Articlesの順で実データ登録）
 - `historicalPeriod`自動分類・`accessionNumber`自動採番フックの実際の動作
+  （詳細は第12章の意思決定ログ、手順は付録D）
+
+まだ未検証：
 - Astroサイトからのライブ疎通（`fetchPublishedArticles`の実データ取得）
+- `ImageAssets`のアップロード動作（R2未設定時のローカルディスクフォールバック）
 
 実装済みファイル：
 - `cms/src/collections/{Articles,Sources,ImageAssets,Tags,Users}.ts`
@@ -309,3 +352,39 @@ npm run build           # astro check + astro build。DB未起動でも空デー
   保存した内容と一度照合すること（バージョン依存のため）
 - スラッグ整形（記号除去・ローマ字化）は`createDraftFromSource.ts`内でTODOの
   ままになっている
+
+## 付録D：スキーマ関連トラブルシューティング手順（2026-07-22の事例より）
+
+Payloadのコレクション定義を変更した際、管理画面で保存エラー（例：
+「Something went wrong」）やPostgres側のenumエラーが出た場合の確認手順。
+
+1. devサーバーのログで`caused by:`行を確認し、実際のPostgresエラー内容を
+   特定する（例：`invalid input value for enum enum_articles_status: "approved"`）。
+2. 該当テーブルのカラム定義を確認する。
+   ```bash
+   docker compose exec -T postgres psql -U discover_ginza -d discover_ginza -c "\d <table>"
+   ```
+   複数のカラムが同じenum型を指していないか確認する（指していれば
+   フィールド名の命名衝突の疑い）。
+3. enum型の実際の値一覧を、コレクション定義（`src/collections/*.ts`）の
+   optionsと突き合わせる。
+   ```sql
+   SELECT enumlabel FROM pg_enum WHERE enumtypid = '<enum_type>'::regtype ORDER BY enumsortorder;
+   ```
+4. **既知の衝突パターン**：`versions: { drafts: true }`を有効にした
+   コレクションで、カスタムフィールド名に`status`を使うと、Payloadが
+   内部的に予約するバージョン管理用フィールド`_status`とPostgresの
+   enum型名が衝突し、`_status`側の値セット（draft/published固定）しか
+   反映されなくなる（2026-07-22にArticlesで実際に発生、詳細は第12章）。
+   ステータス系フィールドは`status`そのものではなく`reviewStatus`等の
+   別名にすることで回避する。
+5. リネームなど破壊的なスキーマ変更を加えた場合、Payloadのdev push機構は
+   既存カラム・enum型を安全に移行しない。ローカル検証環境であれば
+   `docker compose down -v && docker compose up -d`でボリュームごと
+   作り直すのが確実。本番（Railway想定）環境でのマイグレーション手順は
+   未検討（第12章の未決事項）。
+6. 管理画面上でフィールドが読み取り専用・入力不可に見えるなど、コード上の
+   設定と実際の挙動が食い違う場合は、まずブラウザのハードリロード
+   （Cmd+Shift+R）を試す。DBリセットやコレクション定義変更の直後は、
+   管理画面JSバンドルとブラウザキャッシュの不整合が起きうる
+   （2026-07-22のSlugフィールド入力不可事象はこれで解消した）。
