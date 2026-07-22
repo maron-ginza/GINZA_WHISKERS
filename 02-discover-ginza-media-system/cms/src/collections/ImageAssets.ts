@@ -18,6 +18,10 @@ export const ImageAssets: CollectionConfig = {
   admin: {
     useAsTitle: 'filename',
   },
+  access: {
+    // 公開記事に埋め込まれた画像を匿名（Astroビルド・ブラウザ）が表示できるよう全面公開
+    read: () => true,
+  },
   fields: [
     {
       name: 'rights',

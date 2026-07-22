@@ -176,8 +176,35 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
 
 ## 12. 現在のステータス
 
-- **フェーズ**：Phase 2（ローカル実起動検証）完了
+- **フェーズ**：Phase 3（Astro連携）進行中——記事一覧のライブ疎通まで完了
 - **直近の意思決定**：
+  - 2026-07-22: Phase 3としてAstro（`site/`）からPayload CMS REST APIへの
+    ライブ疎通を実地検証した。着手前に`site/src/lib/payload.ts`の
+    `fetchPublishedArticles`が旧フィールド名`status`のままクエリして
+    いたことが発覚（Phase 2の`reviewStatus`リネームの反映漏れ）。
+    `where[status][equals]`を`where[reviewStatus][equals]`に修正。
+  - 2026-07-22: 上記修正後もAPIが匿名リクエストに対し全件`403 You are not
+    allowed to perform this action`を返す事象が発生。原因はPayload 3.xの
+    既定アクセス制御`defaultAccess = ({ req }) => Boolean(req.user)`——
+    未ログインの匿名リクエストはデフォルトで全拒否という仕様であり、
+    Articles/Tags/ImageAssetsのいずれにも`access`が明示されていなかった
+    ため適用されていた（`node_modules/payload/dist/auth/defaultAccess.js`
+    で確認）。ビルド時にAstroが未ログインでfetchする以上、これは静的サイト
+    連携において必ず踏む設計判断点であり、単純なバグではなく方針決定が
+    必要と判断しユーザーに確認した。
+  - 2026-07-22: 匿名読み取りの公開方針を「published限定で開放」に決定
+    （全面公開ではなく）。`Articles.ts`に
+    `access.read: ({ req }) => req.user ? true : { reviewStatus: { equals:
+    'published' } }`を追加し、匿名はpublished記事のみ、ログイン済み編集者は
+    draft含む全件を閲覧可能とした。`Tags.ts`・`ImageAssets.ts`は機密性の
+    ない付随データのため`access.read: () => true`で全面公開とした。この
+    設計はRailway本番環境でも同一のまま踏襲する想定（本番用の`access`
+    上書きは不要）。
+  - 2026-07-22: 上記修正後、Docker Desktop／Postgres／Payload devサーバー
+    ／Astro devサーバーを起動し、`http://localhost:4321/ja/`で実データ
+    （「銀座四丁目交差点の変遷」、`GW・1923・001`）が一覧表示されることを
+    確認した。本日のゴール「CMSの記事一覧がAstroで表示されること」を達成。
+    記事詳細ページ（`/articles/[slug]`）は未実装のまま次回以降に持ち越し。
   - 2026-07-22: Phase 2としてローカル実行環境（Docker Desktop／Postgres
     コンテナ／Payload devサーバー）を構築し、管理画面からTags→Sources→
     Articlesの順でサンプルデータ登録を実地検証した。`historicalPeriod`
@@ -271,10 +298,9 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
   スキーマ変更のマイグレーション手順（ローカルはDBボリューム再作成で
   対応したが、本番では使えない対応のため別途検討が必要）。付録Cに実装
   レベルの既知の未完了事項を記載。
-- **次のマイルストーン**：`ImageAssets`のアップロード動作（R2未設定時の
-  ローカルディスクへのフォールバック）を実地検証し、続けてAstro側
-  （`site/`）から稼働中のPayload CMSへのライブ疎通（`fetchPublishedArticles`
-  の実データ取得）を確認する。
+- **次のマイルストーン**：記事詳細ページ（`/articles/[slug]`）をAstro側に
+  実装する。あわせてHEIC画像アップロード時のリサイズ非対応（付録C参照）を
+  恒久対応するか運用ルール化するかを検討する。
 - **最終更新日**：2026-07-22
 
 ---

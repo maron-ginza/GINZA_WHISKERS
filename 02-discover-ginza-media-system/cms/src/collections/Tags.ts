@@ -10,6 +10,10 @@ export const Tags: CollectionConfig = {
     defaultColumns: ['name', 'type'],
     description: '6本柱（収蔵室）と自由タグのマスタ。CONTENT_MODEL.md 5節',
   },
+  access: {
+    // ラベルデータのみで機密性がないため匿名にも全面公開（Articles一覧のpillars表示等で使用）
+    read: () => true,
+  },
   fields: [
     {
       name: 'type',

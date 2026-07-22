@@ -24,7 +24,7 @@ interface PayloadListResponse<T> {
 export async function fetchPublishedArticles(locale: Locale): Promise<ArticleSummary[]> {
   const params = new URLSearchParams({
     locale,
-    'where[status][equals]': 'published',
+    'where[reviewStatus][equals]': 'published',
     depth: '1',
     limit: '100',
   })

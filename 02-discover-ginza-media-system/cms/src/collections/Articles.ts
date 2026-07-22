@@ -34,6 +34,13 @@ export const Articles: CollectionConfig = {
     useAsTitle: 'title',
     defaultColumns: ['title', 'reviewStatus', 'accessionNumber', 'historicalPeriod', 'updatedAt'],
   },
+  access: {
+    // 匿名（Astroのビルド時fetch等）はpublishedのみ閲覧可。ログイン済み編集者は全件（draft含む）閲覧可
+    read: ({ req }) => {
+      if (req.user) return true
+      return { reviewStatus: { equals: 'published' } }
+    },
+  },
   versions: {
     drafts: true,
     maxPerDoc: 50,
