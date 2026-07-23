@@ -35,8 +35,13 @@ const { title, locale } = Astro.props
     --color-ink-muted: #786c58;
     --color-accent: #1f3f38;
     --color-accent-tint: #4d7a70;
-    --font-display: 'Noto Serif JP', serif;
-    --font-body: 'Noto Sans JP', sans-serif;
+    --font-display: 'Hiragino Mincho ProN', 'Noto Serif JP', serif;
+    --font-body: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    --font-mono: 'SF Mono', 'Iowan Old Style', ui-monospace, monospace;
+  }
+
+  * {
+    box-sizing: border-box;
   }
 
   body {
@@ -48,6 +53,7 @@ const { title, locale } = Astro.props
 
   .site-header {
     padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--color-accent-tint);
   }
 
   .brand {

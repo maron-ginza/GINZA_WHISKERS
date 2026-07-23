@@ -1,0 +1,100 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro'
+import { fetchArticleBySlug, fetchPublishedArticles, resolveImageUrl } from '../../../lib/payload'
+import { lexicalToHtml } from '../../../lib/lexical'
+
+export async function getStaticPaths() {
+  const articles = await fetchPublishedArticles('en')
+
+  return Promise.all(
+    articles.map(async ({ slug }) => {
+      const article = await fetchArticleBySlug('en', slug)
+      return { params: { slug }, props: { article } }
+    }),
+  )
+}
+
+const { article } = Astro.props
+const bodyHtml = article ? lexicalToHtml(article.body) : ''
+const hero = article?.images.find((img) => img.role === 'hero')?.asset ?? null
+const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
+---
+
+<BaseLayout title={article ? `${article.title} — Discover GINZA` : 'Discover GINZA'} locale="en">
+  {
+    article ? (
+      <article>
+        <p class="meta">
+          {article.accessionNumber && <span>{article.accessionNumber}</span>}
+          {article.historicalPeriod && <span>{article.historicalPeriod}</span>}
+          {article.representedYear && <span>{article.representedYear}</span>}
+        </p>
+        <h1>{article.title}</h1>
+        <p class="pillars">
+          {article.pillars.map((pillar) => (
+            <span class="pillar-tag">{pillar.name}</span>
+          ))}
+        </p>
+        {hero && (
+          <figure class="hero">
+            <img src={resolveImageUrl(hero.sizes?.gallery?.url ?? hero.url)} alt={hero.altText?.en ?? ''} />
+          </figure>
+        )}
+        <div class="body" set:html={bodyHtml} />
+        {otherImages.length > 0 && (
+          <div class="gallery">
+            {otherImages.map(
+              (img) =>
+                img.asset && (
+                  <figure>
+                    <img
+                      src={resolveImageUrl(img.asset.sizes?.gallery?.url ?? img.asset.url)}
+                      alt={img.asset.altText?.en ?? ''}
+                    />
+                    {img.caption && <figcaption>{img.caption}</figcaption>}
+                  </figure>
+                ),
+            )}
+          </div>
+        )}
+      </article>
+    ) : (
+      <p>Article not found.</p>
+    )
+  }
+</BaseLayout>
+
+<style>
+  article {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 1rem 2rem 4rem;
+  }
+  .meta {
+    display: flex;
+    gap: 1rem;
+    color: var(--color-ink-muted);
+    font-size: 0.875rem;
+  }
+  .pillars {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .pillar-tag {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--color-accent);
+    color: var(--color-accent);
+    border-radius: 999px;
+  }
+  .hero img,
+  .gallery img {
+    max-width: 100%;
+    height: auto;
+  }
+  .body :global(h2),
+  .body :global(h3) {
+    font-family: var(--font-display);
+  }
+</style>
