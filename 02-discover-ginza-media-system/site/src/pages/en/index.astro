@@ -38,6 +38,7 @@ try {
                   <p class="card-meta">
                     {article.accessionNumber && <span>{article.accessionNumber}</span>}
                     {article.representedYear && <span>{article.representedYear}</span>}
+                    {!article.isTranslated && <span class="badge-pending">EN pending</span>}
                   </p>
                   <h2 class="card-title">{article.title}</h2>
                   <p class="card-pillars">
@@ -178,6 +179,11 @@ try {
     border: 1px solid var(--color-accent);
     color: var(--color-accent);
     border-radius: 999px;
+  }
+  .badge-pending {
+    padding: 0.05rem 0.4rem;
+    border: 1px dashed var(--color-accent-tint);
+    color: var(--color-ink-muted);
   }
 
   @media (max-width: 640px) {

@@ -1,21 +1,15 @@
 ---
 import BaseLayout from '../../../layouts/BaseLayout.astro'
-import { fetchArticleBySlug, fetchPublishedArticles, resolveImageUrl } from '../../../lib/payload'
+import { fetchPublishedArticleDetails, resolveImageUrl } from '../../../lib/payload'
 import { lexicalToHtml } from '../../../lib/lexical'
 
 export async function getStaticPaths() {
-  const articles = await fetchPublishedArticles('ja')
-
-  return Promise.all(
-    articles.map(async ({ slug }) => {
-      const article = await fetchArticleBySlug('ja', slug)
-      return { params: { slug }, props: { article } }
-    }),
-  )
+  const articles = await fetchPublishedArticleDetails('ja')
+  return articles.map((article) => ({ params: { slug: article.slug }, props: { article } }))
 }
 
 const { article } = Astro.props
-const bodyHtml = article ? lexicalToHtml(article.body) : ''
+const bodyHtml = article?.isTranslated ? lexicalToHtml(article.body) : ''
 const hero = article?.images.find((img) => img.role === 'hero')?.asset ?? null
 const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
 ---
@@ -40,7 +34,11 @@ const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
             <img src={resolveImageUrl(hero.sizes?.gallery?.url ?? hero.url)} alt={hero.altText?.ja ?? ''} />
           </figure>
         )}
-        <div class="body" set:html={bodyHtml} />
+        {article.isTranslated ? (
+          <div class="body" set:html={bodyHtml} />
+        ) : (
+          <p class="translation-notice">この記事はまだ翻訳されていません。</p>
+        )}
         {otherImages.length > 0 && (
           <div class="gallery">
             {otherImages.map(
@@ -96,5 +94,12 @@ const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
   .body :global(h2),
   .body :global(h3) {
     font-family: var(--font-display);
+  }
+  .translation-notice {
+    padding: 1rem 1.25rem;
+    border: 1px dashed var(--color-accent-tint);
+    background: var(--color-ground);
+    color: var(--color-ink-muted);
+    font-size: 0.9rem;
   }
 </style>
