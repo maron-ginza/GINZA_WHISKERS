@@ -1,7 +1,9 @@
 ---
 import BaseLayout from '../../../layouts/BaseLayout.astro'
 import { fetchPublishedArticleDetails, resolveImageUrl } from '../../../lib/payload'
-import { lexicalToHtml } from '../../../lib/lexical'
+import { lexicalToHtml, lexicalToPlainText } from '../../../lib/lexical'
+
+const DEFAULT_DESCRIPTION = 'An archive of Showa-era romance, preserved layer by layer from Ginza.'
 
 export async function getStaticPaths() {
   const articles = await fetchPublishedArticleDetails('en')
@@ -12,9 +14,27 @@ const { article } = Astro.props
 const bodyHtml = article?.isTranslated ? lexicalToHtml(article.body) : ''
 const hero = article?.images.find((img) => img.role === 'hero')?.asset ?? null
 const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
+
+const pageTitle = article ? `${article.seo.metaTitle ?? article.title} — Discover GINZA` : 'Discover GINZA'
+const description = article
+  ? article.seo.metaDescription || lexicalToPlainText(article.body) || DEFAULT_DESCRIPTION
+  : DEFAULT_DESCRIPTION
+const ogImage = hero ? resolveImageUrl(hero.sizes?.gallery?.url ?? hero.url) : null
+const canonicalPath = article ? `/en/articles/${article.slug}` : '/en/'
+const alternatePath = article ? `/ja/articles/${article.slugs.ja}` : '/ja/'
+// 未翻訳のプレースホルダーページは検索エンジンに索引させない
+const robots = article && !article.isTranslated ? 'noindex,follow' : 'index,follow'
 ---
 
-<BaseLayout title={article ? `${article.title} — Discover GINZA` : 'Discover GINZA'} locale="en">
+<BaseLayout
+  title={pageTitle}
+  locale="en"
+  description={description}
+  canonicalPath={canonicalPath}
+  alternatePath={alternatePath}
+  ogImage={ogImage}
+  robots={robots}
+>
   {
     article ? (
       <article>

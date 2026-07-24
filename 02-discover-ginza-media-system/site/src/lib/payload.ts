@@ -38,6 +38,9 @@ export interface ArticleSummary {
   id: string
   title: string
   slug: string
+  // hreflang alternate link生成用に両ロケールのスラッグを保持する
+  // （enはjaスラッグへのフォールバックを含む。上のslugと同じ解決規則）
+  slugs: Record<Locale, string>
   accessionNumber: string | null
   representedYear: number | null
   historicalPeriod: string | null
@@ -106,6 +109,10 @@ function resolveSummary(raw: ArticleRaw, locale: Locale): ArticleSummary {
     // URLの解決はコンテンツの翻訳状態と独立させる：英語スラッグが無くても
     // 日本語スラッグを流用してURLを成立させる（Phase 6設計承認事項）
     slug: (raw.slug[locale] || raw.slug.ja) as string,
+    slugs: {
+      ja: raw.slug.ja as string,
+      en: (raw.slug.en || raw.slug.ja) as string,
+    },
     accessionNumber: raw.accessionNumber,
     representedYear: raw.representedYear,
     historicalPeriod: raw.historicalPeriod,

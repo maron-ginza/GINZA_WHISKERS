@@ -1,12 +1,37 @@
 ---
 import type { Locale } from '../lib/payload'
 
+// index,follow ⇄ noindex,follow ⇄ noindex,nofollow を呼び出し側で自由に
+// 切り替えられるようにするための型（Phase 7、翻訳未完了の英語ページ向け
+// noindex運用を主目的とするが、将来の他用途にも流用できる形にしておく）
+export type RobotsDirective = 'index,follow' | 'noindex,follow' | 'noindex,nofollow'
+
 interface Props {
   title: string
   locale: Locale
+  description: string
+  // 自ページの正規URL（絶対ドメイン未確定のため当面はサイトルート相対パス）
+  canonicalPath: string
+  // hreflang alternate用のもう一方のロケールのパス。無ければ相互参照を出さない
+  alternatePath?: string
+  ogImage?: string | null
+  robots?: RobotsDirective
 }
 
-const { title, locale } = Astro.props
+const {
+  title,
+  locale,
+  description,
+  canonicalPath,
+  alternatePath,
+  ogImage = null,
+  robots = 'index,follow',
+} = Astro.props
+
+const otherLocale: Locale = locale === 'ja' ? 'en' : 'ja'
+const ogLocale = locale === 'ja' ? 'ja_JP' : 'en_US'
+// astro.config.mjsのdefaultLocaleに合わせる（x-defaultの参照先）
+const defaultLocalePath = locale === 'ja' ? canonicalPath : (alternatePath ?? canonicalPath)
 ---
 
 <!doctype html>
@@ -15,6 +40,17 @@ const { title, locale } = Astro.props
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content={robots} />
+    <link rel="canonical" href={canonicalPath} />
+    <link rel="alternate" hreflang={locale} href={canonicalPath} />
+    {alternatePath && <link rel="alternate" hreflang={otherLocale} href={alternatePath} />}
+    <link rel="alternate" hreflang="x-default" href={defaultLocalePath} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content={ogLocale} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
   </head>
   <body>
     <header class="site-header">

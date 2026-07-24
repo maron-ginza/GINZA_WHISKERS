@@ -1,7 +1,9 @@
 ---
 import BaseLayout from '../../../layouts/BaseLayout.astro'
 import { fetchPublishedArticleDetails, resolveImageUrl } from '../../../lib/payload'
-import { lexicalToHtml } from '../../../lib/lexical'
+import { lexicalToHtml, lexicalToPlainText } from '../../../lib/lexical'
+
+const DEFAULT_DESCRIPTION = '銀座に積み重なる昭和浪漫の記憶を、資料として収蔵する。'
 
 export async function getStaticPaths() {
   const articles = await fetchPublishedArticleDetails('ja')
@@ -12,9 +14,24 @@ const { article } = Astro.props
 const bodyHtml = article?.isTranslated ? lexicalToHtml(article.body) : ''
 const hero = article?.images.find((img) => img.role === 'hero')?.asset ?? null
 const otherImages = article?.images.filter((img) => img.role !== 'hero') ?? []
+
+const pageTitle = article ? `${article.seo.metaTitle ?? article.title} — Discover GINZA` : 'Discover GINZA'
+const description = article
+  ? article.seo.metaDescription || lexicalToPlainText(article.body) || DEFAULT_DESCRIPTION
+  : DEFAULT_DESCRIPTION
+const ogImage = hero ? resolveImageUrl(hero.sizes?.gallery?.url ?? hero.url) : null
+const canonicalPath = article ? `/ja/articles/${article.slug}` : '/ja/'
+const alternatePath = article ? `/en/articles/${article.slugs.en}` : '/en/'
 ---
 
-<BaseLayout title={article ? `${article.title} — Discover GINZA` : 'Discover GINZA'} locale="ja">
+<BaseLayout
+  title={pageTitle}
+  locale="ja"
+  description={description}
+  canonicalPath={canonicalPath}
+  alternatePath={alternatePath}
+  ogImage={ogImage}
+>
   {
     article ? (
       <article>

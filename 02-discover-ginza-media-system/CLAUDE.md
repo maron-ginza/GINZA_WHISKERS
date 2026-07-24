@@ -214,10 +214,37 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
 
 ## 12. 現在のステータス
 
-- **フェーズ**：Phase 6（翻訳ワークフロー）完了——記事詳細ページ
-  （Phase 4）・記事一覧カードデザイン刷新（Phase 5）・翻訳ワークフロー
-  確立（Phase 6）まで完了
+- **フェーズ**：Phase 7（SEOメタ対応）完了——記事詳細ページ（Phase 4）・
+  記事一覧カードデザイン刷新（Phase 5）・翻訳ワークフロー確立（Phase 6）・
+  SEOメタ対応（Phase 7）まで完了
 - **直近の意思決定**：
+  - 2026-07-24: Phase 7としてSEOメタ対応を実装した。`BaseLayout.astro`に
+    `description`・`robots`・`canonicalPath`・`alternatePath`・`ogImage`の
+    Propsを追加し、`<meta name="description">`・`<meta name="robots">`・
+    `<link rel="canonical">`・`<link rel="alternate" hreflang="ja|en|
+    x-default">`・OGPタグ（`og:type`/`og:title`/`og:description`/
+    `og:locale`/`og:image`）を出力するようにした。`robots`は
+    `index,follow` / `noindex,follow` / `noindex,nofollow`
+    の3値から呼び出し側が選べる型（`RobotsDirective`）とし、用途を
+    翻訳未完了ページのnoindexに限定しない汎用設計にした。記事詳細ページは
+    `article.seo.metaTitle`/`metaDescription`が未入力の場合、本文冒頭を
+    プレーンテキスト化したもの（`lexical.ts`に`lexicalToPlainText`を
+    新規追加）→それも無ければ既定文へとフォールバックする。**翻訳未完了の
+    英語記事（`isTranslated: false`）は`noindex,follow`を出す**——
+    プレースホルダー本文しかないページを検索エンジンに索引させないための
+    意図的な設計（ユーザー承認済み）。hreflang相互参照のため、`payload.ts`
+    の`ArticleSummary`に`slugs: Record<Locale, string>`（ja/en両方の
+    スラッグ）を追加し、追加フェッチなしで相手ロケールのURLを解決できる
+    ようにした。本番ドメイン（Cloudflare Pages想定）が未確定のため、
+    `canonical`・`hreflang`・`og:image`以外は当面サイトルート相対パスの
+    まま（`og:image`はPayloadの絶対URLをそのまま使用）。ドメイン確定時に
+    絶対URL化する対応が残課題（第12章未決事項に記載）。`astro check`・
+    `astro build`とも無エラーで通過、ローカルの実データ
+    （`ginza-4-chome-crossing`、ja/en両方翻訳済み）でメタタグ出力を
+    curl・distファイルの両方で確認した。翻訳未完了記事でのnoindex出力は
+    現在データセットに未翻訳記事が存在しないため実データでは未検証
+    （ロジックはPhase 6で検証済みの`isTranslated`フラグをそのまま再利用す
+    るのみで型チェックも通過済みのため、リスクは低いと判断）。
   - 2026-07-23: Phase 6として翻訳ワークフローを確立した。着手前の調査で、
     `payload.config.ts`の`localization`に`fallback: false`が未設定のため
     既定値`true`が適用され、英語未翻訳のフィールド（`title`・`body`・
@@ -391,13 +418,14 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
   AI支援翻訳の要否、リリース前チェックリストの具体項目、02固有の
   Daily PMO進捗率算出方法、本番（Railway想定）環境での破壊的スキーマ
   変更のマイグレーション手順（ローカルはDBボリューム再作成で対応したが、
-  本番では使えない対応のため別途検討が必要）。付録Cに実装レベルの既知の
-  未完了事項を記載。
-- **次のマイルストーン**：記事詳細ページのSEOメタ（`BaseLayout`が
-  `description`等のmeta出力に未対応）と、HEIC画像アップロード時の
-  リサイズ非対応（付録C参照）を恒久対応するか運用ルール化するかを検討
-  する。あわせてギャラリー機能（第3章の4本柱の2つ目）の着手時期を検討。
-- **最終更新日**：2026-07-23
+  本番では使えない対応のため別途検討が必要）。本番ドメイン
+  （Cloudflare Pages想定）確定後、`canonical`/`hreflang`を絶対URL化する
+  対応（Phase 7、`astro.config.mjs`の`site`未設定が前提）。付録Cに
+  実装レベルの既知の未完了事項を記載。
+- **次のマイルストーン**：HEIC画像アップロード時のリサイズ非対応
+  （付録C参照）を恒久対応するか運用ルール化するかを検討する。あわせて
+  ギャラリー機能（第3章の4本柱の2つ目）の着手時期を検討。
+- **最終更新日**：2026-07-24
 
 ---
 

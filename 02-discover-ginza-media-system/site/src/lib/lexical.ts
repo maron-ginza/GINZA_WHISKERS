@@ -84,3 +84,17 @@ export function lexicalToHtml(value: LexicalRoot | null | undefined): string {
   if (!value?.root) return ''
   return renderChildren(value.root)
 }
+
+function extractText(node: LexicalNode): string {
+  if (node.type === 'text') return node.text ?? ''
+  return (node.children ?? []).map(extractText).join(' ')
+}
+
+// SEOのmeta descriptionが未入力の記事向けフォールバック：本文冒頭を
+// プレーンテキスト化して指定文字数に切り詰める
+export function lexicalToPlainText(value: LexicalRoot | null | undefined, maxLength = 160): string {
+  if (!value?.root) return ''
+  const text = extractText(value.root).replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`
+}
