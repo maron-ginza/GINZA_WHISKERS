@@ -71,7 +71,8 @@ interface ArticleRaw {
   accessionNumber: string | null
   representedYear: number | null
   historicalPeriod: string | null
-  pillars: Array<{ id: string; name: string }>
+  // Phase 8でTags.nameをlocalized化。`locale=all`のためロケールごとの生値で返る
+  pillars: Array<{ id: string; name: Localized<string> }>
   images: ArticleImageRaw[]
   seo: {
     metaTitle: Localized<string>
@@ -116,7 +117,12 @@ function resolveSummary(raw: ArticleRaw, locale: Locale): ArticleSummary {
     accessionNumber: raw.accessionNumber,
     representedYear: raw.representedYear,
     historicalPeriod: raw.historicalPeriod,
-    pillars: raw.pillars,
+    // タグ名は記事本文の翻訳ワークフローとは独立した固定語彙のため、
+    // 英語名未入力時はサイレントに日本語名へフォールバックする（Phase 8承認事項）
+    pillars: raw.pillars.map((pillar) => ({
+      id: pillar.id,
+      name: (pillar.name[locale] || pillar.name.ja) as string,
+    })),
     images: raw.images.map((img) => ({
       asset: img.asset,
       role: img.role,

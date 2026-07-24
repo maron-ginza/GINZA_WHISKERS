@@ -155,11 +155,15 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
     スラッグをそのまま英語URLに流用する（`/en/articles/<ja-slug>`）。
     翻訳が未完了でもページ自体は存在させプレースホルダーを表示する、
     という上記の公開条件と整合させるための意図的な設計判断。
-  - **既知の残課題**：`Tags.name`（収蔵室・自由タグのラベル）はロケール
-    別フィールドになっていないため、英語ページでも常に日本語のタグ表示
-    （例：「歴史」）になる。翻訳ワークフローの対象を記事本文からタグ
-    ラベルにも広げるかは未決定（対応する場合は`Tags.name`を
-    `localized: true`にする小さなスキーマ変更が必要）。
+  - **タグ名のロケール対応（2026-07-24確定、Phase 8）**：`Tags.name`を
+    `localized: true`にし、収蔵室（6本柱）・自由タグとも英語ラベルを
+    個別に持てるようにした。ただしタグ名は記事本文のような編集対象コンテンツ
+    ではなく固定語彙（収蔵室は6値固定）のため、記事本文・タイトルに適用した
+    「サイレントフォールバック禁止」ポリシー（第7章上部）とは**あえて別方針**
+    とし、英語名が未入力の場合は日本語名へサイレントにフォールバック表示する
+    （タグチップが欠落・空欄になるより自然、との判断でユーザー承認済み）。
+    収蔵室の固定6値バリデーション（`Tags.ts`の`beforeValidate`フック）も
+    ロケール別（`PILLAR_NAMES.ja` / `PILLAR_NAMES.en`）に対応させた。
 
 ## 8. AI活用ポリシー（記事生成・SNS配信）
 
@@ -214,10 +218,44 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
 
 ## 12. 現在のステータス
 
-- **フェーズ**：Phase 7（SEOメタ対応）完了——記事詳細ページ（Phase 4）・
-  記事一覧カードデザイン刷新（Phase 5）・翻訳ワークフロー確立（Phase 6）・
-  SEOメタ対応（Phase 7）まで完了
+- **フェーズ**：Phase 8（タグ名のロケール対応）完了——記事詳細ページ
+  （Phase 4）・記事一覧カードデザイン刷新（Phase 5）・翻訳ワークフロー
+  確立（Phase 6）・SEOメタ対応（Phase 7）・タグ名ロケール対応（Phase 8）
+  まで完了
 - **直近の意思決定**：
+  - 2026-07-24: Phase 8として`Tags.name`をロケール別対応にした。
+    `cms/src/collections/Tags.ts`の`name`フィールドに`localized: true`を
+    追加し、収蔵室（固定6値）バリデーションの`beforeValidate`フックも
+    `req.locale`に応じて`PILLAR_NAMES.ja`/`PILLAR_NAMES.en`のいずれかで
+    判定するよう変更（英語ラベルは History / Culture / Art /
+    Architecture / People / Events に確定）。**フォールバック方針**：
+    記事本文とは異なりタグ名は固定語彙のため、英語名未入力時は日本語名へ
+    サイレントにフォールバック表示する方針をユーザーに確認のうえ確定
+    （第7章に詳細）。フロントエンドは`site/src/lib/payload.ts`の
+    `ArticleRaw.pillars[].name`を`Localized<string>`型に変更し、
+    `resolveSummary`内で`pillar.name[locale] || pillar.name.ja`により
+    解決するようにした。
+    **スキーマ変更の適用方法**：`name`フィールドへの`localized: true`追加は
+    既存データ（タグ1件「歴史」）を伴う破壊的変更で、Payloadのdev
+    push機構が対話式の削除確認プロンプト（`accept warnings and push
+    schema? (y/N)`）を要求したが、このサンドボックス環境は非TTYのため
+    対話入力ができず（付録Bに記載の`create-payload-app`と同種の制約）、
+    かつPhase 2のような`docker compose down -v`によるボリューム全体リセット
+    は既存記事データ（ヒーロー画像・ja/en本文入りのサンプル記事）を失う
+    コストが大きいと判断し、今回は**手動SQLマイグレーション**で対応した。
+    既存の`articles_locales`テーブル（`slug`が同じ`localized: true`+
+    `unique: true`の組み合わせ）の実際の列・インデックス命名規則
+    （`<table>_locales`テーブル、`_locale`/`_parent_id`列、
+    `<table>_locales_locale_parent_id_unique`、`<table>_<field>_idx`）を
+    確認したうえで`tags_locales`テーブルを手動作成・データ移送・旧
+    `tags.name`列削除を行い、Payloadが期待する形と完全一致させることで、
+    次回起動時に対話プロンプトなしでスキーマ検証を通過することを確認した。
+    本番（Railway想定）でも同種の破壊的スキーマ変更時はこの手動移行手順が
+    再利用できる（手順は付録Dに追記）。
+    **検証**：管理画面でタグ「歴史」の英語名を`History`に設定 →
+    サーバーログでPATCH確認 → `/en/`一覧・詳細ページとも「History」表示、
+    `/ja/`は「歴史」のまま影響なしを確認。`astro check`・`astro build`
+    とも無エラー。
   - 2026-07-24: Phase 7としてSEOメタ対応を実装した。`BaseLayout.astro`に
     `description`・`robots`・`canonicalPath`・`alternatePath`・`ogImage`の
     Propsを追加し、`<meta name="description">`・`<meta name="robots">`・
@@ -414,14 +452,14 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
     `astro build`で実際に3ページ生成を確認（いずれもこのサンドボックス内で
     検証済み）。Docker Postgresでの実起動・管理画面疎通は未検証。詳細は
     付録A・B。
-- **未決事項**：`Tags.name`のロケール別対応（収蔵室タグの英語表示）、
-  AI支援翻訳の要否、リリース前チェックリストの具体項目、02固有の
-  Daily PMO進捗率算出方法、本番（Railway想定）環境での破壊的スキーマ
-  変更のマイグレーション手順（ローカルはDBボリューム再作成で対応したが、
-  本番では使えない対応のため別途検討が必要）。本番ドメイン
-  （Cloudflare Pages想定）確定後、`canonical`/`hreflang`を絶対URL化する
-  対応（Phase 7、`astro.config.mjs`の`site`未設定が前提）。付録Cに
-  実装レベルの既知の未完了事項を記載。
+- **未決事項**：AI支援翻訳の要否、リリース前チェックリストの具体項目、
+  02固有のDaily PMO進捗率算出方法、本番（Railway想定）環境での破壊的
+  スキーマ変更のマイグレーション手順（ローカルはPhase 2でDBボリューム
+  再作成、Phase 8で手動SQLマイグレーションの2通りの前例ができたが、
+  本番Railway環境での実際の手順としてはまだ確定・検証していない）。
+  本番ドメイン（Cloudflare Pages想定）確定後、`canonical`/`hreflang`を
+  絶対URL化する対応（Phase 7、`astro.config.mjs`の`site`未設定が前提）。
+  付録Cに実装レベルの既知の未完了事項を記載。
 - **次のマイルストーン**：HEIC画像アップロード時のリサイズ非対応
   （付録C参照）を恒久対応するか運用ルール化するかを検討する。あわせて
   ギャラリー機能（第3章の4本柱の2つ目）の着手時期を検討。
@@ -538,3 +576,47 @@ Payloadのコレクション定義を変更した際、管理画面で保存エ�
    （Cmd+Shift+R）を試す。DBリセットやコレクション定義変更の直後は、
    管理画面JSバンドルとブラウザキャッシュの不整合が起きうる
    （2026-07-22のSlugフィールド入力不可事象はこれで解消した）。
+7. **既存データを保持したまま`localized: true`を追加する場合**
+   （2026-07-24、Phase 8のTags.name対応より）：このサンドボックス環境は
+   非TTYのため、Payloadのdev push機構が要求する削除確認の対話プロンプト
+   （`Accept warnings and push schema to database? (y/N)`）に応答できず、
+   スキーマ変更が止まる。`docker compose down -v`によるボリューム全体
+   リセットは可能だが、他の既存データ（記事本文・画像等）まで失う
+   コストが大きい場合は、以下の手順で対象フィールドだけを手動移行できる。
+   1. 既存の`localized: true`+`unique: true`なフィールドを持つ別
+      コレクションの実際のテーブル定義を確認し、命名規則を把握する。
+      ```bash
+      docker compose exec -T postgres psql -U discover_ginza -d discover_ginza -c "\d <table>_locales"
+      ```
+      Payloadの規則：`<collection>_locales`テーブル（`id`・元フィールド名の
+      列・`_locale`（`_locales` enum型）・`_parent_id`）、
+      `<collection>_locales_locale_parent_id_unique`（`_locale, _parent_id`の
+      複合UNIQUE）、`unique: true`も設定している場合は
+      `<collection>_<field>_idx`（`<field>, _locale`のUNIQUE）。
+   2. 上記と同じ形で新しい`<collection>_locales`テーブルを手動作成し、
+      既存の値を`_locale = <defaultLocale>`として移送、その後に元テーブルの
+      非localizedカラムを削除する（トランザクション内で実施）。
+      ```sql
+      BEGIN;
+      CREATE TABLE tags_locales (
+        id serial PRIMARY KEY,
+        name character varying,
+        _locale _locales NOT NULL,
+        _parent_id integer NOT NULL
+      );
+      INSERT INTO tags_locales (name, _locale, _parent_id)
+        SELECT name, 'ja', id FROM tags;
+      ALTER TABLE tags DROP COLUMN name;
+      ALTER TABLE tags_locales
+        ADD CONSTRAINT tags_locales_parent_id_fk
+        FOREIGN KEY (_parent_id) REFERENCES tags(id) ON DELETE CASCADE;
+      CREATE UNIQUE INDEX tags_locales_locale_parent_id_unique
+        ON tags_locales (_locale, _parent_id);
+      CREATE UNIQUE INDEX tags_name_idx ON tags_locales (name, _locale);
+      COMMIT;
+      ```
+   3. Payload devサーバーを再起動し、対話プロンプトが出ないこと
+      （＝スキーマが完全一致していること）を確認する。
+   本番（Railway想定）でも同種の破壊的スキーマ変更が必要になった場合、
+   この手順を土台にできる（ただしRailway環境での実施・検証はまだ未実施、
+   第12章の未決事項）。

@@ -1,7 +1,11 @@
 import type { CollectionConfig } from 'payload'
 
-// Root第2章の6本柱（固定値）。CONTENT_MODEL.md 5節。
-export const PILLAR_NAMES = ['歴史', '文化', 'アート', '建築', '人物', 'イベント'] as const
+// Root第2章の6本柱（固定値、ja/en両方）。CONTENT_MODEL.md 5節。
+// Phase 8でnameをlocalized化したため、pillar名バリデーションもロケール別に判定する。
+export const PILLAR_NAMES = {
+  ja: ['歴史', '文化', 'アート', '建築', '人物', 'イベント'],
+  en: ['History', 'Culture', 'Art', 'Architecture', 'People', 'Events'],
+} as const
 
 export const Tags: CollectionConfig = {
   slug: 'tags',
@@ -29,14 +33,21 @@ export const Tags: CollectionConfig = {
       type: 'text',
       required: true,
       unique: true,
+      localized: true,
     },
   ],
   hooks: {
     beforeValidate: [
-      ({ data }) => {
-        if (data?.type === 'pillar' && data.name && !PILLAR_NAMES.includes(data.name as (typeof PILLAR_NAMES)[number])) {
+      ({ data, req }) => {
+        const locale = (req.locale === 'en' ? 'en' : 'ja') as keyof typeof PILLAR_NAMES
+        const allowedNames = PILLAR_NAMES[locale]
+        if (
+          data?.type === 'pillar' &&
+          data.name &&
+          !(allowedNames as readonly string[]).includes(data.name as string)
+        ) {
           throw new Error(
-            `収蔵室（pillar）タグは固定6値のみ使用できます: ${PILLAR_NAMES.join(' / ')}`,
+            `収蔵室（pillar）タグは固定6値のみ使用できます（${locale}）: ${allowedNames.join(' / ')}`,
           )
         }
         return data
