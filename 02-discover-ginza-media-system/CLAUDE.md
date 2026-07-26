@@ -218,11 +218,51 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
 
 ## 12. 現在のステータス
 
-- **フェーズ**：Phase 8（タグ名のロケール対応）完了——記事詳細ページ
-  （Phase 4）・記事一覧カードデザイン刷新（Phase 5）・翻訳ワークフロー
-  確立（Phase 6）・SEOメタ対応（Phase 7）・タグ名ロケール対応（Phase 8）
-  まで完了
+- **フェーズ**：Phase 9（HEIC画像アップロード対応）実装完了・実機ファイル
+  検証待ち——記事詳細ページ（Phase 4）・記事一覧カードデザイン刷新
+  （Phase 5）・翻訳ワークフロー確立（Phase 6）・SEOメタ対応（Phase 7）・
+  タグ名ロケール対応（Phase 8）・HEIC対応（Phase 9）まで完了
 - **直近の意思決定**：
+  - 2026-07-26: Phase 9としてHEIC画像アップロードの恒久対応を実装した。
+    **原因確認**：このプロジェクトの`sharp`ビルド（`sharp.format.heif`を
+    実機確認）はHEIF入出力の対応が`fileSuffix: ['.avif']`/
+    `alias: ['avif']`のみで、実際のiPhone撮影HEIC（HEVCコーデック）の
+    デコードには非対応と判明（libvipsのプリビルドバイナリがpatentライセンス
+    の都合でHEVCデコーダを含んでいないため）。さらにPayload本体の
+    `canResizeImage()`/`isImage()`（`node_modules/payload/dist/uploads/
+    canResizeImage.js`等）のホワイトリストにも`image/heic`/`image/heif`が
+    含まれておらず、現状HEICアップロードはエラーにはならず**サイレントに
+    リサイズされないまま原本だけ保存される**（`imageSizes`が生成されない）
+    ことをソース確認した。
+    **対応方針**：`heic-convert`（pure-JS、`libheif-js`のWASMビルド経由で
+    HEVCデコードに対応）を追加し、`cms/src/collections/ImageAssets.ts`の
+    `hooks.beforeOperation`でPayload標準のアップロード処理
+    （`generateFileData`、Sharpのリサイズより前）が走る前にHEICを検出して
+    JPEGへ変換する方式にした。Payloadのソース
+    （`collections/operations/create.js`）を確認し、`beforeOperation`が
+    `generateFileData`より確実に先に実行される順序であることを検証済み。
+    HEIC判定は拡張子やクライアント送信の`mimetype`ではなく、`file-type`
+    パッケージによる実バイト列（ftypボックスのブランド）判定を用いる
+    （iOS/ブラウザ側で`mimetype`が不正確になるケースがあるため。同じHEIF
+    コンテナだが既にsharpが扱えるAVIFは誤検出しないことも確認済み）。
+    **保持される情報／不可避な変化**：ファイル名は拡張子を除く部分を保持し
+    `.jpg`に置き換える（例：`IMG_1234.HEIC` → `IMG_1234.jpg`）。
+    `rights`・`altText`・`pillars`等のCMS側メタデータフィールドは無変更。
+    一方、デコード→JPEG再エンコードの過程でHEIC内部のEXIF（撮影日時・
+    GPS位置情報・カメラ機種等）は失われる（`heic-convert`が使う
+    `jpeg-js`エンコーダがEXIFセグメントを書き出さないため）。回転情報のみ
+    `heic-decode`がデコード時に画素へ反映済みのため、見た目の向きのズレは
+    生じない。
+    **検証状況**：`tsc --noEmit`が新規エラーなしで通過（既存の
+    `createDraftFromSource.ts`の3件は無関係の既知エラー、Phase 8以前から
+    存在）。Payloadソースの追跡によるフック順序の確認、`file-type`による
+    HEIC系ブランド（heic/heix/hevc/hevx/mif1/msf1）判定とAVIF除外の
+    smokeテスト、`heic-convert`（WASM libheif）がこのサンドボックス環境で
+    問題なくロードされ不正入力に対して正しくエラーを返すことは確認済み。
+    **ただし実際のiPhone撮影HEICファイルを用いた管理画面での
+    エンドツーエンドアップロード検証は未実施**（このサンドボックス環境に
+    実機HEICのテストファイルが存在しないため）。次回、実ファイルでの検証が
+    取れ次第この項目を更新する。
   - 2026-07-24: Phase 8として`Tags.name`をロケール別対応にした。
     `cms/src/collections/Tags.ts`の`name`フィールドに`localized: true`を
     追加し、収蔵室（固定6値）バリデーションの`beforeValidate`フックも
@@ -459,11 +499,13 @@ SNS配信を通じてブランドの物語を継続的に拡張・発信する�
   本番Railway環境での実際の手順としてはまだ確定・検証していない）。
   本番ドメイン（Cloudflare Pages想定）確定後、`canonical`/`hreflang`を
   絶対URL化する対応（Phase 7、`astro.config.mjs`の`site`未設定が前提）。
+  Phase 9のHEIC変換フックについて、実機（iPhone等）撮影のHEICファイルを
+  用いた管理画面でのエンドツーエンドアップロード検証がまだ取れていない。
   付録Cに実装レベルの既知の未完了事項を記載。
-- **次のマイルストーン**：HEIC画像アップロード時のリサイズ非対応
-  （付録C参照）を恒久対応するか運用ルール化するかを検討する。あわせて
-  ギャラリー機能（第3章の4本柱の2つ目）の着手時期を検討。
-- **最終更新日**：2026-07-24
+- **次のマイルストーン**：Phase 9のHEIC対応を実ファイルで最終検証する。
+  あわせてギャラリー機能（第3章の4本柱の2つ目）の着手時期を検討する
+  （本格的な設計・スコープ確定は別フェーズとする方針、2026-07-26確認）。
+- **最終更新日**：2026-07-26
 
 ---
 
@@ -540,6 +582,8 @@ npm run build           # astro check + astro build。DB未起動でも空デー
   保存した内容と一度照合すること（バージョン依存のため）
 - スラッグ整形（記号除去・ローマ字化）は`createDraftFromSource.ts`内でTODOの
   ままになっている
+- Phase 9で`ImageAssets.ts`にHEIC→JPEG変換フックを実装したが、実機HEIC
+  ファイルでの管理画面アップロード検証は未実施（第12章参照）
 
 ## 付録D：スキーマ関連トラブルシューティング手順（2026-07-22の事例より）
 
