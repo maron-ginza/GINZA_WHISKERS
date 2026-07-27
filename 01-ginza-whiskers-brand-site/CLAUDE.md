@@ -177,8 +177,9 @@
 - [x] favicon / apple-touch-icon（2026-07-26）
 - [x] OGP / Twitter Card メタタグ（2026-07-26。og:url/og:imageは独自ドメイン
       未確定のためginzawhiskers.com想定の仮実装、第10章参照）
-- [ ] `robots.txt` / `sitemap.xml`
-- [ ] canonical URL
+- [x] `robots.txt` / `sitemap.xml`（2026-07-27。og:url/og:imageと同じく
+      ginzawhiskers.com想定の仮実装、第10章参照）
+- [x] canonical URL（2026-07-27。同上、仮ドメイン）
 - [ ] 404ページ
 
 **インフラ**
@@ -249,13 +250,25 @@
     （claude-in-chrome）は本セッションで未接続のため、実ブラウザでのタブ
     アイコン表示の目視確認とSNSクローラーによる実際のOGP展開確認は未実施
     のまま残る。
+  - 2026-07-27: `robots.txt`・`sitemap.xml`・canonicalタグを実装した。
+    `robots.txt`は全クローラーへのクロール許可と`sitemap.xml`の場所を明示。
+    `sitemap.xml`は現存する2ページ（`index.html`, `about.html`）を登録
+    （トップページ優先度1.0、aboutを0.8）。canonicalタグは各ページの
+    `<head>`に`<link rel="canonical">`として追加し、`<meta name="description">`
+    の直後に配置。**ドメインについて**：canonical URL・sitemap内のURLは
+    仕様上絶対URLが必須のため、og:url/og:imageと同じく独自ドメイン未確定の
+    現時点では想定ドメイン`https://ginzawhiskers.com/`で仮実装した
+    （2026-07-26のOGP実装時の前例を踏襲）。ドメイン確定時に
+    `robots.txt`・`sitemap.xml`・両HTMLファイルのcanonical値をまとめて
+    実際の値へ更新する必要がある（付録C参照）。**検証**：ローカル静的
+    サーバーで`robots.txt`/`sitemap.xml`/`index.html`/`about.html`が
+    いずれも200で配信されることを確認済み。
 - **未決事項**：ドメイン/ホスティング先、記事アーカイブ方針、英語版の要否、
-  `mailto:`のスクレイピング対策、ドメイン確定後のog:url/og:image実URL化
-  （詳細は第9章・付録C参照）
+  `mailto:`のスクレイピング対策、ドメイン確定後のog:url/og:image・
+  canonical・sitemap実URL化（詳細は第9章・付録C参照）
 - **次のマイルストーン**：ヒーロー画像素材の取材・取得（届き次第、付録Bの
-  実装仕様に沿って実装）。または`robots.txt`/`sitemap.xml`等、発見可能性の
-  残り項目の着手
-- **最終更新日**：2026-07-26
+  実装仕様に沿って実装）。または404ページ等、発見可能性の残り項目の着手
+- **最終更新日**：2026-07-27
 
 ---
 
@@ -327,9 +340,10 @@ python3 -m http.server 8000
 `ginzashowaromanticclub@gmail.com`）への差し替えが完了した（第10章参照）。
 
 **残っている暫定値（プレースホルダーではないが、ドメイン確定後に見直しが必要）**：
-`index.html`/`about.html`のOGP `og:url`・`og:image`が、独自ドメイン未確定のため
-想定ドメイン`https://ginzawhiskers.com/`をハードコードしている（2026-07-26追加、
-第9章・第10章参照）。ドメインが正式決定・変更された場合はこの2ファイルの
+`index.html`/`about.html`のOGP `og:url`・`og:image`・canonicalタグ、および
+`robots.txt`/`sitemap.xml`が、独自ドメイン未確定のため想定ドメイン
+`https://ginzawhiskers.com/`をハードコードしている（2026-07-26・2026-07-27追加、
+第9章・第10章参照）。ドメインが正式決定・変更された場合はこれらのファイルの
 該当箇所を実際の値に更新すること。
 
 ## 補足：現在のファイル配置について
