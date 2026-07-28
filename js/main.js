@@ -20,4 +20,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (yearEl) {
     yearEl.textContent = new Date().getFullYear();
   }
+
+  const emailLink = document.getElementById("contact-email");
+  if (emailLink) {
+    const user = "ginzashowaromanticclub";
+    const domain = "gmail.com";
+    const address = `${user}@${domain}`;
+    emailLink.href = `mailto:${address}`;
+    emailLink.textContent = address;
+  }
 });
