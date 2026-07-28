@@ -305,6 +305,12 @@ h1, h2, h3 {
   margin-bottom: 0.6em;
 }
 
+.policy-date {
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+  margin-top: 2.5em;
+}
+
 /* ---------- 404 Page ---------- */
 
 .error-code {
@@ -347,6 +353,20 @@ h1, h2, h3 {
   color: var(--color-ink-muted);
   font-size: 0.78rem;
   margin: 0;
+}
+
+.footer-links {
+  margin: 0;
+}
+
+.footer-links a {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  transition: color 0.25s ease;
+}
+
+.footer-links a:hover {
+  color: var(--color-gold-light);
 }
 
 /* ---------- Responsive ---------- */
