@@ -1,0 +1,128 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+---
+
+<BaseLayout
+  title="プライバシーポリシー | Discover GINZA"
+  locale="ja"
+  description="Discover GINZAにおける個人情報の取り扱いについて。"
+  canonicalPath="/ja/privacy"
+  alternatePath="/en/privacy"
+>
+  <section class="policy">
+    <header class="policy-header">
+      <h1>プライバシーポリシー</h1>
+    </header>
+
+    <p>
+      GINZA WHISKERS（銀座昭和浪漫倶楽部、以下「当会」）は、Discover GINZA
+      （本サイト）における個人情報の取り扱いについて、以下のとおり定めます。
+      Discover GINZAはGINZA WHISKERSブランド傘下のコンテンツ・出版メディアです。
+    </p>
+
+    <h2>1. お問い合わせについて</h2>
+    <p>
+      本サイトは現時点でお問い合わせフォーム・メールアドレスの掲載を行って
+      いません。取材・掲載・お仕事のご相談等のお問い合わせは、GINZA WHISKERS
+      ブランドサイトのお問い合わせ窓口（<a href="https://ginzawhiskers.com/about.html">ginzawhiskers.com</a>）
+      をご利用ください。
+    </p>
+
+    <h2>2. ニュースレター配信について</h2>
+    <p>
+      本サイトは将来的にニュースレターの配信機能を導入する予定ですが、
+      現時点では未実装であり、メールアドレスの登録・収集は行っていません。
+      導入する際は、収集する情報の範囲・利用目的・配信停止（退会）の方法を
+      本ポリシーに明記したうえで運用を開始します。
+    </p>
+
+    <h2>3. アクセス解析ツールについて</h2>
+    <p>
+      本サイトは、アクセス状況を把握し、コンテンツ改善に役立てる目的で
+      Google Analytics（GA4）を導入する方針です。GA4はGoogleが提供する
+      アクセス解析ツールで、Cookieを利用してサイトの利用状況を収集しますが、
+      個人を特定する情報を含まない形で処理されます。
+    </p>
+    <p>
+      当会は、広告向け機能（Google Signals、Google広告アカウントとの
+      データ連携等）を有効化しません。これにより、本サイトの利用データが
+      広告の配信・追跡目的で第三者と共有されることはありません。
+    </p>
+    <p>
+      GA4によるデータ収集を望まない場合は、Googleが提供する
+      <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener">
+        Google アナリティクス オプトアウト アドオン
+      </a>
+      を利用することで収集を無効化できます。
+    </p>
+
+    <h2>4. SNS連携（Instagram等）について</h2>
+    <p>
+      当会は、Discover GINZAが制作したコンテンツを公式SNSアカウント
+      （Instagram等）へ配信するために、Meta社が提供するGraph APIを利用します。
+      この連携は当会が管理する公式アカウントへの投稿を目的としたものであり、
+      本サイトの訪問者個人のInstagram／Facebookアカウント情報を取得・保存する
+      ものではありません。配信は必ず人間による内容確認・承認を経て行われ、
+      自動投稿（人間の確認を経ない配信）は行いません。
+    </p>
+
+    <h2>5. 個人情報の第三者提供について</h2>
+    <p>
+      当会は、法令に基づく場合を除き、取得した情報を本人の同意なく第三者へ
+      提供することはありません。
+    </p>
+
+    <h2>6. 本ポリシーの変更について</h2>
+    <p>
+      本ポリシーの内容は、法令の変更や本サイトの機能追加（ニュースレター・
+      アクセス解析ツールの導入状況の変更等）に応じて、予告なく改定することが
+      あります。改定後の内容は、本ページに掲載した時点で効力を生じるものと
+      します。
+    </p>
+
+    <h2>7. お問い合わせ窓口</h2>
+    <p>
+      本ポリシーに関するお問い合わせは、GINZA WHISKERSブランドサイトの
+      <a href="https://ginzawhiskers.com/about.html">お問い合わせ窓口</a>
+      よりご連絡ください。
+    </p>
+
+    <p class="policy-date">制定日：2026年7月29日</p>
+  </section>
+</BaseLayout>
+
+<style>
+  .policy {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 2rem 2rem 5rem;
+  }
+  .policy-header {
+    margin-bottom: 2rem;
+  }
+  .policy-header h1 {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    margin: 0;
+    letter-spacing: 0.03em;
+  }
+  .policy p {
+    color: var(--color-ink-muted);
+    font-size: 0.92rem;
+    line-height: 1.9;
+  }
+  .policy h2 {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: var(--color-ink);
+    margin-top: 2.2em;
+    letter-spacing: 0.02em;
+  }
+  .policy a {
+    color: var(--color-accent);
+  }
+  .policy-date {
+    font-size: 0.8rem;
+    margin-top: 2.5em;
+  }
+</style>

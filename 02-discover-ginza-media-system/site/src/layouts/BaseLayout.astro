@@ -59,6 +59,12 @@ const defaultLocalePath = locale === 'ja' ? canonicalPath : (alternatePath ?? ca
     <main>
       <slot />
     </main>
+    <footer class="site-footer">
+      <p class="footer-links">
+        <a href={`/${locale}/privacy`}>{locale === 'ja' ? 'プライバシーポリシー' : 'Privacy Policy'}</a>
+      </p>
+      <p class="footer-copy">&copy; Ginza Showa Roman Club. All Rights Reserved.</p>
+    </footer>
   </body>
 </html>
 
@@ -98,5 +104,32 @@ const defaultLocalePath = locale === 'ja' ? canonicalPath : (alternatePath ?? ca
     text-decoration: none;
     font-size: 1.25rem;
     letter-spacing: 0.05em;
+  }
+
+  .site-footer {
+    padding: 2rem;
+    border-top: 1px solid var(--color-accent-tint);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .footer-links,
+  .footer-copy {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--color-ink-muted);
+  }
+
+  .footer-links a {
+    color: var(--color-ink-muted);
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .footer-links a:hover {
+    color: var(--color-accent);
   }
 </style>
