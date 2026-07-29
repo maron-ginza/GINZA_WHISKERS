@@ -208,7 +208,7 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   | Phase | 内容 | 優先度 |
   |---|---|---|
   | 11 | リリース前チェックリストの具体化 | 完了（本節・第11章） |
-  | 12 | 本番インフラ確定（ドメイン／Railway／Cloudflare Pages／本番スキーマ移行手順） | **最優先** |
+  | 12 | 本番インフラ確定（ドメイン／Railway／Cloudflare Pages／本番スキーマ移行手順） | **設計完了（2026-07-29）、実際の構築作業が残る** |
   | 13 | Phase 9 HEIC対応の実機エンドツーエンド検証 | **最優先** |
   | 14 | コンテンツ制作の本格開始（AI編集部パイプライン実運用） | Phase 12・13の後 |
   | 15 | SNS配信の本実装（Instagram App Review／X OAuth） | Instagram側はリードタイムを理由に**申請だけ先行着手**（付録E参照） |
@@ -237,9 +237,15 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
 以下がすべて解消されている状態を「公開可能」の基準とする。*
 
 **必須（公開ブロッカー）**
-- [ ] 本番ドメイン・ホスティングの決定・設定（Cloudflare Pages／Railway、Phase 12）
+- [x] 本番ドメイン・ホスティングの**方針決定**（Phase 12。サブドメイン方式、
+      `discover.ginzawhiskers.com`。2026-07-29確定、詳細は付録F）
+- [ ] 上記方針に基づく**実際の構築**（Cloudflare Pagesプロジェクト作成、
+      Railwayサービス作成、Cloudflare R2バケット作成、DNSレコード追加。
+      Phase 12。手順は付録F、いずれも各サービスのアカウント操作が必要な
+      ためユーザー側での実施が必要）
 - [ ] 本番Postgres環境の構築＋スキーマ移行手順の本番検証（Phase 12。
-      現状ローカルDocker環境での2通りの前例のみで、本番環境では未検証）
+      現状ローカルDocker環境での2通りの前例のみで、本番環境では未検証。
+      手順の設計は付録F参照）
 - [ ] Phase 9 HEIC対応の実機（iPhone等）エンドツーエンドアップロード検証（Phase 13）
 
 **信頼性**
@@ -251,8 +257,8 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
 - [ ] X（Twitter）投稿のOAuth実装（`postToX.ts`、Phase 15）
 
 **発見可能性**
-- [ ] canonical／hreflangの絶対URL化（Phase 7の残課題。ドメイン確定
-      〈Phase 12〉に従属するため、それまでは相対パスのまま）
+- [x] canonical／hreflang／og:urlの絶対URL化（Phase 7の残課題。
+      2026-07-29、ドメイン確定を受けて対応完了。詳細は付録F）
 
 **インフラ**
 - （本番インフラの内容は上記「必須」に集約。現時点で追加項目なし）
@@ -275,6 +281,32 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   （Phase 10）まで完了。**ギャラリーの実装自体は01公開後に先送り**
   （後述）
 - **直近の意思決定**：
+  - 2026-07-29: Phase 12（本番インフラ）のドメイン・ホスティング方針を
+    決定した。**ドメイン**：サブドメイン方式を採用し`discover.ginzawhiskers.
+    com`を02のフロントエンドドメインとする（独立ドメインの新規購入は
+    見送り）。理由：02はビジュアル上は01と別のサブブランドだが（第5章）、
+    ブランド構造上はGINZA WHISKERS傘下であり（Root第1章のツリー構造）、
+    01が「各プロジェクトへのハブ」を担うという役割定義（Root第1章、01
+    CLAUDE.md第1章）とも整合するため。追加のドメイン購入・DNS検証・SEO
+    立ち上げコストも回避できる。**構成**：フロントエンド（`site/`）＝
+    Cloudflare Pages・`discover.ginzawhiskers.com`、バックエンド
+    （`cms/`）＝Railway・`api.discover.ginzawhiskers.com`、画像ストレージ
+    ＝Cloudflare R2（第6章の技術選定どおり）。詳細な構築手順・DNS設計・
+    環境変数一覧は付録Fにランブックとして記録した。**コード変更**：
+    `site/astro.config.mjs`に`site: 'https://discover.ginzawhiskers.com'`
+    を追加し、これに伴いPhase 7の残課題だった`canonical`/`hreflang`の
+    絶対URL化に対応した——`BaseLayout.astro`の`canonicalPath`/
+    `alternatePath`をこれまでの相対パスそのまま出力から、`Astro.site`を
+    基準に絶対URL化する処理（`toAbsolute`ヘルパー）に変更し、あわせて
+    従来出力していなかった`og:url`メタタグも新規追加した。`og:image`は
+    元々Payloadの絶対URLをそのまま使う設計のため変更なし。**検証**：
+    `astro check`は12ファイル・0エラー。`astro dev`を起動し
+    `/ja/privacy`で`canonical`が`https://discover.ginzawhiskers.com/ja/
+    privacy`、`hreflang`が日英とも絶対URL、`og:url`が新規出力されている
+    ことをcurlで確認済み。**今回は方針決定・コード対応のみ**——Cloudflare
+    Pages／Railway／R2の実際のアカウント作成・DNSレコード追加は未実施
+    （各サービスのダッシュボード操作が必要なため、私からは代行できず
+    ユーザー側の対応が必要。付録F参照）。
   - 2026-07-29: 02固有のプライバシーポリシーページを実装した
     （`site/src/pages/{ja,en}/privacy.astro`、`/ja/privacy` `/en/privacy`）。
     01の`privacy.html`を土台にしつつ、02固有の実態に合わせて内容を調整：
@@ -604,25 +636,25 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
     付録A・B。
 - **未決事項**：AI支援翻訳の要否、02固有のDaily PMO進捗率算出方法
   （第11章のチェックリストが具体化したため、今後算出方法を確定する）、
-  本番（Railway想定）環境での破壊的スキーマ変更のマイグレーション手順
-  （ローカルはPhase 2でDBボリューム再作成、Phase 8で手動SQLマイグレー
-  ションの2通りの前例ができたが、本番Railway環境での実際の手順としては
-  まだ確定・検証していない）。本番ドメイン（Cloudflare Pages想定）確定後、
-  `canonical`/`hreflang`を絶対URL化する対応（Phase 7、
-  `astro.config.mjs`の`site`未設定が前提）。Phase 9のHEIC変換フックに
-  ついて、実機（iPhone等）撮影のHEICファイルを用いた管理画面での
-  エンドツーエンドアップロード検証がまだ取れていない。ギャラリー機能
-  （Phase 10でスコープ確定）における、複数記事から参照される同一画像
-  アセットの年代・収蔵室の解決規則（実装フェーズで確定、
+  本番（Railway想定）環境での破壊的スキーマ変更のマイグレーション手順の
+  **実地**検証（手順の設計自体は2026-07-29に付録Fへ記録したが、ローカル
+  2前例〈Phase 2のDBボリューム再作成、Phase 8の手動SQLマイグレーション〉
+  を踏まえた設計段階に留まり、Railway環境での実施はまだ行っていない）。
+  Phase 9のHEIC変換フックについて、実機（iPhone等）撮影のHEICファイルを
+  用いた管理画面でのエンドツーエンドアップロード検証がまだ取れていない。
+  ギャラリー機能（Phase 10でスコープ確定）における、複数記事から参照
+  される同一画像アセットの年代・収蔵室の解決規則（実装フェーズで確定、
   `CONTENT_MODEL.md`第7章）。付録Cに実装レベルの既知の未完了事項を記載。
-  **2026-07-28追加**：Meta Business Managerのビジネス確認状況の確認
-  （02固有のプライバシーポリシーページは2026-07-29に実装済み、下記参照）。
-- **次のマイルストーン**：Phase 12（本番ドメイン・ホスティング決定、本番
-  スキーマ移行手順の検証）とPhase 13（Phase 9 HEIC対応の実機検証）を
-  並行して進める。あわせてInstagram Meta App Review申請の前提整備
-  （02固有のプライバシーポリシー作成、Business Verification状況の確認）
-  に着手する。ギャラリー機能の実装は02の進捗を見て再判断する方針のため、
-  当面の次のマイルストーンからは外れる。
+  **2026-07-29追加**：Cloudflare Pages・Railway・Cloudflare R2の実際の
+  アカウント設定・DNSレコード追加（方針は確定済み、付録F。各サービスの
+  ダッシュボード操作が必要なためユーザー側の対応が必要）、Meta Business
+  Managerのビジネス確認状況の確認。
+- **次のマイルストーン**：付録Fの手順に沿った本番インフラの実際の構築
+  （Cloudflare Pages／Railway／R2のアカウント設定・DNS追加）と、Phase 13
+  （Phase 9 HEIC対応の実機検証）を並行して進める。あわせてInstagram Meta
+  App Review申請の前提整備（Business Verification状況の確認）に着手する。
+  ギャラリー機能の実装は02の進捗を見て再判断する方針のため、当面の次の
+  マイルストーンからは外れる。
 - **最終更新日**：2026-07-29
 
 ---
@@ -825,6 +857,84 @@ Managerアカウントでの操作が必要なため、私（Claude）が代行�
 **未確認・要対応（2026-07-29時点）**：
 - Meta Business Managerのビジネス確認が完了しているかどうか未確認。
 - 02固有のプライバシーポリシーページは実装済み（2026-07-29、上記参照）。
-  本番ドメイン確定後、公開URLを申請フォームに反映する必要あり。
+  本番ドメイン`discover.ginzawhiskers.com`も確定済み（付録F）——実際に
+  Cloudflare Pagesへデプロイし公開URLが到達可能になった時点で、その
+  URLを申請フォームに入力する（デプロイ自体は付録F、まだ未実施）。
 - 実際の申請提出・審査結果の待ち状況は、次回セッション以降、ユーザーからの
   報告を受けて第12章に記録する。
+
+## 付録F：本番インフラ構築ランブック（2026-07-29作成）
+
+*2026-07-29、Phase 12（本番インフラ）のドメイン・ホスティング方針を確定
+した（第12章参照）。以下は実際に構築するための設計・手順。本ランブック
+作成時点でコード側の対応（`site: 'https://discover.ginzawhiskers.com'`の
+設定、canonical/hreflang/og:urlの絶対URL化）は完了済みだが、各サービスの
+アカウント作成・実際の設定投入にはCloudflare／Railwayのダッシュボード
+操作が必要なため、私（Claude）が代行することはできず、ユーザー自身の
+対応が必要。*
+
+**採用したドメイン方針**：サブドメイン方式。`ginzawhiskers.com`
+（01が既に取得予定のドメイン、付録D参照）の配下に02用のサブドメインを
+切る。独立ドメインの新規購入は行わない（比較検討は第12章の決定ログ参照）。
+
+**構成**：
+
+| コンポーネント | サービス | ドメイン |
+|---|---|---|
+| フロントエンド（`site/`） | Cloudflare Pages | `discover.ginzawhiskers.com` |
+| バックエンド（`cms/`、Payload CMS） | Railway | `api.discover.ginzawhiskers.com` |
+| 画像ストレージ | Cloudflare R2 | （任意）`images.discover.ginzawhiskers.com` |
+| データベース | Railway Postgresプラグイン | （外部公開ドメイン不要） |
+
+**手順（概略）**：
+
+1. **Cloudflare Pages（フロントエンド）**
+   - Cloudflare Pagesで新規プロジェクトを作成し、本リポジトリの
+     `02-discover-ginza-media-system/site/`をビルド対象に設定する
+     （ビルドコマンド`npm run build`、出力ディレクトリ`dist/`）。
+   - ビルド時の環境変数`PAYLOAD_API_URL=https://api.discover.
+     ginzawhiskers.com`を設定する。
+   - カスタムドメインとして`discover.ginzawhiskers.com`を追加する。
+2. **Railway（バックエンド＋Postgres）**
+   - 新規プロジェクトを作成し、Postgresプラグインを追加する
+     （`DATABASE_URI`は自動注入される）。
+   - `02-discover-ginza-media-system/cms/`をサービスとしてデプロイする。
+   - 環境変数を設定する：`PAYLOAD_SECRET`（新規生成の長いランダム文字列）、
+     `R2_BUCKET`／`R2_ENDPOINT`／`R2_ACCESS_KEY_ID`／
+     `R2_SECRET_ACCESS_KEY`（下記3）、`ANTHROPIC_API_KEY`、
+     `IG_BUSINESS_ACCOUNT_ID`／`IG_PAGE_ACCESS_TOKEN`（Meta App Review
+     承認後、付録E）、`X_API_BEARER_TOKEN`（Phase 15実装後）。
+   - カスタムドメインとして`api.discover.ginzawhiskers.com`を追加する。
+3. **Cloudflare R2（画像ストレージ）**
+   - バケットを新規作成する（例：`discover-ginza-images`）。
+   - APIトークン（アクセスキーID・シークレットキー）を発行し、Railway側の
+     環境変数に設定する。
+   - パブリック配信用のカスタムドメイン（`images.discover.ginzawhiskers.
+     com`）を設定するかは任意——設定しない場合はR2のデフォルト公開URLを
+     使う。
+4. **DNS（`ginzawhiskers.com`ゾーン）**
+
+   | レコード | 種別 | 向き先 |
+   |---|---|---|
+   | `discover.ginzawhiskers.com` | CNAME | Cloudflare Pages |
+   | `api.discover.ginzawhiskers.com` | CNAME | Railway |
+   | `images.discover.ginzawhiskers.com`（任意） | CNAME | Cloudflare R2 |
+
+   01のドメイン設定（付録D、Aレコード4件＋`www`のCNAME）とは独立した
+   レコード追加のみで完結し、01側の設定に影響しない。
+
+5. **本番スキーマ移行**：付録Dの「7. 既存データを保持したまま
+   `localized: true`を追加する場合」の手動SQL手順をベースに、Railway
+   Postgresへの接続情報を使い同様の手動移行を行う想定。本番では
+   `docker compose down -v`のようなボリューム全リセットは実データ保護の
+   観点から選択肢に入らないため、**手動SQLマイグレーションが本番での
+   唯一の現実的な手段**になる見込み。実行前にRailway側のバックアップ
+   機能（自動バックアップの有無・保持期間）を確認すること。
+6. 完了後、第11章のチェックリスト該当項目にチェックを入れ、第12章に
+   実施日と結果を記録する。
+
+**未確認・要対応**：
+- Cloudflare Pages／Railwayのアカウント作成状況（既存アカウントの有無）。
+- Railway Postgresの自動バックアップ機能の有無・保持期間。
+- 実際の構築作業は次回セッション以降、ユーザーからの実施報告を受けて
+  本章に記録する。
