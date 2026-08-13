@@ -1,0 +1,725 @@
+#!/bin/bash
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_DIR="$ROOT/.devlogs"
+PID_DIR="$ROOT/.devpids"
+
+CMS_URL="http://localhost:3000"
+SITE_URL="http://localhost:4321"
+DB_CONTAINER="cms-postgres-1"
+
+mkdir -p "$LOG_DIR" "$PID_DIR"
+
+ok()   { printf "✅ %s\n" "$1"; }
+warn() { printf "⚠️  %s\n" "$1"; }
+fail() { printf "❌ %s\n" "$1"; }
+
+http_ok() {
+  curl -fsS "$1" >/dev/null 2>&1
+}
+
+wait_docker() {
+  if docker info >/dev/null 2>&1; then
+    ok "Docker Engine"
+    return 0
+  fi
+
+  echo "Docker Desktopを自動起動しています..."
+  open -a Docker >/dev/null 2>&1 || true
+
+  for i in $(seq 1 60); do
+    if docker info >/dev/null 2>&1; then
+      ok "Docker Engine started"
+      return 0
+    fi
+    sleep 2
+  done
+
+  fail "Docker Engine 起動タイムアウト"
+  return 1
+}
+
+wait_http() {
+  url="$1"
+  name="$2"
+
+  for i in $(seq 1 60); do
+    if http_ok "$url"; then
+      ok "$name"
+      return 0
+    fi
+    sleep 1
+  done
+
+  fail "$name 起動タイムアウト"
+  return 1
+}
+
+ensure_env() {
+  if [ ! -f "$ROOT/site/.env" ] && [ -f "$ROOT/site/.env.example" ]; then
+    cp "$ROOT/site/.env.example" "$ROOT/site/.env"
+    ok "site/.env created"
+  fi
+
+  if [ ! -f "$ROOT/cms/.env" ]; then
+    fail "cms/.env がありません"
+    return 1
+  fi
+
+  if [ ! -f "$ROOT/site/.env" ]; then
+    fail "site/.env がありません"
+    return 1
+  fi
+
+  ok "Environment files"
+}
+
+start_db() {
+  wait_docker || exit 1
+
+  if ! docker inspect "$DB_CONTAINER" >/dev/null 2>&1; then
+    fail "PostgreSQL container が見つかりません"
+    exit 1
+  fi
+
+  if [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" = "true" ]; then
+    ok "PostgreSQL already running"
+  else
+    docker start "$DB_CONTAINER" >/dev/null || exit 1
+    ok "PostgreSQL started"
+  fi
+}
+
+start_cms() {
+  if http_ok "$CMS_URL/api/articles"; then
+    ok "Payload CMS already running"
+    return
+  fi
+
+  (
+    cd "$ROOT/cms" || exit 1
+    nohup npm run dev > "$LOG_DIR/cms.log" 2>&1 &
+    echo $! > "$PID_DIR/cms.pid"
+  )
+
+  wait_http "$CMS_URL/api/articles" "Payload CMS"
+}
+
+start_site() {
+  if http_ok "$SITE_URL/ja/"; then
+    ok "Astro already running"
+    return
+  fi
+
+  (
+    cd "$ROOT/site" || exit 1
+    nohup npm run dev > "$LOG_DIR/site.log" 2>&1 &
+    echo $! > "$PID_DIR/site.pid"
+  )
+
+  wait_http "$SITE_URL/ja/" "Astro Site"
+}
+
+stop_port() {
+  port="$1"
+  name="$2"
+  found=0
+
+  for pid in $(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null); do
+    kill "$pid" >/dev/null 2>&1 || true
+    found=1
+  done
+
+  if [ "$found" = "1" ]; then
+    ok "$name stopped"
+  else
+    ok "$name already stopped"
+  fi
+}
+
+stop_all() {
+  echo
+  echo "🛑 Project 02 安全終了開始"
+
+  stop_port 4321 "Astro"
+  stop_port 3000 "Payload CMS"
+
+  if docker info >/dev/null 2>&1 &&
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" = "true" ]; then
+    docker stop "$DB_CONTAINER" >/dev/null
+    ok "PostgreSQL stopped"
+  else
+    ok "PostgreSQL already stopped"
+  fi
+
+  rm -f "$PID_DIR/cms.pid" "$PID_DIR/site.pid"
+
+  echo "✅ Project 02 安全終了完了"
+  echo
+}
+
+health() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Health Check ==="
+
+  docker info >/dev/null 2>&1 \
+    && ok "Docker Engine" \
+    || fail "Docker Engine"
+
+  [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" = "true" ] \
+    && ok "PostgreSQL" \
+    || fail "PostgreSQL"
+
+  if http_ok "$CMS_URL/api/articles"; then
+    ok "Payload API : HTTP 200"
+
+    API="$CMS_URL/api/articles?where%5BreviewStatus%5D%5Bequals%5D=published&limit=100"
+
+    COUNT=$(curl -fsS "$API" | python3 -c \
+      'import sys,json; print(len(json.load(sys.stdin).get("docs",[])))' 2>/dev/null)
+
+    TITLE=$(curl -fsS "$API" | python3 -c \
+      'import sys,json; d=json.load(sys.stdin); x=d.get("docs",[]); print(x[0].get("title","") if x else "")' 2>/dev/null)
+
+    ok "Published Articles : ${COUNT:-0}"
+  else
+    fail "Payload API"
+    TITLE=""
+  fi
+
+  if http_ok "$SITE_URL/ja/"; then
+    ok "Astro Japanese Site"
+  else
+    fail "Astro Japanese Site"
+  fi
+
+  if [ -n "$TITLE" ] && curl -fsS "$SITE_URL/ja/" | grep -Fq "$TITLE"; then
+    ok "Payload → Astro Live Data"
+  elif [ -z "$TITLE" ]; then
+    warn "Payload → Astro : 公開記事なし"
+  else
+    fail "Payload → Astro Live Data"
+  fi
+
+  echo "================================================"
+  echo
+}
+
+dump_logs() {
+  echo "=== 自動診断ログ ==="
+
+  if [ -f "$LOG_DIR/cms.log" ]; then
+    echo "--- Payload CMS last 15 lines ---"
+    tail -15 "$LOG_DIR/cms.log"
+  fi
+
+  if [ -f "$LOG_DIR/site.log" ]; then
+    echo "--- Astro last 15 lines ---"
+    tail -15 "$LOG_DIR/site.log"
+  fi
+
+  echo "=================="
+}
+
+doctor() {
+  health
+  dump_logs
+}
+
+editorial() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 編集パイプライン状況 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/editorialStatus.ts 2>"$LOG_DIR/editorial.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "編集パイプライン集計スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/editorial.log 末尾 ---"
+    tail -15 "$LOG_DIR/editorial.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_editorial_status.py" "$LOG_DIR/editorial.log"
+
+  echo "================================================"
+  echo
+}
+
+social() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 SNS配信キュー状況（Phase 15） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/socialStatus.ts 2>"$LOG_DIR/social.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "SNS配信キュー集計スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/social.log 末尾 ---"
+    tail -15 "$LOG_DIR/social.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_social_status.py" "$LOG_DIR/social.log"
+
+  echo "================================================"
+  echo
+}
+
+start_all() {
+  echo
+  echo "🚀 Project 02 自動起動開始"
+
+  ensure_env || exit 1
+  start_db
+  start_cms
+  start_site
+  health
+}
+
+# 値は一切表示しない。「設定されているかどうか」の存在確認のみ行う。
+check_env_var() {
+  file="$1"
+  var="$2"
+  line=$(grep -E "^${var}=" "$file" 2>/dev/null | head -1)
+
+  if [ -z "$line" ]; then
+    warn "  $var : 未設定"
+    return 1
+  fi
+
+  value="${line#*=}"
+  if [ -z "$value" ]; then
+    warn "  $var : 空文字（キーはあるが値が未入力）"
+    return 1
+  fi
+
+  ok "  $var : 設定済み（値は表示しません）"
+  return 0
+}
+
+# 値は一切表示しない。形式（sk-ant-プレフィックス・長さ・空白有無）のみで
+# 「APIキーとして成立しているか」を判定する。実際の認証成功は保証しない
+# （2026-08-10 実AI E2E検証セッションで、形式異常な値が.envに混入していた
+# 事例があったため、日次チェックとして静的検査のみ追加した）。
+check_anthropic_key_format() {
+  file="$1"
+  line=$(grep -E "^ANTHROPIC_API_KEY=" "$file" 2>/dev/null | head -1)
+  ANTHROPIC_KEY_OK=0
+
+  if [ -z "$line" ]; then
+    return 1
+  fi
+
+  value="${line#*=}"
+  len=${#value}
+
+  if [ -z "$value" ]; then
+    warn "  ANTHROPIC_API_KEY 形式チェック : 空文字のためスキップ"
+    return 1
+  fi
+
+  case "$value" in
+    sk-ant-*) prefix_ok=1 ;;
+    *) prefix_ok=0 ;;
+  esac
+
+  case "$value" in
+    *' '*) has_space=1 ;;
+    *) has_space=0 ;;
+  esac
+
+  if [ "$prefix_ok" = "1" ] && [ "$has_space" = "0" ] && [ "$len" -lt 200 ]; then
+    ok "  ANTHROPIC_API_KEY 形式チェック : 正常な形式に見えます（sk-ant-始まり、${len}文字。実際の認証成功は保証しません）"
+    ANTHROPIC_KEY_OK=1
+    return 0
+  else
+    warn "  ANTHROPIC_API_KEY 形式チェック : 異常の疑いあり（sk-ant-始まり=${prefix_ok}、空白含む=${has_space}、長さ=${len}文字。値は表示していません）"
+    return 1
+  fi
+}
+
+# === Railway / Cloudflare 読み取り専用ラッパー（2026-08-12新設） ===
+#
+# 背景：`railway domain` をサブコマンドなしで実行し、Postgresサービスに
+# 公開ドメインを誤って作成する事故が発生した（発見後 `railway domain delete`
+# で削除し、読み取り専用コマンドで復旧確認済み。実データ・デプロイ・環境変数
+# への影響はなし）。原因は「一覧表示のつもりで叩いたコマンドが、実際には
+# サブコマンド省略時に暗黙で『作成』動作をする」仕様を、実行前に`--help`で
+# 確認していなかったこと。
+#
+# 再発防止として、以後Railway/Cloudflareの読み取り専用操作は必ずこの
+# railway_ro / wrangler_ro を経由すること。ここに無い操作を実行する場合は、
+# 生成AIエージェントは自動実行せず、実行直前で必ず停止して人間の承認を得る
+# こと。新しい操作をここへ追加する前に、必ず `railway <cmd> --help` /
+# `wrangler <cmd> --help` を読み、サブコマンド省略時に作成・変更が起きない
+# ことを確認すること。
+#
+# 【許可リストに追加してはいけない操作（＝実行前に必ず人間の承認が必要）】
+#   Railway: domain（create/update/delete）、variable set/delete、up、
+#            deploy、redeploy、restart、down、delete、init、
+#            service（create相当）、environment（create/delete）、volume、
+#            scale、connect/ssh（本番DBへの対話シェル）、config apply、
+#            usage limit set/update/remove（課金上限の変更）
+#   Cloudflare: pages deploy、r2 bucket create/delete、deploy/publish、
+#            kv:*、d1 *、secret put、login/logout
+railway_ro() {
+  case "$1" in
+    whoami)              railway whoami ;;
+    status)              railway status --json ;;
+    domain-list)         shift; railway domain list --service "$1" ;;
+    domain-status)       shift; railway domain status "$1" --service "$2" ;;
+    deployment-list)     shift; railway deployment list --service "$1" ;;
+    variable-list-keys)  shift; railway variable list --service "$1" --json 2>/dev/null | jq -r 'keys[]' ;;
+    usage)               railway usage ;;
+    usage-limit-status)  railway usage limit status ;;
+    *)
+      fail "railway_ro: 未許可の操作 '$1'（追加する前に railway <cmd> --help で安全性を確認してください）"
+      return 1
+      ;;
+  esac
+}
+
+wrangler_ro() {
+  case "$1" in
+    whoami)              env -u CLOUDFLARE_API_TOKEN wrangler whoami ;;
+    pages-project-list)  env -u CLOUDFLARE_API_TOKEN wrangler pages project list ;;
+    r2-bucket-list)      env -u CLOUDFLARE_API_TOKEN wrangler r2 bucket list ;;
+    *)
+      fail "wrangler_ro: 未許可の操作 '$1'（追加する前に wrangler <cmd> --help で安全性を確認してください）"
+      return 1
+      ;;
+  esac
+}
+
+# 現状Railway上に存在するサービス一覧（cmsサービスが将来デプロイされたら
+# "Postgres cms" のように増やすだけでよい）
+RAILWAY_KNOWN_SERVICES="Postgres"
+
+prod_status() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 本番リソース状態（読み取り専用） ==="
+  echo "作成・変更・削除・デプロイは一切行いません（railway_ro/wrangler_ro経由の読み取りのみ）"
+  echo
+
+  echo "--- Railway ---"
+  if ! command -v railway >/dev/null 2>&1; then
+    warn "railway CLI 未インストール"
+  elif ! (cd "$ROOT/cms" && railway_ro whoami >/dev/null 2>&1); then
+    warn "railway 未ログイン（本コマンドからはログインしません）"
+  else
+    ok "railway 認証: 有効"
+    echo
+    echo "  [usage（課金確認）]"
+    (cd "$ROOT/cms" && railway_ro usage) | sed 's/^/  /'
+    echo
+    echo "  [status]"
+    (cd "$ROOT/cms" && railway_ro status) | sed 's/^/  /'
+
+    for svc in $RAILWAY_KNOWN_SERVICES; do
+      echo
+      echo "  [$svc: domains]"
+      (cd "$ROOT/cms" && railway_ro domain-list "$svc") | sed 's/^/  /'
+      echo
+      echo "  [$svc: deployments]"
+      (cd "$ROOT/cms" && railway_ro deployment-list "$svc") | sed 's/^/  /'
+      echo
+      echo "  [$svc: 環境変数キー一覧（値は表示しません）]"
+      (cd "$ROOT/cms" && railway_ro variable-list-keys "$svc") | sed 's/^/    /'
+    done
+  fi
+
+  echo
+  echo "--- Cloudflare ---"
+  if ! command -v wrangler >/dev/null 2>&1; then
+    warn "wrangler CLI 未インストール"
+  elif ! wrangler_ro whoami >/dev/null 2>&1; then
+    warn "wrangler 未ログイン、または認証切れ（本コマンドからはログインしません）"
+  else
+    ok "wrangler 認証: 有効"
+    echo
+    echo "  [Cloudflare Pages プロジェクト一覧]"
+    wrangler_ro pages-project-list | sed 's/^/  /'
+    echo
+    echo "  [R2 バケット一覧]"
+    wrangler_ro r2-bucket-list | sed 's/^/  /'
+  fi
+
+  echo
+  echo "================================================"
+  echo
+}
+
+pmo() {
+  morning || return 1
+  prod_status
+}
+
+preflight() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Phase 12 Preflight（本番インフラ構築準備） ==="
+  echo "外部アカウント作成・課金操作・DNS変更・本番公開は行いません（調査・ローカル検証のみ）"
+  echo
+
+  echo "--- 1. デプロイ関連ファイルの存在確認 ---"
+  [ -f "$ROOT/cms/railway.json" ] && ok "cms/railway.json（Railway build/start/healthcheck設定）" || warn "cms/railway.json が見つかりません"
+  [ -f "$ROOT/cms/docker-compose.yml" ] && ok "cms/docker-compose.yml（ローカルPostgres用、本番では不使用）" || warn "cms/docker-compose.yml が見つかりません"
+  grep -q '"engines"' "$ROOT/site/package.json" 2>/dev/null && ok "site/package.json に engines.node 指定あり" || warn "site/package.json に engines.node がありません"
+  [ -f "$ROOT/cms/.env.example" ] && ok "cms/.env.example" || warn "cms/.env.example が見つかりません"
+  [ -f "$ROOT/site/.env.example" ] && ok "site/.env.example" || warn "site/.env.example が見つかりません"
+
+  echo
+  echo "--- 2. cms/.env の必須環境変数（名前のみ確認、値は表示しません） ---"
+  if [ -f "$ROOT/cms/.env" ]; then
+    db_ok=1
+    check_env_var "$ROOT/cms/.env" "DATABASE_URI" || db_ok=0
+    if [ "$db_ok" = "0" ]; then
+      check_env_var "$ROOT/cms/.env" "DATABASE_URL" && db_ok=1
+    fi
+    [ "$db_ok" = "1" ] || warn "  DATABASE_URI / DATABASE_URL のいずれも未設定です"
+    check_env_var "$ROOT/cms/.env" "PAYLOAD_SECRET"
+    check_env_var "$ROOT/cms/.env" "R2_BUCKET"
+    check_env_var "$ROOT/cms/.env" "R2_ENDPOINT"
+    check_env_var "$ROOT/cms/.env" "R2_ACCESS_KEY_ID"
+    check_env_var "$ROOT/cms/.env" "R2_SECRET_ACCESS_KEY"
+    check_env_var "$ROOT/cms/.env" "ANTHROPIC_API_KEY" && check_anthropic_key_format "$ROOT/cms/.env"
+    check_env_var "$ROOT/cms/.env" "X_API_BEARER_TOKEN"
+    check_env_var "$ROOT/cms/.env" "IG_BUSINESS_ACCOUNT_ID"
+    check_env_var "$ROOT/cms/.env" "IG_PAGE_ACCESS_TOKEN"
+  else
+    fail "cms/.env が存在しません"
+  fi
+
+  echo
+  echo "--- 3. site/.env の必須環境変数（名前のみ確認） ---"
+  if [ -f "$ROOT/site/.env" ]; then
+    check_env_var "$ROOT/site/.env" "PAYLOAD_API_URL"
+  else
+    fail "site/.env が存在しません"
+  fi
+
+  echo
+  echo "--- 4. デプロイ用CLIツールの検出（読み取りのみ、ログイン等は行いません） ---"
+  RAILWAY_AUTH_OK=0
+  WRANGLER_AUTH_OK=0
+
+  if command -v railway >/dev/null 2>&1; then
+    ok "railway CLI インストール済み"
+    if railway whoami >/dev/null 2>&1; then
+      ok "railway 認証: 有効"
+      RAILWAY_AUTH_OK=1
+    else
+      warn "railway 認証: 未ログイン（本スクリプトからはログインしません。ユーザー側でのブラウザ操作が必要）"
+    fi
+  else
+    warn "railway CLI 未インストール（Railwayダッシュボードでの手動設定が必要）"
+  fi
+
+  if command -v wrangler >/dev/null 2>&1; then
+    ok "wrangler CLI インストール済み（$(wrangler --version 2>/dev/null | head -1)）"
+    if wrangler whoami >/dev/null 2>&1; then
+      ok "wrangler 認証: 有効"
+      WRANGLER_AUTH_OK=1
+    else
+      warn "wrangler 認証: 無効または期限切れ（再ログインが必要、本スクリプトからは実行しません）"
+    fi
+  else
+    warn "wrangler CLI 未インストール"
+  fi
+
+  echo
+  echo "--- 5. ローカルビルド・型チェック ---"
+  if (cd "$ROOT/cms" && npx tsc --noEmit >"$LOG_DIR/preflight_cms_tsc.log" 2>&1); then
+    ok "cms: tsc --noEmit エラーなし"
+  else
+    known=$(grep -c "createDraftFromSource.ts" "$LOG_DIR/preflight_cms_tsc.log" 2>/dev/null || echo 0)
+    total=$(grep -c "error TS" "$LOG_DIR/preflight_cms_tsc.log" 2>/dev/null || echo 0)
+    if [ "$known" = "$total" ] && [ "$total" != "0" ]; then
+      warn "cms: tsc --noEmit は既知の${total}件のみ（createDraftFromSource.ts、Phase 8以前からの既知エラー）"
+    else
+      fail "cms: tsc --noEmit で未知のエラーあり（詳細: $LOG_DIR/preflight_cms_tsc.log）"
+    fi
+  fi
+
+  if (cd "$ROOT/site" && npx astro check >"$LOG_DIR/preflight_astro_check.log" 2>&1); then
+    ok "site: astro check エラーなし"
+  else
+    fail "site: astro check でエラーあり（詳細: $LOG_DIR/preflight_astro_check.log）"
+  fi
+
+  echo
+  echo "================================================"
+  echo
+}
+
+# preflight() が設定したWRANGLER_AUTH_OK/RAILWAY_AUTH_OK/ANTHROPIC_KEY_OKを
+# 読み、今日進めるべき工程を1つだけ提案する。優先順位は
+# 「ローカル環境の健全性 > 外部認証の復旧 > APIキーの健全性 > 本番構築の続き」。
+recommend_next_step() {
+  echo "=== 今日の次の推奨工程（1つだけ） ==="
+
+  if [ "${WRANGLER_AUTH_OK:-0}" != "1" ]; then
+    echo "→ wrangler login を実行し、Cloudflareの認証を復旧してください（本コマンドからは自動実行しません）"
+  elif [ "${RAILWAY_AUTH_OK:-0}" != "1" ]; then
+    echo "→ railway login を実行し、Railwayの認証を完了してください（ブラウザでの操作が必要、本コマンドからは自動実行しません）"
+  elif [ "${ANTHROPIC_KEY_OK:-0}" != "1" ]; then
+    echo "→ cms/.env の ANTHROPIC_API_KEY を、Anthropicコンソールで発行した有効な値（sk-ant-で始まる）に差し替えてください"
+  else
+    echo "→ 付録Fの手順で Cloudflare Pages / Railway デプロイ / R2 有効化など、本番インフラの実際の構築を進めてください（各サービスのダッシュボード操作が必要）"
+  fi
+
+  echo
+}
+
+morning() {
+  echo
+  echo "🌅 Project 02 Morning Startup — $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "外部ログイン・課金操作・本番デプロイは行いません（ローカル起動・診断・状態確認のみ）"
+  echo
+
+  ensure_env || {
+    echo
+    echo "次の1操作: cms/.env（と必要ならsite/.env）を用意してから ./p2 morning を再実行してください"
+    return 1
+  }
+
+  echo "--- 1-2. Docker Engine / PostgreSQL ---"
+  if ! wait_docker; then
+    echo
+    echo "次の1操作: Docker Desktopを手動起動し、再度 ./p2 morning を実行してください"
+    return 1
+  fi
+
+  if ! docker inspect "$DB_CONTAINER" >/dev/null 2>&1; then
+    fail "PostgreSQL container が見つかりません"
+    echo
+    echo "次の1操作: cms/docker-compose.yml の存在を確認し 'docker compose up -d' を実行してください"
+    return 1
+  fi
+
+  if [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" = "true" ]; then
+    ok "PostgreSQL already running"
+  else
+    if ! docker start "$DB_CONTAINER" >/dev/null; then
+      fail "PostgreSQL 起動失敗"
+      echo
+      echo "次の1操作: docker logs $DB_CONTAINER でエラー内容を確認してください"
+      return 1
+    fi
+    ok "PostgreSQL started"
+  fi
+
+  echo
+  echo "--- 3. Payload CMS ---"
+  start_cms
+  if ! http_ok "$CMS_URL/api/articles"; then
+    echo
+    echo "次の1操作: tail -50 $LOG_DIR/cms.log でエラー内容を確認してください"
+    return 1
+  fi
+
+  echo
+  echo "--- 4. Astro ---"
+  start_site
+  if ! http_ok "$SITE_URL/ja/"; then
+    echo
+    echo "次の1操作: tail -50 $LOG_DIR/site.log でエラー内容を確認してください"
+    return 1
+  fi
+
+  echo
+  echo "--- 5. ./p2 status 相当 ---"
+  health
+
+  echo "--- 6. ./p2 doctor 相当（診断ログ） ---"
+  dump_logs
+
+  echo "--- 7. ./p2 editorial 相当 ---"
+  editorial
+
+  echo "--- 8. ./p2 social 相当 ---"
+  social
+
+  echo "--- 9〜11. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
+  preflight
+
+  recommend_next_step
+
+  echo "🌅 Project 02 Morning Startup 完了"
+  echo
+}
+
+case "${1:-status}" in
+  start)
+    start_all
+    ;;
+  stop)
+    stop_all
+    ;;
+  restart)
+    stop_all
+    start_all
+    ;;
+  status)
+    health
+    ;;
+  doctor)
+    doctor
+    ;;
+  editorial)
+    editorial
+    ;;
+  social)
+    social
+    ;;
+  preflight)
+    preflight
+    ;;
+  morning)
+    morning
+    ;;
+  prod-status)
+    prod_status
+    ;;
+  pmo)
+    pmo
+    ;;
+  open)
+    open "$SITE_URL/ja/"
+    open "$CMS_URL/admin"
+    ;;
+  *)
+    echo "Project 02 Automation"
+    echo
+    echo "  ./p2 start      起動＋自動診断"
+    echo "  ./p2 stop       安全終了"
+    echo "  ./p2 restart    再起動"
+    echo "  ./p2 status     状態確認"
+    echo "  ./p2 doctor     異常時診断"
+    echo "  ./p2 editorial  編集パイプライン状況（Sources/Articles集計、承認待ち一覧）"
+    echo "  ./p2 social     SNS配信キュー状況（Phase 15、候補生成＋Dry Run＋承認待ち一覧）"
+    echo "  ./p2 preflight  Phase 12本番インフラ構築の準備状況確認（env var名・CLI認証・ビルド）"
+    echo "  ./p2 morning    朝の作業開始準備を1コマンドで完了（起動＋status/doctor/editorial/social/preflight＋次の推奨工程）"
+    echo "  ./p2 prod-status Railway/Cloudflareの本番リソース状態を読み取り専用で確認（railway_ro/wrangler_ro経由のみ、値は表示しません）"
+    echo "  ./p2 pmo        morning + prod-status をまとめて実行（PMOレポート作成用の一括データ収集）"
+    echo "  ./p2 open       Site/CMSを開く"
+    ;;
+esac
