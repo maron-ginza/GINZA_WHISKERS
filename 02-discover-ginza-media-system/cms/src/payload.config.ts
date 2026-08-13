@@ -9,10 +9,19 @@ import sharp from 'sharp'
 
 import { Articles } from './collections/Articles'
 import { ImageAssets } from './collections/ImageAssets'
+import { SocialPosts } from './collections/SocialPosts'
 import { Sources } from './collections/Sources'
 import { Tags } from './collections/Tags'
 import { Users } from './collections/Users'
+import { evaluateInboxEndpoint } from './endpoints/evaluateInbox'
+import { evaluateSourceEndpoint } from './endpoints/evaluateSource'
 import { generateDraftEndpoint } from './endpoints/generateDraft'
+import {
+  dispatchSocialPostEndpoint,
+  dryRunSocialQueueEndpoint,
+  generateSocialQueueEndpoint,
+  markSocialPostReadyEndpoint,
+} from './endpoints/socialQueue'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -21,8 +30,16 @@ export default buildConfig({
   admin: {
     user: Users.slug,
   },
-  collections: [Users, Articles, Sources, ImageAssets, Tags],
-  endpoints: [generateDraftEndpoint],
+  collections: [Users, Articles, Sources, ImageAssets, Tags, SocialPosts],
+  endpoints: [
+    generateDraftEndpoint,
+    evaluateSourceEndpoint,
+    evaluateInboxEndpoint,
+    generateSocialQueueEndpoint,
+    dryRunSocialQueueEndpoint,
+    markSocialPostReadyEndpoint,
+    dispatchSocialPostEndpoint,
+  ],
   editor: lexicalEditor(),
   sharp,
   secret: process.env.PAYLOAD_SECRET || '',
@@ -36,7 +53,11 @@ export default buildConfig({
   },
   db: postgresAdapter({
     pool: {
-      connectionString: process.env.DATABASE_URI || '',
+      // ローカル開発は DATABASE_URI（.env.example の慣習）。Railway の
+      // Postgres プラグインは自動生成する接続文字列変数を DATABASE_URL と
+      // 命名するため（CLAUDE.md 第12章 2026-08-09 決定ログ参照）、本番で
+      // どちらの変数名を使っても接続できるようフォールバックする。
+      connectionString: process.env.DATABASE_URI || process.env.DATABASE_URL || '',
     },
   }),
   plugins: [
