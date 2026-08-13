@@ -8,19 +8,26 @@ export async function createDraftFromSource(payload: Payload, sourceId: string) 
   const source = await payload.findByID({ collection: 'sources', id: sourceId })
 
   const pillarIds = Array.isArray(source.pillars)
-    ? source.pillars.map((p) => (typeof p === 'string' ? p : p.id))
+    ? source.pillars.map((p) => (typeof p === 'object' && p !== null ? p.id : p))
+    : []
+  // AIプロンプトには収蔵室のID（例："3"）ではなく名前（例："歴史"）を渡す必要が
+  // あるため、pillarIds（Articleのpillarsリレーション用、id配列）とは別に
+  // 名前の配列を作る（2026-08-12、next buildの型検査で発覚した既存バグの修正。
+  // 従来はIDをそのままプロンプトへ渡していた）。
+  const pillarNames = Array.isArray(source.pillars)
+    ? source.pillars.map((p) => (typeof p === 'object' && p !== null ? p.name : String(p)))
     : []
 
   const draft = await generateArticleDraft({
     sourceText: source.contentRef,
-    pillars: pillarIds as string[],
+    pillars: pillarNames,
   })
 
   const article = await payload.create({
     collection: 'articles',
     locale: 'ja',
     data: {
-      status: 'draft',
+      reviewStatus: 'draft',
       title: draft.title,
       // TODO: 記号除去・ローマ字化を含むスラッグ整形は編集長レビュー前に行う
       slug: draft.title,
@@ -35,7 +42,7 @@ export async function createDraftFromSource(payload: Payload, sourceId: string) 
         x: draft.socialCopy.x,
         instagram: draft.socialCopy.instagram,
       },
-      sourceRefs: [sourceId],
+      sourceRefs: [Number(sourceId)],
       aiGeneratedBy: 'claude-sonnet-5',
     },
   })

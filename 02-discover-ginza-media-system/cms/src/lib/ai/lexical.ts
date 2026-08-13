@@ -31,7 +31,7 @@ export function blocksToLexicalState(blocks: TextBlock[]) {
       return {
         type: 'heading',
         tag: `h${block.level ?? 2}`,
-        format: '',
+        format: '' as const,
         indent: 0,
         version: 1,
         direction: 'ltr' as const,
@@ -43,7 +43,7 @@ export function blocksToLexicalState(blocks: TextBlock[]) {
       const text = block.attribution ? `${block.text}（${block.attribution}）` : block.text
       return {
         type: 'quote',
-        format: '',
+        format: '' as const,
         indent: 0,
         version: 1,
         direction: 'ltr' as const,
@@ -53,7 +53,7 @@ export function blocksToLexicalState(blocks: TextBlock[]) {
 
     return {
       type: 'paragraph',
-      format: '',
+      format: '' as const,
       indent: 0,
       version: 1,
       direction: 'ltr' as const,
@@ -64,7 +64,7 @@ export function blocksToLexicalState(blocks: TextBlock[]) {
   return {
     root: {
       type: 'root',
-      format: '',
+      format: '' as const,
       indent: 0,
       version: 1,
       direction: 'ltr' as const,
