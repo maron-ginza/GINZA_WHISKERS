@@ -3,3 +3,10 @@
 # ImageAssetsのローカルディスクフォールバック先（R2未設定時のアップロード実体。
 # 個人の検証用画像を含むため追跡しない）
 02-discover-ginza-media-system/media/
+
+# ./p2 (scripts/project02) が生成するローカル開発サーバーのログ・PID
+02-discover-ginza-media-system/.devlogs/
+02-discover-ginza-media-system/.devpids/
+
+# wranglerのローカルキャッシュ（Cloudflareのアカウント識別子を含むため追跡しない）
+02-discover-ginza-media-system/.wrangler/
