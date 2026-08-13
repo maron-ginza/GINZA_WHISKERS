@@ -1,0 +1,90 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+
+// Cloudflare Pagesはビルド出力直下の404.htmlを、未知のパスへの応答として
+// HTTP 404で返す。これが無いと存在しないパスにも200が返り（2026-08-13に
+// 本番で確認したソフト404）、クローラに実在するページと誤認される。
+// 日英どちらのパスにも同じページが返るため、本文は両言語を併記する。
+---
+
+<BaseLayout
+  title="該当資料なし — Discover GINZA"
+  locale="ja"
+  description="お探しの資料は見つかりませんでした。"
+  canonicalPath="/404"
+  robots="noindex,nofollow"
+>
+  <section class="not-found">
+    <p class="code">404</p>
+    <h1>該当する資料が見つかりません</h1>
+    <p class="lede">
+      お探しの頁は、収蔵されていないか、既に別の場所へ移されています。
+    </p>
+    <p class="lede en">
+      The page you are looking for is not in our archive, or has been moved.
+    </p>
+    <p class="back">
+      <a href="/ja/">台帳へ戻る</a>
+      <span class="sep">／</span>
+      <a href="/en/">Back to the Ledger</a>
+    </p>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 5rem 2rem;
+    text-align: center;
+  }
+
+  .code {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    letter-spacing: 0.3em;
+    color: var(--color-ink-muted);
+  }
+
+  h1 {
+    margin: 1rem 0 1.5rem;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  .lede {
+    margin: 0 0 0.5rem;
+    font-size: 0.92rem;
+    line-height: 1.9;
+    color: var(--color-ink-muted);
+  }
+
+  .lede.en {
+    font-size: 0.82rem;
+  }
+
+  .back {
+    margin: 2.5rem 0 0;
+    font-size: 0.85rem;
+  }
+
+  .back a {
+    color: var(--color-accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-accent-tint);
+    padding-bottom: 0.15rem;
+    transition: color 0.2s ease;
+  }
+
+  .back a:hover {
+    color: var(--color-accent-tint);
+  }
+
+  .sep {
+    margin: 0 0.75rem;
+    color: var(--color-ink-muted);
+  }
+</style>

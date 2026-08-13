@@ -1,10 +1,10 @@
 ---
 import type { Locale } from '../lib/payload'
+import { resolveRobots, type RobotsDirective } from '../lib/seo'
 
-// index,follow ⇄ noindex,follow ⇄ noindex,nofollow を呼び出し側で自由に
-// 切り替えられるようにするための型（Phase 7、翻訳未完了の英語ページ向け
-// noindex運用を主目的とするが、将来の他用途にも流用できる形にしておく）
-export type RobotsDirective = 'index,follow' | 'noindex,follow' | 'noindex,nofollow'
+// 型の定義は src/lib/seo.ts へ移設（robots.txtと同じスイッチを共有するため）。
+// 既存の呼び出し側との互換のためここからも再エクスポートする
+export type { RobotsDirective }
 
 interface Props {
   title: string
@@ -35,6 +35,9 @@ const defaultLocalePath = locale === 'ja' ? canonicalPath : (alternatePath ?? ca
 
 // Phase 12（2026-07-29）でastro.config.mjsにsiteを設定したため、ここで絶対URL化する
 // （Astro.siteが未設定の場合は相対パスのままフォールバックする）
+// ローンチ前はページ側の指定に関係なくnoindex,nofollowへ引き下げる（src/lib/seo.ts）
+const robotsContent = resolveRobots(robots)
+
 const toAbsolute = (path: string) => (Astro.site ? new URL(path, Astro.site).toString() : path)
 const canonicalUrl = toAbsolute(canonicalPath)
 const alternateUrl = alternatePath ? toAbsolute(alternatePath) : undefined
@@ -48,7 +51,7 @@ const defaultLocaleUrl = toAbsolute(defaultLocalePath)
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="robots" content={robots} />
+    <meta name="robots" content={robotsContent} />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="alternate" hreflang={locale} href={canonicalUrl} />
     {alternateUrl && <link rel="alternate" hreflang={otherLocale} href={alternateUrl} />}
