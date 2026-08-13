@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "next build",
+    "build": "payload generate:types && next build",
     "dev": "next dev",
     "devsafe": "rm -rf .next && next dev",
     "generate:importmap": "payload generate:importmap",
