@@ -28,6 +28,11 @@ const TRANSLATION_STATES = [
   { label: '完了', value: 'complete' },
 ]
 
+// ARCHITECTURE_DRAFT.md 2.5節「承認キュー」の人間ゲート。Sources.tsの
+// editorialStatusゲートと同じ考え方：approved/publishedへの遷移は
+// ログイン済みの人間のみ実行可（AI・自動化スクリプトからの直接遷移は不可）。
+const HUMAN_GATED_REVIEW_STATES = ['approved', 'published'] as const
+
 export const Articles: CollectionConfig = {
   slug: 'articles',
   admin: {
@@ -258,20 +263,37 @@ export const Articles: CollectionConfig = {
           if (classified) data.historicalPeriod = classified
         }
 
-        const isNewlyApproved =
-          data.reviewStatus === 'approved' && originalDoc?.reviewStatus !== 'approved'
+        const prevReviewStatus = originalDoc?.reviewStatus
+        const nextReviewStatus = data.reviewStatus
 
-        if (isNewlyApproved && !originalDoc?.accessionNumber) {
-          const year = data.representedYear ?? new Date().getFullYear()
-          const prefix = `GW・${year}・`
-          const { totalDocs } = await req.payload.count({
-            collection: 'articles',
-            where: {
-              accessionNumber: { like: prefix },
-            },
-          })
-          const seq = String(totalDocs + 1).padStart(3, '0')
-          data.accessionNumber = `${prefix}${seq}`
+        const isEnteringHumanGate =
+          !!nextReviewStatus &&
+          nextReviewStatus !== prevReviewStatus &&
+          (HUMAN_GATED_REVIEW_STATES as readonly string[]).includes(nextReviewStatus)
+
+        if (isEnteringHumanGate && !req.user) {
+          throw new Error(
+            `reviewStatusを「${nextReviewStatus}」に変更するには、ログイン済みの人間による操作が必要です（AI・自動化スクリプトからの直接遷移は不可）`,
+          )
+        }
+
+        const isNewlyApproved = nextReviewStatus === 'approved' && prevReviewStatus !== 'approved'
+
+        if (isNewlyApproved) {
+          if (req.user) data.approvedBy = req.user.id
+
+          if (!originalDoc?.accessionNumber) {
+            const year = data.representedYear ?? new Date().getFullYear()
+            const prefix = `GW・${year}・`
+            const { totalDocs } = await req.payload.count({
+              collection: 'articles',
+              where: {
+                accessionNumber: { like: prefix },
+              },
+            })
+            const seq = String(totalDocs + 1).padStart(3, '0')
+            data.accessionNumber = `${prefix}${seq}`
+          }
         }
 
         return data
