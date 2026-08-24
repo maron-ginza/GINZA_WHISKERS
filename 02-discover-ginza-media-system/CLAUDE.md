@@ -64,6 +64,19 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
 配信は後続フェーズとする。この順序は本憲章の合意事項であり、変更する
 場合は第12章に記録する。
 
+**Tokyo Nostalgic Soundtrack（TNS、2026-08-21正式反映）**：上記4本柱の
+うち主に1（長文記事）と4（AI支援SNS配信）を組み合わせた、週次シリーズ
+形式のフォーマット。天気・曜日・季節・銀座イベント等のFactから、読者の
+気分・生活テーマ・銀座での過ごし方・選曲までを一連のストーリーとして
+構成し、AI 80％／マロン最終編集20％を目標とする自動制作フローを持つ。
+マロンの週次必須入力は原則`maronWeeklyObservation`（今週の銀座を
+一言でどう感じるか）の1項目のみとし、それ以外は全て任意入力とする
+設計。詳細な制作フロー（STEP1〜6）・TNS Payload v1.0のデータ設計
+（`TNSSettings`／`SoundtrackEditions`／`MusicTracks`／
+`MusicUsageLedger`）・Human/AI責任分界は`TNS_SPEC.md`を参照。
+**今回は制作フロー・Payloadのデータ設計確定のみであり、実コード実装・
+実コレクション作成・外部天気API導入は行っていない。**
+
 ## 4. ブランド哲学の適用
 
 - Root憲章第2章の共通コア（昭和浪漫・6本柱）を02はそのまま継承する。
@@ -193,6 +206,191 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   `ARCHITECTURE_DRAFT.md` 第2.4節）。
 - 翻訳（第7章）へのAI活用可否は、翻訳ワークフロー自体が未決事項のため
   別途決定する。決定時は本章を改めて見直す。
+- **Editorial Trust Layer（画像・出典ポリシー、2026-08-19確定）**：
+  「旬の銀座」記事生成における画像利用・出典管理の正式方針。
+  設計・Trial適用の経緯は第12章の該当セッション（2026-08-19、
+  画像選定・利用可否Trial→Editorial Trust Layer設計）を参照。
+  1. **外部サイト画像は原則転載しない**——公式サイト掲載画像・OGP
+     画像・二次告知サイト画像を「取得可能」という理由だけでnote・X・
+     LINE等へ転載しない。明示的な利用許諾・プレス素材利用条件等が
+     確認できた場合のみ例外とする。**通常運用では「画像利用条件を
+     毎回詳細調査して使用可能画像を探す」ことを必須工程にしない**
+     ——確認コストを日常運用の前提にしない設計判断。
+  2. **記事・SNS画像は原則GINZA WHISKERS独自素材を使用**——独自撮影・
+     独自アイキャッチ・権利上問題のない独自生成画像・明示的に利用
+     許諾された素材のいずれか。**外部画像が利用できないこと自体を
+     公開のBLOCKERにはしない**——画像なし記事、または独自アイキャッチ
+     での代替を正規の運用として許容する。
+  3. **Source Provenance**：記事で使用する主要な事実には、可能な
+     範囲で`fact`・`sourceName`・`sourceUrl`・`sourceType`
+     （primary/official/secondary）・`verifiedAt`・
+     `verificationStatus`（confirmed/unconfirmed/conflicting）・
+     `factType`（date/venue/price/reservation/hours/access等）を
+     対応づける。**「掲載サイト＝開催場所」と推定しない**
+     （2026-08-19のnote記事生成Trialで発見した会場誤認を踏まえた
+     明文化、詳細は`QUALITY_GATE_TRIAL.md`）。
+  4. **Fact / Editorial Note / Quoted Materialの分離**：Confirmed
+     Fact（出典から確認した事実）とEditorial Note（GINZA WHISKERS
+     独自の選定・評価・おすすめ理由）を明確に分離する。原文の引用
+     （Quoted Material）は原則使用せず、必要な場合のみ引用要件・
+     出典を確認し最小限とする。
+  5. **Quality Gate**：BLOCKER＝開催期間不明／開催場所不明／終了済み
+     ／一次・公式情報間の重大な矛盾／出典URLが追跡できない重要事実。
+     WARNING＝料金・予約要否・営業時間・アクセス・撮影可否のいずれか
+     未確認。**画像が外部画像しか存在しないことはBLOCKER/WARNINGの
+     いずれにもしない**（上記2の帰結）。
+  詳細な設計根拠・Trial適用結果は`QUALITY_GATE_TRIAL.md`・
+  `IMAGE_USAGE_TRIAL.md`・`NOTE_ARTICLE_TRIAL.md`（プロジェクト
+  ルート）を参照。
+- **Editorial Style Engine（note/X/LINE生成規則、2026-08-19確定）**：
+  Human Editor Review（2026-08-19、note/X/LINE Trial成果物のマロン
+  レビュー）を経て正式確定した、「旬の銀座」自動生成の文体・構成規則。
+  **目的**：単に正確なイベント情報を生成するのではなく、「GINZA
+  WHISKERSの視点で旬の銀座を選び、読まれ、行動につながり、見た目にも
+  魅力的な記事・投稿へ変換する」こと。**今回のHuman Editor Reviewで
+  確定したのは個別Trial文章そのものではなく、以下の生成ルールである**
+  ——2026-08-19生成のTrial文章（`NOTE_ARTICLE_TRIAL.md`）自体は本番
+  未採用のTrial記録として保持し、本項目の規則に置き換えて再生成する
+  際の参考例とする。
+  1. **タイトル**：毎回3〜5案生成する。イベント名の羅列にせず、
+     「今週の銀座で何が体験できるか」が伝わる案にする。銀座・旬性・
+     体験価値が自然に伝わること。過剰な煽り・クリックベイト、SEO目的の
+     不自然なキーワード反復は避ける。
+  2. **冒頭**：長い挨拶から始めない。最初の数行で「今週の銀座の
+     特徴」（季節感・街の空気・今週性）を短く伝え、なぜ今回の
+     Editor's Choiceなのかへ自然につなぐ。
+  3. **本文の基本構造**：Hook→THIS WEEK IN GINZA→Editor's Choice
+     3〜5件→各候補のEditor's Note→Source/Official Information→
+     結び（今週の銀座をどう歩くか）。ただし毎回同一構造に固定せず、
+     内容に応じた自然な変化を許容する。
+  4. **Editor's Choice各項目の構成**：イベント／体験名・場所・開催
+     期間・体験内容・Why Now?（なぜ今か）・Editor's Note・どんな人/
+     どんな時間に向くか・Source・公式URL・情報確認日。FactとEditor's
+     Noteは混同しない（Editorial Trust Layer項目4を踏襲）。
+  5. **Visual Rhythm**（外部画像が使えない前提でも「文字の壁」に
+     見せない）：大見出し・小見出し・短い英語ラベル（例：THIS WEEK IN
+     GINZA / EDITOR'S CHOICE 01 / WHY NOW? / EDITOR'S NOTE / SOURCE）・
+     適度な絵文字/アイコン・区切り線・余白・短い段落（原則2〜3文で
+     改行）・箇条書き・太字・候補ごとのカード的な見せ方・Editor's
+     Noteの視覚的区別、を使う。装飾過多にはせず、スマートフォンでの
+     読みやすさを優先する。
+  6. **独自アイキャッチ方針**：Editorial Trust Layer（項目1・2）を
+     そのまま適用する——外部サイト画像・OGP画像・イベント公式画像は
+     利用許諾が確認できない限り転載せず、記事冒頭画像は独自撮影・
+     独自アイキャッチ・権利上問題のない独自生成画像・明示的に利用
+     許諾された素材を原則とする。独自生成画像を使う場合はイベント
+     固有の作品・商品・写真・キャラクター等を模倣せず、「今週の銀座の
+     空気・季節・体験テーマ」を抽象的・編集的に表現する。外部画像が
+     ないこと自体は記事公開のBLOCKER/WARNINGにしない。
+  7. **X**：noteの要約版にしない——役割は「今週の銀座、少し気になる」
+     と思わせてnoteへ誘導すること。短く、最初の1〜2行にHook、
+     Editor's Choiceを全部説明しない、今週性・旬性を入れる、GINZA
+     WHISKERS独自の視点を一言残す、noteへのURL導線を基本とする、
+     ハッシュタグ1〜2個を基本とし必要最小限、未確認情報は書かない、
+     外部画像利用を前提にしない。A/B案生成は状況に応じて行ってよいが、
+     毎回2案生成を必須にはしない。
+  8. **LINE**：長文記事にしない——役割は既存読者が短時間で「今週
+     どこへ行くか」を判断できること。基本構造は、今週の銀座を1〜2文→
+     Editor's Choice 3〜5件（各1〜2行）→短いEditor's Note→note誘導。
+     Xより情報量は多く、noteより大幅に短くする。確認済みの重要情報
+     のみ簡潔に記載し、公式URLを大量に並べず詳細はnote記事または
+     必要な公式情報へ誘導する。
+  9. **Editor's Noteの正式定義**：情報の要約ではなく、「なぜGINZA
+     WHISKERSがこれを選んだか」を示し、読者に新しい銀座の見方を
+     提示するもの。店舗・主催者の広告コピーをなぞらず、Factとは
+     明確に分離する。媒体別の長さ：note＝詳細、X＝Hookまたは一言の
+     選定理由、LINE＝今週全体の短い編集コメント。
+  10. **Source / Editorial Trust Layerとの接続**：本項目はEditorial
+      Trust Layer（画像・出典ポリシー）をそのまま維持し、その上に
+      文体・構成規則を追加するものである。重要Factには可能な範囲で
+      Trust Layer項目3のSource Provenance7項目を対応づけ、読者向け
+      表示は「Source／出典名称／確認：YYYY.M.D／→ 公式情報を見る」の
+      簡潔な形式を使う。「掲載サイト＝開催場所」と推定しない、
+      未確認情報は推測で補完しない、という原則も維持する。
+  11. **Performance Learning Layer（将来構想、現段階は未実装）**：
+      将来的に、公開後の読者反応（note PV・スキ・読了傾向・X反応・
+      noteへの遷移・LINE反応）を次回の生成条件へ反映できる構造を
+      想定する。**現段階では外部API接続・自動取得は実装しない**。
+      まず「どのタイトル案・構成パターン・Editor's Noteの書き方・
+      候補数等が反応に影響したか」を後から分析できるよう、記事・
+      投稿を生成する際は生成条件（採用したタイトル案・本文構造の
+      バリエーション・候補数・使用したEditor's Noteの長さ等）を
+      追跡可能な形で記録する方針とする——実際のデータモデル
+      （Article/SocialPostコレクションへのメタデータ追加等）は、
+      note記事生成が実コード実装される段階で改めて設計する。
+  詳細なTrial例・Human Editor Reviewの経緯は第12章の該当セッション
+  （2026-08-19）および`NOTE_ARTICLE_TRIAL.md`を参照。
+- **Visual Asset Library（世界観挿絵・ジャンルアイコン、2026-08-19
+  確定）**：Editorial Style Engine（項目5 Visual Rhythm）を実際の
+  画像素材レベルで支える仕様。詳細は`VISUAL_ASSET_LIBRARY.md`
+  （プロジェクトルート）を正本とし、本項目は要点のみ記す。
+  1. ビジュアルを**世界観挿絵**（note冒頭等のアイキャッチ、銀座・
+     四季・日本らしさを表現する入口ビジュアル、個別の催事・商品・
+     作品は直接描かない）と**個別ジャンルアイコン**（各Editor's
+     Choiceをスマホ上で一瞬で判別できる視覚記号）の2階層に分け、
+     役割を混同しない。
+  2. 世界観挿絵は季節に応じてSPRING/SUMMER/AUTUMN/CHRISTMAS/
+     NEW YEAR/WINTERの6タイプを切り替える。**WAKOの建物は独自生成の
+     抽象化した街並みモチーフとしてのみ使用し、公式写真・公式ロゴは
+     使用せず、公式提携と誤認される表現は避ける**（Editorial Trust
+     Layerの画像方針をそのまま適用）。
+  3. 「GINZA WHISKERS」表記横の署名シルエットは**犬（マロン）**。
+     ただしマロンを世界観挿絵の主役にはしない——位置付けはブランド
+     署名・編集者人格・Editor's Note・記事末尾署名に限定する。
+  4. 個別ジャンルアイコンはFOOD/CAFE/SHOPPING等18カテゴリを正式
+     採用（円形バッジ基本、日英で図柄共通・ラベルのみ差し替え、
+     訪日外国人利用を前提としたグローバルに理解しやすい図柄）。
+     候補ごとにPrimary Categoryを1つ判定して自動選択するが、
+     **自動判定に迷う場合はHuman Editorへ確認する**（推測しない
+     原則の延長）。
+  5. 外部イベント画像・OGP画像・商品写真・展示作品・外部ロゴの無断
+     利用は禁止——Editorial Trust Layerの権利方針をそのまま適用し、
+     新規の例外は設けていない。
+  6. **今回は仕様統合・カテゴリマッピング・自動選択ロジック設計・
+     ファイル命名・配置ルールの確定までであり、画像生成の自動実行・
+     実コード実装はいずれも行っていない**——実装要否・範囲は別途
+     Human Editor確認事項として残っている。
+- **読者接続の編集ロジック（2026-08-21確定）**：noteコンテストのテーマ
+  研究を踏まえ、Editorial Style Engine（項目1〜4：タイトル・冒頭・本文
+  構造・Editor's Choice構成）の生成ロジックを拡張する。従来の「旬の
+  銀座情報を集めて記事化する」に加え、**社会・季節・生活文脈→読者の
+  気分／潜在ニーズ→銀座でできる体験・発見→GINZA WHISKERS独自の
+  Editor's Choice→記事タイトル・ストーリー**という接続を編集ロジックの
+  基本形とする。情報量の多さではなく「これは今の自分のための記事だ」と
+  感じられる編集を重視する。**Editorial Score（5軸・配点）自体は変更
+  しない**——評価軸を増やすと既存採点済み候補（Sources/
+  DiscoveredContent 300件超）の再評価が必要になり実AI課金が発生する
+  ため、2026-08-18のUX Type軸追加時と同じ判断基準に従い、生成
+  プロンプト・構成ロジックの拡張として位置づけた。
+- **Character Standard／Character Dominance（マロン／コロン、
+  2026-08-21確定）**：ブランドキャラクターの扱いを2つの独立した概念に
+  分けて明文化する。**Character Standard**＝マロン／コロンの造形・
+  外見・ブランド上の一貫性を固定する仕様（詳細は
+  `CHARACTER_STANDARD.md`）。**Character Dominance**＝各挿絵・記事で
+  何を主役にするかの判断軸——造形の固定とは独立しており、**「マロンを
+  世界観挿絵の主役にしない」という既存原則（`VISUAL_ASSET_LIBRARY.md`
+  §2.4）は維持する**。TNS・「旬の銀座」・GINZA Concierge等では、記事や
+  情景に応じて人・街・建築・体験を主役とし、マロン／コロンは必要に
+  応じて登場するブランドキャラクターとする。画像生成は「固定
+  Character Layer」＋「可変Scene Layer」の2層構造とし、Character
+  Layerでマロン／コロンの基本造形を固定、Scene Layerで季節・場所・
+  時間帯・服装・情景を変更する。**今回はProject 02内での運用に留め、
+  Root／`00-shared-guidelines`等の他プロジェクトへの一括変更は
+  行っていない**（将来昇格可能な構造にはしておく、詳細は
+  `CHARACTER_STANDARD.md`§6）。
+- **Music Provenance（TNS、2026-08-21確定）**：Tokyo Nostalgic
+  Soundtrack（TNS）で選曲を扱う際の原則。Editorial Trust Layerの画像
+  方針と同じ発想を音楽にも適用し、**曲名・アーティスト名・編集的紹介
+  （Editor's Noteに準ずる紹介文）を基本とし、歌詞全文・長文引用・
+  音源埋め込みは自動生成対象にしない**。TNSの選曲思想は「昭和歌謡」に
+  限定せず「昭和浪漫の時代に銀座に流れていた、または銀座の情景・空気に
+  似合う音楽」（原則1926〜1989年、1972〜1987年前後は実績上の参考
+  中心帯）と定義する（TNS Music Selection Logic）。邦楽／洋楽比率は
+  固定値を採用せず、公開済み実績を参考値として随時上書き可能な
+  **Adaptive Music Balance**とする（2026-08-21、#32〜#34の3週比較を
+  経て確定。3週のみでは恒常ルールと断定せず、固定60/40・固定43/57の
+  いずれも採用しなかった）。詳細フロー・TNS Payload v1.1のデータ構造・
+  選曲評価の7段階順序は`TNS_SPEC.md`を参照。
 
 ## 9. 優先順位の考え方
 
@@ -211,7 +409,7 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   | 12 | 本番インフラ確定（ドメイン／Railway／Cloudflare Pages／本番スキーマ移行手順） | **設計完了（2026-07-29）、実際の構築作業が残る** |
   | 13 | Phase 9 HEIC対応の実機エンドツーエンド検証 | **最優先** |
   | 14 | コンテンツ制作の本格開始（AI編集部パイプライン実運用） | Phase 12・13の後 |
-  | 15 | SNS配信の本実装（Instagram App Review／X OAuth） | Instagram側はリードタイムを理由に**申請だけ先行着手**（付録E参照） |
+  | 15 | SNS配信の本実装（Instagram App Review／X OAuth） | 外部認証・実投稿を除く配信キュー基盤（候補生成・Dry Run・人間承認ゲート・二重配信防止）は**2026-08-10完成**。Instagram App Review／X OAuthは引き続き未着手、Instagram側はリードタイムを理由に**申請だけ先行着手**（付録E参照） |
   | 16 | ニュースレター機能 | 後続フェーズ（未着手） |
   | 17 | ギャラリー実装 | **予定どおり後続フェーズとして先送り**。実装タイミングは02の進捗を見て再判断する（スケジュール自体は今回変更しない） |
 
@@ -288,415 +486,117 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
 
 ## 12. 現在のステータス
 
-- **フェーズ**：Phase 10（ギャラリー機能スコープ確定）完了——記事詳細
-  ページ（Phase 4）・記事一覧カードデザイン刷新（Phase 5）・翻訳ワーク
-  フロー確立（Phase 6）・SEOメタ対応（Phase 7）・タグ名ロケール対応
-  （Phase 8）・HEIC対応（Phase 9）・ギャラリー機能スコープ確定
-  （Phase 10）まで完了。**ギャラリーの実装自体は01公開後に先送り**
-  （後述）
-- **直近の意思決定**：
-  - 2026-07-29: 02のPMO運用フォーマットを「Executive PMO」形式に刷新した
-    （ユーザー依頼、第10章に反映）。従来のDaily PMO（01フォーマットの
-    流用）に代えて、①現在地②Phase一覧（Phase 1〜17）③4カテゴリ管理
-    （システム開発／コンテンツ設計／デザイン／運用・収益化）④7〜10月
-    ロードマップ（ガントチャート形式）⑤次アクション提案、の5点構成を
-    今後の標準とする。**副産物として判明した重要なギャップ**：④運用・
-    収益化カテゴリの整理中に、収益化の具体的な方法（広告／アフィリエイト
-    ／有料会員等）自体が本CLAUDE.mdにまだ一度も明記されていないことが
-    判明した。10月ローンチまでに意思決定が必要な未決事項として扱う
-    （本項目下部の未決事項欄には未収録のため、次回PMOで正式に追加する）。
-    なお初回提示はHTML Artifactとして作成したが、Safari上で空白表示になる
-    不具合が発生したため、Markdown形式でチャットへ直接表示する方式に
-    切り替えた（Artifactツールのレンダリング起因の問題であり、内容自体の
-    問題ではない）。
-  - 2026-07-29: Phase 13（HEIC対応の実機エンドツーエンド検証）を完了した。
-    **発端**：本セッションでリポジトリの`media/image-assets/`配下
-    （Payloadのローカルアップロード領域、gitignore対象）に既存の
-    `IMG_8401.HEIC`を発見。`mdls`でEXIF由来のメタデータを確認したところ
-    `kMDItemAcquisitionMake=Apple`／`kMDItemAcquisitionModel=iPhone 14
-    Plus`／撮影日2026-06-26・4032×3024pxで、実機iPhone撮影の正真の
-    HEVCコーデックHEICファイル（`file`コマンドでも`HEIF Image HEVC Main
-    or Main Still Picture Profile`と確認）であることを確定した。同じ
-    ディレクトリに`IMG_8401_test-*.jpg`という命名の変換済みJPEG群も
-    存在したが、コレクション定義（`ImageAssets.ts`のimageSizes名は
-    `gallery`/`instagram_square`等）ともファイル命名規則（Payloadは
-    `_test`を挿入しない）とも一致せず、リポジトリ内のどのコードからも
-    参照されていないことを確認——実際のPayloadアップロードフローを
-    経たものではなく、由来不明の過去のアドホックな検証物と判断し、
-    今回の検証根拠には使わなかった。
-    **検証方法**：Docker Desktop起動→ローカルPostgresコンテナ起動→
-    Payload Local API（`getPayload()`経由、REST/管理画面と同一の
-    コレクション設定・フックを通る）を使った一回限りの検証スクリプトで、
-    `IMG_8401.HEIC`を実際に`image-assets`コレクションへ`create`し、
-    結果を確認後にレコードを`delete`して後片付けする方式にした
-    （REST経由も検討したが、既存の管理画面ログインパスワードを私は
-    保持しておらず、ローカル開発用とはいえ推測でのログイン試行は
-    行わないと判断し、Local API方式を採用）。
-    **結果**：`beforeOperation`フックがHEICを正しく検出し
-    `heic-convert`でJPEG変換（`IMG_8401.jpg`、4032×3024、元HEICと
-    同一解像度を維持）、Payload標準のリサイズも正常に動作し
-    `imageSizes`5種（`gallery` 1600×1200／`instagram_square`
-    1080×1080／`instagram_portrait` 1080×1350／`x_landscape`
-    1600×900／`note_header` 1280×670）すべてが生成されることを実データで
-    確認した。検証後、生成されたDBレコード・派生ファイルは削除して
-    環境を元の状態に戻し、検証用スクリプトもリポジトリから削除した
-    （コミット対象には含めていない）。Docker／Postgresコンテナ・Payload
-    devサーバーも検証後に停止済み。これによりPhase 9で未検証のまま
-    残っていた「実機HEICでのエンドツーエンドアップロード検証」が解消した。
-    第11章のチェックリストを更新した。
-  - 2026-07-29: Phase 12（本番インフラ）のドメイン・ホスティング方針を
-    決定した。**ドメイン**：サブドメイン方式を採用し`discover.ginzawhiskers.
-    com`を02のフロントエンドドメインとする（独立ドメインの新規購入は
-    見送り）。理由：02はビジュアル上は01と別のサブブランドだが（第5章）、
-    ブランド構造上はGINZA WHISKERS傘下であり（Root第1章のツリー構造）、
-    01が「各プロジェクトへのハブ」を担うという役割定義（Root第1章、01
-    CLAUDE.md第1章）とも整合するため。追加のドメイン購入・DNS検証・SEO
-    立ち上げコストも回避できる。**構成**：フロントエンド（`site/`）＝
-    Cloudflare Pages・`discover.ginzawhiskers.com`、バックエンド
-    （`cms/`）＝Railway・`api.discover.ginzawhiskers.com`、画像ストレージ
-    ＝Cloudflare R2（第6章の技術選定どおり）。詳細な構築手順・DNS設計・
-    環境変数一覧は付録Fにランブックとして記録した。**コード変更**：
-    `site/astro.config.mjs`に`site: 'https://discover.ginzawhiskers.com'`
-    を追加し、これに伴いPhase 7の残課題だった`canonical`/`hreflang`の
-    絶対URL化に対応した——`BaseLayout.astro`の`canonicalPath`/
-    `alternatePath`をこれまでの相対パスそのまま出力から、`Astro.site`を
-    基準に絶対URL化する処理（`toAbsolute`ヘルパー）に変更し、あわせて
-    従来出力していなかった`og:url`メタタグも新規追加した。`og:image`は
-    元々Payloadの絶対URLをそのまま使う設計のため変更なし。**検証**：
-    `astro check`は12ファイル・0エラー。`astro dev`を起動し
-    `/ja/privacy`で`canonical`が`https://discover.ginzawhiskers.com/ja/
-    privacy`、`hreflang`が日英とも絶対URL、`og:url`が新規出力されている
-    ことをcurlで確認済み。**今回は方針決定・コード対応のみ**——Cloudflare
-    Pages／Railway／R2の実際のアカウント作成・DNSレコード追加は未実施
-    （各サービスのダッシュボード操作が必要なため、私からは代行できず
-    ユーザー側の対応が必要。付録F参照）。
-  - 2026-07-29: 02固有のプライバシーポリシーページを実装した
-    （`site/src/pages/{ja,en}/privacy.astro`、`/ja/privacy` `/en/privacy`）。
-    01の`privacy.html`を土台にしつつ、02固有の実態に合わせて内容を調整：
-    ①お問い合わせ窓口は現状01に集約（02自体にフォーム・メール掲載なし）
-    である旨を明記、②ニュースレター機能（Phase 16未着手）は「現時点で
-    未実装・メールアドレス収集なし、導入時に本ポリシーを改定」と将来時制で
-    記述（GA4セクションと同じ「未実装は未実装と書く」方針）、③新規に
-    「SNS連携（Instagram等）について」の章を追加し、Meta Graph API連携は
-    当会が管理する公式アカウントへの投稿のみを目的とし訪問者個人のSNS
-    アカウント情報は取得・保存しないこと、人間承認を経ない自動投稿は
-    行わないことを明記（Instagram Meta App Review申請時の説明と整合させる
-    意図）。あわせて`BaseLayout.astro`にサイト共通のフッター（プライバシー
-    ポリシーへのリンク、コピーライト）を新規追加した（従来02にはフッター
-    自体が存在しなかった）。`astro check`は12ファイル・0エラーで通過。
-    `astro dev`を起動し`/ja/privacy`・`/en/privacy`・フッターリンクとも
-    200 OK・想定どおりの内容で表示されることをcurlで確認済み（`astro build`
-    のフルビルドはCMS未起動時`[slug].astro`側の`getStaticPaths`が
-    フェッチ例外で失敗する既知の制約——付録B「まだ未検証」参照——があり、
-    このサンドボックス環境では以前から未検証のまま。今回の変更による新規
-    問題ではない）。この実装により、付録Eに記載していたInstagram App Review
-    申請の前提条件（プライバシーポリシーURL）は解消した。
-  - 2026-07-28: 10月ローンチに向けたPhase実行計画（第9章）をユーザーが
-    承認し、今後のPMOの基準とすることを確定した。**確定事項**：
-    ①Phase 12（本番インフラ）・Phase 13（HEIC実機検証）を最優先とする。
-    ②Instagram Meta App Reviewは外部審査のリードタイムを考慮し、実装の
-    順番とは切り離して申請の前提整備に最優先で着手する（手順は付録E。
-    申請の実行自体はMeta Developer/Business Managerアカウントでの
-    ユーザー操作が必要なため、私からは代行できない）。③ギャラリー機能
-    （Phase 17）は予定どおり後続フェーズとして先送りを継続し、実装
-    タイミングは02の進捗を見て再判断する（スケジュール変更なし）。
-    第11章のリリース前チェックリストを、01第9章と同形式で初めて具体化
-    した。付録E作成時に、Instagram申請の前提条件として**02固有の
-    プライバシーポリシーページが未作成**であることが判明し、第11章
-    「信頼性」に追加した。
-  - 2026-07-28: Root CLAUDE.mdの「Project Charter」改訂（ユーザーが
-    ChatGPTと整理した設計方針に基づく）を受け、本ファイルへカスケード
-    反映した。**変更点**：①第1章に「AI編集部として銀座の旬を毎日発信」
-    「10月ローンチがワークスペース直近最優先」という位置づけを明記。
-    ②第9章のワークスペース横断優先順位を「01優先」から「02優先」へ
-    修正。**ギャラリー機能スケジュールの扱い（同日、ユーザー確認済み）**：
-    下記のPhase 10決定（ギャラリー実装を「01公開後」に先送り）は当時の
-    「01がワークスペース最優先」という前提に基づいていたが、**今回の
-    優先順位反転（02が最優先）を受けても、ギャラリーのスケジュール自体は
-    変更しない**。02優先で進めつつ、ギャラリーの実装タイミングは今後の
-    02計画の中で改めて判断する。
-  - 2026-07-26: Phase 10としてギャラリー機能（第3章4本柱の2番目）の
-    スコープを確定した（実装はまだ行わない、設計・意思決定のみのフェーズ）。
-    **性格**：新規エンティティを作らず、既存`Article.images`（hero/inline/
-    gallery役割）を記事横断で集約する閲覧ビューとする。単独の（記事に
-    紐づかない）ビジュアル資料はスコープ外。**ブラウズ構造**：記事一覧と
-    同じ3層（収蔵室・年代・台帳）を踏襲するが、`ImageAsset`自体は年代・
-    収蔵室を持たないため画像が属する記事側の値を継承する方式とし、同一
-    画像が複数記事から参照される場合の解決規則は実装時の未決事項として
-    `CONTENT_MODEL.md`第7章に明記した。**MVPスコープ**：一覧グリッド＋
-    個別画像詳細表示（`rights.requiresAttribution`に基づく権利者表記を
-    含む）。**着手時期**：Root第5.3節のワークスペース横断優先順位に従い、
-    01（2026年10月公開）を優先し、ギャラリーの実装フェーズは01公開後に
-    先送りすることを確定した。詳細は`CONTENT_MODEL.md`第6章に反映。
-  - 2026-07-26: Phase 9としてHEIC画像アップロードの恒久対応を実装した。
-    **原因確認**：このプロジェクトの`sharp`ビルド（`sharp.format.heif`を
-    実機確認）はHEIF入出力の対応が`fileSuffix: ['.avif']`/
-    `alias: ['avif']`のみで、実際のiPhone撮影HEIC（HEVCコーデック）の
-    デコードには非対応と判明（libvipsのプリビルドバイナリがpatentライセンス
-    の都合でHEVCデコーダを含んでいないため）。さらにPayload本体の
-    `canResizeImage()`/`isImage()`（`node_modules/payload/dist/uploads/
-    canResizeImage.js`等）のホワイトリストにも`image/heic`/`image/heif`が
-    含まれておらず、現状HEICアップロードはエラーにはならず**サイレントに
-    リサイズされないまま原本だけ保存される**（`imageSizes`が生成されない）
-    ことをソース確認した。
-    **対応方針**：`heic-convert`（pure-JS、`libheif-js`のWASMビルド経由で
-    HEVCデコードに対応）を追加し、`cms/src/collections/ImageAssets.ts`の
-    `hooks.beforeOperation`でPayload標準のアップロード処理
-    （`generateFileData`、Sharpのリサイズより前）が走る前にHEICを検出して
-    JPEGへ変換する方式にした。Payloadのソース
-    （`collections/operations/create.js`）を確認し、`beforeOperation`が
-    `generateFileData`より確実に先に実行される順序であることを検証済み。
-    HEIC判定は拡張子やクライアント送信の`mimetype`ではなく、`file-type`
-    パッケージによる実バイト列（ftypボックスのブランド）判定を用いる
-    （iOS/ブラウザ側で`mimetype`が不正確になるケースがあるため。同じHEIF
-    コンテナだが既にsharpが扱えるAVIFは誤検出しないことも確認済み）。
-    **保持される情報／不可避な変化**：ファイル名は拡張子を除く部分を保持し
-    `.jpg`に置き換える（例：`IMG_1234.HEIC` → `IMG_1234.jpg`）。
-    `rights`・`altText`・`pillars`等のCMS側メタデータフィールドは無変更。
-    一方、デコード→JPEG再エンコードの過程でHEIC内部のEXIF（撮影日時・
-    GPS位置情報・カメラ機種等）は失われる（`heic-convert`が使う
-    `jpeg-js`エンコーダがEXIFセグメントを書き出さないため）。回転情報のみ
-    `heic-decode`がデコード時に画素へ反映済みのため、見た目の向きのズレは
-    生じない。
-    **検証状況**：`tsc --noEmit`が新規エラーなしで通過（既存の
-    `createDraftFromSource.ts`の3件は無関係の既知エラー、Phase 8以前から
-    存在）。Payloadソースの追跡によるフック順序の確認、`file-type`による
-    HEIC系ブランド（heic/heix/hevc/hevx/mif1/msf1）判定とAVIF除外の
-    smokeテスト、`heic-convert`（WASM libheif）がこのサンドボックス環境で
-    問題なくロードされ不正入力に対して正しくエラーを返すことは確認済み。
-    **ただし実際のiPhone撮影HEICファイルを用いた管理画面での
-    エンドツーエンドアップロード検証は未実施**（このサンドボックス環境に
-    実機HEICのテストファイルが存在しないため）。次回、実ファイルでの検証が
-    取れ次第この項目を更新する。
-  - 2026-07-24: Phase 8として`Tags.name`をロケール別対応にした。
-    `cms/src/collections/Tags.ts`の`name`フィールドに`localized: true`を
-    追加し、収蔵室（固定6値）バリデーションの`beforeValidate`フックも
-    `req.locale`に応じて`PILLAR_NAMES.ja`/`PILLAR_NAMES.en`のいずれかで
-    判定するよう変更（英語ラベルは History / Culture / Art /
-    Architecture / People / Events に確定）。**フォールバック方針**：
-    記事本文とは異なりタグ名は固定語彙のため、英語名未入力時は日本語名へ
-    サイレントにフォールバック表示する方針をユーザーに確認のうえ確定
-    （第7章に詳細）。フロントエンドは`site/src/lib/payload.ts`の
-    `ArticleRaw.pillars[].name`を`Localized<string>`型に変更し、
-    `resolveSummary`内で`pillar.name[locale] || pillar.name.ja`により
-    解決するようにした。
-    **スキーマ変更の適用方法**：`name`フィールドへの`localized: true`追加は
-    既存データ（タグ1件「歴史」）を伴う破壊的変更で、Payloadのdev
-    push機構が対話式の削除確認プロンプト（`accept warnings and push
-    schema? (y/N)`）を要求したが、このサンドボックス環境は非TTYのため
-    対話入力ができず（付録Bに記載の`create-payload-app`と同種の制約）、
-    かつPhase 2のような`docker compose down -v`によるボリューム全体リセット
-    は既存記事データ（ヒーロー画像・ja/en本文入りのサンプル記事）を失う
-    コストが大きいと判断し、今回は**手動SQLマイグレーション**で対応した。
-    既存の`articles_locales`テーブル（`slug`が同じ`localized: true`+
-    `unique: true`の組み合わせ）の実際の列・インデックス命名規則
-    （`<table>_locales`テーブル、`_locale`/`_parent_id`列、
-    `<table>_locales_locale_parent_id_unique`、`<table>_<field>_idx`）を
-    確認したうえで`tags_locales`テーブルを手動作成・データ移送・旧
-    `tags.name`列削除を行い、Payloadが期待する形と完全一致させることで、
-    次回起動時に対話プロンプトなしでスキーマ検証を通過することを確認した。
-    本番（Railway想定）でも同種の破壊的スキーマ変更時はこの手動移行手順が
-    再利用できる（手順は付録Dに追記）。
-    **検証**：管理画面でタグ「歴史」の英語名を`History`に設定 →
-    サーバーログでPATCH確認 → `/en/`一覧・詳細ページとも「History」表示、
-    `/ja/`は「歴史」のまま影響なしを確認。`astro check`・`astro build`
-    とも無エラー。
-  - 2026-07-24: Phase 7としてSEOメタ対応を実装した。`BaseLayout.astro`に
-    `description`・`robots`・`canonicalPath`・`alternatePath`・`ogImage`の
-    Propsを追加し、`<meta name="description">`・`<meta name="robots">`・
-    `<link rel="canonical">`・`<link rel="alternate" hreflang="ja|en|
-    x-default">`・OGPタグ（`og:type`/`og:title`/`og:description`/
-    `og:locale`/`og:image`）を出力するようにした。`robots`は
-    `index,follow` / `noindex,follow` / `noindex,nofollow`
-    の3値から呼び出し側が選べる型（`RobotsDirective`）とし、用途を
-    翻訳未完了ページのnoindexに限定しない汎用設計にした。記事詳細ページは
-    `article.seo.metaTitle`/`metaDescription`が未入力の場合、本文冒頭を
-    プレーンテキスト化したもの（`lexical.ts`に`lexicalToPlainText`を
-    新規追加）→それも無ければ既定文へとフォールバックする。**翻訳未完了の
-    英語記事（`isTranslated: false`）は`noindex,follow`を出す**——
-    プレースホルダー本文しかないページを検索エンジンに索引させないための
-    意図的な設計（ユーザー承認済み）。hreflang相互参照のため、`payload.ts`
-    の`ArticleSummary`に`slugs: Record<Locale, string>`（ja/en両方の
-    スラッグ）を追加し、追加フェッチなしで相手ロケールのURLを解決できる
-    ようにした。本番ドメイン（Cloudflare Pages想定）が未確定のため、
-    `canonical`・`hreflang`・`og:image`以外は当面サイトルート相対パスの
-    まま（`og:image`はPayloadの絶対URLをそのまま使用）。ドメイン確定時に
-    絶対URL化する対応が残課題（第12章未決事項に記載）。`astro check`・
-    `astro build`とも無エラーで通過、ローカルの実データ
-    （`ginza-4-chome-crossing`、ja/en両方翻訳済み）でメタタグ出力を
-    curl・distファイルの両方で確認した。翻訳未完了記事でのnoindex出力は
-    現在データセットに未翻訳記事が存在しないため実データでは未検証
-    （ロジックはPhase 6で検証済みの`isTranslated`フラグをそのまま再利用す
-    るのみで型チェックも通過済みのため、リスクは低いと判断）。
-  - 2026-07-23: Phase 6として翻訳ワークフローを確立した。着手前の調査で、
-    `payload.config.ts`の`localization`に`fallback: false`が未設定のため
-    既定値`true`が適用され、英語未翻訳のフィールド（`title`・`body`・
-    `seo.*`・`socialCopy.*`）がリクエスト時に日本語の値をそのまま返す
-    サイレントフォールバックが発生していたことを特定（`curl`で
-    `locale=en`と`locale=all`の応答差分を比較して確認）。設計案を
-    ユーザーに提示し承認を得たうえで実装：`site/src/lib/payload.ts`を
-    Payloadのフォールバック機構に依存しない方式へ全面書き換えし、常に
-    `locale=all`でロケールごとの生値を取得、Phase 1から未使用のまま
-    残っていた`translationStatus.en`フィールド（`not_started`/
-    `in_progress`/`complete`）と実際のフィールド非空チェックの両方を
-    満たす場合のみ「翻訳済み」とみなすロジックを自前実装した。未翻訳の
-    記事は一覧・詳細ページとも表示はするが、タイトル・本文をプレース
-    ホルダー（「Translation in progress」等）に置き換える。英語スラッグ
-    未入力時は日本語スラッグをURLに流用する（翻訳完了判定とは独立）。
-    **スキーマ変更は行っていない**。合わせて詳細ページの
-    `getStaticPaths`をN+1フェッチ（`fetchArticleBySlug`を記事ごとに
-    個別呼び出し）から一括フェッチ＋JS側解決（`fetchPublishedArticleDetails`）
-    に整理した。管理画面で実際に英語のtitle/bodyを入力し
-    `translationStatus.en`を`complete`に変更 → 一覧・詳細ページとも
-    プレースホルダーから実翻訳表示に切り替わることを実地検証済み。
-    詳細・公開条件表は第7章を参照。既知の残課題：`Tags.name`が
-    ロケール別フィールドではないため、収蔵室タグ（例：「歴史」）は
-    英語ページでも日本語表示のまま（対応する場合は`Tags.name`への
-    `localized: true`追加が必要、未着手）。
-  - 2026-07-23: Phase 5として記事一覧ページ（`/ja/` `/en/`）のデザインを
-    改善した。単純なリンクリストから、カード型グリッドレイアウト
-    （`repeat(auto-fill, minmax(260px, 1fr))`、640px以下で1カラムに
-    折り返し）へ刷新。`ArticleSummary`型に`images`を追加し
-    `payload.ts`の`getHeroImageUrl()`で各記事のヒーロー画像サムネイルを
-    解決、未設定の記事はタイトル頭文字のモノグラムをプレースホルダー
-    表示する。資料番号・年代表示用に、第5章で定義済みだが未実装だった
-    書体トークン`--font-mono`（SF Mono／Iowan Old Style）を新規追加し、
-    見出し・本文の書体も`Hiragino Mincho ProN`／`Hiragino Kaku Gothic
-    ProN`（第5章の確定書体）へ是正した（Webフォールバックとして既存の
-    Noto Serif/Sans JPを残置）。ライブAPIデータ（`GW・1923・001`）で
-    表示確認済み。
-  - 2026-07-23: Phase 4として記事詳細ページ（`/ja/articles/[slug]`
-    `/en/articles/[slug]`）を実装した。`site/src/lib/lexical.ts`に
-    PayloadのrichText（Lexical JSON）を最小限のHTMLへ変換するレンダラー
-    を新規作成（見出し/段落/引用/リスト/リンク/文字装飾に対応、未対応の
-    ノード種別は子要素を展開し内容を失わない設計）。`payload.ts`に
-    `fetchArticleBySlug`・`resolveImageUrl`を追加。Astroの出力モードが
-    `static`のため`[slug].astro`は`getStaticPaths()`が必須（devモードでも
-    SSRフォールバックが無い）点に留意。画像URLはPayloadが相対パス
-    （例：`/api/image-assets/file/...`）で返すため、`resolveImageUrl`で
-    ビルド時の`PAYLOAD_API_URL`を基準に絶対URL化する処理を追加した。
-  - 2026-07-23: 画像紐付けの確認中、ユーザーが「紐付け完了済み」と申告
-    した内容が実際にはDBへ未保存だった事象が発生（該当記事の`updatedAt`
-    が前日のまま、`/tmp/payload-dev.log`にPATCH/POSTが記録されていない
-    ことで検出）。コード側の原因を推測して修正するのではなく、ユーザーに
-    管理画面での再保存を依頼して解決した。今後、管理画面での保存有無を
-    確認する際はサーバーログのPATCH/POST有無と`updatedAt`のタイムスタンプ
-    を一次情報とする。
-  - 2026-07-22: Phase 3としてAstro（`site/`）からPayload CMS REST APIへの
-    ライブ疎通を実地検証した。着手前に`site/src/lib/payload.ts`の
-    `fetchPublishedArticles`が旧フィールド名`status`のままクエリして
-    いたことが発覚（Phase 2の`reviewStatus`リネームの反映漏れ）。
-    `where[status][equals]`を`where[reviewStatus][equals]`に修正。
-  - 2026-07-22: 上記修正後もAPIが匿名リクエストに対し全件`403 You are not
-    allowed to perform this action`を返す事象が発生。原因はPayload 3.xの
-    既定アクセス制御`defaultAccess = ({ req }) => Boolean(req.user)`——
-    未ログインの匿名リクエストはデフォルトで全拒否という仕様であり、
-    Articles/Tags/ImageAssetsのいずれにも`access`が明示されていなかった
-    ため適用されていた（`node_modules/payload/dist/auth/defaultAccess.js`
-    で確認）。ビルド時にAstroが未ログインでfetchする以上、これは静的サイト
-    連携において必ず踏む設計判断点であり、単純なバグではなく方針決定が
-    必要と判断しユーザーに確認した。
-  - 2026-07-22: 匿名読み取りの公開方針を「published限定で開放」に決定
-    （全面公開ではなく）。`Articles.ts`に
-    `access.read: ({ req }) => req.user ? true : { reviewStatus: { equals:
-    'published' } }`を追加し、匿名はpublished記事のみ、ログイン済み編集者は
-    draft含む全件を閲覧可能とした。`Tags.ts`・`ImageAssets.ts`は機密性の
-    ない付随データのため`access.read: () => true`で全面公開とした。この
-    設計はRailway本番環境でも同一のまま踏襲する想定（本番用の`access`
-    上書きは不要）。
-  - 2026-07-22: 上記修正後、Docker Desktop／Postgres／Payload devサーバー
-    ／Astro devサーバーを起動し、`http://localhost:4321/ja/`で実データ
-    （「銀座四丁目交差点の変遷」、`GW・1923・001`）が一覧表示されることを
-    確認した。本日のゴール「CMSの記事一覧がAstroで表示されること」を達成。
-    記事詳細ページ（`/articles/[slug]`）は未実装のまま次回以降に持ち越し。
-  - 2026-07-22: Phase 2としてローカル実行環境（Docker Desktop／Postgres
-    コンテナ／Payload devサーバー）を構築し、管理画面からTags→Sources→
-    Articlesの順でサンプルデータ登録を実地検証した。`historicalPeriod`
-    自動分類（`representedYear: 1923` → `明治・大正`）・`accessionNumber`
-    自動採番（`status`が`approved`に変わった際に`GW・1923・001`を採番）の
-    両フックとも、実データ・実DBで動作することを確認した。
-  - 2026-07-22: Articlesのカスタムフィールド`status`を`reviewStatus`に
-    リネームした。原因はPayloadの`versions.drafts`機能が内部で予約する
-    バージョン管理用フィールド`_status`（値はdraft/publishedの2値固定）と、
-    こちらが定義した4値（draft/review/approved/published）のカスタム
-    `status`フィールドが、Postgresのenum型命名時に同名`enum_articles_status`
-    へ衝突し、`_status`側の2値しか反映されない状態になっていたため
-    （`status`を`approved`に更新しようとして
-    `invalid input value for enum enum_articles_status: "approved"`が
-    発生し発覚）。`\d articles`で両カラムが同一enum型を指していることを
-    確認して特定した。リネーム後は`enum_articles_review_status`（4値）と
-    `enum_articles_status`（`_status`専用、2値）が独立した型として生成
-    されることを確認済み。今後、`versions.drafts`を使うコレクションで
-    ステータス系フィールドを追加する場合は、フィールド名を`status`その
-    ものにせず`reviewStatus`等の別名にすることで同種の衝突を避ける
-    （手順は付録D参照）。
-  - 2026-07-22: 上記リネームは列・enum型の非互換な変更を伴うため、
-    ローカルPostgresコンテナをボリュームごと削除・再作成した
-    （`docker compose down -v` → `up -d`）。検証用のダミーデータ
-    （Tags/Sources/Articles各1件、管理者アカウント）は破棄し、リセット後に
-    作り直した。ローカル検証環境のみの対応であり、本番（Railway想定）での
-    スキーマ移行手順は別途検討が必要（未決事項）。
-  - 2026-07-22: Articles新規作成画面でSlugフィールドが読み取り専用・
-    入力不可に見える事象が発生したが、コード上`slug`フィールドに
-    `readOnly`・`disabled`・カスタムコンポーネントは設定されておらず、
-    サーバーログにもエラーは無かった。DBリセット＋フィールド名変更に伴う
-    管理画面JSバンドル更新後のブラウザ側キャッシュが原因と推測され、
-    ハードリロード（Cmd+Shift+R）とドキュメントの再作成により解消し、
-    Slug入力・Article保存とも正常動作を確認した。恒久的なコード修正は
-    行っていない（＝再発時はまずブラウザキャッシュを疑う。付録D参照）。
-  - 2026-07-20: Project 02の要件を定義。サイト＋配信システムの両輪、
-    01は窓口・02が中心的出版プラットフォームという位置づけ、note.comは
-    廃止せず並走する外部チャネルとして維持、と確定。
-  - 2026-07-20: コンテンツスコープを4本柱（記事・ギャラリー・
-    ニュースレター・AI支援SNS配信）に確定。ビルド順序は記事＋ギャラリー
-    を先行、ニュースレター・SNSを後続フェーズとした。
-  - 2026-07-20: ビジュアルは01と別のサブブランド的デザインとする方針を
-    確定（詳細は別途デザインセッションで決定）。
-  - 2026-07-20: 技術方針として、01と異なりCMS・バックエンド・
-    フレームワークの採用を許容する方針を確定（具体的な技術選定は未定）。
-  - 2026-07-20: 日英バイリンガルでの立ち上げを確定（翻訳ワークフローは
-    未定）。
-  - 2026-07-20: SNS配信のAI活用は「AI支援・人間承認」とし、自動投稿は
-    行わない方針を確定。
-  - 2026-07-20: ワークスペース優先順位（Root第5.3節）に従い、02は01と
-    並行するが01優先という位置づけを確認。
-  - 2026-07-21: MVPシステムアーキテクチャ設計セッションを実施し承認。
-    AI編集部パイプライン（情報収集→AI記事下書き→編集長レビュー→承認
-    キュー→Content Asset Repository→各チャネル配信）を確定。詳細は
-    `ARCHITECTURE_DRAFT.md`。
-  - 2026-07-21: 記事生成のAI活用ポリシーを「AI下書き＋人間が編集長として
-    全面レビュー」に確定し、第8章に反映（従来SNS配信のみが対象だった
-    AI活用ポリシーを記事生成にも拡張）。
-  - 2026-07-21: Content Asset Repositoryを採用。承認済みコンテンツは
-    チャネルごとに作り直さず構造化データとして一元管理し、02サイト・
-    note・X・Instagram・ニュースレターが共通して参照する設計とした。
-  - 2026-07-21: note投稿は公式APIが存在しないため、AIが下書き・画像
-    パッケージを生成し人間が手動投稿する方式に確定。X・Instagramは
-    承認後のAPI自動送信とする。
-  - 2026-07-21: デザイン確認セッションを実施。3方向性（台紙・アーカイブ／
-    夜の続章／現代のディスカバリー）を比較したうえで「台紙・アーカイブ」を
-    選定し、余白拡大・アクセント深化・アーカイブ性強化の微調整を経て
-    **正式採用として確定**。方向性の位置づけも「雑誌」から「銀座の文化と
-    季節の発見を収め続けるアーカイブ」に更新した。詳細・確定トークンは
-    第5章を参照。今後は実装段階の細部ブラッシュアップのみとし、デザイン
-    思想自体は変更しない。
-  - 2026-07-21: 技術選定セッションを実施し確定。コンテンツ基盤＝Payload
-    CMS（自己ホスト）、フロントエンド＝Astro、ホスティング＝Railway／
-    Cloudflare R2／Cloudflare Pages、AI記事生成＝Anthropic API。自己
-    ホストを選んだ理由は、長期文化アーカイブという位置づけ上データを
-    自前で所有するため。詳細は `TECH_SELECTION_DRAFT.md`。
-  - 2026-07-21: Phase 1実装に着手。`create-payload-app`/`npm create astro`の
-    対話式CLIが開発サンドボックス環境（非TTY）で起動できなかったため、
-    公式テンプレート構成に基づき`cms/`（Payload：Articles/Sources/
-    ImageAssets/Tags/Usersコレクション、Postgres＋R2アダプタ、ja/en
-    localization）と`site/`（Astro：`/ja/` `/en/`台帳ページ骨格）を手動で
-    作成。AI記事生成パイプラインの土台（Claude tool-use経由の下書き生成、
-    `POST /api/ai/generate-draft`）とX/Instagram配信ワーカー（Instagram
-    はGraph API二段階呼び出しを実装、Xは認可実装が必要なため意図的に
-    未実装スタブ）も作成。`cms`は`tsc --noEmit`が無エラーで通過、`site`は
-    `astro build`で実際に3ページ生成を確認（いずれもこのサンドボックス内で
-    検証済み）。Docker Postgresでの実起動・管理画面疎通は未検証。詳細は
-    付録A・B。
+- **フェーズ**：Phase 1〜11・13完了、Phase 12は設計完了・実際の構築が残り
+  進行中、Phase 14は**AI編集部パイプラインの実装・検証は完了、
+  「毎日発信」運用に足る記事の蓄積という完了条件自体は最低掲載本数が
+  未確定のため未達**（2026-08-10、詳細は本節直近の意思決定）。**さらに
+  実際のANTHROPIC_API_KEYを使った本物のAI呼び出しは、鍵が無効
+  （401 authentication_error）なため2026-08-10時点でも未検証のまま**
+  （詳細は本節直近の意思決定の最新項目、この状態には本セッションでは
+  一切手を入れていない）。Phase 15は**外部認証・実投稿を除く範囲
+  （公開承認済み記事からのSNS配信候補生成・Dry Run・人間承認ゲート・
+  二重配信防止）が2026-08-10完成**（詳細は本節直近の意思決定）。
+  Instagram App Review／X OAuthは引き続き未着手。
+  Phase 4（記事詳細ページ）・Phase 5（記事一覧カードデザイン刷新）・
+  Phase 6（翻訳ワークフロー確立）・Phase 7（SEOメタ対応）・Phase 8
+  （タグ名ロケール対応）・Phase 9（HEIC対応）・Phase 10（ギャラリー機能
+  スコープ確定。**実装自体は02の進捗を見て再判断、Phase 17へ先送り**）・
+  Phase 11（リリース前チェックリスト具体化）・Phase 13（HEIC実機検証）は
+  いずれも完了。
+
+- **意思決定ログ（一文要約、全文は分割ファイルを参照）**：本項目は
+  2026-08-21、CLAUDE.mdの肥大化（150,000文字上限超過）を解消するため、
+  Root憲章第4章の記法（「YYYY-MM-DD: 一文で結論のみ」）に統一して圧縮した。
+  各エントリの詳細な実行ログ・検証手順・発見事象の経緯は、日付に応じて
+  `DECISION_LOG_01.md`（2026-07-21〜2026-08-17）または
+  `DECISION_LOG_02.md`（2026-08-17〜2026-08-19、直近の重要決定を含む）を
+  参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
+  している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
+
+- 2026-08-19: Visual Asset Library確定——世界観挿絵6タイプ・18ジャンルアイコン仕様を第8章へ正式統合（画像生成の実行・コード実装は未着手）
+- 2026-08-19: 新ルール準拠note記事Trial——Editorial Style Engine適用版の記事原稿を再生成（比較用に新規ファイル`NOTE_ARTICLE_TRIAL_STYLE_ENGINE.md`として保存、外部公開なし）
+- 2026-08-19: Editorial Style Engine確定——Human Editor Reviewを経た文体・構成規則を第8章へ正式統合
+- 2026-08-19: X／LINE展開Trial——note記事からの媒体別変換ロジックを設計し原稿を生成（Quality Gate PASS、実配信なし）
+- 2026-08-19: Editorial Trust Layer確定——画像・出典の正式方針を第8章へ統合し、note記事Trialへ適用
+- 2026-08-19: 画像選定・利用可否Trial——USABLE/REVIEW/NOT_USABLE/UNKNOWNの4区分を設計し試験候補5件を判定（全件REVIEW、コード実装なし）
+- 2026-08-19: 記事品質Gate Trial——会場誤認の教訓を踏まえたBLOCKER/WARNING判定仕様を設計（コード実装なし）
+- 2026-08-19: note記事生成Trial——Editor's Choice 4件を入力に初のnote記事Trial原稿を生成（`NOTE_ARTICLE_TRIAL.md`作成、外部公開なし）
+- 2026-08-19: Editor's Choice Trial——当日Top10を4件へ絞り込み（読み取り専用、DB書き込みなし）
+- 2026-08-18: 本日の統合Trial最終検収——7機能を通しで検証し安定動作・再現性を確認（読み取り専用）
+- 2026-08-18: Temporal Relevance実装——NOW/SOON/NEXT/LATER/EXPIREDを算出する参考指標を追加（Editorial Scoreへの加減点なし）
+- 2026-08-18: 統合Trial——Daily Editorial Desk本日版候補表を初めて生成（読み取り専用、クロスサイト重複を発見）
+- 2026-08-18: 参加／体験型UXタイプを設計・実装——6分類のuxTypeフィールドを追加し既存300件へ遡及適用（実AI呼び出しなし）
+- 2026-08-18: 本文情報量をEditorial Scoreへ反映——contentRichness（rich/thin/boilerplate）判定を実装しSources/DiscoveredContent既存335件へ遡及適用
+- 2026-08-18: OGP等の画像URL取得を実装——og:image/twitter:imageからimageUrlを抽出（画像ファイル自体はダウンロードしない設計）
+- 2026-08-18: Daily Rankingにおける施設偏り抑制を実装——同一施設の連続・偏重を緩和する多様性調整ロジックを追加
+- 2026-08-18: SOURCE LEDGER→Sources接続の再確認・実データ検証——既に実装済みと判明、Trial由来の改善候補4点の優先順位を再評価
+- 2026-08-17: Event Date Extraction誤判定・Story Clustering過剰統合を修正——複数セッション日時の誤抽出、10件の過剰統合を解消
+- 2026-08-17: Daily Top10レビュー表示——「connect connect」の重大なStory Clustering誤結合を発見（実装変更は次回、読み取り専用）
+- 2026-08-17: ongoing/upcoming捕捉率改善——Event Date Extraction拡張とsite-specific adapterを実装、日付取得率10%→48.8%
+- 2026-08-17: Source Coverage拡張の再巡回検証——差分検知の冪等性（重複生成なし）を実データで確認
+- 2026-08-17: Source Coverage拡張——一覧ページの自動発見・追加巡回を実装（PDF/画像への誤アクセスバグを発見・修正）
+- 2026-08-17: Daily Editorial Desk 実運用テストを実施（初回はDaily候補0件、原因はデータ実態の反映と判明）
+- 2026-08-17: Event Date Extraction／Story Clustering実装——JSON-LD優先の日付抽出とサイト内同一イベント統合ロジックを新設
+- 2026-08-17: Sources（サイト単位）28件も実Claudeで全件採点完了
+- 2026-08-17: 実AI E2E初成功——DiscoveredContent 160件を実際のClaudeで全件採点（Anthropicクレジット追加により解消）
+- 2026-08-17: ANTHROPIC_API_KEY差し替え3回目——鍵は有効化されたが残高不足でブロック（外部課金問題と特定）
+- 2026-08-17: ANTHROPIC_API_KEY差し替え再試行——またもシェルコマンド断片混入で失敗
+- 2026-08-17: トップページ更新検知→個別記事・イベント抽出を実装——新規`DiscoveredContent`コレクションを新設
+- 2026-08-17: 「旬の銀座」編集判断レイヤーを実装——Editorial Score（5軸100点）・Audience Tagsを新設
+- 2026-08-17: SOURCE LEDGER 定期実行——Payload Jobs Queue（毎朝6:00）を採用し`./p2 morning`へ統合
+- 2026-08-17: SOURCE LEDGER 巡回結果→Sourcesコレクション接続を実装（HTTPルーティング衝突バグも発見・修正）
+- 2026-08-16: 本日の作業終了・引継ぎ整理（コミットは行わず、回帰確認のみ）
+- 2026-08-16: SOURCE LEDGER 自動巡回の取得品質を改善——UA形式調整・robots.txt対応・HTML正規化でGINZA OFFICIAL誤検知を解消
+- 2026-08-16: SOURCE LEDGER 自動巡回 v1——Fetcher→Snapshot→Diff判定を実装
+- 2026-08-15: SOURCE LEDGER v1をローカルDBへ実投入し動作確認
+- 2026-08-15: SOURCE LEDGER v1——情報源台帳（Core 14サイト）を新設
+- 2026-08-12: Railwayドメイン誤作成事故が発生——読み取り専用許可リスト方式（railway_ro/wrangler_ro）を導入し再発防止
+- 2026-08-10: `./p2 morning`を新設——作業開始準備を1コマンドに自動化
+- 2026-08-10: Phase 12 Preflight——本番インフラ構築の事前準備（DB接続フォールバック化、railway.json追加等）
+- 2026-08-10: Phase 15——SNS配信キュー基盤を実装（外部認証・実投稿を除く範囲、人間承認ゲート・二重配信防止込み）
+- 2026-08-10: Phase 14実AI E2E再検証——APIキーがシェルコマンド断片混入という形式異常と判明し呼び出しを見送り
+- 2026-08-10: Phase 14実AI E2E検証——鍵は設定されているが401 authentication_errorで無効と判明
+- 2026-08-10: Phase 14完成確認セッション——パイプライン実装面は完了、記事蓄積の基準（最低掲載本数）は未確定のまま
+- 2026-08-10: Phase 14開始——AIによるSources評価・Editor's Choice候補選定ロジックを実装（バッチ処理事故と復旧を含む）
+- 2026-08-10: 編集パイプライン基盤の実装を完了（Sources/Articlesの人間承認ゲート、editorialStatus状態機械）
+- 2026-08-09: Phase 12（本番インフラ）の実際の構築に着手——ドメイン取得（Cloudflare Registrar）、Railwayプロジェクト・PostgreSQL作成
+- 2026-07-29: 02のPMO運用フォーマットを「Executive PMO」形式に刷新（第10章反映）
+- 2026-07-29: Phase 13（HEIC対応の実機エンドツーエンド検証）を完了
+- 2026-07-29: Phase 12のドメイン・ホスティング方針を決定——サブドメイン方式、`discover.ginzawhiskers.com`
+- 2026-07-29: 02固有のプライバシーポリシーページを実装
+- 2026-07-28: 10月ローンチに向けたPhase実行計画（第9章）を承認、以後のPMO基準に確定
+- 2026-07-28: Root CLAUDE.mdの「Project Charter」改訂を受け本ファイルへカスケード反映（優先順位を01→02へ変更）
+- 2026-07-26: Phase 10としてギャラリー機能のスコープを確定（実装は01公開後へ先送り、方針のみ）
+- 2026-07-26: Phase 9としてHEIC画像アップロードの恒久対応を実装
+- 2026-07-24: Phase 8として`Tags.name`をロケール別対応化
+- 2026-07-24: Phase 7としてSEOメタ対応を実装
+- 2026-07-23: Phase 6として翻訳ワークフローを確立（サイレントフォールバック問題を発見・解消）
+- 2026-07-23: Phase 5として記事一覧ページのデザインを改善（カード型グリッドレイアウト化）
+- 2026-07-23: Phase 4として記事詳細ページを実装
+- 2026-07-23: 画像紐付けの「完了済み」申告が実際は未保存だった事象を検知——以後サーバーログとupdatedAtを一次情報とする運用を確立
+- 2026-07-22: Phase 3としてAstroからPayload CMS REST APIへのライブ疎通を実地検証
+- 2026-07-22: 匿名リクエストが全件403エラーとなる事象を発見——Payload既定アクセス制御（未ログイン全拒否）の仕様と判明
+- 2026-07-22: 匿名読み取りの公開方針を「published限定で開放」に決定（全面公開ではなく）
+- 2026-07-22: Docker/Postgres/Payload/Astroを起動し、Astroで実データ記事一覧の表示を確認（本日のゴール達成）
+- 2026-07-22: Phase 2としてローカル実行環境を構築し、Tags→Sources→Articlesのサンプルデータ登録を実地検証
+- 2026-07-22: Articlesのカスタムフィールド`status`を`reviewStatus`にリネーム——Payload予約フィールド`_status`とのenum型衝突を解消
+- 2026-07-22: 上記リネームにより非互換なスキーマ変更が発生、ローカルPostgresをボリュームごと再作成
+- 2026-07-22: Slugフィールドが入力不可に見える事象が発生——原因はブラウザキャッシュと判明しハードリロードで解消
+- 2026-07-20: Project 02の要件を定義——01が窓口、02が中心的出版プラットフォーム、note.comは廃止せず並走
+- 2026-07-20: コンテンツスコープを4本柱（記事・ギャラリー・ニュースレター・AI支援SNS配信）に確定、記事＋ギャラリーを先行
+- 2026-07-20: ビジュアルは01と別のサブブランド的デザインとする方針を確定
+- 2026-07-20: 技術方針として01と異なりCMS・バックエンド・フレームワークの採用を許容する方針を確定
+- 2026-07-20: 日英バイリンガルでの立ち上げを確定（翻訳ワークフローは未定のまま）
+- 2026-07-20: SNS配信のAI活用は「AI支援・人間承認」とし自動投稿は行わない方針を確定
+- 2026-07-20: ワークスペース優先順位に従い、02は01と並行するが01優先という位置づけを確認（後日02優先へ改訂）
+- 2026-07-21: MVPシステムアーキテクチャ設計セッションを実施し承認
+- 2026-07-21: 記事生成のAI活用ポリシーを「AI下書き＋人間が編集長として全面レビュー」に確定
+- 2026-07-21: Content Asset Repositoryを採用——承認済みコンテンツをチャネル横断で一元管理
+- 2026-07-21: note投稿は公式APIが存在しないため人間が手動投稿する方式に確定（X・Instagramは承認後API自動送信）
+- 2026-07-21: デザイン確認セッションを実施——「台紙・アーカイブ」方向性を正式採用
+- 2026-07-21: 技術選定セッションを実施し確定——Payload CMS（自己ホスト）＋Astro＋Railway／Cloudflare R2／Pages
+- 2026-07-21: Phase 1実装に着手——`cms/`・`site/`の手動セットアップ、AI記事生成パイプラインの土台を作成
+
 - **未決事項**：AI支援翻訳の要否、02固有のDaily PMO進捗率算出方法
   （第11章のチェックリストが具体化したため、今後算出方法を確定する）、
   本番（Railway想定）環境での破壊的スキーマ変更のマイグレーション手順の
@@ -712,295 +612,235 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   Managerのビジネス確認状況の確認。**収益化モデル自体の具体化**（広告／
   アフィリエイト／有料会員等、どの方式を採るかが本ファイルに一度も
   明記されていないことがExecutive PMO整理中に判明。10月ローンチまでに
-  決定が必要）。
+  決定が必要）。**2026-08-10追加**：Sourcesへの AI/自動化からの読み取り
+  アクセス方針の明文化（現状はデフォルトの認証必須のまま運用しているが、
+  方針として第12章に未記載）。**2026-08-10 Phase 14開始で追加**：実際の
+  `ANTHROPIC_API_KEY`を使ったAI評価結果の質の検証（プロンプト・許容基準の
+  妥当性は未検証のまま、このサンドボックス環境ではキー未設定のためAI呼び
+  出し自体が試せない。2026-08-10の完成確認セッションでも状況変わらず）、
+  Editor's Choice候補の確認・以後の扱いを専用UIで行うか既存のPayload
+  管理画面一覧で足りるとするかの判断、AI評価バッチ（`evaluate-inbox`）の
+  実行契機（手動実行のみを想定。定期実行の要否・実行頻度は未検討）。
+  **2026-08-10 Phase 14完成確認セッションで明確化**：第11章チェックリスト
+  「『毎日発信』運用に足る記事の蓄積開始」の基準となる**最低掲載本数
+  そのものが未確定**——これが決まらない限り、Phase 14はエンジニアリング
+  面（パイプライン実装・検証）が完了していても、公開基準としては完了
+  判定ができない。
+  **2026-08-10 実AI E2E検証セッションで更新**：`cms/.env`の
+  `ANTHROPIC_API_KEY`は空文字ではなく値が設定されているが、実際のAPI
+  呼び出しに対し401 `authentication_error`（`invalid x-api-key`）を返す
+  ——**有効な鍵ではない**。実AI E2Eが未検証のままである理由が「未設定」
+  から「設定されているが無効」に変わった。ユーザー側で鍵の値を再確認
+  （タイポ・失効・別環境用の鍵の誤コピー等の可能性）し、有効な鍵に
+  差し替える対応が必要（値そのものはClaudeからは確認・訂正できない）。
+  これが解消されない限り、実際のAI評価結果の質の検証（直前の項目）にも
+  進めない。
+  **2026-08-10 実AI E2E再検証セッションで更新**：ユーザーが`.env`の
+  `ANTHROPIC_API_KEY`を新しい値に差し替えたが、値の**形状**を確認した
+  ところ`sk-ant-`で始まらず・383文字と異常に長く・空白を含むという、
+  正規のAnthropic APIキー形式とはまったく異なる状態だった。前回の
+  「設定されているが認証エラーで無効」（値の形式は一応キーらしい）から、
+  今回は「値そのものがAPIキーの形式になっていない（キー取得用のシェル
+  コマンドを誤って貼り付けた可能性）」へ症状が変化している。この状態は
+  静的検査だけで判定でき実際のAPI呼び出しをするまでもないため、今回は
+  実際のAnthropic API呼び出しを1回も行わずに停止した。ユーザー側で
+  Anthropicコンソールから発行された実際のキー文字列（`sk-ant-`で始まる
+  もの）を`.env`に貼り付け直す対応が必要。
+  **2026-08-15 SOURCE LEDGER v1実装で追加**：①（2026-08-15、DB実投入
+  セッションで解消——`seedSourceLedger.ts`によるDB実投入・REST API/管理画面
+  URLでの疎通確認は完了。ただし管理画面への実ログイン後の画面表示は
+  ログインパスワード非保持のため引き続き未検証、ユーザー側での確認が
+  必要）。②SOURCE LEDGERと既存`Sources`コレクションの接続方法
+  （巡回結果から`Sources`を自動生成するかどうか等）は未設計。③SEIKO
+  HOUSE GINZAの日本語版URL（`seiko.co.jp/ginza2020`）は確認が取れず、
+  英語版URLを暫定採用した状態のまま——次回人間の目視確認が必要。
+  ④SOURCE LEDGERをどのPhase番号・ロードマップに位置づけるか（第9章の
+  Phase 1〜17は今回更新していない）は未決定。⑤自動巡回・差分検知の
+  実装自体（enabledな情報源を巡回しlastCheckedAt/lastChangedAtを更新する
+  ジョブ）は2026-08-16に実装済み（本節直近の意思決定参照）。
+  **2026-08-16 取得品質改善セッションで更新**：POLA MUSEUM ANNEXはUA
+  フォーマット改善で解消済み。**東京メトロ（IP/ネットワーク層のブロック）・
+  銀座三越（ブラウザ限定の接続レベルの選別）の2件は、実ブラウザへの
+  なりすましをしない方針のもとでは解消不可能と判断し確定**——重要な情報源
+  として扱うなら、サイト運営者への問い合わせ・公式API/RSSの有無確認・
+  手動巡回への切替、を人間が判断する事項として残す。GINZA OFFICIALの
+  `changed`誤検知は原因（協賛バナーの表示順ランダムシャッフル）を特定し
+  正規化ハッシュ（normalizedContentHash）で解消済み。巡回結果から
+  既存`Sources`コレクションへ接続する設計、定期実行（cron等）の要否・
+  頻度、`./p2 morning`/`./p2 pmo`への統合要否、いずれも未着手・未決定
+  のまま。
+  **2026-08-17 巡回結果→Sources接続実装で更新**：上記「巡回結果から
+  既存`Sources`コレクションへ接続する設計」は解消した（本節直近の
+  意思決定「SOURCE LEDGER 巡回結果 → Sourcesコレクション接続」参照。
+  `success:true`かつ`diffStatus`が`changed`/`first_seen`のSnapshotから
+  `editorialStatus:inbox`のSourceを冪等に生成し、既存のPhase 14
+  `evaluate-inbox`にそのまま合流する設計で実装・ローカル実データで検証
+  済み）。**2026-08-17 定期実行実装で更新**：「定期実行（cron等）・
+  `./p2 morning`/`./p2 pmo`への統合」も解消した（本節直近の意思決定
+  「SOURCE LEDGER 定期実行：Payload Jobs Queueの採用と`./p2 morning`
+  統合」参照）。OSレベルのcronではなくPayload純正のJobs Queueを採用し、
+  毎朝6:00（サーバーローカルタイム基準）に自動巡回、`./p2 morning`/
+  `./p2 pmo`には新設`./p2 jobs`（次回実行予定・直近成功/失敗を表示する
+  読み取り専用コマンド）を統合した——巡回の**実行**自体はJobs Queueが
+  担うため、`./p2 morning`が`./p2 crawl`を直接呼ぶ必要がなくなり、
+  従来の統合見送り理由（外部14サイトへの実ネットワークアクセスを毎朝の
+  起動シーケンスへ無条件追加）が構造的に解消された。残る新しい未決事項：
+  Railway本番展開時の`TZ=Asia/Tokyo`環境変数設定（付録F、未実施）。
+  加えて2026-08-17時点で、生成された27件のinbox候補に対する実際の
+  AI評価（`ANTHROPIC_API_KEY`無効のため未検証）、`contentRef`に埋め込む
+  excerptのノイズ除去（回転バナー・ランキング等）、も未解決のまま
+  残っている（詳細は本節直近の意思決定参照）。
+  **2026-08-17 編集判断レイヤー実装で更新**：Editorial Score・
+  Audience Tags・Score順ランキング・Top候補までのパイプラインを追加した
+  （本節直近の意思決定「「旬の銀座」編集判断レイヤー」参照）。**現在の
+  28件のInbox候補は全件heuristic-placeholderで仮採点済み**——本物の
+  AI評価ではなく、`ANTHROPIC_API_KEY`が有効になり次第`./p2 score --force`
+  でclaude採点へ切り替える必要がある未解決事項として残る。交差性
+  （People×Culture×Commerce×Technology×Time）は評価ロジック未実装
+  （フィールドのみ、空欄運用）。
+  **2026-08-17 個別記事・イベント抽出実装で更新**：トップページ検知
+  （サイト単位）だけでなく、個別URL単位で「何が新規/更新されたか」を
+  特定できるようになった（本節直近の意思決定「トップページ更新検知 →
+  個別記事・イベント抽出」参照）。新規`DiscoveredContent`コレクション
+  （1URL＝1行）・`./p2 daily`（Daily Editorial Desk）を追加。**現在の
+  160件のDiscoveredContentも全件heuristic-placeholderで仮採点済み**——
+  Sources同様、有効な鍵が用意でき次第`./p2 score-articles --force`で
+  claude採点へ切り替えが必要。公開日13件・開催期間0件が構造化データから
+  取得できている（本文自由テキストからの推測は行っていない、既知の
+  限界として本文がJSON-LD/メタタグを持たないページでは日付が
+  取得できない）。
+
+- **次回セッション最初に行うべき作業（2026-08-17時点）**：SOURCE LEDGERの
+  「巡回→Snapshot→Diff→Sources接続→定期実行（Payload Jobs Queue）→
+  個別記事・イベント抽出（DiscoveredContent）→Editorial Score/
+  Audience Tags→ランキング（サイト単位・個別記事単位）→Daily Editorial
+  Desk」までの一連のパイプラインはローカル環境で安定動作を確認済みの
+  状態でセッションを終了した。次回は以下のいずれかから着手するとよい——
+  優先度の指定はなく、ユーザーの判断に委ねる。①**ANTHROPIC_API_KEYは
+  有効化済み**（2026-08-17、本節直近の意思決定参照）。**Sources
+  （サイト単位）30件・DiscoveredContent（個別記事・イベント単位）160件の
+  両方が全件実Claudeで採点済み**——Editorial Score/Audience Tagsの
+  仮採点は残っていない。あわせて既存Phase 14の`evaluate-inbox`（要約・
+  Editor's Choice候補判定、承認proceed/reject）も同じ鍵で動くはずだが、
+  こちらはまだ実際に試していない（次回の候補）。②**Maron
+  Editor's Choiceの実運用**：`./p2 ranking`のTop候補を見て、
+  実際にeditorialStatusをapproved等へ進める運用フローを試す（人間承認
+  ゲートは既存のまま、今回変更なし）。③**Railway本番展開時のTZ設定**：
+  付録Fの本番構築手順に`TZ=Asia/Tokyo`環境変数の追加を反映する（本番展開
+  自体はまだ先だが、手順書への反映は今のうちに行ってもよい）。
+  ④**excerptのノイズ除去**：ランキング・回転要素等、並び順に意味がある
+  ページのcontentRef品質改善（現状は2026-08-16の正規化はdiffStatus判定に
+  のみ使用、Source生成時の`contentRef`は正規化前のexcerptをそのまま
+  使っている——ヒューリスティック採点のUXスコアがこのノイズの影響を
+  受ける可能性がある）。⑤**交差性（People×Culture×Commerce×Technology×
+  Time）の実評価ロジック**：今回はフィールドのみ準備、値は空欄のまま。
+  ⑥**Maron Editor's Choiceの個別記事単位での実運用**：`./p2 daily`の
+  Daily Top10を見て、実際に`DiscoveredContent.curationStatus`を
+  approved/rejectedへ進める運用フローを試す（人間承認ゲートは実装済み・
+  今回は使っていない）。⑦**個別記事抽出の質の改善**：contentType
+  ヒューリスティックの誤分類（サイト内検索リンクが「イベント」に
+  誤分類される例を実データで確認済み）の改善、外部origin（他ドメインに
+  委託されたイベントページ等）への対応要否の検討。⑧それ以外に、
+  Root第5.3節に基づき10月ローンチ最優先の観点では、本項目直下の
+  「Phase 13が完了したため、残る公開ブロッカーは付録Fの本番インフラ構築」
+  の記述が引き続き有効——SOURCE LEDGER・編集判断レイヤー・個別記事抽出
+  関連作業は第9章のPhase 1〜17・第11章チェックリストの対象外（未計画の
+  新規スコープ）のため、10月ローンチの進捗そのものには影響していない。
+
 - **次のマイルストーン**：Phase 13（HEIC実機検証）が完了したため、残る
   公開ブロッカーは付録Fの手順に沿った本番インフラの実際の構築
   （Cloudflare Pages／Railway／R2のアカウント設定・DNS追加、本番Postgres
   スキーマ移行の実地検証）に絞られた——いずれも各サービスのダッシュボード
-  操作が必要なためユーザー側の対応が前提。あわせてInstagram Meta App
-  Review申請の前提整備（Business Verification状況の確認）に着手する。
-  ギャラリー機能の実装は02の進捗を見て再判断する方針のため、当面の次の
-  マイルストーンからは外れる。
-- **最終更新日**：2026-07-29
+  操作が必要なためユーザー側の対応が前提。**2026-08-09時点でドメイン取得
+  （Cloudflare Registrar）とRailwayプロジェクト作成＋PostgreSQLプラグイン
+  追加（空DB）まで完了**（詳細は本章2026-08-09の決定ログ）。続く工程は
+  付録Fの記載順・既知の制約（付録B：CMS未起動時のAstroビルド失敗）を
+  踏まえて個別に判断する。あわせてInstagram Meta App Review申請の前提
+  整備（Business Verification状況の確認）に着手する。ギャラリー機能の
+  実装は02の進捗を見て再判断する方針のため、当面の次のマイルストーンから
+  は外れる。SNS配信キュー基盤（Phase 15、外部認証・実投稿を除く範囲）は
+  2026-08-10完成済みのため、Instagram Meta App Review／X OAuthが揃い次第
+  `./p2 social`で候補生成→人間承認→実配信まで運用開始できる状態にある。
+  **本番インフラ構築の事前準備（Preflight）も2026-08-10完了**（付録F
+  「Preflight」節）。次回は`./p2 preflight`を実行して現状（env var名の
+  設定有無・CLI認証状態・ローカルビルド）を再確認したうえで、付録Fの
+  手順どおりCloudflare Pages／Railway／R2の実アカウント操作に進める。
+  **日次の作業開始準備も2026-08-10自動化済み**：`./p2 morning`
+  （本節直近の意思決定）を実行すれば、ローカル環境起動→`status`／
+  `doctor`／`editorial`／`social`／`preflight`の一括確認→今日の推奨
+  工程の提示までを1コマンドで行える（外部ログイン・課金・本番デプロイは
+  行わない）。次回セッションはまずこれを実行してから本項目の続きに
+  進んでよい。
+
+- **最終更新日**：2026-08-19
+
+## 13. 運用コスト方針（2026-08-09確定）
+
+Project 02の本番運用（トライアル運用）にあたり、以下のコスト上限を定める。
+実装・インフラ構築（第6章・付録F）はこの方針の範囲内で行う。
+
+- **月額運営コスト上限**：5,000円。到達が見込まれた時点で、追加のリソース
+  利用（新規サービスの有効化、ストレージ・処理量が増加する操作等）を
+  停止し、ユーザーに確認する。
+- **通常運用の目標水準**：月額3,000円以内。
+- **警戒水準**：月額3,000円を超過した時点で警戒とし、コスト増加要因を
+  確認する。
+- **Cloudflare R2（画像ストレージ）**：無料枠内での運用を原則とする。
+  無料枠超過を防ぐため、使用量（ストレージ容量、Class A/B operationsの
+  回数等）を監視する設計を、R2の実装に含めること。
+- 本方針は付録Fの本番インフラ構築（特にRailway・Cloudflare R2）に適用
+  される。R2バケットの実際の作成・有効化は、この使用量監視の設計を伴った
+  上で行う（付録F第3節に注記済み）。
+
+**R2料金体系・無料枠の確認結果（2026-08-09、Cloudflare公式ドキュメント
+retrieval確認）**：
+- 無料枠：ストレージ月10GB（Standard storageのみ対象、Infrequent Access
+  storageは対象外）、Class A operations月100万回、Class B operations月
+  1,000万回、エグレスはR2純正の経路経由であれば無料。超過分は使用量に
+  応じて課金（端数は切り上げ）。
+- Railwayの具体的な料金体系・無料枠は本ファイル内で未確認のまま
+  （実装時に確認する）。
+
+**監視手段の確認結果（同日確認）**：
+- Cloudflareには2026-04-13導入の「Budget alerts（予算アラート）」機能が
+  存在し、2026-06-15からPay-as-you-goアカウントでデフォルトON（$10の
+  アカウント全体閾値）になっている。米ドル建てのアカウント全体の従量課金
+  合計額に対する閾値超過をメール通知する機能で、R2はドキュメント内で
+  対象例として明示されている（「R2 spend warning」）。判定はリアルタイム
+  ではなく1日1回の集計で、閾値到達の**翌日**に通知される。
+- **重要な制約（公式ドキュメントで明記）**：Budget alertsは通知のみで、
+  利用の一時停止や上限キャップは行わない（原文：「Budget alerts do not
+  pause or cap usage.」）。無料枠超過による課金を自動的に止める仕組みは
+  Cloudflare側には存在しないことを確認した。
+- R2有効化時の支払い方法登録の要否、支払い方法未登録時に無料枠超過が
+  どう扱われるかは、公式ドキュメントからは確認できなかった。
+
+**二段階監視方針（2026-08-09確定、上記確認結果を踏まえた設計）**：
+- Cloudflareの仕組みだけでは自動停止が実現できないため、「Budget
+  alertsによる通知」と「通知を受けた後の人力での利用停止判断」を組み
+  合わせた運用とする。
+- Budget alertsを2本設定する：警戒ライン（3,000円相当）と上限ライン
+  （5,000円相当）。Budget alertsは米ドル建てのため、設定時点の為替
+  レートで変換し、変動幅を見込んでやや低め（安全側）の金額に丸めて
+  設定する（2026-08-09時点の参考レート：1USD≈158円。実際の設定は
+  その時点のレートで確認すること）。
+- 上限ラインのアラートを受信した場合、Railway・Cloudflare双方の追加
+  利用（新規リソース作成、ストレージ・処理量が増加する操作等）を人力で
+  停止し、ユーザーに確認する（第13章冒頭の「月額運営コスト上限」の運用
+  ルールと同一）。
+- Budget alertsが1日1回集計・翌日通知という遅延特性を持つため、R2
+  ダッシュボードでの使用量の定期的な目視確認を補完手段として併用する。
+- R2バケットの実際の作成・有効化時に、この二段階アラート設定を先に
+  行うこと（付録F第3節に注記済み）。
 
 ---
 
 # 付録
 
-## 付録A：セットアップ手順
-
-**CMS（`cms/` — Payload CMS）**
-
-```bash
-cd 02-discover-ginza-media-system/cms
-npm install
-cp .env.example .env   # DATABASE_URI / PAYLOAD_SECRET 等を設定
-npm run generate:importmap
-npm run generate:types
-npm run dev             # http://localhost:3000/admin
-```
-
-Postgres（`DATABASE_URI`）への接続が必要。ローカルはDocker Postgres、
-本番はRailwayを想定（`TECH_SELECTION_DRAFT.md` 3節）。
-
-**フロントエンド（`site/` — Astro）**
-
-```bash
-cd 02-discover-ginza-media-system/site
-npm install
-cp .env.example .env    # PAYLOAD_API_URL を設定
-npm run dev
-npm run build           # astro check + astro build。DB未起動でも空データで
-                         # ビルドが通ることをこのサンドボックス環境で確認済み
-```
-
-## 付録B：Phase 1実装状況（2026-07-21時点）
-
-`create-payload-app` / `npm create astro` の対話式CLIが、このワークスペースの
-開発サンドボックス環境（非TTY・Docker/Postgresなし）では起動できなかった
-（`@clack/prompts`が`uv_tty_init`で失敗）ため、両プロジェクトともPayload/Astro
-公式のテンプレート構成に基づき手動でファイルを作成した。
-
-検証できたこと：
-- `cms/`：`npm install`成功、`tsc --noEmit`が型エラーなしで通過
-- `site/`：`npm install`成功、`astro build`が3ページ（`/`, `/ja/`, `/en/`）を
-  実際に生成することを確認（CMS未起動時はfetchエラーを握りつぶし空表示する
-  フォールバックも動作確認済み）
-
-2026-07-22のPhase 2セッションで検証済み：
-- Payload管理画面の実際の起動・ログイン・コレクションの保存
-  （Tags→Sources→Articlesの順で実データ登録）
-- `historicalPeriod`自動分類・`accessionNumber`自動採番フックの実際の動作
-  （詳細は第12章の意思決定ログ、手順は付録D）
-
-まだ未検証：
-- Astroサイトからのライブ疎通（`fetchPublishedArticles`の実データ取得）
-- `ImageAssets`のアップロード動作（R2未設定時のローカルディスクフォールバック）
-
-実装済みファイル：
-- `cms/src/collections/{Articles,Sources,ImageAssets,Tags,Users}.ts`
-  （`CONTENT_MODEL.md`のフィールド定義に対応）
-- `cms/src/payload.config.ts`（Postgresアダプタ、R2ストレージプラグイン、
-  ja/en localization設定）
-- `cms/src/lib/ai/`（Claude Sonnet 5をtool-use経由で呼び出す記事下書き生成、
-  Block→Lexical変換）、`cms/src/endpoints/generateDraft.ts`
-  （`POST /api/ai/generate-draft`）
-- `cms/src/workers/{postToX,postToInstagram}.ts`（Instagram側はGraph APIの
-  二段階呼び出しを実装済み、X側はOAuth署名が必要なため意図的に未実装スタブ）
-- `site/`一式（`/ja/` `/en/`の台帳ページ骨格、Payload REST APIフェッチャー）
-
-## 付録C：既知のプレースホルダー・要確認事項
-
-- `postToX.ts`はスタブのまま（`twitter-api-v2`等の導入とOAuth認可実装が必要）
-- `postToInstagram.ts`はMeta App Review通過・Instagramビジネスアカウント
-  連携が完了するまで実際には送信できない
-- Lexicalのノード形状（`cms/src/lib/ai/lexical.ts`）は実際のPayload管理画面で
-  保存した内容と一度照合すること（バージョン依存のため）
-- スラッグ整形（記号除去・ローマ字化）は`createDraftFromSource.ts`内でTODOの
-  ままになっている
-- Phase 9で`ImageAssets.ts`にHEIC→JPEG変換フックを実装。実機HEICファイル
-  での検証は2026-07-29完了（Phase 13、第12章参照）
-
-## 付録D：スキーマ関連トラブルシューティング手順（2026-07-22の事例より）
-
-Payloadのコレクション定義を変更した際、管理画面で保存エラー（例：
-「Something went wrong」）やPostgres側のenumエラーが出た場合の確認手順。
-
-1. devサーバーのログで`caused by:`行を確認し、実際のPostgresエラー内容を
-   特定する（例：`invalid input value for enum enum_articles_status: "approved"`）。
-2. 該当テーブルのカラム定義を確認する。
-   ```bash
-   docker compose exec -T postgres psql -U discover_ginza -d discover_ginza -c "\d <table>"
-   ```
-   複数のカラムが同じenum型を指していないか確認する（指していれば
-   フィールド名の命名衝突の疑い）。
-3. enum型の実際の値一覧を、コレクション定義（`src/collections/*.ts`）の
-   optionsと突き合わせる。
-   ```sql
-   SELECT enumlabel FROM pg_enum WHERE enumtypid = '<enum_type>'::regtype ORDER BY enumsortorder;
-   ```
-4. **既知の衝突パターン**：`versions: { drafts: true }`を有効にした
-   コレクションで、カスタムフィールド名に`status`を使うと、Payloadが
-   内部的に予約するバージョン管理用フィールド`_status`とPostgresの
-   enum型名が衝突し、`_status`側の値セット（draft/published固定）しか
-   反映されなくなる（2026-07-22にArticlesで実際に発生、詳細は第12章）。
-   ステータス系フィールドは`status`そのものではなく`reviewStatus`等の
-   別名にすることで回避する。
-5. リネームなど破壊的なスキーマ変更を加えた場合、Payloadのdev push機構は
-   既存カラム・enum型を安全に移行しない。ローカル検証環境であれば
-   `docker compose down -v && docker compose up -d`でボリュームごと
-   作り直すのが確実。本番（Railway想定）環境でのマイグレーション手順は
-   未検討（第12章の未決事項）。
-6. 管理画面上でフィールドが読み取り専用・入力不可に見えるなど、コード上の
-   設定と実際の挙動が食い違う場合は、まずブラウザのハードリロード
-   （Cmd+Shift+R）を試す。DBリセットやコレクション定義変更の直後は、
-   管理画面JSバンドルとブラウザキャッシュの不整合が起きうる
-   （2026-07-22のSlugフィールド入力不可事象はこれで解消した）。
-7. **既存データを保持したまま`localized: true`を追加する場合**
-   （2026-07-24、Phase 8のTags.name対応より）：このサンドボックス環境は
-   非TTYのため、Payloadのdev push機構が要求する削除確認の対話プロンプト
-   （`Accept warnings and push schema to database? (y/N)`）に応答できず、
-   スキーマ変更が止まる。`docker compose down -v`によるボリューム全体
-   リセットは可能だが、他の既存データ（記事本文・画像等）まで失う
-   コストが大きい場合は、以下の手順で対象フィールドだけを手動移行できる。
-   1. 既存の`localized: true`+`unique: true`なフィールドを持つ別
-      コレクションの実際のテーブル定義を確認し、命名規則を把握する。
-      ```bash
-      docker compose exec -T postgres psql -U discover_ginza -d discover_ginza -c "\d <table>_locales"
-      ```
-      Payloadの規則：`<collection>_locales`テーブル（`id`・元フィールド名の
-      列・`_locale`（`_locales` enum型）・`_parent_id`）、
-      `<collection>_locales_locale_parent_id_unique`（`_locale, _parent_id`の
-      複合UNIQUE）、`unique: true`も設定している場合は
-      `<collection>_<field>_idx`（`<field>, _locale`のUNIQUE）。
-   2. 上記と同じ形で新しい`<collection>_locales`テーブルを手動作成し、
-      既存の値を`_locale = <defaultLocale>`として移送、その後に元テーブルの
-      非localizedカラムを削除する（トランザクション内で実施）。
-      ```sql
-      BEGIN;
-      CREATE TABLE tags_locales (
-        id serial PRIMARY KEY,
-        name character varying,
-        _locale _locales NOT NULL,
-        _parent_id integer NOT NULL
-      );
-      INSERT INTO tags_locales (name, _locale, _parent_id)
-        SELECT name, 'ja', id FROM tags;
-      ALTER TABLE tags DROP COLUMN name;
-      ALTER TABLE tags_locales
-        ADD CONSTRAINT tags_locales_parent_id_fk
-        FOREIGN KEY (_parent_id) REFERENCES tags(id) ON DELETE CASCADE;
-      CREATE UNIQUE INDEX tags_locales_locale_parent_id_unique
-        ON tags_locales (_locale, _parent_id);
-      CREATE UNIQUE INDEX tags_name_idx ON tags_locales (name, _locale);
-      COMMIT;
-      ```
-   3. Payload devサーバーを再起動し、対話プロンプトが出ないこと
-      （＝スキーマが完全一致していること）を確認する。
-   本番（Railway想定）でも同種の破壊的スキーマ変更が必要になった場合、
-   この手順を土台にできる（ただしRailway環境での実施・検証はまだ未実施、
-   第12章の未決事項）。
-
-## 付録E：Instagram Meta App Review 申請ランブック（2026-07-28作成）
-
-*2026-07-28、10月ローンチのPhase実行計画（第9章）でInstagram投稿の
-実運用化（Phase 15）を、外部審査のリードタイムを理由に最優先で着手する
-方針とした。以下は実際に申請するための前提条件と手順。本ランブック自体の
-作成はコード変更を伴わない。申請の実行にはMeta Developer／Business
-Managerアカウントでの操作が必要なため、私（Claude）が代行することはできず、
-ユーザー自身の対応が必要。*
-
-**前提条件（申請前に揃える必要があるもの）**：
-1. Meta Developerアカウント、および同一Business Manager配下のMetaアプリ
-   （新規作成、またはPhase 1の`postToInstagram.ts`実装時に想定していた
-   アプリがあればそれを利用）。
-2. Instagram Business（またはCreator）アカウントを、Facebookページに
-   連携済みであること。
-3. **Meta Business Managerのビジネス確認（Business Verification）** ——
-   これ自体も審査を要し、App Reviewとは別のリードタイムが発生しうる。
-   未実施であれば、App Review申請と並行して早めに着手する。
-4. **公開済みのプライバシーポリシーURL** ——Meta App Reviewの申請フォームで
-   必須項目となる。**2026-07-29に解消済み**：02固有のプライバシーポリシー
-   ページ（`/ja/privacy` `/en/privacy`）を実装した。本番ドメイン確定
-   （Phase 12）後、実際に公開されたURLを申請フォームに入力する。
-
-**申請の手順（概略）**：
-1. Meta for Developers管理画面で対象アプリの「App Review」→
-   「Permissions and Features」から、必要な権限を申請する
-   （`instagram_basic`、`instagram_content_publish`、および連携に必要な
-   `pages_show_list`／`pages_read_engagement`等）。
-2. 各権限について、実際の利用方法を示すスクリーンキャスト（画面録画）と
-   利用目的の説明文を提出する（`postToInstagram.ts`の二段階Graph API
-   呼び出しフローを実演する想定）。
-3. プライバシーポリシーURL、データ削除手順URL、アプリアイコン等の
-   基本情報を入力する。
-4. 審査に提出する。**審査期間は数日〜数週間と変動する**ため、Phase 15の
-   実装完了を待たずに提出だけ先行させることが今回のPhase実行計画の意図。
-5. 承認後、本番用の長期アクセストークン（long-lived access token）を
-   取得し、`postToInstagram.ts`の環境変数に設定する。実装自体は
-   Phase 1で完了済みのため、承認後は疎通確認のみで運用開始できる想定。
-
-**未確認・要対応（2026-07-29時点）**：
-- Meta Business Managerのビジネス確認が完了しているかどうか未確認。
-- 02固有のプライバシーポリシーページは実装済み（2026-07-29、上記参照）。
-  本番ドメイン`discover.ginzawhiskers.com`も確定済み（付録F）——実際に
-  Cloudflare Pagesへデプロイし公開URLが到達可能になった時点で、その
-  URLを申請フォームに入力する（デプロイ自体は付録F、まだ未実施）。
-- 実際の申請提出・審査結果の待ち状況は、次回セッション以降、ユーザーからの
-  報告を受けて第12章に記録する。
-
-## 付録F：本番インフラ構築ランブック（2026-07-29作成）
-
-*2026-07-29、Phase 12（本番インフラ）のドメイン・ホスティング方針を確定
-した（第12章参照）。以下は実際に構築するための設計・手順。本ランブック
-作成時点でコード側の対応（`site: 'https://discover.ginzawhiskers.com'`の
-設定、canonical/hreflang/og:urlの絶対URL化）は完了済みだが、各サービスの
-アカウント作成・実際の設定投入にはCloudflare／Railwayのダッシュボード
-操作が必要なため、私（Claude）が代行することはできず、ユーザー自身の
-対応が必要。*
-
-**採用したドメイン方針**：サブドメイン方式。`ginzawhiskers.com`
-（01が既に取得予定のドメイン、付録D参照）の配下に02用のサブドメインを
-切る。独立ドメインの新規購入は行わない（比較検討は第12章の決定ログ参照）。
-
-**構成**：
-
-| コンポーネント | サービス | ドメイン |
-|---|---|---|
-| フロントエンド（`site/`） | Cloudflare Pages | `discover.ginzawhiskers.com` |
-| バックエンド（`cms/`、Payload CMS） | Railway | `api.discover.ginzawhiskers.com` |
-| 画像ストレージ | Cloudflare R2 | （任意）`images.discover.ginzawhiskers.com` |
-| データベース | Railway Postgresプラグイン | （外部公開ドメイン不要） |
-
-**手順（概略）**：
-
-1. **Cloudflare Pages（フロントエンド）**
-   - Cloudflare Pagesで新規プロジェクトを作成し、本リポジトリの
-     `02-discover-ginza-media-system/site/`をビルド対象に設定する
-     （ビルドコマンド`npm run build`、出力ディレクトリ`dist/`）。
-   - ビルド時の環境変数`PAYLOAD_API_URL=https://api.discover.
-     ginzawhiskers.com`を設定する。
-   - カスタムドメインとして`discover.ginzawhiskers.com`を追加する。
-2. **Railway（バックエンド＋Postgres）**
-   - 新規プロジェクトを作成し、Postgresプラグインを追加する
-     （`DATABASE_URI`は自動注入される）。
-   - `02-discover-ginza-media-system/cms/`をサービスとしてデプロイする。
-   - 環境変数を設定する：`PAYLOAD_SECRET`（新規生成の長いランダム文字列）、
-     `R2_BUCKET`／`R2_ENDPOINT`／`R2_ACCESS_KEY_ID`／
-     `R2_SECRET_ACCESS_KEY`（下記3）、`ANTHROPIC_API_KEY`、
-     `IG_BUSINESS_ACCOUNT_ID`／`IG_PAGE_ACCESS_TOKEN`（Meta App Review
-     承認後、付録E）、`X_API_BEARER_TOKEN`（Phase 15実装後）。
-   - カスタムドメインとして`api.discover.ginzawhiskers.com`を追加する。
-3. **Cloudflare R2（画像ストレージ）**
-   - バケットを新規作成する（例：`discover-ginza-images`）。
-   - APIトークン（アクセスキーID・シークレットキー）を発行し、Railway側の
-     環境変数に設定する。
-   - パブリック配信用のカスタムドメイン（`images.discover.ginzawhiskers.
-     com`）を設定するかは任意——設定しない場合はR2のデフォルト公開URLを
-     使う。
-4. **DNS（`ginzawhiskers.com`ゾーン）**
-
-   | レコード | 種別 | 向き先 |
-   |---|---|---|
-   | `discover.ginzawhiskers.com` | CNAME | Cloudflare Pages |
-   | `api.discover.ginzawhiskers.com` | CNAME | Railway |
-   | `images.discover.ginzawhiskers.com`（任意） | CNAME | Cloudflare R2 |
-
-   01のドメイン設定（付録D、Aレコード4件＋`www`のCNAME）とは独立した
-   レコード追加のみで完結し、01側の設定に影響しない。
-
-5. **本番スキーマ移行**：付録Dの「7. 既存データを保持したまま
-   `localized: true`を追加する場合」の手動SQL手順をベースに、Railway
-   Postgresへの接続情報を使い同様の手動移行を行う想定。本番では
-   `docker compose down -v`のようなボリューム全リセットは実データ保護の
-   観点から選択肢に入らないため、**手動SQLマイグレーションが本番での
-   唯一の現実的な手段**になる見込み。実行前にRailway側のバックアップ
-   機能（自動バックアップの有無・保持期間）を確認すること。
-6. 完了後、第11章のチェックリスト該当項目にチェックを入れ、第12章に
-   実施日と結果を記録する。
-
-**未確認・要対応**：
-- Cloudflare Pages／Railwayのアカウント作成状況（既存アカウントの有無）。
-- Railway Postgresの自動バックアップ機能の有無・保持期間。
-- 実際の構築作業は次回セッション以降、ユーザーからの実施報告を受けて
-  本章に記録する。
+付録A〜F（セットアップ手順、Phase 1実装状況、既知のプレースホルダー、
+スキーマ関連トラブルシューティング手順、Instagram Meta App Review
+申請ランブック、本番インフラ構築ランブック）は、2026-08-21、CLAUDE.mdの
+肥大化（150,000文字上限超過）を解消するための分割作業で `RUNBOOKS.md`
+（プロジェクトルート）へ移設した。**内容はそのまま全文を保持しており、
+削除・要約は行っていない**。本番インフラ構築・Instagram申請・スキーマ
+移行トラブル対応が必要な際は `RUNBOOKS.md` を参照すること。
