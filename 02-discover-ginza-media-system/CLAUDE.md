@@ -513,6 +513,7 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-24: Maron Editor's Choice候補選定の実運用確認——DiscoveredContent id:97「南方書局のハッピーサマー ミニミニ大百貨店」を候補として選定し、未確認4項目（入場条件・予約要否・限定特典内容・撮影可否）の公式取材窓口宛て問い合わせ文案を作成（送信は未実施・外部確認中、curationStatusはinboxのまま変更なし、詳細は`DECISION_LOG_02.md`参照）
 - 2026-08-19: Visual Asset Library確定——世界観挿絵6タイプ・18ジャンルアイコン仕様を第8章へ正式統合（画像生成の実行・コード実装は未着手）
 - 2026-08-19: 新ルール準拠note記事Trial——Editorial Style Engine適用版の記事原稿を再生成（比較用に新規ファイル`NOTE_ARTICLE_TRIAL_STYLE_ENGINE.md`として保存、外部公開なし）
 - 2026-08-19: Editorial Style Engine確定——Human Editor Reviewを経た文体・構成規則を第8章へ正式統合
