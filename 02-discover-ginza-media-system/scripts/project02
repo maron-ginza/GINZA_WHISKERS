@@ -284,6 +284,454 @@ social() {
   echo
 }
 
+sources() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 SOURCE LEDGER v1（情報源台帳） ==="
+
+  # seedData.ts（git管理の正本）を直接読むだけなのでDocker/Postgres起動は不要
+  (cd "$ROOT/cms" && node --import=tsx/esm src/scripts/sourceLedgerStatus.ts 2>"$LOG_DIR/sources.log") || {
+    fail "SOURCE LEDGER確認スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/sources.log 末尾 ---"
+    tail -15 "$LOG_DIR/sources.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  }
+
+  echo "================================================"
+  echo
+}
+
+articles() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 個別記事・イベント（DiscoveredContent） ==="
+  echo "（読み取り専用：このコマンド自体は新規のHTTP巡回・AI呼び出し・DB書き込みを一切行いません）"
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/articlesStatus.ts 2>"$LOG_DIR/articles.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "個別記事・イベント状態確認スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/articles.log 末尾 ---"
+    tail -15 "$LOG_DIR/articles.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_articles_status.py" "$LOG_DIR/articles.log"
+
+  echo "================================================"
+  echo
+}
+
+score() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 「旬の銀座」Editorial Score採点 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARGS=""
+  for a in "$@"; do
+    if [ "$a" = "--force" ]; then
+      MODE_ARGS="$MODE_ARGS --force"
+    fi
+  done
+
+  # ANTHROPIC_API_KEYの形式を事前チェックし、無効そうな場合は自動でヒューリスティック
+  # 仮採点（本物のAI評価ではないローカル検証用モード）へフォールバックする
+  # （マロン指示：外部APIキーは変更せず、使えない場合はローカルで検証可能な方法を使う）。
+  if [ -f "$ROOT/cms/.env" ]; then
+    check_anthropic_key_format "$ROOT/cms/.env" >/dev/null 2>&1
+  fi
+
+  if [ "${ANTHROPIC_KEY_OK:-0}" = "1" ] && ! printf '%s' "$*" | grep -qe '--heuristic'; then
+    echo "（ANTHROPIC_API_KEYが有効な形式のため、実際のClaude呼び出しで採点します）"
+  else
+    MODE_ARGS="$MODE_ARGS --heuristic"
+    warn "ANTHROPIC_API_KEYが未設定・無効な形式、または--heuristic指定のため、"
+    warn "ヒューリスティック仮採点（本物のAI評価ではない）で実行します"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/scoreSources.ts $MODE_ARGS 2>"$LOG_DIR/score.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "採点スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/score.log 末尾 ---"
+    tail -15 "$LOG_DIR/score.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_score_status.py" "$LOG_DIR/score.log"
+
+  echo "================================================"
+  echo
+}
+
+ranking() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 「旬の銀座」Editorial Score ランキング ==="
+  echo "（読み取り専用：このコマンド自体は新規のAI呼び出し・DB書き込みを一切行いません）"
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  ALL_ARG=""
+  if [ "$1" = "--all" ]; then
+    ALL_ARG="--all"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/curationRanking.ts $ALL_ARG 2>"$LOG_DIR/ranking.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "ランキングスクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/ranking.log 末尾 ---"
+    tail -15 "$LOG_DIR/ranking.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_ranking_status.py" "$LOG_DIR/ranking.log"
+
+  echo "================================================"
+  echo
+}
+
+score_articles() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 個別記事・イベント Editorial Score採点 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARGS=""
+  for a in "$@"; do
+    if [ "$a" = "--force" ]; then
+      MODE_ARGS="$MODE_ARGS --force"
+    fi
+  done
+
+  if [ -f "$ROOT/cms/.env" ]; then
+    check_anthropic_key_format "$ROOT/cms/.env" >/dev/null 2>&1
+  fi
+
+  if [ "${ANTHROPIC_KEY_OK:-0}" = "1" ] && ! printf '%s' "$*" | grep -qe '--heuristic'; then
+    echo "（ANTHROPIC_API_KEYが有効な形式のため、実際のClaude呼び出しで採点します）"
+  else
+    MODE_ARGS="$MODE_ARGS --heuristic"
+    warn "ANTHROPIC_API_KEYが未設定・無効な形式、または--heuristic指定のため、"
+    warn "ヒューリスティック仮採点（本物のAI評価ではない）で実行します"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/scoreArticles.ts $MODE_ARGS 2>"$LOG_DIR/score_articles.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "個別記事・イベント採点スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/score_articles.log 末尾 ---"
+    tail -15 "$LOG_DIR/score_articles.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_score_articles_status.py" "$LOG_DIR/score_articles.log"
+
+  echo "================================================"
+  echo
+}
+
+daily() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Daily Editorial Desk ==="
+  echo "（読み取り専用：このコマンド自体は新規のAI呼び出し・DB書き込みを一切行いません）"
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/dailyDesk.ts 2>"$LOG_DIR/daily.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "Daily Editorial Deskスクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/daily.log 末尾 ---"
+    tail -15 "$LOG_DIR/daily.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_daily_desk_status.py" "$LOG_DIR/daily.log"
+
+  echo "================================================"
+  echo
+}
+
+refresh_dates() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 個別ページ日付再確認（Source Coverage拡張） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARG=""
+  LIMIT_ARG=""
+  ALL_ARG=""
+  for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+      MODE_ARG="--dry-run"
+      echo "（Dry Runモード：実際にHTTP再取得は行いますが、DBへの書き込みは一切行いません）"
+    fi
+    if [ "$arg" = "--all" ]; then
+      ALL_ARG="--all"
+      echo "（全件モード：日付未取得の行だけでなく295件全件を再取得し、誤抽出の訂正も反映します）"
+    fi
+    case "$arg" in
+      --limit=*) LIMIT_ARG="$arg" ;;
+    esac
+  done
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/refreshDates.ts $MODE_ARG $LIMIT_ARG $ALL_ARG 2>"$LOG_DIR/refresh_dates.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "日付再確認スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/refresh_dates.log 末尾 ---"
+    tail -15 "$LOG_DIR/refresh_dates.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_refresh_dates_status.py" "$LOG_DIR/refresh_dates.log"
+
+  echo "================================================"
+  echo
+}
+
+recompute_richness() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 本文情報量ペナルティ再計算（Editorial Score） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARG=""
+  for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+      MODE_ARG="--dry-run"
+      echo "（Dry Runモード：判定は行いますが、DBへの書き込みは一切行いません）"
+    fi
+  done
+  echo "（新規のAI呼び出しは一切行いません。既存のEditorial Score・本文テキストのみで再計算します）"
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/recomputeContentRichness.ts $MODE_ARG 2>"$LOG_DIR/recompute_richness.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "本文情報量ペナルティ再計算スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/recompute_richness.log 末尾 ---"
+    tail -15 "$LOG_DIR/recompute_richness.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_recompute_richness_status.py" "$LOG_DIR/recompute_richness.log"
+
+  echo "================================================"
+  echo
+}
+
+recompute_ux_type() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 参加／体験型UXタイプ再計算 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARG=""
+  for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+      MODE_ARG="--dry-run"
+      echo "（Dry Runモード：判定は行いますが、DBへの書き込みは一切行いません）"
+    fi
+  done
+  echo "（新規のAI呼び出しは一切行いません。既存のtitle/excerpt/contentType/contentRichnessTierのみで再計算します）"
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/recomputeUxType.ts $MODE_ARG 2>"$LOG_DIR/recompute_ux_type.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "UXタイプ再計算スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/recompute_ux_type.log 末尾 ---"
+    tail -15 "$LOG_DIR/recompute_ux_type.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_recompute_ux_type_status.py" "$LOG_DIR/recompute_ux_type.log"
+
+  echo "================================================"
+  echo
+}
+
+clusters() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Story Clustering ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARG=""
+  if [ "$1" = "--dry-run" ]; then
+    MODE_ARG="--dry-run"
+    echo "（Dry Runモード：計算のみ行い、StoryClustersコレクションへの書き込みは行いません）"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/clustersStatus.ts $MODE_ARG 2>"$LOG_DIR/clusters.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "Story Clusteringスクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/clusters.log 末尾 ---"
+    tail -15 "$LOG_DIR/clusters.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_clusters_status.py" "$LOG_DIR/clusters.log"
+
+  echo "================================================"
+  echo
+}
+
+jobs() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 定期実行状況（Payload Jobs Queue） ==="
+  echo "（読み取り専用：このコマンド自体は新規のHTTP巡回・DB書き込みを一切行いません）"
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/jobsStatus.ts 2>"$LOG_DIR/jobs.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "定期実行状況スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/jobs.log 末尾 ---"
+    tail -15 "$LOG_DIR/jobs.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_jobs_status.py" "$LOG_DIR/jobs.log"
+
+  # recommend_next_step()向けのシグナル：直近の実行に失敗が含まれるかだけを判定する
+  # （値の詳細解析はformat_jobs_status.py側の表示に任せ、ここでは1/0のみ）
+  if echo "$RAW" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if any(r.get('hasError') for r in d.get('recentRuns', [])) else 1)" 2>/dev/null; then
+    JOBS_RECENT_FAILURE=1
+  else
+    JOBS_RECENT_FAILURE=0
+  fi
+
+  echo "================================================"
+  echo
+}
+
+crawl() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 SOURCE LEDGER 自動巡回・Snapshot・Diff ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  MODE_ARG=""
+  BUDGET_ARG=""
+  for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+      MODE_ARG="--dry-run"
+      echo "（Dry Runモード：実際にHTTP取得は行いますが、DBへの書き込みは一切行いません）"
+    fi
+    case "$arg" in
+      --budget=*) BUDGET_ARG="$arg" ;;
+    esac
+  done
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crawlSources.ts $MODE_ARG $BUDGET_ARG 2>"$LOG_DIR/crawl.log" | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "SOURCE LEDGER巡回スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/crawl.log 末尾 ---"
+    tail -15 "$LOG_DIR/crawl.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_crawl_status.py" "$LOG_DIR/crawl.log"
+
+  echo "================================================"
+  echo
+}
+
 start_all() {
   echo
   echo "🚀 Project 02 自動起動開始"
@@ -582,6 +1030,8 @@ recommend_next_step() {
     echo "→ railway login を実行し、Railwayの認証を完了してください（ブラウザでの操作が必要、本コマンドからは自動実行しません）"
   elif [ "${ANTHROPIC_KEY_OK:-0}" != "1" ]; then
     echo "→ cms/.env の ANTHROPIC_API_KEY を、Anthropicコンソールで発行した有効な値（sk-ant-で始まる）に差し替えてください"
+  elif [ "${JOBS_RECENT_FAILURE:-0}" = "1" ]; then
+    echo "→ SOURCE LEDGER自動巡回（Jobs Queue）に直近の失敗があります。./p2 jobs で詳細を確認してください"
   else
     echo "→ 付録Fの手順で Cloudflare Pages / Railway デプロイ / R2 有効化など、本番インフラの実際の構築を進めてください（各サービスのダッシュボード操作が必要）"
   fi
@@ -658,7 +1108,10 @@ morning() {
   echo "--- 8. ./p2 social 相当 ---"
   social
 
-  echo "--- 9〜11. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
+  echo "--- 9. ./p2 jobs 相当（SOURCE LEDGER定期実行の状態確認、読み取り専用） ---"
+  jobs
+
+  echo "--- 10〜12. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
   preflight
 
   recommend_next_step
@@ -690,6 +1143,48 @@ case "${1:-status}" in
   social)
     social
     ;;
+  sources)
+    sources
+    ;;
+  crawl)
+    shift
+    crawl "$@"
+    ;;
+  score)
+    shift
+    score "$@"
+    ;;
+  ranking)
+    ranking "$2"
+    ;;
+  articles)
+    articles
+    ;;
+  score-articles)
+    shift
+    score_articles "$@"
+    ;;
+  daily)
+    daily
+    ;;
+  clusters)
+    clusters "$2"
+    ;;
+  refresh-dates)
+    shift
+    refresh_dates "$@"
+    ;;
+  recompute-richness)
+    shift
+    recompute_richness "$@"
+    ;;
+  recompute-ux-type)
+    shift
+    recompute_ux_type "$@"
+    ;;
+  jobs)
+    jobs
+    ;;
   preflight)
     preflight
     ;;
@@ -716,8 +1211,20 @@ case "${1:-status}" in
     echo "  ./p2 doctor     異常時診断"
     echo "  ./p2 editorial  編集パイプライン状況（Sources/Articles集計、承認待ち一覧）"
     echo "  ./p2 social     SNS配信キュー状況（Phase 15、候補生成＋Dry Run＋承認待ち一覧）"
+    echo "  ./p2 sources    SOURCE LEDGER v1（情報源台帳）確認（件数・tier別・Core Source一覧、DB不要）"
+    echo "  ./p2 crawl [--dry-run] [--budget=N]  SOURCE LEDGERのenabled情報源を巡回しSnapshot保存・差分検知＋一覧ページ発見＋個別記事・イベント抽出（--dry-runはDB書き込みなし、--budget=NはStage2予算の既定20を上書き。手動実行用。定期実行はPayload Jobs Queueが自動で行う）"
+    echo "  ./p2 score [--force]  「旬の銀座」Editorial Score/Audience Tags採点（サイト単位Inbox候補。鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
+    echo "  ./p2 ranking [--all]  Editorial Score順ランキング表示（サイト単位Inbox候補、既定は読み取り専用）"
+    echo "  ./p2 articles   個別記事・イベント（DiscoveredContent）の現在状態サマリー（件数・公開日/開催期間取得状況、読み取り専用）"
+    echo "  ./p2 score-articles [--force]  個別記事・イベント単位のEditorial Score/Audience Tags採点（鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
+    echo "  ./p2 daily      Daily Editorial Desk（本日新規/更新＋開催中＋近日開催、Story Cluster単位のTop10、読み取り専用）"
+    echo "  ./p2 clusters [--dry-run]  Story Clustering再計算・StoryClustersコレクションへ反映（同一イベントの複数URLを統合、DiscoveredContentは変更しない）"
+    echo "  ./p2 refresh-dates [--dry-run] [--limit=N] [--all]  既存DiscoveredContentの個別ページを安全に再確認（--allで全件対象・誤抽出の訂正も反映。新規行は作成せず、discoveryStatus/curationStatusも変更しない）"
+    echo "  ./p2 recompute-richness [--dry-run]  既存の採点済みSources/DiscoveredContentへ本文情報量ペナルティを遡及反映（新規AI呼び出しなし・課金なし）"
+    echo "  ./p2 recompute-ux-type [--dry-run]  既存DiscoveredContentへ参加／体験型UXタイプを遡及反映（新規AI呼び出しなし・課金なし）"
+    echo "  ./p2 jobs       SOURCE LEDGER定期実行（Payload Jobs Queue）の状態確認（次回実行予定・直近の成功/失敗、読み取り専用）"
     echo "  ./p2 preflight  Phase 12本番インフラ構築の準備状況確認（env var名・CLI認証・ビルド）"
-    echo "  ./p2 morning    朝の作業開始準備を1コマンドで完了（起動＋status/doctor/editorial/social/preflight＋次の推奨工程）"
+    echo "  ./p2 morning    朝の作業開始準備を1コマンドで完了（起動＋status/doctor/editorial/social/jobs/preflight＋次の推奨工程）"
     echo "  ./p2 prod-status Railway/Cloudflareの本番リソース状態を読み取り専用で確認（railway_ro/wrangler_ro経由のみ、値は表示しません）"
     echo "  ./p2 pmo        morning + prod-status をまとめて実行（PMOレポート作成用の一括データ収集）"
     echo "  ./p2 open       Site/CMSを開く"
