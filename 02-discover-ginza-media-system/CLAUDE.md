@@ -320,6 +320,53 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
       note記事生成が実コード実装される段階で改めて設計する。
   詳細なTrial例・Human Editor Reviewの経緯は第12章の該当セッション
   （2026-08-19）および`NOTE_ARTICLE_TRIAL.md`を参照。
+  12. **note編集部ノウハウの正式反映（2026-08-26確定）**：note編集部の
+      公式記事から抽出した10項目のノウハウを、実コード（`generateArticleDraft.ts`
+      の単一Source・週次両方のプロンプト、`Articles.ts`スキーマ）へ正式反映
+      した。追加・強化した点は以下：
+      (a) **なぜ今読む価値があるか**：hookの冒頭で季節・旬性・今週性に基づく
+      具体的な「今読む理由」を必須化（一般的な季節の挨拶で終わらせない）。
+      (b) **スマホ前提の可読性**：段落2〜3文まで、前置き・冗長な接続表現の
+      禁止をプロンプトへ明文化。
+      (c) **見出しだけで内容が把握できる構造**：categoryLabel/name/period
+      に「何が・どこで・いつ」の具体性を必須化。
+      (d) **読者接続の編集ロジックの実運用反映**：2026-08-21確定済みだった
+      「社会・季節・生活文脈→読者の気分→体験・発見」という接続を、実際の
+      プロンプト文言として初めてコード化した。
+      (e) **単一の結びのCTA**：新規`callToAction`フィールド（Articles
+      スキーマ・AI出力スキーマ双方に追加）を新設し、closing（結びの短文）
+      とは分離。記事末尾で重ねて依頼せず、次の行動を1つだけ示す設計にした。
+      (f) **回遊導線（関連記事）**：新規`Articles.relatedArticles`
+      （自己参照relationship）を新設。生成時に同じ収蔵室（pillar）を持つ
+      公開済み記事をDBから機械的に検索して自動候補提示し、AIには関連記事を
+      作文させない（存在しない記事タイトルの捏造を防ぐ、Editorial Trust
+      Layerと同じ「推測で補完しない」原則の適用）。公開前に人間が確認・
+      取捨選択する前提の自動候補である。
+      (g) **noteクリエイターページ上のシリーズ性**：新規`Articles.series`
+      （label/editionNumber）を新設。週次「旬の銀座」記事にのみ、既存の
+      TNS（#32〜#34、`note.com/ginza_whiskers`で公開中）と同じ「#連番」
+      形式のシリーズ番号を自動採番し、本文冒頭に「GINZA WHISKERS
+      SERIES｜旬の銀座 #NNN」という目印を付与する（機械的な連番、AIには
+      生成させない）。単発の単一Source記事にはこの番号を付与しない。
+      (h) **ハッシュタグの絞り込み**：Xの1〜2個に加え、noteのハッシュタグも
+      テーマに直接関係するもの3〜5個までに絞る指示をプロンプトへ追加
+      （従来はnote側に上限の指定がなかった）。
+      (i) **自動生成後もマロンが最終編集・承認できる構造**：新規追加した
+      `callToAction`・`relatedArticles`・`series`のいずれも、既存の
+      `reviewStatus`（draft→review→approved→published）人間承認ゲート
+      （Articles.tsの`beforeChange`フック）の対象範囲内にそのまま含まれる
+      ——新しいゲートやバイパス経路は作っていない。
+      **今回の変更範囲**：`generateArticleDraft.ts`（単一Source・週次の
+      両プロンプト、DRAFT_TOOL/WEEKLY_DRAFT_TOOLスキーマ、ブロック組み立て
+      関数）・`Articles.ts`（`callToAction`/`relatedArticles`/`series`
+      フィールド追加）・`createDraftFromSource.ts`・
+      `createWeeklyDraftFromDiscoveredContent.ts`・新規
+      `relatedArticles.ts`（回遊導線候補の決定的検索ロジック、AI呼び出し
+      なし）。**今回は実際のAI呼び出し・実データでのE2E検証は行っていない**
+      ——`ANTHROPIC_API_KEY`の有効性は本セッションで確認しておらず、
+      `payload generate:types`・`tsc --noEmit`（cms、0エラー）による
+      静的検証のみ。既存のSources/DiscoveredContent/Editorial Score等の
+      データ・既存フローへの変更は一切行っていない。
 - **Visual Asset Library（世界観挿絵・ジャンルアイコン、2026-08-19
   確定）**：Editorial Style Engine（項目5 Visual Rhythm）を実際の
   画像素材レベルで支える仕様。詳細は`VISUAL_ASSET_LIBRARY.md`
@@ -513,6 +560,8 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-26: note編集部ノウハウ（10項目）をEditorial Style Engineへ正式反映——`callToAction`（単一CTA）・`relatedArticles`（回遊導線、自動候補）・`series`（noteシリーズ連番）をArticlesスキーマ・生成プロンプト双方に追加（実AI呼び出し・DB実データ検証は未実施、詳細は第8章項目12・`DECISION_LOG_02.md`参照）
+- 2026-08-25: 週次「旬の銀座」記事生成（複数DiscoveredContent入力）を実装——Human Editor Review P0〜P2の指摘（出典捏造防止・Source Provenance保存・タイトル体験型優先等）を反映し`generateWeeklyDraft`エンドポイントを新設（詳細は`DECISION_LOG_02.md`参照）
 - 2026-08-24: Maron Editor's Choice候補選定の実運用確認——DiscoveredContent id:97「南方書局のハッピーサマー ミニミニ大百貨店」を候補として選定し、未確認4項目（入場条件・予約要否・限定特典内容・撮影可否）の公式取材窓口宛て問い合わせ文案を作成（送信は未実施・外部確認中、curationStatusはinboxのまま変更なし、詳細は`DECISION_LOG_02.md`参照）
 - 2026-08-19: Visual Asset Library確定——世界観挿絵6タイプ・18ジャンルアイコン仕様を第8章へ正式統合（画像生成の実行・コード実装は未着手）
 - 2026-08-19: 新ルール準拠note記事Trial——Editorial Style Engine適用版の記事原稿を再生成（比較用に新規ファイル`NOTE_ARTICLE_TRIAL_STYLE_ENGINE.md`として保存、外部公開なし）
@@ -773,7 +822,7 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-08-19
+- **最終更新日**：2026-08-26
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

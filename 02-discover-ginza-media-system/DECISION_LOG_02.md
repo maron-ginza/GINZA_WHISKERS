@@ -1,10 +1,11 @@
 # Project 02 意思決定ログ（2/2：直近分）
 
 このファイルは `CLAUDE.md` 第12章の意思決定ログのうち、**新しい方の期間
-（2026-08-17〜2026-08-21、直近の重要決定を含む）** を保持する。2026-08-21、
+（2026-08-17〜、直近の重要決定を含む）** を保持する。2026-08-21、
 CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分割作業で作成した。
-原文は `CLAUDE.md.backup-20260821.md`（分割前の全文バックアップ）からそのまま
-転記しており、内容の要約・書き換えは行っていない。
+2026-08-21分までの原文は `CLAUDE.md.backup-20260821.md`（分割前の全文
+バックアップ）からそのまま転記しており、内容の要約・書き換えは行っていない。
+2026-08-24以降のエントリは分割後にこのファイルへ直接追記したもの。
 
 - 古い方の期間（2026-07-21〜2026-08-17）は `DECISION_LOG_01.md` を参照。
 - 現行の仕様・方針・未決事項・直近の重要決定の要約は `CLAUDE.md` 本体を
@@ -12,6 +13,99 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 - 各エントリの並び順は分割前の原文と同じ（新しい日付が先、古い日付が後）。
 
 ---
+
+  - 2026-08-26（note編集部ノウハウのEditorial Style Engineへの正式反映）:
+    ユーザーが確認した「note編集部の公式記事」から抽出した10項目のノウハウを、
+    Project 02の記事生成・編集ロジック（`generateArticleDraft.ts`・
+    `Articles.ts`・`createDraftFromSource.ts`・
+    `createWeeklyDraftFromDiscoveredContent.ts`）へ正式反映した。作業着手前に
+    まず現状の実装状況を確認したところ、2026-08-25（直後のエントリ参照）の
+    Editorial Style Engine週次生成実装が既にHook/THIS WEEK IN GINZA/Editor's
+    Choice/Source Provenance/結びという構造・Editorial Trust Layer・タイトル
+    体験型優先まで実装済みであることが判明し、今回はその土台の上に10項目を
+    差分反映する形で進めた。
+    **反映した10項目とコード上の対応**：①「なぜ今読む価値があるか」が短く
+    伝わる冒頭構成→hookプロンプトへ「今読む理由」の明示を必須化。②スマホ
+    閲覧前提で長すぎる段落・冗長な説明を避ける→段落2〜3文・前置き禁止を
+    プロンプトへ明文化。③見出しだけで内容把握できる構造→categoryLabel/
+    name/periodの具体性を必須化。④単なる情報羅列ではなく独自の編集視点→
+    既存editorsNote要件を維持・強化。⑤読者の気分・体験・発見への接続→
+    2026-08-21にCLAUDE.md上で確定していた「読者接続の編集ロジック」（社会・
+    季節・生活文脈→気分→体験・発見→Editor's Choice）を、今回初めて実際の
+    プロンプト文言としてコード化した（従来は方針のみでコード未反映だった）。
+    ⑥関連記事・シリーズ・プロフィール等の回遊導線→新規
+    `Articles.relatedArticles`（自己参照relationship）と新規
+    `cms/src/lib/ai/relatedArticles.ts`（`findRelatedArticles`）を追加。
+    同じ収蔵室（pillar）を持つ公開済み記事をDBから機械的に検索して自動候補
+    提示する決定的ロジックとし、AIには関連記事のタイトルを一切作文させない
+    （存在しない記事の捏造を防ぐ、Editorial Trust Layerの「推測で補完しない」
+    原則をそのまま踏襲した設計判断）。⑦noteクリエイターページ上でのシリーズ
+    性→新規`Articles.series`（`label`/`editionNumber`）を追加。既存のTNS
+    （Tokyo Nostalgic Soundtrack、#32〜#34が`note.com/ginza_whiskers`で
+    公開済みと確認済み——本セッションで本ファイル内の直前のTNS関連エントリを
+    確認して存在を把握した）と同じ「#連番」形式の慣例を「旬の銀座」週次記事
+    にも適用し、`createWeeklyDraftFromDiscoveredContent.ts`が既存の週次記事数
+    （`aiGeneratedBy`が`claude-sonnet-5 (weekly-digest)`の件数）から機械的に
+    連番を算出、本文冒頭に「GINZA WHISKERS SERIES｜旬の銀座 #NNN」という
+    目印ブロックを追加する。単発の単一Source記事にはこの番号を付与しない
+    （既存の6本柱タクソノミー記事とは性質が異なるため）。⑧記事末尾は説明を
+    重ねすぎず次の行動を1つ→新規`callToAction`フィールド（Articles
+    スキーマ・AI出力スキーマ双方）を追加し、既存のclosing（結びの短文）とは
+    分離。生成ブロック内では「→ 次に：{callToAction}」という1行として本文
+    末尾に配置し、closingとの内容重複・複数依頼の並列を構造的に避けた。
+    ⑨ハッシュタグは多用せずテーマに絞る→従来Xのみだった「1〜2個まで」の
+    制約に加え、note本文のハッシュタグにも「3〜5個まで」の上限をプロンプト
+    へ新規追加した（従来note側には上限の指定がなかった）。⑩自動生成後も
+    マロンが最終編集・承認できる構造→新規追加したcallToAction/
+    relatedArticles/seriesのいずれも、既存の`reviewStatus`人間承認ゲート
+    （`Articles.ts`の`beforeChange`フック、draft→review→approved→published）
+    の対象範囲にそのまま含まれることを確認した——新しい承認バイパス経路は
+    作っていない。
+    **スキーマ変更の詳細**：`Articles.ts`に`callToAction`（text,
+    localized）・`relatedArticles`（relationship, hasMany, relationTo:
+    'articles'、自己参照）・`series`（group: `label` text / `editionNumber`
+    number readOnly）を追加した。2026-08-25の`editorialProvenance`追加時に
+    発生したPostgres識別子長制限（63文字）の教訓を踏まえ、新規追加した
+    select/relationshipフィールドで同種の衝突が起きないことを
+    `payload generate:types`の正常終了で確認した。
+    **検証内容**：`payload generate:types`実行（`payload-types.ts`に
+    `callToAction`/`relatedArticles`/`series.editionNumber`が正しく反映
+    されたことを確認）、`tsc --noEmit`（cms、0エラー）。
+    **今回行っていないもの**：実際の`ANTHROPIC_API_KEY`呼び出しによる
+    E2E検証（本セッションでは鍵の有効性を確認していない）、ローカル
+    Postgres環境への実際のスキーマ反映・実データでの動作確認、`./p2`
+    CLIへの週次生成コマンドの追加、note・X・LINEへの実配信、Sources/
+    DiscoveredContent/Editorial Score等の既存データ・既存フローの変更。
+
+  - 2026-08-25（週次「旬の銀座」記事生成の実装、Human Editor Review
+    P0〜P2反映）: 既存の単一Source（Source 1件→Article 1件）記事生成フロー
+    とは独立した並行フローとして、複数DiscoveredContent（Maron Editor's
+    Choiceで`curationStatus: approved`済み）を入力に取る週次「旬の銀座」
+    記事生成を追加した。新規`generateWeeklyArticleDraft`
+    （`generateArticleDraft.ts`）・新規
+    `createWeeklyDraftFromDiscoveredContent.ts`・新規`POST
+    /api/ai/generate-weekly-draft`エンドポイント（`generateWeeklyDraft.ts`）
+    を実装し、`payload.config.ts`へ配線した。直前に行われたHuman Editor
+    Reviewの指摘（P0〜P2優先度）を設計へ反映済み：P0-1（sourceName/
+    sourceUrl/確認日時をAIに生成させず、システム側の実データ
+    〈`WeeklyCandidateInput`〉から機械的に付与——確認日の捏造を防ぐ）、
+    P0-2（fact単位のSource Provenanceを`Articles.editorialProvenance`
+    〈新規フィールド〉へ保存し追跡可能にする）、P0-3（生成された
+    editorsChoiceItems件数が入力候補数と一致しない場合は承認済み候補の
+    欠落・統合を疑い記事化を中止する防衛ライン）、P1-3（公開本文の
+    SOURCE表示は候補ごとに1ブロックへ集約、fact単位の詳細は本文に出さず
+    内部保存のみ）、P1-4（editorsNoteに「なぜ銀座で体験する価値があるか」
+    等の観点を最低1つ含めることを必須化）、P1-5（タイトルをカテゴリー
+    列挙型ではなく体験型優先にする指示を追加）、P2-6（DiscoveredContentの
+    contentTypeから収蔵室を自動推定し明示指定分と合算する仕組み）。
+    `Articles.ts`に`editorialProvenance`（array、fact/sourceName/
+    sourceUrl/verifiedAt/sourceType/factType/verificationStatus）を新設。
+    実装中、Postgres識別子長制限（63文字）——versions機能のプレフィックスと
+    組み合わさると既定の自動生成enum型名が63文字を超えてPayload起動時
+    エラーになる——を実機で確認し、配下のselectフィールドに短い`dbName`
+    （`ep_source_type`等）を明示して回避した。**今回も実際のAI呼び出し・
+    ローカルDBへの実データ投入・note等への実配信は行っていない**（実装・
+    静的検証のみ）。
 
   - 2026-08-24（Maron Editor's Choice候補選定の実運用確認・外部確認中の記録）:
     Sources／DiscoveredContentのEditorial Score・evaluate-inboxの実運用検証

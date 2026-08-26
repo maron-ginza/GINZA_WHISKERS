@@ -1,6 +1,7 @@
 import type { Payload } from 'payload'
 
 import { generateArticleDraft } from './generateArticleDraft'
+import { findRelatedArticles } from './relatedArticles'
 
 // Source(情報収集) -> AI下書きArticle(status: draft) への変換オーケストレーション。
 // 生成された下書きは編集長レビュー（status: review以降）を経ないと公開されない。
@@ -18,9 +19,14 @@ export async function createDraftFromSource(payload: Payload, sourceId: string) 
     ? source.pillars.map((p) => (typeof p === 'object' && p !== null ? p.name : String(p)))
     : []
 
+  // 回遊導線（2026-08-26追加）：同じ収蔵室を持つ公開済み記事をDBから機械的に
+  // 拾い、AIには関連記事を作文させない（relatedArticles.ts参照）。
+  const related = await findRelatedArticles(payload, pillarIds)
+
   const draft = await generateArticleDraft({
     sourceText: source.contentRef,
     pillars: pillarNames,
+    relatedArticles: related.map((r) => ({ title: r.title })),
   })
 
   const article = await payload.create({
@@ -42,6 +48,8 @@ export async function createDraftFromSource(payload: Payload, sourceId: string) 
         x: draft.socialCopy.x,
         instagram: draft.socialCopy.instagram,
       },
+      callToAction: draft.callToAction,
+      relatedArticles: related.map((r) => r.id),
       sourceRefs: [Number(sourceId)],
       aiGeneratedBy: 'claude-sonnet-5',
     },

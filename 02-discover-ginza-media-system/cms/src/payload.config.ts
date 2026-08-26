@@ -20,6 +20,7 @@ import { Users } from './collections/Users'
 import { evaluateInboxEndpoint } from './endpoints/evaluateInbox'
 import { evaluateSourceEndpoint } from './endpoints/evaluateSource'
 import { generateDraftEndpoint } from './endpoints/generateDraft'
+import { generateWeeklyDraftEndpoint } from './endpoints/generateWeeklyDraft'
 import {
   scoreDiscoveredContentEndpoint,
   scoreDiscoveredInboxEndpoint,
@@ -54,6 +55,7 @@ export default buildConfig({
   ],
   endpoints: [
     generateDraftEndpoint,
+    generateWeeklyDraftEndpoint,
     evaluateSourceEndpoint,
     evaluateInboxEndpoint,
     generateSocialQueueEndpoint,

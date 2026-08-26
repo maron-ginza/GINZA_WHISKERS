@@ -245,6 +245,124 @@ export const Articles: CollectionConfig = {
       admin: { description: '生成物のトレーサビリティ（モデル/バージョン識別）' },
     },
     {
+      name: 'editorialProvenance',
+      label: 'Editorial Provenance（Source Provenance記録）',
+      type: 'array',
+      // dbName明示：Postgresの識別子長制限（63文字）対策。versions機能
+      // （_articles_v_version_...プレフィックス）と組み合わさると、
+      // 既定の自動生成名（enum__articles_v_version_editorial_provenance_
+      // verification_status等）が63文字を超えてPayload起動時エラーに
+      // なることを実機で確認した（2026-08-25）。配下のselectフィールドに
+      // 短いdbNameを明示して回避する。
+      dbName: 'article_editorial_provenance',
+      admin: {
+        description:
+          '週次「旬の銀座」等、複数DiscoveredContentから生成した記事のfact単位の出典記録' +
+          '（2026-08-25、Human Editor Review P0-2）。公開本文には候補単位で集約したSOURCE' +
+          '表示のみを出し、fact単位の詳細追跡はここで行う。単一Source生成の記事では空のまま。',
+      },
+      fields: [
+        {
+          name: 'discoveredContentSource',
+          label: '元DiscoveredContent',
+          type: 'relationship',
+          relationTo: 'discovered-content',
+        },
+        { name: 'sourceName', type: 'text', required: true },
+        { name: 'sourceUrl', type: 'text', required: true },
+        {
+          name: 'verifiedAt',
+          label: '確認日時（システムが実際に確認した日時。AIによる生成値は使わない）',
+          type: 'date',
+        },
+        { name: 'fact', type: 'text', required: true },
+        {
+          name: 'sourceType',
+          type: 'select',
+          dbName: 'ep_source_type',
+          options: [
+            { label: 'Primary', value: 'primary' },
+            { label: 'Official', value: 'official' },
+            { label: 'Secondary', value: 'secondary' },
+          ],
+        },
+        {
+          name: 'factType',
+          type: 'select',
+          dbName: 'ep_fact_type',
+          options: [
+            { label: 'Date', value: 'date' },
+            { label: 'Venue', value: 'venue' },
+            { label: 'Price', value: 'price' },
+            { label: 'Reservation', value: 'reservation' },
+            { label: 'Hours', value: 'hours' },
+            { label: 'Access', value: 'access' },
+            { label: 'Other', value: 'other' },
+          ],
+        },
+        {
+          name: 'verificationStatus',
+          type: 'select',
+          dbName: 'ep_verification_status',
+          options: [
+            { label: 'Confirmed', value: 'confirmed' },
+            { label: 'Unconfirmed', value: 'unconfirmed' },
+            { label: 'Conflicting', value: 'conflicting' },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'callToAction',
+      label: "Call to Action（結びの一手）",
+      type: 'text',
+      localized: true,
+      admin: {
+        description:
+          '記事末尾で示す「次に取ってほしい1つの行動」（2026-08-26、note編集部の' +
+          '公式ノウハウ反映）。closing（結びの一文）とは別に持たせることで、' +
+          '複数の依頼を重ねて末尾がぼやけるのを防ぐ。1文・1アクションのみ。',
+      },
+    },
+    {
+      name: 'relatedArticles',
+      label: '関連記事（回遊導線）',
+      type: 'relationship',
+      relationTo: 'articles',
+      hasMany: true,
+      admin: {
+        description:
+          '同じ収蔵室（pillar）を持つ公開済み記事から生成時に自動候補提示する' +
+          '（2026-08-26追加、note編集部ノウハウの「次の閲覧につながる回遊導線」対応）。' +
+          '自動候補は参考値であり、公開前に人間が確認・取捨選択する。',
+      },
+    },
+    {
+      name: 'series',
+      label: 'シリーズ情報',
+      type: 'group',
+      admin: {
+        description:
+          'noteクリエイターページ上でもシリーズ性が伝わるようにするための識別情報' +
+          '（2026-08-26追加）。週次「旬の銀座」等シリーズ生成のみ設定し、単発記事は空欄のまま。',
+      },
+      fields: [
+        {
+          name: 'label',
+          type: 'text',
+          admin: { description: '例：「旬の銀座」' },
+        },
+        {
+          name: 'editionNumber',
+          type: 'number',
+          admin: {
+            readOnly: true,
+            description: 'シリーズ内の自動採番（生成時にシステムが設定、以後不変）',
+          },
+        },
+      ],
+    },
+    {
       name: 'reviewedBy',
       type: 'relationship',
       relationTo: 'users',
