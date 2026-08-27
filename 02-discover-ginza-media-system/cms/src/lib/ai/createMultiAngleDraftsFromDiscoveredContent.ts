@@ -37,9 +37,20 @@ export interface CreateMultiAngleDraftsResult {
   skipped: { angle: MultiAngleKey; reason: string }[]
 }
 
+export interface CreateMultiAngleDraftsOptions {
+  /**
+   * 生成・保存する角度を絞る（既定は5角度すべて）。日次オーケストレーション
+   * （createDailyDraftsFromApproved.ts）が「1トピック=1本（CORE のみ）」で
+   * 呼ぶために追加。AI ツールスキーマは変更せず、生成対象角度をプロンプトと
+   * 保存ループの両方で絞るだけ。
+   */
+  angles?: MultiAngleKey[]
+}
+
 export async function createMultiAngleDraftsFromDiscoveredContent(
   payload: Payload,
   discoveredContentId: string | number,
+  options: CreateMultiAngleDraftsOptions = {},
 ): Promise<CreateMultiAngleDraftsResult> {
   const doc = await payload.findByID({
     collection: 'discovered-content',
@@ -97,6 +108,7 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
     pillars: [pillarDoc.name],
     relatedArticles: related.map((r) => ({ title: r.title })),
     discoveredContentId,
+    angles: options.angles,
   })
 
   if (included.length === 0) {

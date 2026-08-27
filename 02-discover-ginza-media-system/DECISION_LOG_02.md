@@ -14,6 +14,55 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（「旬の銀座」日次オーケストレーション `./p2 draft-today` の実装）:
+    これまで手作業でエンドポイント/スクリプトを個別に叩いていた「Maron
+    Editor's Choiceで承認 → 記事ドラフト生成」を1つの日次ルーチンへまとめ、
+    「旬の銀座 最大5本/日」を実運用可能にした。**方針（マロン確定：トピック
+    優先）**：当日 `curationStatus=approved` になった DiscoveredContent
+    （`decisionAt` が当日以降、`--since=YYYY-MM-DD` で遡り可）を取得 →
+    既にドラフト化済み（`Articles.editorialProvenance.discoveredContentSource`
+    から逆引き）を除外して冪等化 → 類似テーマ（title+excerpt の文字バイグラム
+    Jaccard類似度 ≥ 0.6、`lib/curation/textSimilarity.ts` 再利用）で束ねて
+    distinct トピック化（代表は Editorial Score が高い方）→ Editorial Score
+    降順で上位 `maxDrafts`（既定5、`--limit=N` で上書き）を選抜 → 各トピック
+    1本ずつ、既存 `createMultiAngleDraftsFromDiscoveredContent` を
+    **CORE 角度のみ**で再利用して `Article(reviewStatus: draft)` を作成。
+    上限超過分は「翌日以降へ繰り越し」として報告する。**新規ファイル**：
+    `cms/src/lib/ai/createDailyDraftsFromApproved.ts`（オーケストレーション
+    本体）、`cms/src/scripts/draftToday.ts`（CLIエントリ）、
+    `scripts/format_draft_today_status.py`（結果フォーマッタ）。
+    `scripts/project02` に `draft_today()` 関数・`draft-today)` dispatch・
+    usage行を追加。**既存コードへの変更（最小・後方互換）**：
+    `createMultiAngleDraftsFromDiscoveredContent` に第3引数
+    `options?: { angles?: MultiAngleKey[] }`、`generateMultiAngleArticleDrafts`
+    の入力に `angles?` を追加——**AIツールスキーマ（`MULTI_ANGLE_DRAFT_TOOL`、
+    常に5候補・全フィールドrequired）は一切変更せず**、指定外角度は
+    プロンプトで「include:false・skipReasonのみで可（本文生成不要）」と伝え
+    保存ループでも対象外にするだけ。既定（引数なし）は5角度すべてで従来
+    どおり——既存エンドポイント `POST /api/ai/generate-multi-angle-draft`・
+    手動スクリプトの挙動は不変。**承認フロー・recap方針**：生成物はすべて
+    `reviewStatus: draft` で既存 `Articles.ts` beforeChange 人間承認ゲートを
+    そのまま通る（新しいゲート・バイパスなし）。コスト発生処理は既存
+    `./p2 tns next` と同じく実行時 `--yes` を必須、`--dry-run` は選定計画のみ
+    （AI呼び出し・DB書き込みなし、`--yes` 不要）。
+    **検証（ローカルDocker/Postgres実データ）**：`npx tsc --noEmit`（cms、
+    0エラー）。`./p2 draft-today --dry-run`＝当日approved 0件（正常、当日分の
+    承認なし）。`./p2 draft-today --dry-run --since=2026-08-01`＝approved 3件
+    のうち #97 は既ドラフト化のため除外、distinct 2件（#100=51点／#150=33点、
+    類似統合は該当なし）。`./p2 draft-today --yes --since=2026-08-01`＝実
+    Claude API 2回で Article #35（#100「EXHIBITION LEAK ASSEMBLY」core/
+    medium）・#36（#150「赤地陶房のうつわ」core/short）を `draft` で生成。
+    両ドラフトとも `editorialProvenance` に date/venue/hours 等の fact が
+    `verificationStatus: confirmed`・`sourceType: official`・元
+    discoveredContentSource 紐付きで保存されることを DB で確認。直後に
+    `--yes` を再実行し、#100/#150/#97 すべてが「既にドラフト化済み」で
+    除外され 0件生成・API呼び出し0（冪等性）を確認。**今回行っていない
+    もの**：本番Railwayへの反映、git push（※本セッションでローカルコミット
+    は行う）、生成した #35/#36 の承認遷移（`draft` のまま）、`./p2 morning`
+    への組み込み、TZ を跨ぐ環境での `decisionAt` 当日判定の検証
+    （ローカルは JST、Railwーは `TZ=Asia/Tokyo` 設定が別途必要——付録F既知
+    事項と同じ）。
+
   - 2026-08-28（2026-08-27未コミット変更の整理・型検証・単一コミット化）:
     2026-08-27セッションで実装されながらコミット・文書化されていなかった
     3系統の変更（下記の同日3エントリ——Project 02-1 multi-angle／TNSエンジン

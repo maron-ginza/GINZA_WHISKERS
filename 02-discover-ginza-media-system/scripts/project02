@@ -496,6 +496,70 @@ daily() {
   echo
 }
 
+draft_today() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 「旬の銀座」日次ドラフト生成（draft-today） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  CONFIRMED=""
+  LIMIT_ARG=""
+  SINCE_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --yes) CONFIRMED="1" ;;
+      --limit=*) LIMIT_ARG="$arg" ;;
+      --since=*) SINCE_ARG="$arg" ;;
+      --*) : ;; # 未知の--オプションは無視
+    esac
+  done
+
+  # --dry-run は選定計画のみ（AI呼び出し・DB書き込みなし）なので --yes 不要。
+  # live 実行は選ばれたトピック数だけ Claude API を呼ぶため、--yes を必須とする
+  # （tns next と同じ「コスト発生処理は明示フラグで確認」方針）。
+  if [ -z "$DRY_RUN_ARG" ] && [ -z "$CONFIRMED" ]; then
+    echo "⚠️  この処理は当日承認トピックごとにClaude APIを呼び出します（トピック数ぶん、小額課金）。"
+    echo "    まず ./p2 draft-today --dry-run で当日の選定計画（何本作られるか）を確認できます。"
+    echo "    実際に生成するには --yes を付けて再実行してください。"
+    echo "    例: ./p2 draft-today --dry-run"
+    echo "        ./p2 draft-today --yes"
+    echo "        ./p2 draft-today --yes --limit=3"
+    echo "        ./p2 draft-today --yes --since=2026-08-27"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：AI呼び出し・DB書き込みは行いません。当日の承認トピックと選定計画のみ表示）"
+  fi
+
+  # Payload内部ロガーの警告が標準出力に混ざる場合があるため、`^{`で始まる行
+  # （JSON本体）だけを抽出する（tns_next と同じ対策）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/draftToday.ts $DRY_RUN_ARG $LIMIT_ARG $SINCE_ARG 2>"$LOG_DIR/draft_today.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "draft-today スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/draft_today.log 末尾 ---"
+    tail -20 "$LOG_DIR/draft_today.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_draft_today_status.py"
+  echo "================================================"
+  echo
+}
+
 refresh_dates() {
   echo
   echo "=== GINZA WHISKERS / Project 02 個別ページ日付再確認（Source Coverage拡張） ==="
@@ -1547,6 +1611,10 @@ case "${1:-status}" in
   daily)
     daily
     ;;
+  draft-today)
+    shift
+    draft_today "$@"
+    ;;
   clusters)
     clusters "$2"
     ;;
@@ -1606,6 +1674,7 @@ case "${1:-status}" in
     echo "  ./p2 articles   個別記事・イベント（DiscoveredContent）の現在状態サマリー（件数・公開日/開催期間取得状況、読み取り専用）"
     echo "  ./p2 score-articles [--force]  個別記事・イベント単位のEditorial Score/Audience Tags採点（鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
     echo "  ./p2 daily      Daily Editorial Desk（本日新規/更新＋開催中＋近日開催、Story Cluster単位のTop10、読み取り専用）"
+    echo "  ./p2 draft-today [--dry-run] [--yes] [--limit=N] [--since=YYYY-MM-DD]  「旬の銀座」日次ドラフト生成：当日curationStatus=approvedのDiscoveredContentを類似テーマで束ね、上位トピック（既定最大5）を各1本ずつmulti-angleのCORE角度で記事draftにする。--dry-runは選定計画のみ（AI・DB書き込みなし）、live実行は--yes必須、生成物はreviewStatus:draftで承認待ち一覧へ"
     echo "  ./p2 clusters [--dry-run]  Story Clustering再計算・StoryClustersコレクションへ反映（同一イベントの複数URLを統合、DiscoveredContentは変更しない）"
     echo "  ./p2 refresh-dates [--dry-run] [--limit=N] [--all]  既存DiscoveredContentの個別ページを安全に再確認（--allで全件対象・誤抽出の訂正も反映。新規行は作成せず、discoveryStatus/curationStatusも変更しない）"
     echo "  ./p2 recompute-richness [--dry-run]  既存の採点済みSources/DiscoveredContentへ本文情報量ペナルティを遡及反映（新規AI呼び出しなし・課金なし）"

@@ -52,6 +52,14 @@ export interface GenerateMultiAngleDraftsInput {
   relatedArticles?: RelatedArticleForPrompt[]
   /** editorialProvenance.discoveredContentSourceに使う元DiscoveredContent ID */
   discoveredContentId: string | number
+  /**
+   * 生成・保存する角度を絞る（既定は5角度すべて）。日次オーケストレーション
+   * が「CORE のみ1本」で呼ぶために追加。AIツールスキーマ
+   * （MULTI_ANGLE_DRAFT_TOOL、常に5候補）は変更しない——指定外の角度は
+   * プロンプトで「include:false・skipReasonのみで可（本文生成不要）」と伝え、
+   * 保存ループでも対象外にする。
+   */
+  angles?: MultiAngleKey[]
 }
 
 export interface MultiAngleDraftResult {
@@ -377,13 +385,27 @@ export async function generateMultiAngleArticleDrafts({
   pillars,
   relatedArticles = [],
   discoveredContentId,
+  angles,
 }: GenerateMultiAngleDraftsInput): Promise<GenerateMultiAngleDraftsResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY が設定されていません（.env参照）')
   }
 
+  // 生成対象角度（既定は5角度すべて）。MULTI_ANGLE_KEYS の並び順を維持する。
+  const requestedAngles: MultiAngleKey[] =
+    angles && angles.length > 0
+      ? MULTI_ANGLE_KEYS.filter((a) => angles.includes(a))
+      : [...MULTI_ANGLE_KEYS]
+
   const client = new Anthropic({ apiKey })
+
+  const focusNote =
+    requestedAngles.length < MULTI_ANGLE_KEYS.length
+      ? `\n\n※今回システムが採用するのは【${requestedAngles.join('・')}】角度のみです。` +
+        `それ以外の角度は include:false とし skipReason に「今回の生成対象外」等を入れ、` +
+        `本文系フィールドは空文字""・sourceProvenanceは空配列[]で構いません（本文を作り込む必要はありません）。`
+      : ''
 
   const message = await client.messages.create({
     model: 'claude-sonnet-5',
@@ -399,7 +421,8 @@ export async function generateMultiAngleArticleDrafts({
           `元となる旬の銀座情報（この情報にない事実を作らないこと）:\n` +
           `sourceName: ${sourceName}\nsourceUrl: ${sourceUrl}\n` +
           `venue: ${venue ?? '不明'}\nperiod: ${period ?? '不明'}\n\n` +
-          `本文素材:\n${sourceText}`,
+          `本文素材:\n${sourceText}` +
+          focusNote,
       },
     ],
   })
@@ -425,7 +448,14 @@ export async function generateMultiAngleArticleDrafts({
   const skipped: MultiAngleSkipResult[] = []
   const includedRaw: { angle: MultiAngleKey; candidate: RawMultiAngleCandidate }[] = []
 
+  // 角度指定で対象外になったものは、AI出力の有無に関わらず先に除外として記録する。
   for (const angle of MULTI_ANGLE_KEYS) {
+    if (!requestedAngles.includes(angle)) {
+      skipped.push({ angle, reason: '今回の生成対象外（角度指定により除外）' })
+    }
+  }
+
+  for (const angle of requestedAngles) {
     const candidate = byAngle.get(angle)
     if (!candidate) {
       skipped.push({ angle, reason: 'AIが当該角度を出力しなかったため除外' })

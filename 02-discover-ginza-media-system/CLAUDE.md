@@ -567,6 +567,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-28: 「旬の銀座」日次オーケストレーション`./p2 draft-today`を実装——当日approved DiscoveredContentを類似テーマで束ね、上位トピック（既定最大5、`--limit`可）を各1本ずつmulti-angleのCORE角度で`Article(draft)`化。冪等（editorialProvenance逆引きで既ドラフト化を除外）、`--dry-run`は計画のみ、live実行は`--yes`必須、生成物は既存reviewStatus人間承認ゲートを通る。AIツールスキーマは不変（`angles`絞り込みはプロンプト＋保存ループのみ）。実Claude API 2回でArticle #35/#36を生成しローカルDBでE2E確認。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 2026-08-27の未コミット変更（下記multi-angle・TNSエンジン・02-2 Phase A/B）を整理——`tsc --noEmit`（cms、0エラー）で型健全性を確認し修正不要、CLAUDE.md/DECISION_LOG_02へ反映、Project 02配下のみを1コミット化（Project 01の未コミット分は対象外）。実AI呼び出し・DB反映・push はなし
 - 2026-08-27: 「旬の銀座」multi-angle記事生成（Project 02-1）を実装——approved DiscoveredContent 1件→CORE/NEED/EXPERIENCE/INTEREST/GINZA_WHISKERSの最大5記事（`draft`）。品質Gate（薄さ・重複除外、決定的・AI非依存）付き。`POST /api/ai/generate-multi-angle-draft`＋手動CLI。既存2系統の下書き生成は無変更。実AI E2Eは id=97 で1回のみ（metaTitle欠落バグ修正後の再検証・`./p2`統合は未）。詳細は`DECISION_LOG_02.md`
 - 2026-08-27: 🌈Tokyo Nostalgic Soundtrack（TNS）エンジンを実コード化——`MusicTracks`/`MusicUsageLedger`/`SoundtrackEditions`コレクション＋`TNSSettings`global＋`lib/tns/`＋`POST /api/ai/generate-tns-weekly-edition`＋`./p2 tns next|status|import-tracks`。天気=Open-Meteo（課金不要）、選曲=AIの外の決定的スコアリング、生成物は既存`Articles.reviewStatus`ゲートの`draft`。実AI E2E・DB反映・候補曲投入・`./p2 tns approve`は未。詳細は`DECISION_LOG_02.md`
