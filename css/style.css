@@ -120,7 +120,7 @@ h1, h2, h3 {
 
 .main-nav ul {
   display: flex;
-  gap: 36px;
+  gap: 28px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -130,6 +130,7 @@ h1, h2, h3 {
   font-size: 0.85rem;
   letter-spacing: 0.08em;
   color: var(--color-ink-muted);
+  white-space: nowrap;
   transition: color 0.25s ease;
 }
 
@@ -164,6 +165,18 @@ h1, h2, h3 {
     radial-gradient(ellipse at top right, rgba(201, 164, 92, 0.08), transparent 60%),
     var(--color-bg);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* 実素材到着時、<section class="hero">に.has-photoを追加し
+   images/hero.jpgを配置するだけで有効化される（付録B-1参照）。
+   クラス未使用の間はブラウザが画像を取得しないため無害。 */
+.hero.has-photo {
+  background-image:
+    linear-gradient(rgba(10, 10, 10, 0.55), rgba(10, 10, 10, 0.75)),
+    radial-gradient(ellipse at top right, rgba(201, 164, 92, 0.08), transparent 60%),
+    url("../images/hero.jpg");
+  background-size: cover;
+  background-position: center;
 }
 
 .hero-inner {
@@ -419,5 +432,165 @@ h1, h2, h3 {
 
   .section {
     padding: 72px 0;
+  }
+}
+
+/* ==========================================================
+   HOME ハブ構成（4グループ）／ LATEST FROM GINZA ／ 外部チャンネル
+   Phase 1（2026-08-27）追加。既存 .section / .btn / :root を流用し、
+   追加セレクタのみで構成（既存ルールは変更していない）。
+   ========================================================== */
+
+.hub-section {
+  padding: 78px 0;
+}
+
+.content-grid {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.content-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  padding: 32px 28px;
+  color: inherit;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+a.content-card:hover {
+  background: #1b1b1e;
+  border-color: var(--color-gold);
+}
+
+.content-card h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.5em;
+}
+
+.content-card > p {
+  color: var(--color-ink-muted);
+  font-size: 0.92rem;
+  margin: 0 0 1.4em;
+}
+
+.content-card .card-cta {
+  margin-top: auto;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  color: var(--color-gold-light);
+}
+
+.content-card.is-pending {
+  cursor: default;
+}
+
+.content-card.is-pending .card-cta {
+  color: var(--color-ink-muted);
+}
+
+.content-card--lead {
+  grid-column: 1 / -1;
+}
+
+.pillar-themes,
+.sub-services {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.4em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.pillar-themes li,
+.sub-services li {
+  font-size: 0.8rem;
+  color: var(--color-ink-muted);
+  border: 1px solid var(--color-border);
+  padding: 3px 12px;
+}
+
+.tentative {
+  font-size: 0.7em;
+  font-style: normal;
+  color: var(--color-ink-muted);
+  margin-left: 0.2em;
+}
+
+/* LATEST FROM GINZA */
+.latest {
+  padding: 78px 0;
+}
+
+.latest-list {
+  margin-top: 32px;
+  display: grid;
+  gap: 16px;
+}
+
+.latest-fallback {
+  margin-top: 24px;
+  color: var(--color-ink-muted);
+  font-size: 0.95rem;
+}
+
+.latest-fallback a {
+  color: var(--color-gold-light);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 2px;
+}
+
+/* 外部チャンネル */
+.channels {
+  padding: 64px 0;
+}
+
+.channel-list {
+  list-style: none;
+  padding: 0;
+  margin: 32px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+
+.channel-list a {
+  font-family: var(--font-serif);
+  letter-spacing: 0.14em;
+  color: var(--color-ink-muted);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 4px;
+  transition: color 0.25s ease;
+}
+
+.channel-list a:hover {
+  color: var(--color-gold-light);
+}
+
+@media (max-width: 860px) {
+  .content-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .content-card--lead {
+    grid-column: auto;
+  }
+
+  .hub-section,
+  .latest {
+    padding: 56px 0;
   }
 }
