@@ -732,6 +732,378 @@ crawl() {
   echo
 }
 
+tns_import_tracks() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 TNS MusicTracks候補曲インポート ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  FILE_ARG=""
+  DRY_RUN_ARG=""
+  for arg in "$@"; do
+    if [ "$arg" = "--dry-run" ]; then
+      DRY_RUN_ARG="--dry-run"
+      echo "（Dry Runモード：DBへの書き込みは一切行いません）"
+    elif [ -z "$FILE_ARG" ]; then
+      FILE_ARG="$arg"
+    fi
+  done
+
+  if [ -z "$FILE_ARG" ]; then
+    fail "インポート対象ファイルを指定してください: ./p2 tns import-tracks <file> [--dry-run]"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ ! -f "$FILE_ARG" ]; then
+    fail "ファイルが見つかりません: $FILE_ARG"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  # cms/ へcdする前に絶対パスへ変換しておく（相対パス指定時の混乱を避ける）
+  FILE_ARG="$(cd "$(dirname "$FILE_ARG")" && pwd)/$(basename "$FILE_ARG")"
+
+  # Payload内部ロガーの警告（"No email adapter..."等）が標準出力に混ざる場合が
+  # あるため、`^{`で始まる行（JSON本体）だけを抽出する（単純なtail -1だけでは
+  # 警告行を誤って拾ってしまうことを実機で確認したための対策）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/importTnsMusicTracks.ts "$FILE_ARG" $DRY_RUN_ARG 2>"$LOG_DIR/tns_import_tracks.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "TNS候補曲インポートスクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/tns_import_tracks.log 末尾 ---"
+    tail -15 "$LOG_DIR/tns_import_tracks.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+tns_next() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 🌈TNS 次週Draft生成 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  CONFIRMED=""
+  OBSERVATION_ARG=""
+  FOR_WEEK_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --yes) CONFIRMED="1" ;;
+      --for-week-after=*) FOR_WEEK_ARG="$arg" ;;
+      --*) : ;; # 未知の--オプションは無視（観察テキストに混入させない）
+      *) OBSERVATION_ARG="$arg" ;;
+    esac
+  done
+
+  # Claude API課金が発生する処理（dynamic mood生成）を含むため、--yes無しでは
+  # 実行しない（マロン指示「Claude API費用が発生する場合、実行前に確認できる
+  # 設計にする」）。インタラクティブなy/N確認ではなく、明示フラグを必須とする
+  # ——将来この処理を自動化・cron化した場合にプロンプトでハングしないため。
+  if [ -z "$CONFIRMED" ]; then
+    echo "⚠️  この処理は曜日ごとのdynamic mood生成のためClaude APIを1回呼び出します（小額課金）。"
+    echo "    続行するには --yes を付けて再実行してください。"
+    echo "    例: ./p2 tns next --yes"
+    echo "        ./p2 tns next --dry-run --yes"
+    echo "        ./p2 tns next --yes \"今週の銀座を一言で\""
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：DBへの保存は一切行いません。天気・選曲・生成予定内容の確認のみ）"
+  fi
+
+  # Payload内部ロガーの警告が標準出力に混ざる場合があるため、`^{`で始まる行
+  # （JSON本体）だけを抽出する（tns_import_tracksと同じ対策）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/tnsNext.ts $DRY_RUN_ARG $FOR_WEEK_ARG "$OBSERVATION_ARG" 2>"$LOG_DIR/tns_next.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "TNS次週Draft生成スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/tns_next.log 末尾 ---"
+    tail -20 "$LOG_DIR/tns_next.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+tns_status() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 🌈TNS 状態確認 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  # Payload内部ロガーの警告が標準出力に混ざる場合があるため、`^{`で始まる行
+  # （JSON本体）だけを抽出する（tns_import_tracksと同じ対策）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/tnsStatus.ts 2>"$LOG_DIR/tns_status.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "TNS状態確認スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/tns_status.log 末尾 ---"
+    tail -15 "$LOG_DIR/tns_status.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+tns_dispatch() {
+  case "$1" in
+    import-tracks)
+      shift
+      tns_import_tracks "$@"
+      ;;
+    next)
+      shift
+      tns_next "$@"
+      ;;
+    status)
+      tns_status
+      ;;
+    approve)
+      echo "./p2 tns approve は今回は設計のみで未実装です。"
+      echo "将来、承認済みSoundtrackEditionをfinal approval状態へ進め、"
+      echo "MusicUsageLedgerへ本番使用済み登録する専用コマンドとして実装予定です。"
+      echo "note自動投稿・記事publishはこのコマンドの将来実装にも一切含めない方針です。"
+      return 1
+      ;;
+    *)
+      echo "Usage:"
+      echo "  ./p2 tns import-tracks <file.csv|file.json> [--dry-run]"
+      echo "  ./p2 tns next --yes [--dry-run] [\"観察テキスト\"]"
+      echo "  ./p2 tns status"
+      echo "  ./p2 tns approve  (設計のみ、未実装)"
+      return 1
+      ;;
+  esac
+}
+
+interest_fetch_note_rising() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 Interest Discovery：note急上昇タグ取得 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+    esac
+  done
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：note.com/trendの取得・パースのみ確認。DBへの保存は行いません）"
+  fi
+
+  # Claude API・有料APIは呼び出さない（note.com/trendへの公開HTMLページGETのみ）。
+  # Payload内部ロガーの警告が標準出力に混ざる場合があるため、`^{`で始まる行
+  # （JSON本体）だけを抽出する（tns系コマンドと同じ対策）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/interestFetchNoteRising.ts $DRY_RUN_ARG 2>"$LOG_DIR/interest_fetch_note_rising.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "note急上昇タグ取得スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/interest_fetch_note_rising.log 末尾 ---"
+    tail -20 "$LOG_DIR/interest_fetch_note_rising.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+interest_fetch_note_official() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 Interest Discovery：note公式お題/コンテスト取得 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+    esac
+  done
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：note.com/info/rssの取得・パースのみ確認。DBへの保存は行いません）"
+  fi
+
+  # Claude API・有料APIは呼び出さない（note.com/info/rssへの公開RSS取得のみ）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/interestFetchNoteOfficial.ts $DRY_RUN_ARG 2>"$LOG_DIR/interest_fetch_note_official.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "note公式お題/コンテスト取得スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/interest_fetch_note_official.log 末尾 ---"
+    tail -20 "$LOG_DIR/interest_fetch_note_official.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+interest_fetch_note_hashtag() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 Interest Discovery：noteハッシュタグページ取得 ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  TAG_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --*) : ;;
+      *) TAG_ARG="$arg" ;;
+    esac
+  done
+
+  if [ -z "$TAG_ARG" ]; then
+    fail "対象タグを指定してください: ./p2 interest fetch-note-hashtag <tag> [--dry-run]"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：note.com/hashtag/${TAG_ARG}の取得・パースのみ確認。DBへの保存は行いません）"
+  fi
+
+  # Claude API・有料APIは呼び出さない（note.com/hashtag/<tag>への公開HTMLページGETのみ）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/interestFetchNoteHashtag.ts "$TAG_ARG" $DRY_RUN_ARG 2>"$LOG_DIR/interest_fetch_note_hashtag.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "noteハッシュタグページ取得スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/interest_fetch_note_hashtag.log 末尾 ---"
+    tail -20 "$LOG_DIR/interest_fetch_note_hashtag.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+interest_score() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 Interest Discovery：Interest Score（Phase A統合、読み取り専用） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  # 読み取り専用。DB書き込み・Claude API・外部APIいずれも呼び出さない。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/interestScore.ts 2>"$LOG_DIR/interest_score.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "Interest Score計算スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/interest_score.log 末尾 ---"
+    tail -20 "$LOG_DIR/interest_score.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
+interest_dispatch() {
+  case "$1" in
+    fetch-note-rising)
+      shift
+      interest_fetch_note_rising "$@"
+      ;;
+    fetch-note-official)
+      shift
+      interest_fetch_note_official "$@"
+      ;;
+    fetch-note-hashtag)
+      shift
+      interest_fetch_note_hashtag "$@"
+      ;;
+    score)
+      interest_score
+      ;;
+    *)
+      echo "Usage:"
+      echo "  ./p2 interest fetch-note-rising [--dry-run]"
+      echo "  ./p2 interest fetch-note-official [--dry-run]"
+      echo "  ./p2 interest fetch-note-hashtag <tag> [--dry-run]"
+      echo "  ./p2 interest score  (読み取り専用、Phase A統合Interest Score表示)"
+      return 1
+      ;;
+  esac
+}
+
 start_all() {
   echo
   echo "🚀 Project 02 自動起動開始"
@@ -1150,6 +1522,14 @@ case "${1:-status}" in
     shift
     crawl "$@"
     ;;
+  tns)
+    shift
+    tns_dispatch "$@"
+    ;;
+  interest)
+    shift
+    interest_dispatch "$@"
+    ;;
   score)
     shift
     score "$@"
@@ -1213,6 +1593,14 @@ case "${1:-status}" in
     echo "  ./p2 social     SNS配信キュー状況（Phase 15、候補生成＋Dry Run＋承認待ち一覧）"
     echo "  ./p2 sources    SOURCE LEDGER v1（情報源台帳）確認（件数・tier別・Core Source一覧、DB不要）"
     echo "  ./p2 crawl [--dry-run] [--budget=N]  SOURCE LEDGERのenabled情報源を巡回しSnapshot保存・差分検知＋一覧ページ発見＋個別記事・イベント抽出（--dry-runはDB書き込みなし、--budget=NはStage2予算の既定20を上書き。手動実行用。定期実行はPayload Jobs Queueが自動で行う）"
+    echo "  ./p2 tns import-tracks <file> [--dry-run]  TNS MusicTracks候補曲の一括インポート（CSV/JSON、title×artist重複チェック・verified=false既定、--dry-runはDB書き込みなし。テンプレートはcms/import-templates/参照）"
+    echo "  ./p2 tns next --yes [--dry-run] [\"観察テキスト\"]  次週TNS Draft生成（天気→選曲→記事draft作成→人間確認待ち。--yes必須＝Claude API課金の確認、--dry-runはDB保存なしで内容確認のみ、観察テキスト省略時は既定値を使用。同一週の二重生成は自動的にブロックされる）"
+    echo "  ./p2 tns status  最新TNS editionの状態確認（号数・対象週・Article ID・reviewStatus・visualStatus・承認状態、読み取り専用）"
+    echo "  ./p2 tns approve  将来のfinal approval／MusicUsageLedger本番登録コマンド（今回は設計のみ・未実装）"
+    echo "  ./p2 interest fetch-note-rising [--dry-run]  Project 02-2 Phase A試験取得：note.com/trend急上昇タグ上位5件をInterestThemesへ保存（Claude API・有料API呼び出しなし、本日分は自動的に二重取得防止）"
+    echo "  ./p2 interest fetch-note-official [--dry-run]  Project 02-2 Phase A試験取得：note.com/info/rssから現在開催中と推定できるお題/コンテストのみInterestThemesへ保存（confidence: low、同一企画は恒久的に重複防止、Claude API・有料API呼び出しなし）"
+    echo "  ./p2 interest fetch-note-hashtag <tag> [--dry-run]  Project 02-2 Phase A試験取得：note.com/hashtag/<tag>（人気=既定ソート）の総記事数・関連タグをInterestThemesへ保存（confidence: high、本日分は自動的に二重取得防止、Claude API・有料API呼び出しなし）"
+    echo "  ./p2 interest score  Project 02-2 Phase A統合ロジック：note_rising/note_official_topic/note_hashtag_popularを正規化・confidence比例配分・freshness減衰・cross-source overlapで統合しInterest Score降順表示（読み取り専用、DB書き込み・API呼び出しなし）"
     echo "  ./p2 score [--force]  「旬の銀座」Editorial Score/Audience Tags採点（サイト単位Inbox候補。鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
     echo "  ./p2 ranking [--all]  Editorial Score順ランキング表示（サイト単位Inbox候補、既定は読み取り専用）"
     echo "  ./p2 articles   個別記事・イベント（DiscoveredContent）の現在状態サマリー（件数・公開日/開催期間取得状況、読み取り専用）"

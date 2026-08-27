@@ -74,8 +74,15 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
 設計。詳細な制作フロー（STEP1〜6）・TNS Payload v1.0のデータ設計
 （`TNSSettings`／`SoundtrackEditions`／`MusicTracks`／
 `MusicUsageLedger`）・Human/AI責任分界は`TNS_SPEC.md`を参照。
-**今回は制作フロー・Payloadのデータ設計確定のみであり、実コード実装・
-実コレクション作成・外部天気API導入は行っていない。**
+**2026-08-27、この設計を実コード化した**（`cms/src/collections/`に上記
+3コレクション、`cms/src/globals/TNSSettings.ts`、`cms/src/lib/tns/`、
+`POST /api/ai/generate-tns-weekly-edition`、`./p2 tns next|status|
+import-tracks` を追加。天気は課金不要の公開API Open-Meteoを採用、選曲は
+AIの外の決定的スコアリング、生成物は既存`Articles.reviewStatus`ゲートを
+通る`draft`）。ただし実`ANTHROPIC_API_KEY`でのTNS週次生成E2E・ローカル
+DBへのスキーマ反映と候補曲の実投入・`./p2 tns approve`（final approval／
+MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
+2026-08-27の該当エントリ参照。
 
 ## 4. ブランド哲学の適用
 
@@ -560,6 +567,10 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-28: 2026-08-27の未コミット変更（下記multi-angle・TNSエンジン・02-2 Phase A/B）を整理——`tsc --noEmit`（cms、0エラー）で型健全性を確認し修正不要、CLAUDE.md/DECISION_LOG_02へ反映、Project 02配下のみを1コミット化（Project 01の未コミット分は対象外）。実AI呼び出し・DB反映・push はなし
+- 2026-08-27: 「旬の銀座」multi-angle記事生成（Project 02-1）を実装——approved DiscoveredContent 1件→CORE/NEED/EXPERIENCE/INTEREST/GINZA_WHISKERSの最大5記事（`draft`）。品質Gate（薄さ・重複除外、決定的・AI非依存）付き。`POST /api/ai/generate-multi-angle-draft`＋手動CLI。既存2系統の下書き生成は無変更。実AI E2Eは id=97 で1回のみ（metaTitle欠落バグ修正後の再検証・`./p2`統合は未）。詳細は`DECISION_LOG_02.md`
+- 2026-08-27: 🌈Tokyo Nostalgic Soundtrack（TNS）エンジンを実コード化——`MusicTracks`/`MusicUsageLedger`/`SoundtrackEditions`コレクション＋`TNSSettings`global＋`lib/tns/`＋`POST /api/ai/generate-tns-weekly-edition`＋`./p2 tns next|status|import-tracks`。天気=Open-Meteo（課金不要）、選曲=AIの外の決定的スコアリング、生成物は既存`Articles.reviewStatus`ゲートの`draft`。実AI E2E・DB反映・候補曲投入・`./p2 tns approve`は未。詳細は`DECISION_LOG_02.md`
+- 2026-08-27: Project 02-2「興味関心×収益性」エンジンのPhase A（Interest Discovery：note_rising/note_official_topic/note_hashtag_popular＋Interest Score統合ロジック）・Phase B（Monetization Scoring：paidRatio試験Proxy）を実装・調査——Phase C以降（銀座変換・記事生成）へは未接続、Claude API呼び出しなし。詳細・次回再開手順は`PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md`参照
 - 2026-08-26: note編集部ノウハウ（10項目）をEditorial Style Engineへ正式反映——`callToAction`（単一CTA）・`relatedArticles`（回遊導線、自動候補）・`series`（noteシリーズ連番）をArticlesスキーマ・生成プロンプト双方に追加（実AI呼び出し・DB実データ検証は未実施、詳細は第8章項目12・`DECISION_LOG_02.md`参照）
 - 2026-08-25: 週次「旬の銀座」記事生成（複数DiscoveredContent入力）を実装——Human Editor Review P0〜P2の指摘（出典捏造防止・Source Provenance保存・タイトル体験型優先等）を反映し`generateWeeklyDraft`エンドポイントを新設（詳細は`DECISION_LOG_02.md`参照）
 - 2026-08-24: Maron Editor's Choice候補選定の実運用確認——DiscoveredContent id:97「南方書局のハッピーサマー ミニミニ大百貨店」を候補として選定し、未確認4項目（入場条件・予約要否・限定特典内容・撮影可否）の公式取材窓口宛て問い合わせ文案を作成（送信は未実施・外部確認中、curationStatusはinboxのまま変更なし、詳細は`DECISION_LOG_02.md`参照）
@@ -822,7 +833,7 @@ CLAUDE.md第1章・第5.3節参照。以前は01の10月公開が最優先とさ
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-08-26
+- **最終更新日**：2026-08-28
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

@@ -14,6 +14,142 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（2026-08-27未コミット変更の整理・型検証・単一コミット化）:
+    2026-08-27セッションで実装されながらコミット・文書化されていなかった
+    3系統の変更（下記の同日3エントリ——Project 02-1 multi-angle／TNSエンジン
+    実コード化／Project 02-2 Interest Discovery Phase A・B）を、今日の新規
+    実装（`./p2 draft-today`）に着手する前に安全に整理した。**実施内容**：
+    ①`git diff`・未追跡ファイル62点（うち `CLAUDE.md.backup-20260821.md`
+    は2026-08-21分の既存バックアップのため対象外）を全件確認し、変更が
+    Project 02配下（`02-discover-ginza-media-system/`）に限定されること、
+    ワークスペースルート `CLAUDE.md`・`01-ginza-whiskers-brand-site/CLAUDE.md`
+    の未コミット変更はProject 01の2026-08-19 PMO整合性更新であり本コミット
+    対象外であることを確認した。②`npx tsc --noEmit`（cms）を実行し **0
+    エラー**を確認（`payload-types.ts` は `.gitignore` 対象＝ローカル再生成
+    物で、新規4コレクション〈interest-themes／music-tracks／
+    music-usage-ledger／soundtrack-editions〉＋global〈tns-settings〉を
+    含む状態で型が通ることを確認）。③残存する使い捨てスクリプト
+    （`_tmp*`）・`FIXME`/`BROKEN`/`@ts-ignore` 等の問題マーカーがない
+    ことを確認。**型修正・コード修正は不要だった**（2026-08-27の実装が
+    そのまま型健全）。④`CLAUDE.md` 第3章のTNS記述（「実コード実装・実
+    コレクション作成・外部天気API導入は行っていない」）が実態と乖離して
+    いたため更新、第12章の意思決定ログ一文要約にmulti-angle・TNSエンジンの
+    2件を追加、最終更新日を2026-08-28へ。⑤上記すべてを**1コミット**
+    （日本語・命令形要約）にまとめた。**今回行っていないもの**：実
+    `ANTHROPIC_API_KEY` を使ったAI呼び出し（multi-angle／TNS／interestの
+    いずれのAI経路も未実行）、ローカルDBへのスキーマ反映・実データ投入、
+    Railway本番展開、git push、Project 01側変更のコミット。
+
+  - 2026-08-27（Project 02-1「核情報→最大5記事」multi-angle記事生成の実装）:
+    Maron Editor's Choiceで `curationStatus: approved` 済みの
+    DiscoveredContent **1件**（核となる旬の銀座情報）を入力に、性質の異なる
+    最大5角度——CORE（核記事）／NEED（読者ニーズ）／EXPERIENCE（体験提案）
+    ／INTEREST（関心接続）／GINZA_WHISKERS（編集視点）——の記事候補を生成
+    する第3の並行エントリーポイントを追加した。既存の
+    `createDraftFromSource.ts`（Source単体）・
+    `createWeeklyDraftFromDiscoveredContent.ts`（複数DiscoveredContent→1
+    記事）は挙動を一切変更していない。**新規ファイル**：
+    `lib/ai/generateMultiAngleArticleDrafts.ts`（TNS専用システムプロンプト
+    ＋`emit_multi_angle_article_candidates`ツールスキーマ。candidatesは
+    常に5件・各角度の `include`/`skipReason` はAIの品質判断）、
+    `lib/ai/createMultiAngleDraftsFromDiscoveredContent.ts`（1
+    DiscoveredContent→最大5 Article〈`reviewStatus: draft`〉のオーケスト
+    レーション）、`endpoints/generateMultiAngleDraft.ts`（`POST
+    /api/ai/generate-multi-angle-draft`、認証必須）、
+    `scripts/generateMultiAngleDraft.ts`（手動テスト用CLI、`./p2` 未統合）、
+    `lib/curation/multiAngleQualityGate.ts`（AIの自己申告に依存しない
+    コード側の二重チェック——`assessContentRichness` で boilerplate 相当を
+    除外＋文字バイグラムJaccard類似度≥0.6 の重複角度を先勝ちで除外）、
+    `lib/curation/textSimilarity.ts`（`computeCharBigramJaccardSimilarity`、
+    決定的・AI呼び出しなし）、`lib/curation/contentTypeToPillar.ts`
+    （既存 `createWeeklyDraftFromDiscoveredContent.ts` 内にあった
+    `CONTENT_TYPE_TO_PILLAR_NAME` を共有モジュールへ抽出、対応関係は不変）。
+    **既存ファイルの変更**：`generateArticleDraft.ts` は
+    `formatEditorsChoiceHeading`・`buildRelatedArticlesBlocks`・
+    `WEEKLY_SOURCE_PROVENANCE_SCHEMA`・`formatVerifiedAtForDisplay` の
+    可視性を `export` にしただけ（挙動不変）、
+    `createWeeklyDraftFromDiscoveredContent.ts` は抽出した共有モジュールを
+    import する差分のみ。**Editorial Trust Layer準拠**：元情報にない事実を
+    生成させない、`sourceName`/`sourceUrl`/確認日時はシステムが機械的に
+    付与（AIに生成させない）、`verifiedAt` は `lastCheckedAt ?? detectedAt`
+    の実クロール記録のみ、回遊導線（関連記事）は `findRelatedArticles` で
+    DBから機械的に取得。生成物は全て `reviewStatus: draft` で、既存
+    `Articles.ts` の `beforeChange` 人間承認ゲートをそのまま通る（新しい
+    ゲート・バイパスなし）。`volume`（short/medium/long）は専用スキーマを
+    増やさず `aiGeneratedBy` へ角度と共に記録。**実AI E2E**：2026-08-27に
+    DiscoveredContent id=97 で1回実行し、`include:true` の候補で
+    `metaTitle`/`metaDescription` が省略される事象（4/5候補）を発見、
+    ツールスキーマの `required` を全フィールドへ拡張して修正済み——
+    **修正後の再検証は未実施**。`./p2` への統合も未実施。
+
+  - 2026-08-27（🌈Tokyo Nostalgic Soundtrack〈TNS〉エンジンの実コード化・
+    楽曲データ基盤・7曲選定ロジック）: `TNS_SPEC.md` で設計のみ確定して
+    いたTNS週次生成フローを実コードとして実装した（`CLAUDE.md` 第3章の
+    「実コード実装・実コレクション作成・外部天気API導入は行っていない」
+    という記述は本実装で解消、同章を更新済み）。**新規コレクション**：
+    `MusicTracks`（楽曲マスタ、`verified` 既定 false＝候補、
+    `eraEligibility` 自動判定）、`MusicUsageLedger`（過去使用曲の重複防止
+    台帳）、`SoundtrackEditions`（週次エディション、`editionNumber` は
+    既存最新+1の自動採番）。**新規global**：`TNSSettings`（曜日→TNS
+    Editorial Codeマッピング、Code別固定ムードラベル、
+    `historicalReferenceJapaneseRatio` 等）。**新規ライブラリ**
+    （`lib/tns/`）：`createWeeklySoundtrackEdition.ts`（オーケスト
+    レーション、既存の generate→`payload.create`〈`reviewStatus: draft`〉
+    パターンを踏襲——TNS固有の承認フローは作らず既存 `Articles.reviewStatus`
+    を承認ゲートに使う）、`selectWeeklyTracks.ts`＋`musicScoring.ts`
+    （**選曲はAIの外**——天気・気分・曜日特性・季節・GINZA CODE適合度の
+    決定的スコアリング＋週全体の邦楽/洋楽比率最適化。「実在しない曲・
+    歌手・年を生成しない」を候補プール制限だけでなく選定プロセス自体から
+    構造的に担保）、`generateTnsWeeklyEditionDraft.ts`（AIは確定済み曲への
+    詩的な編集コメント〈`readerFacingComment`〉の執筆のみ担当。曲未確定日は
+    強制空文字、`weeklyEnglishSubtitle` の7日重複はコード側で類似度検証し
+    重複時は記事化中止）、`fetchWeeklyWeather.ts`（**Open-Meteo**——APIキー
+    登録・契約・課金不要の公開天気API、実装前にユーザー承認済み。取得失敗
+    時は `weatherSource: 'manual'` フォールバック）、`weekDates.ts`／
+    `findExistingEditionForWeek.ts`（同一対象週の二重生成を天気取得・AI
+    呼び出しより前にブロック＝重複時のAPI課金ゼロ）、`buildTnsArticleBlocks.ts`
+    ／`seasonVisualBrief.ts`／`importMusicTracksCandidates.ts`／
+    `parseMusicTracksImportFile.ts`／`trackIdentity.ts`（title×artist
+    正規化フィンガープリントで重複スキップ）／`musicCandidates.ts`／
+    `testWeeklySoundtrackSelection.ts` 等。**新規エンドポイント**：`POST
+    /api/ai/generate-tns-weekly-edition`。**新規スクリプト**：`./p2 tns
+    next --yes [--dry-run]`（次週Draft生成、`--yes` 必須＝Claude API課金の
+    明示確認）、`./p2 tns status`（読み取り専用）、`./p2 tns import-tracks
+    <file> [--dry-run]`（CSV/JSON一括インポート、`verified=false` 既定）、
+    `./p2 tns approve` は**設計のみ・未実装**（final approval／
+    MusicUsageLedger本番登録を将来担当）。**MusicUsageLedgerへの本番使用
+    登録は `createWeeklySoundtrackEdition` から削除**——最終承認後に別
+    コマンドが担当する責務へ切り出し（承認前は「使用済み」を確定させない）。
+    **import-templates/**：`music_tracks_candidates_template.csv`/`.json`/
+    `README.md` と、マロンが2026-08-27に承認した候補曲30件の
+    `tns_candidate_pool_v1_review.csv`（未DB投入）。**今回行っていない
+    もの**：実 `ANTHROPIC_API_KEY` を使ったTNS週次生成のE2E、ローカルDBへの
+    スキーマ反映・候補曲の実投入、`note.com/ginza_whiskers` で公開中の実
+    TNS（#32〜#34）との連番整合の実確認。
+
+  - 2026-08-27（Project 02-2「興味関心×収益性」エンジン Phase A/B）:
+    詳細は `PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md`（新規、生きた文書
+    として以後追記）を正本とする。要点のみ：処理順 A（Interest Discovery）
+    →B（Monetization Scoring）→C（GINZA変換）→D（記事生成）→E（学習）を
+    固定し、**今回はA実装＋B調査まで、C以降は未接続**。**Phase A**：新規
+    `interest-themes` コレクション＋`lib/interestDiscovery/`（13ファイル）。
+    3シグナル——`note_rising`（`note.com/trend` 急上昇タグ上位5件、
+    confidence high）／`note_official_topic`（`note.com/info/rss` の開催中
+    推定お題、confidence low）／`note_hashtag_popular`（`note.com/hashtag/
+    <tag>` の総記事数・関連タグ、confidence high）。Interest Score統合
+    （`computeInterestScore.ts`、confidence比例配分×sourceType別freshness
+    減衰×cross-source overlap乗数、読み取り専用）。CLI：`./p2 interest
+    fetch-note-rising|fetch-note-official|fetch-note-hashtag <tag> [--dry-run]`
+    ／`./p2 interest score`。既存Sources/DiscoveredContent/Editorial Score
+    のスキーマ・フックは無変更、`beforeChange` 人間ゲート（inbox→approved/
+    rejected）は既存パターンを踏襲。実データ21件（観測初日のみ）。
+    **Phase B**：paidRatio（`?paid_only=true` の記事数比率）を試験Proxyと
+    して5テーマで計測（DB未保存・恒久コマンド化せず）。「約10,000件」概数
+    表示のパース不具合（`parseNoteHashtagPage.ts`）は修正済み。売上・CVR・
+    購入者数等は公開取得不可と確認。**Claude API・有料API呼び出しは一切
+    なし**（全てnote公開ページ/RSSのGETのみ）。数値（Signal Weight・
+    freshness減衰カーブ・overlap乗数）は「初期提案」で人間の最終承認待ち。
+
   - 2026-08-26（note編集部ノウハウのEditorial Style Engineへの正式反映）:
     ユーザーが確認した「note編集部の公式記事」から抽出した10項目のノウハウを、
     Project 02の記事生成・編集ロジック（`generateArticleDraft.ts`・

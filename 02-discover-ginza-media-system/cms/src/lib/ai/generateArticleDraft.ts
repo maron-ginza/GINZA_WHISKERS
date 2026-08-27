@@ -272,7 +272,7 @@ interface EditorsChoiceItemInput {
 // periodShortを1つの短い見出し文字列へ組み立てる（2026-08-26、見出し
 // 拾い読みへの対応）。venue・periodShortが欠けている場合は該当部分を
 // 省略し、長文化・不自然な空欄表示を避ける。
-function formatEditorsChoiceHeading(name: string, venue: string, periodShort: string): string {
+export function formatEditorsChoiceHeading(name: string, venue: string, periodShort: string): string {
   const detail = [venue, periodShort].filter(Boolean).join('｜')
   return detail ? `${name}（${detail}）` : name
 }
@@ -293,7 +293,7 @@ interface EmitArticleDraftInput {
 
 // 回遊導線ブロック（2026-08-26追加）。AIには作らせず、呼び出し元がDBから
 // 取得した実在の公開済み記事タイトルのみを使う。
-function buildRelatedArticlesBlocks(relatedArticles: RelatedArticleForPrompt[]): TextBlock[] {
+export function buildRelatedArticlesBlocks(relatedArticles: RelatedArticleForPrompt[]): TextBlock[] {
   if (relatedArticles.length === 0) return []
   const blocks: TextBlock[] = [
     { type: 'heading', level: 2, text: '続けて読む GINZA WHISKERSの記事' },
@@ -565,7 +565,7 @@ sourceProvenanceにはfact/sourceType/factType/verificationStatusのみを
 // 週次専用のSource Provenanceスキーマ（Human Editor Review P0-1対応）。
 // sourceName/sourceUrl/verifiedAtはAIに生成させず、システム側
 // （WeeklyCandidateInput）から後段で機械的に付与する。
-const WEEKLY_SOURCE_PROVENANCE_SCHEMA = {
+export const WEEKLY_SOURCE_PROVENANCE_SCHEMA = {
   type: 'object',
   properties: {
     fact: { type: 'string' },
@@ -702,7 +702,7 @@ function formatWeeklyCandidatesForPrompt(candidates: WeeklyCandidateInput[]): st
 // verifiedAtの表示用フォーマット（Human Editor Review P0-1）。
 // システムに確認日時がない場合は「確認日不明」とし、AIによる推測での
 // 補完はしない。
-function formatVerifiedAtForDisplay(verifiedAt: string | undefined): string {
+export function formatVerifiedAtForDisplay(verifiedAt: string | undefined): string {
   if (!verifiedAt) return '確認日不明'
   const parsed = new Date(verifiedAt)
   if (Number.isNaN(parsed.getTime())) return '確認日不明'

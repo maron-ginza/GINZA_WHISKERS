@@ -1,5 +1,6 @@
 import type { Payload } from 'payload'
 
+import { CONTENT_TYPE_TO_PILLAR_NAME } from '../curation/contentTypeToPillar'
 import { generateWeeklyArticleDraft, type WeeklyCandidateInput } from './generateArticleDraft'
 import { findRelatedArticles } from './relatedArticles'
 
@@ -20,19 +21,10 @@ const WEEKLY_SERIES_LABEL = '旬の銀座'
 // 公開されない（既存フローと同じ人間承認ゲート）。
 
 // contentType -> 収蔵室（6本柱）の対応表（Human Editor Review P2-6）。
-// 6本柱の固定タクソノミー（歴史/文化/アート/建築/人物/イベント、CLAUDE.md
-// 第2章）自体は変更しない——ART/DISCOVER/EXPERIENCE等の新規カテゴリーは
-// 追加しない（既存schemaを壊さない範囲、というご指示に基づく判断）。
-// AI呼び出しなしの決定的ロジック（uxType.ts等、既存の分類ロジックと同じ方針）。
-const CONTENT_TYPE_TO_PILLAR_NAME: Record<string, string> = {
-  event: 'イベント',
-  exhibition: 'アート',
-  food: '文化',
-  shopping: '文化',
-  culture: '文化',
-  news: '文化',
-  other: '文化',
-}
+// 2026-08-27、Project 02-1「核情報→最大5記事」拡張でも同じ表が必要になった
+// ため、`../curation/contentTypeToPillar.ts`へ共有モジュールとして抽出した
+// （重複実装を避ける、CLAUDE.md「既存コードを壊さない」原則に基づく最小差分の
+// リファクタリング）。対応関係・ロジックは一切変更していない。
 
 export async function createWeeklyDraftFromDiscoveredContent(
   payload: Payload,

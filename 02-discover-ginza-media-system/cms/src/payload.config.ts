@@ -10,7 +10,11 @@ import sharp from 'sharp'
 import { Articles } from './collections/Articles'
 import { DiscoveredContent } from './collections/DiscoveredContent'
 import { ImageAssets } from './collections/ImageAssets'
+import { InterestThemes } from './collections/InterestThemes'
+import { MusicTracks } from './collections/MusicTracks'
+import { MusicUsageLedger } from './collections/MusicUsageLedger'
 import { SocialPosts } from './collections/SocialPosts'
+import { SoundtrackEditions } from './collections/SoundtrackEditions'
 import { SourceLedger } from './collections/SourceLedger'
 import { SourceSnapshots } from './collections/SourceSnapshots'
 import { Sources } from './collections/Sources'
@@ -20,6 +24,8 @@ import { Users } from './collections/Users'
 import { evaluateInboxEndpoint } from './endpoints/evaluateInbox'
 import { evaluateSourceEndpoint } from './endpoints/evaluateSource'
 import { generateDraftEndpoint } from './endpoints/generateDraft'
+import { generateMultiAngleDraftEndpoint } from './endpoints/generateMultiAngleDraft'
+import { generateTnsWeeklyEditionEndpoint } from './endpoints/generateTnsWeeklyEdition'
 import { generateWeeklyDraftEndpoint } from './endpoints/generateWeeklyDraft'
 import {
   scoreDiscoveredContentEndpoint,
@@ -32,6 +38,7 @@ import {
   generateSocialQueueEndpoint,
   markSocialPostReadyEndpoint,
 } from './endpoints/socialQueue'
+import { TNSSettings } from './globals/TNSSettings'
 import { sourceLedgerCrawlTask } from './lib/jobs/sourceLedgerCrawlTask'
 
 const filename = fileURLToPath(import.meta.url)
@@ -51,11 +58,18 @@ export default buildConfig({
     SourceLedger,
     SourceSnapshots,
     DiscoveredContent,
+    InterestThemes,
     StoryClusters,
+    MusicTracks,
+    MusicUsageLedger,
+    SoundtrackEditions,
   ],
+  globals: [TNSSettings],
   endpoints: [
     generateDraftEndpoint,
     generateWeeklyDraftEndpoint,
+    generateMultiAngleDraftEndpoint,
+    generateTnsWeeklyEditionEndpoint,
     evaluateSourceEndpoint,
     evaluateInboxEndpoint,
     generateSocialQueueEndpoint,
