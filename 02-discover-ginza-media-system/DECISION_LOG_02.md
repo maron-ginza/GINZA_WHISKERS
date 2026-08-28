@@ -14,6 +14,51 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS #36 note 転記用完成稿の確定〈気象庁主軸再生成版〉）:
+    気象庁主軸で再生成し Human Editorial パスを適用した #36 を、**note 転記
+    用の完成稿として確定**する（2回目の「完成稿確定」——1回目は Open-Meteo
+    版 Article 49 で確定していたが、天気ソース見直しにより #36 を丸ごと
+    再生成したため、確定対象を新版へ更新する）。
+    **確定した実体**：SoundtrackEditions id=11 / editionNumber 36 /
+    Article id=50「残暑のやわらぐ場所で」（`reviewStatus=draft` のまま維持）。
+    本文70→71ブロック（末尾ハッシュタグ段落を含む）、`translationStatus.ja
+    =complete`（`en` は `not_started`）。
+    **本文の状態（Human Editorial 適用済み）**：①各日 h3 見出しの内部コード
+    「— TNS Editorial Code: codeN」を全7日から除去し「GINZA CODE N：
+    <日本語ムード>」へ（code2/3/4/6 に日本語ムード見出しを付与）。②各日の
+    EDITORIAL POINT OF VIEW を読者向け文体へ整形（`fixedMoodLabel` という
+    内部フィールド名の露出も解消）。③本文末尾に note 向けハッシュタグ
+    `#TokyoNostalgicSoundtrack #銀座 #昭和歌謡 #シティポップ #AOR
+    #GINZAWHISKERS`。本文に `TNS Editorial Code`／`fixedMoodLabel`／`codeN`
+    文字列が無いことを確認済み。
+    **7曲**：月 All Right/Christopher Cross（洋）、火 恋人よ/五輪真弓（邦）、
+    水 September/竹内まりや（邦）、木 みずいろの雨/八神純子（邦）、
+    金 Cool Night/Paul Davis（洋）、土 **I LOVE YOU/オフコース**（邦。
+    Human Editorial 継続——自動選曲の「夏の日」から差し替えを維持し、土曜の
+    dailyScene と本文土曜ブロックを「金の高揚→土の静けさ→日の余韻」の
+    トーンに整えてある）、日 Sailing/Christopher Cross（洋）。邦4:洋3・
+    週内重複0・過去使用（`music-usage-ledger` 28曲）重複0。
+    **週テーマ**：coreTheme「残暑の名残と、少しずつ涼やかさを帯びていく
+    銀座の一週間。季節の境目に立ち、過ぎゆく夏を静かに見送るような時間を
+    編集する。」／englishSubtitle「A Week Where Summer Loosens Its Grip on
+    Ginza」／weekSummary「くもり時々晴れが中心、気温は21.6〜35℃」。
+    **天気 provenance（DB 保持）**：primary＝気象庁 週間天気予報（東京地方
+    130010・気温 東京44132）、secondary＝Open-Meteo(jma_seamless)、
+    jmaReportDatetime＝2026-08-28 17:00 JST、fetchedAt＝2026-08-28 17:31 JST、
+    **`humanReviewRequired=true`**、humanReviewReasons 6件（8/31・9/1
+    [major] 天候カテゴリ反転＋最高気温差4.7℃／9/2 [minor] 信頼度C＋降水
+    有無食い違い＋気温差3.1℃／9/4 信頼度C／9/5・9/6 気象庁週間予報の
+    範囲外→補助ソース確定）。**マロンはこの humanReviewReasons を確認の
+    うえで完成稿として確定した**（内容の妥当性判断は済み）。
+    **旧版の退避**：Open-Meteo 版（SoundtrackEditions id=10 / Article 49
+    「雷雨の輪郭、季節の境目」、`translationStatus.ja=complete` だったもの）は
+    `_backups/tns_edition_36_jma_regen_backup_20260828.json` に全文退避済みで
+    比較可能（gitignore、コミット対象外）。
+    **未実施（＝完成稿確定 ≠ 公開）**：CMS 上の `approve`／`reviewStatus`
+    変更、自動投稿。note 転記時の Human Editorial 工程——曜日ごとの挿絵7点の
+    配置／7曲それぞれの YouTube 動画URLの確認・挿入／note 上での最終
+    レイアウト確認。DB 書き込みはローカル開発（`cms-postgres-1`）のみ。
+
   - 2026-08-28（🌈TNS週間天気 気象庁主軸化の正式実装 ＋ #36 の再生成）:
     **背景**：Open-Meteo 単独採用では、Weathernews／気象庁の銀座（中央区）
     週間予報と大きく乖離する日があることが #32〜#34 の事実比較および
