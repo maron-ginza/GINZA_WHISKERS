@@ -399,12 +399,33 @@ reviewStatus:draft で生成。**interest・ginza_whiskers の4本すべてに
 承認済み DC の拡充（特に 文化/歴史/建築/人物 系）と、銀座親和性のある関心テーマ
 （旅行・写真・カフェ・建築・読書等）の承認蓄積で伸びる。
 
-### 8.8 次にやること（morning 接続は保留中）
+### 8.8 `./p2 morning` 接続（2026-08-28完了）＋ 収益化①②間の重複防止
 
-- `./p2 draft-interest` の `./p2 morning` 接続（draft-today と同様、step 14 で
-  `--dry-run`、実生成は人間が `--yes`）——**今回はユーザー指示により未実施**。
-- W_PAID / C_MATCH の 9月Trial 調整（`INTEREST_W_PAID` / `INTEREST_C_MATCH` を
-  振って `--dry-run` で候補順位の感度を見る）。
-- pillarHint 表の実データに基づく拡充。
-- テーマ近似クラスタ束ね・上限スライスの実データ発火確認（承認済みテーマが
-  6件以上たまってから）。
+- **morning step 14 に `draft_interest --dry-run` を追加**（step 13 の
+  `draft_today --dry-run` の直後）。morning 通常実行では ①② とも `--dry-run`
+  ——AI 呼び出し・DB 書き込み・自動投稿なし。実生成は人間が
+  `./p2 draft-today --yes` ／ `./p2 draft-interest --yes` を明示実行した場合のみ。
+- **収益化①②間の重複防止（要件7）**：`createInterestDrivenDraftsFromThemes.ts`
+  のプレマッチ対象プールから、**既に何らかの Article が
+  `editorialProvenance.discoveredContentSource` で参照している承認済み DC を
+  除外**する。処理順が「① draft-today → ② draft-interest」なので、②は
+  「①がまだ記事化していない承認済み Ginza コンテンツ」に対してのみ関心テーマを
+  接続する。同一ソースを CORE（①）と interest/ginza_whiskers（②）で
+  同日二重に記事化しない。除外件数は dry-run 出力に表示
+  （「収益化①で記事化済みのため N件を除外後」）。
+  - ①②とも同一の multi-angle 生成基盤を使い、①=CORE のみ、②=interest/
+    ginza_whiskers のみと角度が排他のため、「同じ角度の重複記事」は構造的に
+    発生しない。②内のテーマ近似束ね（旅/旅行/旅行記 → 旅行）・同一 DC 先着
+    deferred も従来どおり。
+- **合計上限 最大10本/日**：① `INTEREST_MAX_DAILY_DRAFTS` 相当の
+  `DEFAULT_MAX_DRAFTS=5`（draft-today）＋ ② `maxDailyDrafts=5`（config、
+  `--limit` で上書き可）。
+- **同日再実行**：morning の `--dry-run` は何も生成しない。`--yes` 実行も
+  ①=`editorialProvenance` 逆引き、②=`interest-themes.generatedArticles` ＋
+  `aiGeneratedBy` の `interestTheme=<key>` で二重生成しない。加えて②が生成した
+  DC は次回以降 ②のプレマッチ対象からも自動除外される（上記重複防止の帰結）。
+- **本番 Railway**：`TZ=Asia/Tokyo` 前提（①の当日 `decisionAt` 判定、②の
+  Interest Score freshness `daysSince(capturedAt)`。RUNBOOKS 付録F）。
+
+**残タスク**：W_PAID / C_MATCH の 9月Trial 調整、pillarHint 表の拡充、
+テーマ近似束ね・上限スライスの実データ発火確認（承認済みテーマ6件以上待ち）。

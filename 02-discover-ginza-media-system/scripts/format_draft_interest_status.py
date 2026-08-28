@@ -23,7 +23,9 @@ print(f"  W_PAID = {data.get('wPaid')} / C_MATCH = {data.get('cMatch')} / 上限
       + ("  [--strict]" if data.get("strict") else ""))
 print(f"  承認済み interest-themes: {data.get('approvedThemeRecords', 0)}行 / "
       f"{data.get('approvedThemeClusters', 0)}クラスタ")
-print(f"  プレマッチ対象の承認済み DiscoveredContent: {data.get('approvedDiscoveredContent', 0)}件")
+_xf = data.get("crossFlowExcludedDiscoveredContent", 0)
+print(f"  プレマッチ対象の承認済み DiscoveredContent: {data.get('approvedDiscoveredContent', 0)}件"
+      + (f"（収益化①で記事化済みのため {_xf}件を除外後）" if _xf else ""))
 
 plan = data.get("plan", [])
 

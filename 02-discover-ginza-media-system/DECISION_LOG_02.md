@@ -14,6 +14,44 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（`./p2 draft-interest`（収益化②）を `./p2 morning` へ接続）:
+    要件（既存 draft-today 接続維持／処理順の明示／通常実行は①②とも `--dry-run`／
+    実生成は人間の `--yes` のみ／自動投稿しない／同日再実行で重複生成なし／
+    ①②間の同一・近似テーマ重複防止／合計最大10本/日〈①5＋②5〉／W_PAID=8・
+    C_MATCH=0.6 は config 取得／本番 Railway は `TZ=Asia/Tokyo` 前提）に基づき実装。
+    **morning への配線**：step 13 の `draft_today --dry-run` の直後に step 14
+    `draft_interest --dry-run` を追加。morning 関数冒頭のコメントを処理順
+    （情報収集 → 抽出・採点 → curation〈DiscoveredContent と interest-themes の
+    両方〉→ approved判定 → 収益化① draft-today〈最大5本〉→ 収益化②
+    draft-interest〈最大5本〉→ 承認待ち一覧〈合計 最大10本/日〉）へ書き換え。
+    **①②間の重複防止（要件7）**：`createInterestDrivenDraftsFromThemes.ts` の
+    プレマッチ対象プールから、既に何らかの Article が
+    `editorialProvenance.discoveredContentSource` で参照している承認済み DC を
+    除外（`crossFlowExcludedDiscoveredContent` として dry-run 出力に件数表示）。
+    処理順が「①→②」なので、②は「①がまだ CORE 記事化していない承認済み
+    Ginza コンテンツ」に対してのみ関心テーマを接続する。①=CORE のみ／
+    ②=interest・ginza_whiskers のみと角度が排他のため「同じ角度の重複記事」は
+    構造的に発生しない。②内のテーマ近似束ね・同一 DC 先着 deferred は従来どおり。
+    **RUNBOOKS 付録F**：`TZ=Asia/Tokyo` 必須の記述に、②の Interest Score
+    freshness（`daysSince(capturedAt, now)`）も `now`＝サーバーローカル時刻
+    依存で TZ ずれによりスコアが変動しうる旨を追記。
+    **実データ検証（ローカル Docker/Postgres）**：`tsc --noEmit`（cms、0エラー）・
+    `bash -n`・`./p2 doctor` 全緑。`./p2 morning` で step 13・14 がどちらも
+    `--dry-run` で動作・副作用なしを確認。cross-flow 除外の実証——検収用に
+    interest-themes「旅行」「写真」＋ DiscoveredContent #217（未記事化）を承認し
+    `./p2 draft-interest --dry-run` を実行すると、プレマッチ対象は「1件
+    （収益化①で記事化済みのため #97/#100/#150 の3件を除外後）」と表示され、
+    旅行→#217 selected／写真→#217 は先着 deferred（写真の自然な接続先 #97 は
+    ①系で記事化済みのため除外）。`--yes` で旅行×#217 の Article #47（interest）・
+    #48（ginza_whiskers）を reviewStatus:draft で生成、両者に editorialProvenance
+    2件ずつ（source #217、verification_status: unconfirmed で正直表示）付与。
+    直後の `--dry-run` 再実行で、旅行が `already_generated`、かつ #217 が
+    「記事化済み4件を除外」に含まれ写真も `no_ginza_match`（冪等＋②が生成した
+    DC も次回以降 ②のプレマッチから自動除外される）。検収用の承認・生成物
+    （Article #47/#48）はすべて inbox へ戻し／削除、`articles` 19・承認済み
+    テーマ0・承認済み DC 3・rel 0 の投入前状態を確認。使い捨てスクリプトは削除済み。
+    **git push なし。W_PAID/C_MATCH の実データ調整は初期値のまま（9月Trial）。**
+
   - 2026-08-28（収益化② E2E検収 → Trust Layer 修正2件 → morning接続可判定）:
     前エントリで接続した `./p2 draft-interest` を実データ E2E 検収し、
     **1点のみ 要修正**（interest/ginza_whiskers の sourceProvenance 空許容が

@@ -299,6 +299,15 @@ Managerアカウントでの操作が必要なため、私（Claude）が代行�
      `TZ=Asia/Tokyo` の設定でまとめて解消する（`draft-today` 側の
      追加設定は不要）。なお `--since=YYYY-MM-DD` 明示指定時の解釈も
      同じローカルTZ基準。
+     **2026-08-28さらに追記——`draft-interest`（収益化②）も TZ 依存**：
+     `./p2 draft-interest`（`createInterestDrivenDraftsFromThemes.ts`）は
+     `computeInterestScoreFromRecords(records, now)` に `now` を渡し、
+     Interest Score の freshness 減衰を `daysSince(capturedAt, now)` で
+     計算する。`now` はサーバープロセスのローカル時刻のため、TZ がずれると
+     freshness の「経過日数」が1日ずれ、`note_rising`（急減衰、0日:1.0→
+     2日:0.6）等でスコアが変動しうる。これも `TZ=Asia/Tokyo` で解消する
+     （`draft-interest` 側の追加設定は不要）。morning はこの2つを
+     どちらも `--dry-run` で回すのみ（生成・課金なし）。
    - カスタムドメインとして`api.discover.ginzawhiskers.com`を追加する。
    - **Cloudflare Pagesより先にRailwayをデプロイし、疎通確認まで済ませる
      こと**（2026-08-10のPreflightで確認：Astroの`getStaticPaths`が

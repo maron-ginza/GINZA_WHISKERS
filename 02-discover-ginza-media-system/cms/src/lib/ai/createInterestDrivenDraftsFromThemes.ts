@@ -105,6 +105,8 @@ export interface RunInterestDrivenDraftsResult {
   approvedThemeRecords: number
   approvedThemeClusters: number
   approvedDiscoveredContent: number
+  /** 収益化①（draft-today 等）で既に記事化済みのためプレマッチ対象から外した承認済み DC 数 */
+  crossFlowExcludedDiscoveredContent: number
   /** finalRankScore 降順の全クラスタ計画 */
   plan: InterestDraftPlanRow[]
   /** 実際に作成された Article ドラフト（dryRun 時は空） */
@@ -230,7 +232,7 @@ export async function runInterestDrivenDraftsFromThemes(
   }
 
   // === 承認済み DiscoveredContent（プレマッチ対象。approved のみ、方針2・3）===
-  const { docs: approvedDcs } = await payload.find({
+  const { docs: approvedDcsRaw } = await payload.find({
     collection: 'discovered-content',
     where: { curationStatus: { equals: 'approved' } },
     limit: 500,
@@ -238,19 +240,36 @@ export async function runInterestDrivenDraftsFromThemes(
     overrideAccess: true,
   })
 
-  // 二次冪等: aiGeneratedBy に |interestTheme=<key> を含む既存 Article
   const { docs: allArticles } = await payload.find({
     collection: 'articles',
     depth: 0,
     limit: 2000,
     overrideAccess: true,
   })
+
+  // 二次冪等: aiGeneratedBy に |interestTheme=<key> を含む既存 Article
   const generatedThemeKeys = new Set<string>()
+  // 収益化① / draft-today 等と収益化②の重複防止（要件7・処理順「①→②」）：
+  // 既に何らかの Article（core など）が参照している承認済み DC は、収益化②の
+  // プレマッチ対象から外す——同一ソースを両フローで二重に記事化しない。
+  const alreadyCoveredDcIds = new Set<number>()
   for (const a of allArticles) {
     const gen = String((a as { aiGeneratedBy?: string }).aiGeneratedBy ?? '')
     const m = gen.match(/interestTheme=([^)]+)\)?$/)
     if (m) generatedThemeKeys.add(m[1])
+    const prov = (a as unknown as {
+      editorialProvenance?: { discoveredContentSource?: number | { id?: number } | null }[] | null
+    }).editorialProvenance
+    if (Array.isArray(prov)) {
+      for (const entry of prov) {
+        const ref = entry?.discoveredContentSource
+        const id = typeof ref === 'object' && ref !== null ? ref.id : ref
+        if (typeof id === 'number') alreadyCoveredDcIds.add(id)
+      }
+    }
   }
+  const approvedDcs = approvedDcsRaw.filter((dc) => !alreadyCoveredDcIds.has(Number(dc.id)))
+  const crossFlowExcludedDiscoveredContent = approvedDcsRaw.length - approvedDcs.length
 
   const dcMatchMethod = (theme: string, dc: (typeof approvedDcs)[number]): string | null => {
     const key = normalizeThemeKey(theme)
@@ -353,6 +372,7 @@ export async function runInterestDrivenDraftsFromThemes(
     approvedThemeRecords: approvedThemeDocs.length,
     approvedThemeClusters: scoreRows.length,
     approvedDiscoveredContent: approvedDcs.length,
+    crossFlowExcludedDiscoveredContent,
     plan,
     createdDrafts: [],
     failures: [],

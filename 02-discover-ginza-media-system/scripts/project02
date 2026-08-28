@@ -1595,16 +1595,26 @@ morning() {
   echo "🌅 Project 02 Morning Startup — $(date '+%Y-%m-%d %H:%M:%S')"
   echo "外部ログイン・課金操作・本番デプロイは行いません（ローカル起動・診断・状態確認のみ）"
   echo
-  # 「旬の銀座」日次パイプラインの位置づけ（2026-08-28、draft-today接続時に明示）:
-  #   情報収集（SOURCE LEDGER自動巡回 = Jobs Queue、morning外・課金なし）
+  # Project 02 日次パイプラインの処理順（2026-08-28、draft-today＋draft-interest 接続時に明示）:
+  #   情報収集（SOURCE LEDGER自動巡回 = Payload Jobs Queue、morning外・課金なし）
   #     → 抽出・採点（./p2 crawl / ./p2 score / ./p2 score-articles、morning外・Claude課金あり）
-  #     → curation（人間: Payload管理画面で Maron Editor's Choice）
-  #     → approved判定（人間承認ゲート: DiscoveredContent.curationStatus = approved、req.user必須）
-  #     → draft-today（当日approved → 類似除外 → 上位最大5トピックを各1本 reviewStatus:draft 生成）
-  #     → 最大5本が「承認待ち（reviewStatus:draft）」へ = 編集長レビュー対象
-  # morning はこのうち draft-today を --dry-run で「予定確認」まで行う（AI呼び出し・
-  # DB書き込みなし）。実生成は人間が別途 ./p2 draft-today --yes を明示実行する
-  # ——morning は課金操作・自動投稿を一切行わない、という既存方針の維持。
+  #     → curation（人間: Payload管理画面で Maron Editor's Choice。
+  #         DiscoveredContent と interest-themes の両方が対象）
+  #     → approved判定（人間承認ゲート、req.user必須:
+  #         DiscoveredContent.curationStatus = approved ／ interest-themes.status = approved）
+  #     → 収益化① draft-today（当日approved DiscoveredContent → 類似除外 → 上位最大5トピックを
+  #         各1本 CORE角度で reviewStatus:draft 生成。最大5本/日）
+  #     → 収益化② draft-interest（承認済み interest-themes → topicInterestScore × monetizationMultiplier
+  #         〈Phase B、W_PAID/C_MATCH は config から取得〉で順位付け → 承認済み DiscoveredContent
+  #         〈収益化①で記事化済みのものは除外〉へプレマッチ → interest / ginza_whiskers 角度で
+  #         reviewStatus:draft 生成。最大5本/日）
+  #     → 承認待ち一覧（reviewStatus:draft、合計 最大10本/日）= 編集長レビュー対象
+  # morning はこのうち draft-today と draft-interest を **どちらも --dry-run** で「予定確認」まで
+  # 行う（AI呼び出し・DB書き込みなし）。実生成は人間が別途 ./p2 draft-today --yes ／
+  # ./p2 draft-interest --yes を明示実行した場合のみ。morning は課金操作・自動投稿を一切
+  # 行わない（既存方針の維持）。同日再実行しても --dry-run は何も生成せず、--yes 実行も
+  # editorialProvenance 逆引き／interest-themes.generatedArticles で二重生成しない。
+  # 本番 Railway では TZ=Asia/Tokyo が前提（当日判定・Interest Score freshness、RUNBOOKS 付録F）。
 
   ensure_env || {
     echo
@@ -1675,8 +1685,11 @@ morning() {
   echo "--- 10〜12. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
   preflight
 
-  echo "--- 13. ./p2 draft-today --dry-run 相当（当日approved → 本日ドラフト化予定の確認。AI呼び出し・DB書き込みなし。実生成は別途 ./p2 draft-today --yes を明示実行） ---"
+  echo "--- 13. 収益化① ./p2 draft-today --dry-run 相当（当日approved DiscoveredContent → 本日ドラフト化予定の確認。AI呼び出し・DB書き込みなし。実生成は別途 ./p2 draft-today --yes） ---"
   draft_today --dry-run
+
+  echo "--- 14. 収益化② ./p2 draft-interest --dry-run 相当（承認済み interest-themes → finalRankScore 順位付け → 承認済みDCへプレマッチの確認。AI呼び出し・DB書き込みなし。実生成は別途 ./p2 draft-interest --yes） ---"
+  draft_interest --dry-run
 
   recommend_next_step
 
