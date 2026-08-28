@@ -618,6 +618,18 @@ a.content-card:hover {
   margin: 0 0 1.8em;
 }
 
+/* 見出し直下の補助ラベル：3つの過ごし方の英語名、LIVE の公演名。
+   .pillar-num（ゴールドのセリフ・イタリック小）と同系の扱い。 */
+.cc-sublabel {
+  display: block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  color: var(--color-gold);
+  margin: -0.2em 0 1.4em;
+}
+
 .cc-prose {
   color: var(--color-ink-muted);
   max-width: 640px;
