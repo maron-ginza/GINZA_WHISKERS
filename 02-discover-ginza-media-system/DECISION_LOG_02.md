@@ -14,6 +14,88 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（Project 02-2 収益化②「興味関心 × 銀座 × GINZA WHISKERS視点 最大5本/日」接続）:
+    マロン確定方針（W_PAID=8／C_MATCH=0.6／Phase B は B2〈monetization グループ〉／
+    プレマッチは approved DiscoveredContent のみ／angles は interest と
+    ginza_whiskers の両方保持／最大5本/日／人間承認ゲート維持／自動投稿なし／
+    既存 Phase A・B・draft 生成を最大限再利用／新規 AI スキーマ最小限／
+    W_PAID・C_MATCH は config 化し9月Trialで調整）に基づき実装。
+    詳細仕様（処理順・スコア式・config・5本選定ロジック・変更ファイル）は
+    `PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md` §8 を正本とする。ここでは
+    決定と実E2E結果の要点のみ記す。
+    **処理順**：Phase A（承認済み interest-themes ＋ 既存 computeInterestScore、
+    式・weight・decay 無変更 → topicInterestScore）→ Phase B（
+    interest-themes.monetization.paidRatio → monetizationMultiplier =
+    clamp(1 + 8×paidRatio, 1.0, 1.6)、paidRatio 未取得/サンプル過小は 1.0 →
+    finalRankScore = topicInterestScore × multiplier）→ Phase C 段1（承認済み
+    DiscoveredContent への決定的プレマッチ：包含／
+    computeThemeBigramContainment ≥ 0.6／pillar hint）→ Phase C 段2（
+    multi-angle の interest/ginza_whiskers 角度の include が銀座接続の最終判定）
+    → Phase D（同 multi-angle 呼び出しが Article(reviewStatus: draft) を作成）
+    → 既存 Articles.ts 人間承認ゲート。
+    **新規 AI ツールスキーマは追加していない**——`readerInterestTheme` は
+    generateMultiAngleArticleDrafts の user メッセージへ注入する1文字列のみ。
+    **新規ファイル**：`lib/interestDiscovery/config.ts`（`INTEREST_W_PAID`
+    既定8／`INTEREST_C_MATCH` 既定0.6／`INTEREST_MAX_DAILY_DRAFTS` 5／
+    `INTEREST_MIN_PAID_SAMPLE` 500／`INTEREST_MAX_MON_MULT` 1.6、すべて
+    env 上書き可）、`monetizationScore.ts`、`pillarHint.ts`（keyword→収蔵室の
+    exact 部分一致、類似度なし）、`capturePaidRatio.ts`（note.com/hashtag/<tag>
+    と ?paid_only=true の差分、非AI）、`lib/ai/createInterestDrivenDraftsFromThemes.ts`
+    （オーケストレーター本体）、`scripts/interestPaidRatio.ts`／`draftInterest.ts`、
+    `scripts/format_draft_interest_status.py`。
+    **既存への変更（最小・後方互換）**：`collections/InterestThemes.ts` に
+    `monetization` group（totalArticleCount/paidArticleCount/paidRatio/
+    sampleSize/isApproximate/capturedAt、全 readOnly、非AI）＋
+    `generatedArticles` relationship（hasMany、冪等キー兼トレーサビリティ）。
+    `createMultiAngleDraftsFromDiscoveredContent` に `readerInterestTheme`/
+    `interestThemeKey` option（`aiGeneratedBy` へ `|interestTheme=<正規化テーマ>`
+    付与）。`textSimilarity.ts` に `computeThemeBigramContainment`（テーマ側
+    bigram の被覆率＝非対称。既存の対称 Jaccard は短語×長文で0に潰れるため新設）。
+    `parseNoteHashtagPage.ts` が「約N件」概数を `totalArticleCountIsApproximate`
+    で返すよう拡張。`scripts/project02` に `interest paid-ratio` ／
+    `draft-interest` を配線（`--dry-run`／live は `--yes` 必須／`--limit`／
+    `--strict`／`--w-paid=`／`--c-match=`）。**`./p2 morning` へは未接続**
+    （ユーザー指示）。
+    **実データ検証（ローカル Docker/Postgres）**：`payload generate:types`・
+    `npx tsc --noEmit`（cms、0エラー）・`bash -n`。schema push で
+    `monetization_*` カラム・`interest_themes_rels` テーブル生成を確認。
+    承認済みテーマ 0 の状態で `--dry-run` が「0クラスタ」を正しく返すことを確認。
+    検収用に interest-themes 5件（旅行/日記/読書感想文/コミティア157/
+    飲み物のある時間）を user id=1（editor）名義で承認（beforeChange 人間ゲートを
+    req.user 付きで通過。AI バイパスではない）。`./p2 interest paid-ratio 旅行`
+    ＝実 note.com 取得で total 337,601／paid 約10,000（概数）／paidRatio ≈ 2.96%
+    を monetization へ保存。`./p2 draft-interest --dry-run` で
+    旅行 topic 1.0 × mon 1.237 = final 1.237（先頭）、日記/コミティア157 = 1.0、
+    読書感想文/飲み物のある時間 = 0.3（official_topic confidence low）の順位、
+    および `--w-paid=20 --c-match=0.3` での乗数変化（旅行 → 1.5924、上限1.6の
+    手前）を確認。承認済み DC（当時3件、niche 美術/イベント展示）とは
+    どのテーマも接点なく全 `no_ginza_match`。
+    **実 E2E と修正**：検収用に DiscoveredContent #217「蔦屋重三郎『耕書堂跡』」
+    （中央区観光協会、other→文化、score 43）を同名義で承認。`--dry-run` で
+    旅行 → #217（inclusion）が `selected`、日記/読書感想文 → #217（pillar_hint）が
+    同一DC先着で `deferred` になることを確認。`--yes` 実行時、interest/
+    ginza_whiskers の両角度が **sourceProvenance 空**により multi-angle の
+    検証で全落ちする不具合を発見。core/need/experience（事実主体の角度）では
+    provenance ≥ 1 必須が妥当だが、interest/ginza_whiskers は編集的視点が主体で
+    元情報の facts を直接列挙しない書き方が正しいことも多いため、
+    **この2角度に限り sourceProvenance 空を許容へ緩和**（Editorial Trust Layer は
+    プロンプトの「元情報にない事実を作らない」で担保）。再実行で Article #37
+    （interest/medium「大河ドラマの舞台を歩く旅——…耕書堂跡から中央区の版元
+    めぐりへ」、provenance 5件）・#38（ginza_whiskers/medium「銀座から日本橋へ
+    ——江戸の出版文化が結ぶ、旅する街の記憶」、provenance 3件）を
+    reviewStatus:draft で生成。`aiGeneratedBy` に `interestTheme=旅行` 付与、
+    `interest-themes.generatedArticles` に #37/#38 紐付け、`--dry-run` 再実行で
+    旅行が `already_generated` スキップされることを確認（冪等）。
+    **検収後、検収用の承認（interest-themes 5件・DiscoveredContent #217）は
+    すべて inbox へ戻し、Article #37/#38 は削除、generatedArticles rel も
+    クリアした**——旅行の monetization（実 note.com データ）のみ意図的に保持。
+    使い捨てスクリプト（`_tmpApproveDemoThemes.ts`／`_tmpApproveDemoDc.ts`／
+    `_tmpCleanup.ts`）は削除済み。`articles` 19件・承認済みテーマ0・承認済み
+    DC 3件・theme_article_rels 0 の投入前状態を確認。
+    **今回行っていないもの**：`./p2 morning` への接続、W_PAID/C_MATCH の
+    実データ調整（初期値のまま）、pillarHint 表の拡充、テーマ近似束ね・上限
+    スライスの実データ発火確認（承認済みテーマ不足）、git push。
+
   - 2026-08-28（`./p2 draft-today` 品質検収 → 本番運用可判定 → `./p2 morning` 接続）:
     前エントリで実装した `./p2 draft-today` の品質検収を実データ
     （ローカルDocker/Postgres）で実施し、**本番運用可**と判定した。

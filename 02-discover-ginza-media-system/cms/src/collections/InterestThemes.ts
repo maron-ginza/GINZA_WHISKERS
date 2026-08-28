@@ -217,6 +217,62 @@ export const InterestThemes: CollectionConfig = {
       defaultValue: false,
       admin: { readOnly: true, description: 'statusがapproved/rejectedへ変更された時点で自動的にtrueになる（手動入力不可）' },
     },
+    // Project 02-2 Phase B（B2、2026-08-28）：収益化可能性の Proxy。
+    // `./p2 interest paid-ratio <theme|id>` が note.com/hashtag/<tag> と
+    // ?paid_only=true の総記事数差分から算出して書き込む（Claude API・有料API
+    // 呼び出しなし）。**paidRatio 単独でテーマをランキング・順位付けしない**
+    // ——収益化②オーケストレーターでは topicInterestScore に掛ける乗数として
+    // のみ使う（lib/interestDiscovery/monetizationScore.ts）。
+    {
+      name: 'monetization',
+      label: 'Monetization（Phase B、paidRatio Proxy）',
+      type: 'group',
+      admin: {
+        description:
+          'note上で「そのテーマの有料記事がどの程度あるか」の公開Proxy。売上・購入率そのものではない。' +
+          'paidRatio単独で判定しない（topicInterestScoreへの乗数としてのみ使用）',
+      },
+      fields: [
+        { name: 'totalArticleCount', label: '総記事数', type: 'number', min: 0, admin: { readOnly: true } },
+        { name: 'paidArticleCount', label: '有料記事数（?paid_only=true）', type: 'number', min: 0, admin: { readOnly: true } },
+        {
+          name: 'paidRatio',
+          label: 'paidRatio（= paid / total、0〜1）',
+          type: 'number',
+          min: 0,
+          max: 1,
+          admin: { readOnly: true },
+        },
+        {
+          name: 'sampleSize',
+          label: 'sampleSize（= totalArticleCount）',
+          type: 'number',
+          min: 0,
+          admin: { readOnly: true, description: 'これが小さいテーマは乗数を1.0に固定する（暴れ防止のfallback）' },
+        },
+        {
+          name: 'isApproximate',
+          label: '概数表示だった（「約N件」）',
+          type: 'checkbox',
+          admin: { readOnly: true, description: 'trueの場合、paidRatioは下限として扱う（過小評価の可能性）' },
+        },
+        { name: 'capturedAt', label: '取得日時', type: 'date', admin: { readOnly: true } },
+      ],
+    },
+    // Project 02-2 収益化②（2026-08-28）：このテーマから生成した記事ドラフト。
+    // `./p2 draft-interest` が生成成功時に紐付ける。同一テーマの二重生成を
+    // 防ぐ冪等キー兼、管理画面での「テーマ→記事」トレーサビリティ。
+    {
+      name: 'generatedArticles',
+      label: '生成済み記事ドラフト（収益化②）',
+      type: 'relationship',
+      relationTo: 'articles',
+      hasMany: true,
+      admin: {
+        readOnly: true,
+        description: 'draft-interest が生成した Article（reviewStatus: draft）。人間が再生成したい場合はここを空にする',
+      },
+    },
   ],
   hooks: {
     // DiscoveredContent.tsと同じ人間ゲートパターン。人間ゲート判定に使うのは

@@ -45,6 +45,15 @@ export interface CreateMultiAngleDraftsOptions {
    * 保存ループの両方で絞るだけ。
    */
   angles?: MultiAngleKey[]
+  /**
+   * Project 02-2 収益化②（2026-08-28）：Phase A 由来の読者関心テーマ。
+   * generateMultiAngleArticleDrafts へそのまま渡す（user メッセージへ注入）。
+   * 指定時は aiGeneratedBy に `|interestTheme=<正規化テーマ>` を付けて
+   * トレーサビリティと冪等判定に使えるようにする。
+   */
+  readerInterestTheme?: string
+  /** aiGeneratedBy 用に事前正規化したテーマキー（呼び出し元が normalizeThemeKey 済みで渡す） */
+  interestThemeKey?: string
 }
 
 export async function createMultiAngleDraftsFromDiscoveredContent(
@@ -109,7 +118,15 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
     relatedArticles: related.map((r) => ({ title: r.title })),
     discoveredContentId,
     angles: options.angles,
+    readerInterestTheme: options.readerInterestTheme,
   })
+
+  // 収益化②：interest / ginza_whiskers がどちらも include:false（＝Phase Cの
+  // 「銀座に接続しない」最終判定）だった場合、下の included.length===0 ガードで
+  // まとめて弾かれる。skipped にその理由が入る。
+  const interestSuffix = options.interestThemeKey
+    ? `|interestTheme=${options.interestThemeKey}`
+    : ''
 
   if (included.length === 0) {
     throw new Error(
@@ -155,8 +172,9 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
           verificationStatus: entry.verificationStatus,
         })),
         // volumeは専用スキーマフィールドを新設せず、aiGeneratedByへ角度と共に
-        // 記録する（トレーサビリティ確保のための最小差分、Articles.ts無変更）
-        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume})`,
+        // 記録する（トレーサビリティ確保のための最小差分、Articles.ts無変更）。
+        // 収益化②経由の場合は末尾に |interestTheme=<正規化テーマ> を付与する。
+        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume}${interestSuffix})`,
       },
     })
 

@@ -60,6 +60,15 @@ export interface GenerateMultiAngleDraftsInput {
    * 保存ループでも対象外にする。
    */
   angles?: MultiAngleKey[]
+  /**
+   * Project 02-2 収益化②（2026-08-28）：Phase A 由来の「note利用者の関心テーマ」。
+   * AIツールスキーマは変更せず、user メッセージにのみ注入する。指定時は
+   * interest / ginza_whiskers 角度がこの関心と旬の銀座情報の自然な接点を
+   * 探る——関心テーマに引きずられて元情報にない事実を作らせない指示も添える。
+   * interest / ginza_whiskers 角度がどちらも include:false を返した場合が
+   * 「この関心テーマは銀座に接続しない」というPhase Cの最終判定になる。
+   */
+  readerInterestTheme?: string
 }
 
 export interface MultiAngleDraftResult {
@@ -386,6 +395,7 @@ export async function generateMultiAngleArticleDrafts({
   relatedArticles = [],
   discoveredContentId,
   angles,
+  readerInterestTheme,
 }: GenerateMultiAngleDraftsInput): Promise<GenerateMultiAngleDraftsResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -407,6 +417,17 @@ export async function generateMultiAngleArticleDrafts({
         `本文系フィールドは空文字""・sourceProvenanceは空配列[]で構いません（本文を作り込む必要はありません）。`
       : ''
 
+  const interestThemeNote = readerInterestTheme
+    ? `\n\n【Phase A由来の読者関心テーマ】「${readerInterestTheme}」\n` +
+      `このnote利用者の関心と、上記の旬の銀座情報とが自然につながる範囲で` +
+      `interest / ginza_whiskers 角度を展開すること。\n` +
+      `- 関心テーマに引きずられて、元情報にない事実（別のイベント・別の店舗・` +
+      `関心テーマ側の一般論を銀座の事実であるかのように書く等）を作らないこと。\n` +
+      `- 元情報と関心テーマの間に無理のない接点がない場合は、interest / ` +
+      `ginza_whiskers 角度を include:false とし、skipReason にその旨（例：` +
+      `「関心テーマと元情報の間に自然な接点がない」）を書くこと。`
+    : ''
+
   const message = await client.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: 8192,
@@ -422,7 +443,8 @@ export async function generateMultiAngleArticleDrafts({
           `sourceName: ${sourceName}\nsourceUrl: ${sourceUrl}\n` +
           `venue: ${venue ?? '不明'}\nperiod: ${period ?? '不明'}\n\n` +
           `本文素材:\n${sourceText}` +
-          focusNote,
+          focusNote +
+          interestThemeNote,
       },
     ],
   })
@@ -468,11 +490,18 @@ export async function generateMultiAngleArticleDrafts({
 
     const missingFields = REQUIRED_NARRATIVE_FIELDS.filter((field) => !candidate[field])
     const hasProvenance = (candidate.sourceProvenance?.length ?? 0) > 0
-    if (missingFields.length > 0 || !hasProvenance) {
+    // sourceProvenance（fact単位の出典）は core/need/experience（事実主体の角度）
+    // では必須。interest / ginza_whiskers は編集的視点が主体で、元情報の facts を
+    // 直接列挙しない書き方が正しいことも多いため、本文系フィールドが揃っていれば
+    // provenance が空でも許容する（Editorial Trust Layer 自体はプロンプトの
+    // 「元情報にない事実を作らない」で担保。2026-08-28、収益化②の実E2Eで
+    // interest/ginza_whiskers が provenance 空により全落ちしたのを受けて緩和）。
+    const provenanceRequired = angle !== 'interest' && angle !== 'ginza_whiskers'
+    if (missingFields.length > 0 || (provenanceRequired && !hasProvenance)) {
       skipped.push({
         angle,
         reason:
-          `AI出力形式が不完全なため除外（欠落: ${[...missingFields, ...(hasProvenance ? [] : ['sourceProvenance'])].join('・')}）`,
+          `AI出力形式が不完全なため除外（欠落: ${[...missingFields, ...(provenanceRequired && !hasProvenance ? ['sourceProvenance'] : [])].join('・')}）`,
       })
       continue
     }

@@ -26,10 +26,12 @@ export interface ParsedRelatedTag {
 
 export interface ParsedNoteHashtagPage {
   totalArticleCount: number | null
+  /** note 側が「約N件」の概数表示だった場合 true（Phase B paidRatio で下限扱いする） */
+  totalArticleCountIsApproximate: boolean
   relatedTags: ParsedRelatedTag[]
 }
 
-const TOTAL_COUNT_REGEX = /text-text-secondary md:pt-0">(?:約)?([\d,]+)件<\/div>/
+const TOTAL_COUNT_REGEX = /text-text-secondary md:pt-0">(約)?([\d,]+)件<\/div>/
 const RELATED_TAGS_START_MARKER = '関連タグ</h2>'
 const RELATED_TAG_ITEM_REGEX =
   /<a data-name="Tag"[^>]*href="([^"]+)"[^>]*>[\s\S]*?#<!-- -->([^<]*)<!-- --> \(<span>([\d,]+)<\/span>\)<\/span><\/a>/g
@@ -53,7 +55,8 @@ export function parseNoteHashtagPage(html: string): ParsedNoteHashtagPage {
     )
   }
 
-  const totalArticleCount = totalMatch ? parseCount(totalMatch[1]) : null
+  const totalArticleCount = totalMatch ? parseCount(totalMatch[2]) : null
+  const totalArticleCountIsApproximate = totalMatch ? totalMatch[1] === '約' : false
 
   const relatedTags: ParsedRelatedTag[] = []
   if (relatedStart !== -1) {
@@ -70,5 +73,5 @@ export function parseNoteHashtagPage(html: string): ParsedNoteHashtagPage {
     }
   }
 
-  return { totalArticleCount, relatedTags }
+  return { totalArticleCount, totalArticleCountIsApproximate, relatedTags }
 }

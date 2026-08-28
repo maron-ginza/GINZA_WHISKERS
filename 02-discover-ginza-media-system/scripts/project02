@@ -560,6 +560,66 @@ draft_today() {
   echo
 }
 
+draft_interest() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 収益化②「興味関心 × 銀座 × GW視点」ドラフト生成（draft-interest） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  CONFIRMED=""
+  PASSTHRU=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --yes) CONFIRMED="1" ;;
+      --limit=*|--strict|--w-paid=*|--c-match=*) PASSTHRU="$PASSTHRU $arg" ;;
+      --*) : ;; # 未知の--オプションは無視
+    esac
+  done
+
+  # --dry-run は選定計画のみ（AI呼び出し・DB書き込みなし）なので --yes 不要。
+  # live 実行は選ばれたテーマ数だけ Claude API を呼ぶため、--yes を必須とする
+  # （draft-today / tns next と同じ「コスト発生処理は明示フラグで確認」方針）。
+  if [ -z "$DRY_RUN_ARG" ] && [ -z "$CONFIRMED" ]; then
+    echo "⚠️  この処理は選定された関心テーマごとにClaude APIを呼び出します（テーマ数ぶん、小額課金）。"
+    echo "    まず ./p2 draft-interest --dry-run で選定計画（W_PAID/C_MATCH・finalRankScore・接続先DC）を確認できます。"
+    echo "    実際に生成するには --yes を付けて再実行してください。"
+    echo "    例: ./p2 draft-interest --dry-run"
+    echo "        ./p2 draft-interest --yes"
+    echo "        ./p2 draft-interest --yes --limit=3 --strict"
+    echo "        ./p2 draft-interest --dry-run --w-paid=6 --c-match=0.5   # 9月Trialの感度確認"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：AI呼び出し・DB書き込みは行いません。承認済みテーマの選定計画のみ表示）"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/draftInterest.ts $DRY_RUN_ARG $PASSTHRU 2>"$LOG_DIR/draft_interest.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "draft-interest スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/draft_interest.log 末尾 ---"
+    tail -20 "$LOG_DIR/draft_interest.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_draft_interest_status.py"
+  echo "================================================"
+  echo
+}
+
 refresh_dates() {
   echo
   echo "=== GINZA WHISKERS / Project 02 個別ページ日付再確認（Source Coverage拡張） ==="
@@ -1140,6 +1200,56 @@ interest_score() {
   echo
 }
 
+interest_paid_ratio() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 Phase B：paidRatio 取得（monetizationグループへ保存） ==="
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  DRY_RUN_ARG=""
+  TARGET_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --*) : ;;
+      *) TARGET_ARG="$arg" ;;
+    esac
+  done
+
+  if [ -z "$TARGET_ARG" ]; then
+    fail "対象テーマ名またはinterest-themes idを指定してください: ./p2 interest paid-ratio <theme|id> [--dry-run]"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：note.com への取得・paidRatio算出のみ確認。DBへの保存は行いません）"
+  fi
+
+  # Claude API・有料APIは呼び出さない（note.com/hashtag/<tag> の公開HTMLページGETのみ）。
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/interestPaidRatio.ts "$TARGET_ARG" $DRY_RUN_ARG 2>"$LOG_DIR/interest_paid_ratio.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "paidRatio 取得スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/interest_paid_ratio.log 末尾 ---"
+    tail -20 "$LOG_DIR/interest_paid_ratio.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 -m json.tool
+  echo "================================================"
+  echo
+}
+
 interest_dispatch() {
   case "$1" in
     fetch-note-rising)
@@ -1157,12 +1267,17 @@ interest_dispatch() {
     score)
       interest_score
       ;;
+    paid-ratio)
+      shift
+      interest_paid_ratio "$@"
+      ;;
     *)
       echo "Usage:"
       echo "  ./p2 interest fetch-note-rising [--dry-run]"
       echo "  ./p2 interest fetch-note-official [--dry-run]"
       echo "  ./p2 interest fetch-note-hashtag <tag> [--dry-run]"
       echo "  ./p2 interest score  (読み取り専用、Phase A統合Interest Score表示)"
+      echo "  ./p2 interest paid-ratio <theme|id> [--dry-run]  (Phase B、note.com公開ページから paidRatio を算出し monetizationグループへ保存)"
       return 1
       ;;
   esac
@@ -1628,6 +1743,10 @@ case "${1:-status}" in
     shift
     draft_today "$@"
     ;;
+  draft-interest)
+    shift
+    draft_interest "$@"
+    ;;
   clusters)
     clusters "$2"
     ;;
@@ -1688,6 +1807,8 @@ case "${1:-status}" in
     echo "  ./p2 score-articles [--force]  個別記事・イベント単位のEditorial Score/Audience Tags採点（鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
     echo "  ./p2 daily      Daily Editorial Desk（本日新規/更新＋開催中＋近日開催、Story Cluster単位のTop10、読み取り専用）"
     echo "  ./p2 draft-today [--dry-run] [--yes] [--limit=N] [--since=YYYY-MM-DD]  「旬の銀座」日次ドラフト生成：当日curationStatus=approvedのDiscoveredContentを類似テーマで束ね、上位トピック（既定最大5）を各1本ずつmulti-angleのCORE角度で記事draftにする。--dry-runは選定計画のみ（AI・DB書き込みなし）、live実行は--yes必須、生成物はreviewStatus:draftで承認待ち一覧へ"
+    echo "  ./p2 interest paid-ratio <theme|id> [--dry-run]  Project 02-2 Phase B：note.com/hashtag/<tag>と?paid_only=trueの総記事数差分からpaidRatioを算出しinterest-themes.monetizationへ保存（Claude API・有料API呼び出しなし）"
+    echo "  ./p2 draft-interest [--dry-run] [--yes] [--limit=N] [--strict] [--w-paid=N] [--c-match=N]  Project 02-2 収益化②：承認済みinterest-themes → topicInterestScore（既存Phase A）× monetizationMultiplier（Phase B）で順位付け → 承認済みDiscoveredContentへプレマッチ（C_MATCH）→ multi-angleのinterest/ginza_whiskers角度で記事draft生成。--dry-runは選定計画のみ、live実行は--yes必須、--w-paid/--c-matchは9月Trial調整用。生成物はreviewStatus:draftで承認待ち一覧へ"
     echo "  ./p2 clusters [--dry-run]  Story Clustering再計算・StoryClustersコレクションへ反映（同一イベントの複数URLを統合、DiscoveredContentは変更しない）"
     echo "  ./p2 refresh-dates [--dry-run] [--limit=N] [--all]  既存DiscoveredContentの個別ページを安全に再確認（--allで全件対象・誤抽出の訂正も反映。新規行は作成せず、discoveryStatus/curationStatusも変更しない）"
     echo "  ./p2 recompute-richness [--dry-run]  既存の採点済みSources/DiscoveredContentへ本文情報量ペナルティを遡及反映（新規AI呼び出しなし・課金なし）"
