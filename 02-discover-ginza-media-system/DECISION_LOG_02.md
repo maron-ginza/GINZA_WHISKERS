@@ -14,6 +14,79 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS #36 のリセット・本文込み live 再生成）:
+    Anthropic クレジット回復後、#36（2026-08-31〜09-06）を**同一
+    editionNumber #36 で本文込み再生成**した。既存 #36 は本文未完成の
+    未承認ドラフト（2026-08-27 の重複整理で「本文プローズのみ要再構築」と
+    記録済み）だったため、2026-08-27 の #0/#37 整理と同じ「退避 → 依存
+    ゼロ確認 → 削除」方式でリセットしてから作り直した。
+    **リセット対象**：SoundtrackEditions id=2（#36, `status=article_generated`）
+    ＋その `dailyScenes` 7 件（配列子行、edition 削除で cascade）＋
+    Article id=31（`reviewStatus=draft`）。
+    **依存の再確認（読み取りのみ）**：Article 31 は `reviewStatus=draft`・
+    `accessionNumber` なし・`publishHistory` 0 件。外部参照は
+    `music-usage-ledger`→edition id=2 が 0（#36 は台帳未記入）、他 Article の
+    `relatedArticles`→31 が 0、`social-posts`→31 が 0、id=2 以外の
+    `generatedArticle`→31 が 0。公開・承認・外部参照いずれもなし。
+    **手順**：一回限りスクリプト `cms/src/scripts/tnsResetEdition36.ts`
+    （`--dry-run` 対応、STEP1 abort guard：#36=article_generated /
+    Article 31=draft・publishHistory 空 / 上記外部参照ゼロ）で、①edition
+    id=2 ＋ Article 31 の全文を `locale:'all'` で JSON 退避
+    （`_backups/tns_edition_36_reset_backup_20260828.json`、53KB。gitignore
+    済みでコミット対象外）→ ②`payload.delete` で soundtrack-editions id=2
+    （dailyScenes は cascade）と articles id=31 を削除 → ③検証：残存
+    editions は #32/#33/#34/#35（すべて historical_import）、`edition_number=36`
+    は 0 件、Article 31 削除済み、`computeNextEditionNumber` 相当
+    （`max(editionNumber)+1`）＝ **36**。
+    **週間観察テキストの保持（マロン指示8）**：edition id=2 の
+    `context.maronWeeklyObservation`「残暑がやわらぎ、銀座にも季節の境目が
+    近づいている一週間でした」を退避時に取得し、live 再生成にそのまま
+    再利用した（退避 JSON にも `preservedWeeklyObservation` として同梱）。
+    **live 再生成**：`./p2 tns next --yes "<上記観察>"`（Claude API 呼び出し
+    あり＝dynamic mood ＋ 記事本文ドラフト、DB 書き込みあり）。結果：新
+    SoundtrackEditions **id=10 / editionNumber 36 / status
+    `article_generated`**、新 Article **id=49 / `reviewStatus=draft`**、
+    title「雷雨の輪郭、季節の境目」、本文 70 ブロック（Lexical root
+    children）、収蔵室（pillar）＝「文化」（tag id=3）、`aiGeneratedBy`＝
+    `claude-sonnet-5 (tns-weekly)`。
+    **AI 編集コメント生成済み（マロン指示：記録すること）**：7 日分それぞれに
+    `music_selected.readerFacingComment`（note 本文用の詩的な短評。例：月
+    「雨の月曜に寄り添う『All Right』——静かな一歩を後押しする軽やかさが
+    ここにある。」）と `music_selected.internalReason`（内部選定理由、例
+    「スコア5点（GINZA Codeタグ一致・気分タグ一致）」）、加えて日別の
+    `emotion`（dynamicEmotion）・`ginzaExperience`、週レベルの
+    `editorialTheme`（coreTheme／emotion／HOOK／AFTERGLOW）を保持。
+    **7 日分の選曲は先の dry-run（本ログ直前の #36 dry-run 報告）と完全
+    一致**：月=track64 All Right/Christopher Cross（洋・1983）、
+    火=43 恋人よ/五輪真弓（邦・1980）、水=38 みずいろの雨/八神純子（邦・1978）、
+    木=36 September/竹内まりや（邦・1979）、金=61 Cool Night/Paul Davis
+    （洋・1981）、土=50 夏の日/オフコース（邦・1984）、日=52 Sailing/
+    Christopher Cross（洋・1980）。旧 #36 draft（削除済み Article 31）との
+    差は火曜のみ＝旧「元気をだして/竹内まりや（id47）」→ 新「恋人よ/
+    五輪真弓（id43）」（元気をだては月曜の次点）。
+    **検証（独立 SQL）**：`edition_number=36` は 1 件（id=10）、Article は
+    1 件（総数 17 で不変：−31 +49）、`dailyScenes` 7 件、7 曲すべて
+    `music_usage_ledger`（#32〜#35、`reuseAllowed=false` の distinct 28 曲）と
+    突合して重複 0・週内も 7/7 distinct、邦楽 4：洋楽 3
+    （`musicBalance` effectiveJapanese=4 / International=3 / pending=0）、
+    `music-usage-ledger` は 28 件のまま不変（#36 は承認時まで台帳に
+    書かない設計）。
+    **#36（id=10）・Article 49 は `reviewStatus=draft` のまま。approve・
+    自動投稿は未実施**（既存の人間承認ゲート上にある）。
+    **公開前確認事項として残す**：
+      ① 土曜「夏の日/オフコース」（スコア 2 点・候補 29 件中 14 位）と
+         木曜「September/竹内まりや」（3 点）は適合度ではなく Adaptive
+         Music Balance（邦 4：洋 3 の強制）による選出で、単独スコアでは
+         次点の「恋人よ」「みずいろの雨」（各 5 点）を下回る。特に土曜の
+         タグ競合（気分タグのみ一致・季節/天気/GINZA Code 不一致）は
+         Human Editorial で差し替え要否を判断する。
+      ② `fixedMoodLabel` が code2/3/4/6 で未設定（TNSSettings は 7 CODE 中
+         3 つのみ）。`dynamicEmotion` で生成は成立しているが、TNS_SPEC は
+         固定ラベルを Human Editorial 対象としている。
+    **成果物**：`cms/src/scripts/tnsResetEdition36.ts`（一回限りのリセット
+    スクリプト）。ローカル開発 DB（`cms-postgres-1`）の行データ本体・退避
+    JSON はリポジトリにコミットしない。
+
   - 2026-08-28（🌈TNS #32 の historical_import）:
     #33〜#35 の重複排除台帳が完了扱いである一方、その前週の **#32
     （2026-08-03〜08-09、CMS 運用開始前に note.com で公開済み）が CMS に
