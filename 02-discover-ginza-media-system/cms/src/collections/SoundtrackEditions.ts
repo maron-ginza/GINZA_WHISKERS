@@ -91,13 +91,54 @@ export const SoundtrackEditions: CollectionConfig = {
                 { name: 'conditionLabel', type: 'text', required: true },
                 { name: 'tempHighC', type: 'number' },
                 { name: 'tempLowC', type: 'number' },
+                // 2026-08-28 気象庁主軸化で追加
+                { name: 'pop', type: 'number', admin: { description: '降水確率(%)。気象庁 pops / Open-Meteo precipitation_probability_max' } },
+                {
+                  name: 'reliability',
+                  type: 'select',
+                  options: ['A', 'B', 'C'],
+                  admin: { description: '気象庁 週間予報の信頼度（補助ソース確定日は空）' },
+                },
+                {
+                  name: 'daySource',
+                  type: 'select',
+                  options: ['jma', 'open-meteo', 'manual'],
+                  admin: { description: 'この日の確定値の出所。気象庁週間予報の範囲外の日は open-meteo' },
+                },
+                {
+                  name: 'divergenceLevel',
+                  type: 'select',
+                  options: ['none', 'minor', 'major'],
+                  admin: { description: '主／補助ソースの日別乖離レベル（major は humanReviewRequired の要因）' },
+                },
               ],
             },
             {
               name: 'weatherSource',
               type: 'select',
               options: toOptions(WEATHER_SOURCES),
-              admin: { description: "'api'=Open-Meteo自動取得／'manual'=マロン手入力／'ai_retrieved'=将来拡張" },
+              admin: { description: "'api'=自動取得（気象庁 or Open-Meteo）／'manual'=マロン手入力" },
+            },
+            {
+              name: 'provenance',
+              type: 'group',
+              admin: {
+                description:
+                  'TNS週間天気の取得来歴（2026-08-28 気象庁主軸化）。主＝気象庁 週間天気予報、' +
+                  '補＝Open-Meteo(jma_seamless)。日別に比較し大きな乖離のみ humanReviewRequired=true。',
+              },
+              fields: [
+                { name: 'primaryWeatherSource', type: 'text' },
+                { name: 'secondaryWeatherSource', type: 'text' },
+                { name: 'fetchedAt', type: 'date', admin: { description: '取得実行時刻' } },
+                { name: 'jmaReportDatetime', type: 'date', admin: { description: '気象庁 週間予報の発表時刻' } },
+                { name: 'humanReviewRequired', type: 'checkbox', defaultValue: false },
+                {
+                  name: 'humanReviewReasons',
+                  type: 'textarea',
+                  admin: { description: '日別の乖離理由・フォールバック理由（1行1件）' },
+                },
+              ],
             },
           ],
         },

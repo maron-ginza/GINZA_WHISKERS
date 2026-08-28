@@ -59,6 +59,12 @@ export interface CreateWeeklySoundtrackEditionResult {
   weekStart: string
   weekEnd: string
   weatherSource: string
+  primaryWeatherSource: string
+  secondaryWeatherSource: string
+  jmaReportDatetime: string | null
+  fetchedAt: string
+  humanReviewRequired: boolean
+  humanReviewReasons: string[]
   daysWithTrackSelected: number
   daysPendingHumanSelection: number
   japaneseTrackCount: number
@@ -134,6 +140,10 @@ export async function createWeeklySoundtrackEdition(
       conditionLabel: '不明',
       tempHighC: null,
       tempLowC: null,
+      pop: null,
+      reliability: null,
+      weatherSource: 'manual' as const,
+      divergence: { level: 'none' as const, reasons: [] },
     }
     return {
       weekday,
@@ -240,8 +250,25 @@ export async function createWeeklySoundtrackEdition(
         season,
         weather: {
           weekSummary: weather.weekSummary,
-          daily: weather.daily,
+          daily: weather.daily.map((d) => ({
+            date: d.date,
+            conditionLabel: d.conditionLabel,
+            tempHighC: d.tempHighC,
+            tempLowC: d.tempLowC,
+            pop: d.pop ?? undefined,
+            reliability: d.reliability ?? undefined,
+            daySource: d.weatherSource,
+            divergenceLevel: d.divergence.level,
+          })),
           weatherSource: weather.weatherSource,
+          provenance: {
+            primaryWeatherSource: weather.provenance.primaryWeatherSource,
+            secondaryWeatherSource: weather.provenance.secondaryWeatherSource,
+            fetchedAt: weather.provenance.fetchedAt,
+            jmaReportDatetime: weather.provenance.jmaReportDatetime ?? undefined,
+            humanReviewRequired: weather.provenance.humanReviewRequired,
+            humanReviewReasons: weather.provenance.humanReviewReasons.join('\n'),
+          },
         },
         maronWeeklyObservation: input.maronWeeklyObservation,
         maronOptional: {
@@ -307,6 +334,12 @@ export async function createWeeklySoundtrackEdition(
     weekStart: formatDateISO(week.weekStart),
     weekEnd: formatDateISO(week.weekEnd),
     weatherSource: weather.weatherSource,
+    primaryWeatherSource: weather.provenance.primaryWeatherSource,
+    secondaryWeatherSource: weather.provenance.secondaryWeatherSource,
+    jmaReportDatetime: weather.provenance.jmaReportDatetime,
+    fetchedAt: weather.provenance.fetchedAt,
+    humanReviewRequired: weather.provenance.humanReviewRequired,
+    humanReviewReasons: weather.provenance.humanReviewReasons,
     daysWithTrackSelected: renderDays.filter((d) => d.track !== null).length,
     daysPendingHumanSelection: renderDays.filter((d) => d.track === null).length,
     japaneseTrackCount: renderDays.filter((d) => d.track?.origin === 'japanese').length,

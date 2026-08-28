@@ -82,11 +82,16 @@ export interface TrackScoreBreakdown {
 // 導出できない情報のため、日次コンテキストの自動導出対象には含めない——
 // MusicTracks側でこれらのタグを人間が手動付与すること自体は妨げないが、
 // その場合はその項目のスコアには（自動導出されないため）寄与しない。
+// Open-Meteo（WMOコード由来、漢字ラベル）と気象庁（週間予報テロップ、
+// 「くもり時々晴れ」等のひらがな複合ラベル）の両方の語彙をカバーする。
 const WEATHER_LABEL_TO_TAGS: [string, WeatherTag[]][] = [
   ['雷', ['thunder', 'rain']],
+  ['ひょう', ['thunder', 'rain']],
   ['霧雨', ['drizzle', 'rain']],
+  ['にわか雨', ['rain']],
   ['雨', ['rain']],
-  ['曇', ['cloudy']],
+  ['曇', ['cloudy']], // Open-Meteo「曇り」
+  ['くもり', ['cloudy']], // 気象庁「くもり」「くもり時々晴れ」「くもり一時雨」
   ['晴', ['sunny']],
 ]
 

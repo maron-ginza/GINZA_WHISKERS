@@ -17,9 +17,9 @@ import config from '../payload.config'
 // 削除後は残存最大 editionNumber が 35 になり、computeNextEditionNumber は 36 を返す。
 // approve・自動投稿・AI 生成は行わない。--dry-run で書き込みなしの確認。
 
-const EDITION_ID = 2
+const EDITION_ID = 10
 const EDITION_NUMBER = 36
-const ARTICLE_ID = 31
+const ARTICLE_ID = 49
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run')
@@ -27,7 +27,7 @@ async function main() {
 
   const backupDir = path.resolve(process.cwd(), '..', '_backups')
   mkdirSync(backupDir, { recursive: true })
-  const backupPath = path.join(backupDir, 'tns_edition_36_reset_backup_20260828.json')
+  const backupPath = path.join(backupDir, 'tns_edition_36_jma_regen_backup_20260828.json')
 
   // ── STEP 1: retrieve + abort guards ────────────────────────
   const guards: string[] = []
@@ -113,7 +113,7 @@ async function main() {
   const observation = String((edition as Record<string, unknown>).context
     ? ((edition as { context?: { maronWeeklyObservation?: string } }).context?.maronWeeklyObservation ?? '')
     : '')
-  console.log('[STEP1] abort guard OK（#36=article_generated / Article 31=draft・publishHistory空 / 台帳0・relatedArticles0・social0・他edition参照0）')
+  console.log('[STEP1] abort guard OK（#36=article_generated / Article 49=draft・publishHistory空 / 台帳0・relatedArticles0・social0・他edition参照0）')
   console.log(`[STEP1] 保持する週間観察テキスト: "${observation}"`)
 
   // dailyScenes 件数（確認用）

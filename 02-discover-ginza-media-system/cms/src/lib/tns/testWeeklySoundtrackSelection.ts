@@ -138,6 +138,10 @@ export async function testWeeklySoundtrackSelection(
       conditionLabel: '不明',
       tempHighC: null,
       tempLowC: null,
+      pop: null,
+      reliability: null,
+      weatherSource: 'manual' as const,
+      divergence: { level: 'none' as const, reasons: [] },
     }
     return {
       weekday,

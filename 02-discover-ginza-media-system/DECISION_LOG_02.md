@@ -14,6 +14,116 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS週間天気 気象庁主軸化の正式実装 ＋ #36 の再生成）:
+    **背景**：Open-Meteo 単独採用では、Weathernews／気象庁の銀座（中央区）
+    週間予報と大きく乖離する日があることが #32〜#34 の事実比較および
+    #36 の突き合わせで判明したため、**主ソースを気象庁「週間天気予報」、
+    補助を Open-Meteo（気象庁数値モデル）とする2ソース構成**へ切り替えた。
+    **実装**：
+      - `cms/src/lib/tns/fetchJmaWeekForecast.ts`（新規）：気象庁
+        `bosai/forecast/data/forecast/130000.json`（東京都府県予報区）から
+        週間セクション（配列[1]）をパース。天気コード・降水確率(pops)・
+        信頼度(reliabilities)＝東京地方(130010)、最高/最低気温＝東京
+        アメダス(44132)。天気コード→日本語ラベルはインライン表
+        （telops.json は現在 404 のため同等表を内蔵、未知コードは百の位で
+        カテゴリ補完）。`reportDatetime`・カバー範囲も返す。
+      - `cms/src/lib/tns/weatherDivergence.ts`（新規）：日別の主／補助
+        乖離判定。しきい値定数化（`DEFAULT_DIVERGENCE_THRESHOLDS`：気温差
+        major 4℃/minor 2℃、降水確率差 major 40pt/minor 20pt）。判定：
+        ①天候カテゴリ反転（晴れ系 vs 雨・雷系、気象庁 pop≥50% も雨側）＝
+        major、②降水有無の食い違い＝minor、③降水確率差・気温差＝しきい値で
+        major/minor、④気象庁 信頼度C は理由に常時付記（単独では major に
+        しない）。
+      - `cms/src/lib/tns/fetchWeeklyWeather.ts`（全面改修）：
+        `fetchOpenMeteoWeekForecast`（既存ロジック＋`models=jma_seamless`＋
+        `precipitation_probability_max`、基準地点を銀座一丁目駅
+        35.6742,139.7668 へ更新）と `fetchJmaWeekForecast` を呼び、
+        `reconcileWeeklyWeather` で日別確定。**通常は気象庁を優先して自動
+        確定**、気象庁の週間気温が近い日で空欄なら補助で補完、気象庁週間
+        予報の範囲外の日（金曜実行だと対象週の土日など）は補助ソースで確定。
+        `humanReviewRequired = 「major 乖離のある日が1つでもある」 or
+        「範囲外フォールバックの日がある」`（生成はブロックしない）。
+        `humanReviewReasons` に日別の理由を列挙。`weekSummary` の決定的
+        生成ロジックは不変。互換の `fetchWeeklyWeather(week)` は中身が
+        reconcile に差し替わり、`daily[]` に `pop/reliability/weatherSource/
+        divergence`、戻り値に `provenance{primaryWeatherSource,
+        secondaryWeatherSource, fetchedAt, jmaReportDatetime,
+        humanReviewRequired, humanReviewReasons}` を追加。
+      - `cms/src/lib/tns/musicScoring.ts`：`WEATHER_LABEL_TO_TAGS` に
+        気象庁のひらがな複合ラベル語彙（`くもり`／`ひょう`／`にわか雨`）を
+        追加。既存 WMO 漢字ラベルの挙動は不変。
+      - `cms/src/collections/SoundtrackEditions.ts`：`context.weather` に
+        `provenance` グループ（primaryWeatherSource / secondaryWeatherSource
+        / fetchedAt / jmaReportDatetime / humanReviewRequired /
+        humanReviewReasons〈textarea、識別子長 63 文字制限のため array →
+        textarea に変更〉）と、`context.weather.daily[]` に `pop`（number）
+        `reliability`（A/B/C）`daySource`（jma/open-meteo/manual）
+        `divergenceLevel`（none/minor/major）を追加。
+      - `createWeeklySoundtrackEdition.ts`：上記 provenance と日別フィールド
+        を `payload.create` で永続化。`CreateWeeklySoundtrackEditionResult`
+        に provenance を追加（`./p2 tns next` の出力にも出る）。
+      - `testWeeklySoundtrackSelection.ts` / `createWeeklySoundtrackEdition.ts`
+        の天気未取得時 fallback リテラルを新 `DailyWeather` 形へ追随。
+      - `payload generate:types` 済み（`payload-types.ts` は gitignore）。
+        `tsc --noEmit` 0エラー。ローカル開発DBは dev-push で列・列挙型を
+        追加済み。**本番デプロイ時は `payload migrate:create` で移行ファイル
+        生成が必要（未実施）**。
+    **#36（2026-08-31〜09-06）の再生成**：
+      - 旧 #36（SoundtrackEditions id=10 / Article id=49、reviewStatus=draft・
+        publishHistory空・台帳/relatedArticles/social/他edition参照ゼロ）を
+        `cms/src/scripts/tnsResetEdition36Jma.ts`（`tnsResetEdition36.ts` を
+        id=10/Article49 用に派生、`--dry-run`・abort guard 付き）で
+        `_backups/tns_edition_36_jma_regen_backup_20260828.json` へ
+        `locale:'all'` 退避 → `payload.delete`（dailyScenes は cascade）。
+        退避 JSON は旧 editionNumber36・旧 weekSummary（雷雨中心20.2〜30.2℃）・
+        旧7曲（64/43/38/36/61/48/52）・旧 editorialTheme・旧 Article 本文
+        70ブロック・旧 title「雷雨の輪郭、季節の境目」・`translationStatus.ja=
+        complete` を保持（比較可能）。削除後 `computeNextEditionNumber` = 36。
+      - 週間観察テキスト「残暑がやわらぎ、銀座にも季節の境目が近づいて
+        いる一週間でした」を退避時に取得し、`./p2 tns next --yes "<観察>"`
+        で live 再生成（Claude API 呼び出しあり、DB 書き込みあり）。
+      - **新 #36：SoundtrackEditions id=11 / editionNumber 36 /
+        Article id=50「残暑のやわらぐ場所で」（reviewStatus=draft、70ブロック）**。
+        provenance：primary＝気象庁 週間天気予報(東京地方130010・気温 東京
+        44132)、secondary＝Open-Meteo(jma_seamless)、jmaReportDatetime＝
+        2026-08-28 17:00 JST、humanReviewRequired＝**true**。
+      - **新天気（旧 Open-Meteo → 新 気象庁主軸）**：8/31 弱いにわか雨
+        30.1/23.6 → くもり時々晴れ 35/24（pop30・信頼B・jma・**major**）／
+        9/1 雷雨 30.2/23.7 → くもり時々晴れ 34/25（pop30・信頼B・**major**）／
+        9/2 弱い霧雨 30.1/24.4 → くもり 33/25（pop40・信頼C・minor）／
+        9/3 雷雨(弱いひょう) 29/23.3 → くもり一時雨 30/24（pop60・信頼B・
+        none）／9/4 強い霧雨 25.5/22.1 → くもり一時雨 28/22（pop50・信頼C・
+        none）／9/5 霧雨 23.5/20.8 → 弱い霧雨 25.4/22（open-meteo 範囲外
+        フォールバック）／9/6 雷雨 23.7/20.2 → 晴れ 26.4/21.6（同）。
+        weekSummary「くもり時々晴れが中心、気温は21.6〜35℃」。
+      - **humanReviewReasons（6件）**：8/31・9/1 [major] 天候カテゴリ反転＋
+        最高気温差4.7℃／9/2 [minor] 信頼度C＋降水有無食い違い＋気温差3.1℃／
+        9/4 信頼度C／9/5・9/6 気象庁週間予報の範囲外→補助ソース確定。
+      - **選曲（自動）**：月 All Right/Christopher Cross（洋）、火 恋人よ/
+        五輪真弓（邦）、水 September/竹内まりや（邦）、木 みずいろの雨/
+        八神純子（邦）、金 Cool Night/Paul Davis（洋）、土 夏の日/オフコース
+        （邦）、日 Sailing/Christopher Cross（洋）。邦4:洋3・週内重複0・
+        過去使用（台帳28曲）重複0。**旧版からの変更**：水⇄木で「みずいろの雨」
+        ⇄「September」入替（雨の日が水→木へ移動したため）＋土曜は自動選曲が
+        「夏の日」を選出（旧の Human Editorial 手動採用「I LOVE YOU」は
+        再生成でリセット。維持候補として比較——両者とも邦楽・機械スコア
+        同点・台帳/週内重複なしで邦4:洋3に影響なし）。月火金日は不変。
+      - **新テーマ**：coreTheme「残暑の名残と、少しずつ涼やかさを帯びて
+        いく銀座の一週間。季節の境目に立ち、過ぎゆく夏を静かに見送るような
+        時間を編集する。」／englishSubtitle「A Week Where Summer Loosens
+        Its Grip on Ginza」（旧「雷雨と霧雨が交互に訪れる一週間／夏から秋
+        への境目」から "残暑・くもり" 基調へ）。
+    **未実施**：Article 50 の Human Editorial パス（見出しの内部コード整理・
+    EPOV 文体・ハッシュタグ・土曜 I LOVE YOU 維持差し替え・
+    translationStatus.ja=complete）、approve・自動投稿、本番 push/DNS/
+    マイグレーション生成。`reviewStatus` は draft、`music-usage-ledger` は
+    28件のまま不変（#36 は承認時まで台帳に書かない設計）。DB 書き込みは
+    ローカル開発（`cms-postgres-1`）のみ。
+    **成果物**：`fetchJmaWeekForecast.ts`／`weatherDivergence.ts`／
+    `fetchWeeklyWeather.ts`（改修）／`musicScoring.ts`（改修）／
+    `SoundtrackEditions.ts`（改修）／`createWeeklySoundtrackEdition.ts`（改修）／
+    `tnsResetEdition36Jma.ts`／`tnsCompareWeather36.ts`。
+
   - 2026-08-28（🌈TNS note 投稿運用方針の更新 ＋ #36 完成稿候補の確定）:
     **運用方針（確定）**：TNS の note 投稿は、CMS から note への自動投稿
     （Phase 15 の social 配信基盤）を使わず、**「完成原稿をマロンが note へ

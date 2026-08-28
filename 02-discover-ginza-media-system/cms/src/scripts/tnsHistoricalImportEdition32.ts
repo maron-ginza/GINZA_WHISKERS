@@ -172,7 +172,7 @@ async function main() {
       }
     }),
     findExistingEditionForWeek_2026_08_03: forWeek
-      ? { id: forWeek.id, editionNumber: forWeek.editionNumber, status: forWeek.status }
+      ? { id: forWeek.id, editionNumber: forWeek.editionNumber }
       : null,
     computeNextEditionNumber: computeNext,
   }
