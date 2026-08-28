@@ -113,16 +113,34 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
         時間を編集する。」／englishSubtitle「A Week Where Summer Loosens
         Its Grip on Ginza」（旧「雷雨と霧雨が交互に訪れる一週間／夏から秋
         への境目」から "残暑・くもり" 基調へ）。
-    **未実施**：Article 50 の Human Editorial パス（見出しの内部コード整理・
-    EPOV 文体・ハッシュタグ・土曜 I LOVE YOU 維持差し替え・
-    translationStatus.ja=complete）、approve・自動投稿、本番 push/DNS/
-    マイグレーション生成。`reviewStatus` は draft、`music-usage-ledger` は
-    28件のまま不変（#36 は承認時まで台帳に書かない設計）。DB 書き込みは
-    ローカル開発（`cms-postgres-1`）のみ。
+    **Article 50 の Human Editorial パス（2026-08-28、上記再生成の直後に
+    適用）**：`cms/src/scripts/tnsEditArticle50.ts`（`--dry-run`対応・18置換の
+    完全一致ガード・週内重複/台帳ガード付き）で、①各日 h3 見出しの内部コード
+    「— TNS Editorial Code: codeN」を全7日から除去し「GINZA CODE N：<日本語
+    ムード>」へ（code2/3/4/6 に日本語ムード見出しを付与）。②EDITORIAL POINT
+    OF VIEW を7日分 読者向け文体へ（金・日の `fixedMoodLabel「…」に合わせ`
+    という内部フィールド名露出も解消）。③本文末尾に note 向けハッシュタグ
+    1段落（`#TokyoNostalgicSoundtrack #銀座 #昭和歌謡 #シティポップ #AOR
+    #GINZAWHISKERS`）。④**土曜は Human Editorial 継続で I LOVE YOU/オフコース
+    (id48) を維持**——自動選曲の「夏の日」(id50) から差し替え、`dailyScenes[土]`
+    （edition id=11）の trackRef・emotion・sceneDescription・EPOV・
+    weeklyEnglishSubtitle・internalReason・readerFacingComment と本文の土曜
+    ブロックを「金の高揚→土の静けさ→日の余韻」のトーンへ更新（見出し
+    「静けさへ」）。⑤`translationStatus.ja` を `complete`（`en` は
+    `not_started`）。**検証**：`reviewStatus=draft` 維持、本文に
+    `TNS Editorial Code`/`fixedMoodLabel`/`codeN` 文字列なし、7曲は
+    月 All Right・火 恋人よ・水 September・木 みずいろの雨・金 Cool Night・
+    土 **I LOVE YOU**・日 Sailing で 邦4:洋3・週内重複0、#36 は1件（id=11）・
+    articles 総数17・`music-usage-ledger` 28件のまま不変、本文70→71ブロック。
+    Article 50 title「残暑のやわらぐ場所で」。**approve・自動投稿は未実施。**
+    **未実施**：approve・自動投稿、`89bf929` の push、本番 push/DNS/
+    マイグレーション生成、note 転記時の Human Editorial 工程（挿絵配置・
+    YouTube URL 挿入・最終レイアウト確認）。DB 書き込みはローカル開発
+    （`cms-postgres-1`）のみ。
     **成果物**：`fetchJmaWeekForecast.ts`／`weatherDivergence.ts`／
     `fetchWeeklyWeather.ts`（改修）／`musicScoring.ts`（改修）／
     `SoundtrackEditions.ts`（改修）／`createWeeklySoundtrackEdition.ts`（改修）／
-    `tnsResetEdition36Jma.ts`／`tnsCompareWeather36.ts`。
+    `tnsResetEdition36Jma.ts`／`tnsCompareWeather36.ts`／`tnsEditArticle50.ts`。
 
   - 2026-08-28（🌈TNS note 投稿運用方針の更新 ＋ #36 完成稿候補の確定）:
     **運用方針（確定）**：TNS の note 投稿は、CMS から note への自動投稿
