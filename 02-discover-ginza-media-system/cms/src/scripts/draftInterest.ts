@@ -34,6 +34,15 @@ async function main() {
   if (maxDrafts !== undefined && (!Number.isInteger(maxDrafts) || maxDrafts < 1)) {
     throw new Error(`--limit は 1 以上の整数で指定してください（受け取った値: ${maxDrafts}）`)
   }
+  // --w-paid は monetization 補正の強さ。負値だと monetized テーマを不当に
+  // 減点する（乗数 < 1）ため 0 以上のみ許可。
+  if (wPaid !== undefined && wPaid < 0) {
+    throw new Error(`--w-paid は 0 以上を指定してください（受け取った値: ${wPaid}）`)
+  }
+  // --c-match は「テーマ側 bigram 被覆率」のしきい値なので 0〜1 の範囲のみ。
+  if (cMatch !== undefined && (cMatch < 0 || cMatch > 1)) {
+    throw new Error(`--c-match は 0〜1 の範囲で指定してください（受け取った値: ${cMatch}）`)
+  }
 
   const payload = await getPayload({ config })
   const result = await runInterestDrivenDraftsFromThemes(payload, {

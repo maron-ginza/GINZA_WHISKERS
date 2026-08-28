@@ -347,29 +347,48 @@ CLI では `--w-paid=N` `--c-match=N` で単発上書き可（`./p2 draft-intere
 **変更（最小・後方互換）**：`collections/InterestThemes.ts`（`monetization` group ＋
 `generatedArticles` relationship を追加、いずれも非AI・readOnly）、
 `lib/ai/generateMultiAngleArticleDrafts.ts`（`readerInterestTheme?` を入力に追加＝
-user メッセージ注入のみ。ツールスキーマ不変。**加えて interest/ginza_whiskers
-角度は sourceProvenance 空を許容へ緩和**——下記 8.6）、
+user メッセージ注入のみ。ツールスキーマ不変。**sourceProvenance は全角度で必須
+——下記 8.6 で 2026-08-28 の一時緩和を取り消し、システムプロンプトを補強**）、
 `lib/ai/createMultiAngleDraftsFromDiscoveredContent.ts`（`readerInterestTheme`/
 `interestThemeKey` を options に追加、`aiGeneratedBy` に `|interestTheme=<key>` を付与）、
 `lib/curation/textSimilarity.ts`（`computeThemeBigramContainment` 追加）、
 `lib/interestDiscovery/parseNoteHashtagPage.ts`（`totalArticleCountIsApproximate` を返す）、
 `scripts/project02`（`interest paid-ratio` ／ `draft-interest` を配線。**morning へは未接続**）。
 
-### 8.6 実E2Eで判明・修正した点（2026-08-28）
+### 8.6 実E2E検収と Trust Layer の再修正（2026-08-28）
 
-- **sourceProvenance 空により interest/ginza_whiskers が全落ちする不具合**：
-  multi-angle の検証は「include:true の角度は sourceProvenance ≥ 1 件必須」だった。
-  core/need/experience（事実主体）では妥当だが、interest/ginza_whiskers は
-  編集的視点が主体で元情報の facts を直接列挙しない書き方が正しいことも多く、
-  実 E2E（関心「旅行」× 蔦屋重三郎「耕書堂跡」記事）で両角度が provenance 空で
-  全落ちした。**interest/ginza_whiskers に限り sourceProvenance 空を許容へ緩和**
-  （Editorial Trust Layer 自体はプロンプトの「元情報にない事実を作らない」で担保）。
-  再実行で Article 2本（interest/medium・ginza_whiskers/medium）が
-  reviewStatus:draft で生成、`aiGeneratedBy` に `interestTheme=旅行` 付与、
-  `interest-themes.generatedArticles` 紐付け、再実行で `already_generated` スキップ
-  ——を確認。検収用の承認（interest-themes 5件・DiscoveredContent #217）と
-  生成物（Article #37/#38）はすべて元へ戻した／削除した（旅行の monetization
-  実データのみ意図的に保持）。
+**第1E2E（関心「旅行」× 蔦屋重三郎「耕書堂跡」記事）**：include:true 角度の
+sourceProvenance ≥ 1 件必須という multi-angle の検証で、interest/ginza_whiskers の
+両角度が provenance 空により全落ち。いったん **interest/ginza_whiskers に限り
+sourceProvenance 空を許容へ緩和**して Article 2本を生成した。
+
+**E2E検収でこの緩和が Editorial Trust Layer を弱めると判定 → 取り消し**：
+緩和後の第2E2E（関心「旅行」「写真」の4本）で、生成4本すべてが
+`editorialProvenance` 0 件のまま承認された（本文は出典 excerpt に接地して
+いたが、日付・地名・外部媒体名など構造化すべき事実の検証記録が空）。
+`sourceProvenance` 必須は単なる記録項目ではなく「AI に使った事実を列挙させる
+forcing function」であり、これを外すと検証台帳が空の記事が通ってしまう。
+**対応（確定）**：
+1. `hasProvenance` を **全5角度で必須へ戻す**（interest/ginza_whiskers も
+   例外にしない）。
+2. `MULTI_ANGLE_SYSTEM_PROMPT` の Editorial Trust Layer 節を補強——
+   「include:true のすべての角度は sourceProvenance を最低1件必ず出力する。
+   編集的視点の角度であっても、会場・日付・人物・歴史・商品・サービス等の
+   事実記述を最低1件は sourceProvenance に記録する。**検証可能な事実が
+   1件も無い角度は記事化せず include:false とする**」。
+3. `draftInterest.ts` の CLI 引数検証を追加（`--w-paid ≥ 0`、`--c-match` は
+   0〜1、不正値は明示エラー）。
+
+**再E2E（修正後、関心「旅行」× #217／「写真」× #97）**：Article #43〜46 を
+reviewStatus:draft で生成。**interest・ginza_whiskers の4本すべてに
+`editorialProvenance` 2件ずつ**が付与され（`discovered_content_source` は
+承認済み #217/#97、`source_url` 一致、`verification_status` は confirmed 中心・
+未確認は unconfirmed で正直に表示、fact は excerpt に接地）、
+`aiGeneratedBy` に `interestTheme=<テーマ>` 付与、再実行で `already_generated`
+スキップを確認。`tsc --noEmit`（cms、0エラー）・`./p2 doctor` 全緑。
+検収用の承認（interest-themes・DiscoveredContent #217）と生成物（Article
+#37〜46）はすべて元へ戻した／削除した（旅行・写真・エッセイの monetization
+実データのみ意図的に保持）。
 
 ### 8.7 実運用上の現実（設計に織り込み済み）
 

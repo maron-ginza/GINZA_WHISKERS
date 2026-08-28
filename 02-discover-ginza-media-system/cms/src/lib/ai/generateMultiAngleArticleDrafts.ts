@@ -157,6 +157,16 @@ const MULTI_ANGLE_SYSTEM_PROMPT = `あなたはGINZA WHISKERS「AI GINZA EDITORI
 - **sourceName・sourceUrl・確認日時は出力しないこと**——システム側が別途
   保持し機械的に付与する。あなたが出力するsourceProvenanceにはfact・
   sourceType・factType・verificationStatusのみを含めればよい。
+- **include:trueとするすべての角度は、sourceProvenanceを最低1件必ず出力する
+  こと**。これはcore/need/experienceだけでなく、**interest・ginza_whiskersの
+  編集的視点の角度も例外ではない**——編集的な角度であっても、記事は必ず
+  何らかの核情報の事実（会場・日付・人物・歴史・商品・サービス・主催者等の
+  記述）に依拠しているはずで、その依拠した事実を最低1件はsourceProvenanceに
+  記録すること。本文中で言及した具体的事実（例：地名・施設名・開催日・
+  掲載媒体名・配布物・関連人物名）は、対応するsourceProvenanceエントリを
+  作ること。**依拠できる検証可能な事実が1件も無い角度は、記事化せず
+  include:falseとし、skipReasonに「検証可能な事実を伴わないため」と書くこと**
+  ——事実の裏付けがないまま編集的文章だけを生成してはならない。
 
 ## 記事の構成要素（角度ごとに1本の記事として成立させる）
 
@@ -490,18 +500,17 @@ export async function generateMultiAngleArticleDrafts({
 
     const missingFields = REQUIRED_NARRATIVE_FIELDS.filter((field) => !candidate[field])
     const hasProvenance = (candidate.sourceProvenance?.length ?? 0) > 0
-    // sourceProvenance（fact単位の出典）は core/need/experience（事実主体の角度）
-    // では必須。interest / ginza_whiskers は編集的視点が主体で、元情報の facts を
-    // 直接列挙しない書き方が正しいことも多いため、本文系フィールドが揃っていれば
-    // provenance が空でも許容する（Editorial Trust Layer 自体はプロンプトの
-    // 「元情報にない事実を作らない」で担保。2026-08-28、収益化②の実E2Eで
-    // interest/ginza_whiskers が provenance 空により全落ちしたのを受けて緩和）。
-    const provenanceRequired = angle !== 'interest' && angle !== 'ginza_whiskers'
-    if (missingFields.length > 0 || (provenanceRequired && !hasProvenance)) {
+    // sourceProvenance（fact単位の出典）は **全角度で必須**（2026-08-28、収益化②の
+    // E2E検収を受けて再判定）。interest / ginza_whiskers も例外にしない——編集的
+    // 視点の角度であっても、拠り所にした核情報の事実（会場・日付・人物・歴史・
+    // 商品・サービス等）を最低1件は列挙させることが、Editorial Trust Layer の
+    // 「使った事実を検証記録に残す」forcing function として機能する。検証可能な
+    // 事実を伴わない角度は記事化せず drop する（Trust Layer の従来挙動）。
+    if (missingFields.length > 0 || !hasProvenance) {
       skipped.push({
         angle,
         reason:
-          `AI出力形式が不完全なため除外（欠落: ${[...missingFields, ...(provenanceRequired && !hasProvenance ? ['sourceProvenance'] : [])].join('・')}）`,
+          `AI出力形式が不完全なため除外（欠落: ${[...missingFields, ...(hasProvenance ? [] : ['sourceProvenance'])].join('・')}）`,
       })
       continue
     }

@@ -14,6 +14,42 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（収益化② E2E検収 → Trust Layer 修正2件 → morning接続可判定）:
+    前エントリで接続した `./p2 draft-interest` を実データ E2E 検収し、
+    **1点のみ 要修正**（interest/ginza_whiskers の sourceProvenance 空許容が
+    Editorial Trust Layer の「使った事実を検証記録に残す」forcing function を
+    外していた——緩和後の実 E2E 4本が `editorialProvenance` 0 件のまま承認
+    された）。**修正2件を反映**：
+    ① `generateMultiAngleArticleDrafts.ts` の provenance ゲートを **全5角度で
+    必須へ戻す**（前日入れた `provenanceRequired = angle !== 'interest' &&
+    angle !== 'ginza_whiskers'` 分岐を削除）。`MULTI_ANGLE_SYSTEM_PROMPT` の
+    Editorial Trust Layer 節に「include:true のすべての角度は sourceProvenance
+    最低1件必須。編集的視点の角度でも会場・日付・人物・歴史・商品・サービス
+    等の事実記述を最低1件記録。検証可能な事実がなければ include:false」を追記。
+    ② `draftInterest.ts` の CLI 引数検証（`--w-paid ≥ 0`、`--c-match` 0〜1、
+    不正値は明示エラー）。
+    **再E2E（修正後）**：関心「旅行」× DC #217（蔦屋重三郎「耕書堂跡」、
+    中央区観光協会）／「写真」× DC #97（南方書局フェア）で Article #43〜46 を
+    reviewStatus:draft で生成。**interest・ginza_whiskers の4本すべてに
+    `editorialProvenance` 2件ずつ**付与（source は承認済み #217/#97 のみ、
+    source_url 一致、verification_status は confirmed 中心・未確認は
+    unconfirmed で正直表示、fact は excerpt に接地）。`--dry-run` 候補順位
+    （旅行 final 1.237 / 写真 1.0472 / 日記 1.0 / 読書感想文 0.3、W_PAID=8 は
+    順位を跳ねさせず）、`--yes` 実生成4本、同日 `--dry-run` 再実行で
+    旅行・写真が `already_generated` スキップ・日記が繰り上がり（冪等）を確認。
+    近似テーマ束ね（旅/旅行記/海外旅行 → 旅行）、同一 DC 先着による deferred、
+    生成記事の相互 Jaccard（interest×ginza_whiskers 同一テーマで 0.27〜0.32、
+    ゲート 0.6 未満で通過するが素材の重なりは残る＝両角度保持方針の帰結）も
+    確認。CLI 引数検証（`--w-paid=-3`／`--c-match=1.5`／`--c-match=abc`）が
+    明示エラーになることを確認。`tsc --noEmit`（cms、0エラー）・`bash -n`・
+    `./p2 doctor` 全緑。検収用の承認（interest-themes・DiscoveredContent #217）
+    と生成物（Article #37〜46）はすべて inbox へ戻し／削除、generatedArticles
+    rel クリア、`articles` 19・承認済みテーマ0・承認済み DC 3・rel 0 の投入前
+    状態を確認。旅行・写真・エッセイの monetization（実 note.com データ）のみ
+    保持。使い捨てスクリプトは削除済み。
+    **判定：morning 接続可**（要修正なし）。ただし本セッションでは **morning
+    へは接続していない**（ユーザー指示）。git push なし。
+
   - 2026-08-28（Project 02-2 収益化②「興味関心 × 銀座 × GINZA WHISKERS視点 最大5本/日」接続）:
     マロン確定方針（W_PAID=8／C_MATCH=0.6／Phase B は B2〈monetization グループ〉／
     プレマッチは approved DiscoveredContent のみ／angles は interest と
