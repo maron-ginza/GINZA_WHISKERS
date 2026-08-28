@@ -14,6 +14,61 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS note 投稿運用方針の更新 ＋ #36 完成稿候補の確定）:
+    **運用方針（確定）**：TNS の note 投稿は、CMS から note への自動投稿
+    （Phase 15 の social 配信基盤）を使わず、**「完成原稿をマロンが note へ
+    転記する」運用**とする。理由は、note 投稿時に人手が必要な3工程がある
+    ため——①曜日ごとの挿絵7点を note 上で配置する、②7曲それぞれの
+    YouTube 動画URLを人間が確認して本文へ挿入する、③note 上で最終
+    レイアウトを確認する。この3つを**「note 転記時の Human Editorial
+    工程」**として明確に位置づけ、CMS 側の Article 本文には持たせない
+    （挿絵・YouTube URL・最終レイアウトは CMS の管轄外）。
+    **#36（Article 49 / SoundtrackEditions id=10）への適用**：
+      1. **本文・選曲を完成稿候補として確定**。7曲：月 All Right/
+         Christopher Cross（洋・1983, id64）、火 恋人よ/五輪真弓（邦・1980,
+         id43）、水 みずいろの雨/八神純子（邦・1978, id38）、木 September/
+         竹内まりや（邦・1979, id36。据え置き＝季節境目週での主題価値を
+         優先）、金 Cool Night/Paul Davis（洋・1981, id61）、土 I LOVE YOU/
+         オフコース（邦・1981, id48。**Human Editorial により「夏の日/
+         オフコース」id50 から差し替え**——AUTUMN 判定週で SUMMER タグの
+         みだったこと、金の高揚→土の静けさ→日の余韻というトーン設計を
+         優先。邦4:洋3・週内重複0・過去使用重複0 を維持）、日 Sailing/
+         Christopher Cross（洋・1980, id52）。
+      2. **本文の公開前エディット**（`cms/src/scripts/tnsEditArticle49Body.ts`）：
+         各日 h3 見出しの内部コード「— TNS Editorial Code: codeN」を全7日
+         から除去し「GINZA CODE N：<日本語ムード>」へ（code2/3/4/6 は
+         日本語ムード見出しを新規付与）。各日の EDITORIAL POINT OF VIEW を
+         「〜したい」等の内部メモ調から読者向け文章へ整形（7日分）。本文
+         末尾に note 向けハッシュタグ6個
+         （`#TokyoNostalgicSoundtrack #銀座 #昭和歌謡 #シティポップ #AOR
+         #GINZAWHISKERS`）を1段落追加。
+      3. **土曜差し替えの反映**（`tnsSwapSaturdayEdition36.ts`）：
+         `soundtrack-editions` id=10 の dailyScenes[土] のみ（trackRef 50→48、
+         emotion／ginzaExperience／sceneDescription／editorialPointOfView／
+         weeklyEnglishSubtitle／internalReason／readerFacingComment を
+         金→土→日の流れに合わせて書き直し）＋ Article 49 本文の土曜
+         ブロック8個を対応テキストへ置換。見出しは「過ぎゆく夏へ」→
+         「静けさへ」。他6日は不変。
+      4. **ヘッダー画像 / OGP画像 未設定は note 投稿のブロッカーとして
+         扱わない**（転記時に note 上で挿絵を配置する運用のため）。CMS の
+         Article には `images` を持たせず、`seo.ogImage` 未設定のままとする。
+      5. **`translationStatus.ja` を `not_started` → `complete`**
+         （`tnsMarkArticle49JaComplete.ts`）。日本語本文を完成稿候補として
+         確定したため。`translationStatus.en` は `not_started` のまま
+         （英語版は未着手）。site 側 `isTranslationComplete()` は ja を
+         常に true 扱いするため描画への影響はなく、編集トラッキング用の
+         フラグ更新。
+    **不変・未実施**：`reviewStatus` は `draft`（approve していない）、
+    CMS→note 自動投稿はしていない、`music-usage-ledger` は 28 件のまま
+    （#36 は承認時まで台帳に書かない設計）、`editionNumber=36` は1件、
+    dailyScenes は7件、`musicBalance` は 4:3。英語版・`relatedArticles`
+    （過去号回遊）・`freeTags` は未着手（note 転記運用では必須ではない）。
+    DB 書き込みはローカル開発（`cms-postgres-1`）のみ。
+    **判定：note 転記用の完成稿候補として準備完了**（本文・選曲・見出し・
+    ハッシュタグ・translationStatus.ja 確定。残りは note 上での Human
+    Editorial 工程＝挿絵配置・YouTube URL 挿入・最終レイアウト確認、および
+    approve）。
+
   - 2026-08-28（🌈TNS #36 のリセット・本文込み live 再生成）:
     Anthropic クレジット回復後、#36（2026-08-31〜09-06）を**同一
     editionNumber #36 で本文込み再生成**した。既存 #36 は本文未完成の
