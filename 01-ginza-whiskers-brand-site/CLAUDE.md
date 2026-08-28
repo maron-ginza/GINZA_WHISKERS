@@ -426,6 +426,46 @@ CLAUDE.md第5.3節参照）。
     取得、DNS変更、GA4本番稼働、外部サービス設定。**チェックリスト
     (第9章)の状態は変更なし**——ヒーロー画像は実素材未着のため引き続き
     未完了。
+  - 2026-08-28: Club Charmant ページ Phase 1 を実装した。**背景**：Club
+    Charmantには独立した公式Webサイトが存在しないため、外部リンク方式を
+    採らず、GINZA WHISKERS母艦サイト内に`charmant.html`を新設する方針を
+    確定（PMO決定）。**実施内容**：①`charmant.html`を新規作成
+    （リポジトリ直下、既存4ページと同じ配置）。既存の共有ヘッダー／
+    フッター・`css/style.css`・`js/main.js`・デザインシステム（近黒／
+    ゴールド／セリフ見出し）を継承。②`index.html`の「銀座を体験する」
+    グループのCharmantカードを準備中ダミー（`is-pending`／
+    `aria-disabled`）から`charmant.html`への内部リンクへ変更
+    （`target="_blank"`は使わない）。これにより**Club Charmant導線の
+    外部サイト依存を廃止**し、母艦内で完結させた。③`css/style.css`末尾に
+    `charmant.html`専用の追加セレクタ（`.cc-*`名前空間、7ルール）のみを
+    追記。既存ルールは無変更。④`sitemap.xml`に`charmant.html`を追加
+    （priority 0.8）。**ページ構成（6セクション）**：Hero／The Story／
+    Three Experiences／LIVE／Private・Ginza Experience／Contact。
+    **内部マーケティング分類の扱い**：Heritage／Next Regular／Experience
+    の3層は内部分類として保持するが、**公開ページには直接表示せず**、
+    公開ラベルはThe Legacy／Your Next Ginza／Experience Charmantとする
+    （対応表は`charmant.html`内のHTMLコメントにのみ記載）。**内容面の
+    制約遵守**：自動予約機能は未実装（Contactは`mailto:`の仮CTAのみ、
+    index.htmlと同じJS難読化方式）。未確認の料金・営業時間・住所詳細
+    （番地・ビル名・階数等）は掲載していない。Hero「銀座一丁目／Ginza
+    1-chome」・Story「約30年」・LIVE「月1回」はユーザー指示のブリーフに
+    基づく記述で、それ以上の沿革・創業者名等は創作していない。SNS・
+    外部サービスURLは追加していない（既存のnoteマガジンURLも
+    `charmant.html`には載せず、HTMLコメントで将来候補として残置）。
+    **構造面**：モバイルファースト（追加CSSは1カラムを基準値とし、広い
+    画面は既存`.content-grid`のブレークポイントに委譲）。日英展開可能な
+    構造（`lang="ja"`明示、head内にhreflang3行をコメントで用意、本文は
+    セクション単位で対訳差し替え可能）。**検証**：ローカル静的サーバーで
+    全ページ・全アセット・内部リンク・ページ内アンカー（`#story`／
+    `#experiences`／`#live`／`#private`／`#contact`のid実在確認含む）が
+    200で解決、存在しないパスは404、`charmant.html`内に`target="_blank"`
+    なし・新規外部ホスト参照なし・メールアドレス平文出現なし
+    （`<noscript>`内のみ）、CSS波括弧対応（101/101）、`sitemap.xml`
+    パースOKを確認した。**既存4ページ（index除く）・`js/main.js`・
+    `robots.txt`への影響なし**。**今回の対象外**：git push、GitHub Pages
+    有効化、ドメイン取得・DNS、GA4、Charmant専用OGP画像作成、英語版
+    ページの実作成、グローバルナビへのCharmant項目追加、他の準備中
+    カードのリンク化。**第9章チェックリストの状態は変更なし**。
 - **未決事項**：記事アーカイブ方針、英語版の要否、ドメイン取得・DNS設定・
   GitHub Pages有効化の実施（決定済み、付録D参照）、GA4タグの実際の実装
   （10月公開直前、Root CLAUDE.md第9章参照。実装後はprivacy.htmlの
@@ -434,7 +474,7 @@ CLAUDE.md第5.3節参照）。
   場合の内容（2026-08-19診断で判明、方針決定のみでコード未着手）
 - **次のマイルストーン**：ドメイン`ginzawhiskers.com`の実際の取得と、
   付録Dの手順に沿ったGitHub Pages設定。またはヒーロー画像素材の取材・取得
-- **最終更新日**：2026-08-19
+- **最終更新日**：2026-08-28
 
 ---
 

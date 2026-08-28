@@ -594,3 +594,50 @@ a.content-card:hover {
     padding: 56px 0;
   }
 }
+
+/* ==========================================================
+   Club Charmant ページ（charmant.html）
+   2026-08-28 追加。既存 .hero / .section / .content-grid / .btn / :root を
+   継承し、charmant.html 専用の追加セレクタ（.cc-*）のみで構成する。
+   既存ルールは一切変更していない。モバイル（1カラム）を基準に、
+   広い画面は既存 .content-grid のブレークポイントへ委ねる。
+   ========================================================== */
+
+.cc-hero {
+  /* サブページのため、トップの .hero（86vh）より低く抑える */
+  min-height: 60vh;
+}
+
+.cc-meta {
+  font-family: var(--font-serif);
+  font-style: italic;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  color: var(--color-ink-muted);
+  margin: 0 0 1.8em;
+}
+
+.cc-prose {
+  color: var(--color-ink-muted);
+  max-width: 640px;
+}
+
+.cc-prose p {
+  margin: 0 0 1.4em;
+}
+
+.cc-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.cc-section-cta {
+  margin: 2.6em 0 0;
+}
+
+.cc-note {
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+  max-width: 560px;
+  margin: 2.2em 0 0;
+}
