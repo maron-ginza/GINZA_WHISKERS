@@ -1,0 +1,119 @@
+{
+  "_purpose": "TNS #32 の historical_import 準備マッピング（2026-08-28作成）。DB書き込みはまだ行わない。内容確認後に手順に沿って投入する。",
+  "_source": "https://note.com/ginza_whiskers/n/n0136ca15976d （TNS #32 記事 DAILY SOUNDTRACK セクション、WebFetchで抽出）",
+  "_pattern": "既存 #33/#34/#35 の historical_import と同一パターン：soundtrack_editions を最小フィールドのみで1行 + music_usage_ledger を7行。dailyScenes は作らない（#33/#34/#35 も 0 行）。",
+
+  "edition": {
+    "collection": "soundtrack-editions",
+    "editionNumber": 32,
+    "weekStart": "2026-08-03",
+    "weekEnd": "2026-08-09",
+    "status": "historical_import",
+    "generatedArticle": null,
+    "_note": "#33 の実データに合わせ、context / editorialTheme / music / visual 等は一切設定しない（すべて NULL/空のまま）。"
+  },
+
+  "ledgerRows": [
+    {
+      "ord": 1,
+      "weekday": "monday",
+      "usedDate": "2026-08-03",
+      "tnsEditorialCode": "code1",
+      "title": "Babe",
+      "artist": "Styx",
+      "origin": "international",
+      "releaseYear": 1979,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "babe|styx",
+      "ledger": { "dayOfWeek": "monday", "usedDate": "2026-08-03", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 2,
+      "weekday": "tuesday",
+      "usedDate": "2026-08-04",
+      "tnsEditorialCode": "code2",
+      "title": "白いパラソル",
+      "artist": "松田聖子",
+      "origin": "japanese",
+      "releaseYear": 1981,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "白いパラソル|松田聖子",
+      "ledger": { "dayOfWeek": "tuesday", "usedDate": "2026-08-04", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 3,
+      "weekday": "wednesday",
+      "usedDate": "2026-08-05",
+      "tnsEditorialCode": "code3",
+      "title": "Lotta Love",
+      "artist": "Nicolette Larson",
+      "origin": "international",
+      "releaseYear": 1978,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "lotta love|nicolette larson",
+      "ledger": { "dayOfWeek": "wednesday", "usedDate": "2026-08-05", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 4,
+      "weekday": "thursday",
+      "usedDate": "2026-08-06",
+      "tnsEditorialCode": "code4",
+      "title": "タッチ",
+      "artist": "岩崎良美",
+      "origin": "japanese",
+      "releaseYear": 1985,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "タッチ|岩崎良美",
+      "ledger": { "dayOfWeek": "thursday", "usedDate": "2026-08-06", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 5,
+      "weekday": "friday",
+      "usedDate": "2026-08-07",
+      "tnsEditorialCode": "code5",
+      "title": "This Time I'm in It for Love",
+      "artist": "Player",
+      "origin": "international",
+      "releaseYear": 1978,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "this time im in it for love|player",
+      "ledger": { "dayOfWeek": "friday", "usedDate": "2026-08-07", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 6,
+      "weekday": "saturday",
+      "usedDate": "2026-08-08",
+      "tnsEditorialCode": "code6",
+      "title": "LOVELAND, ISLAND",
+      "artist": "山下達郎",
+      "origin": "japanese",
+      "releaseYear": 1982,
+      "existingMusicTrackId": null,
+      "musicTrackFingerprint": "loveland island|山下達郎",
+      "ledger": { "dayOfWeek": "saturday", "usedDate": "2026-08-08", "reuseAllowed": false, "ginzaCode": null }
+    },
+    {
+      "ord": 7,
+      "weekday": "sunday",
+      "usedDate": "2026-08-09",
+      "tnsEditorialCode": "code7",
+      "title": "Hard to Say I'm Sorry",
+      "artist": "Chicago",
+      "origin": "international",
+      "releaseYear": 1982,
+      "existingMusicTrackId": 54,
+      "musicTrackFingerprint": "hard to say im sorry|chicago",
+      "ledger": { "dayOfWeek": "sunday", "usedDate": "2026-08-09", "reuseAllowed": false, "ginzaCode": null },
+      "_note": "既存 music_tracks id=54（release_year 1982 / origin international / verified true）。新規作成せずこの id を ledger.musicTrack に使う。"
+    }
+  ],
+
+  "originBalance": { "international": 4, "japanese": 3, "_matchesDecisionLog": "DECISION_LOG_02.md 2026-08-21 の『#32 洋楽4曲：邦楽3曲』と一致" },
+
+  "importPlan": {
+    "step1_tracks": "`./p2 tns import-tracks _imports/tns_edition_32_tracks_import.csv --dry-run` → 内容確認 → `--dry-run` を外して実行。6曲 created / Chicago は skipped_duplicate（id=54）になる想定。",
+    "step2_edition": "soundtrack-editions を1行作成：{ editionNumber:32, weekStart:'2026-08-03', weekEnd:'2026-08-09', status:'historical_import' }（他フィールドは設定しない。#33 と同形）。既存 CLI なし → Payload 管理画面 or 小さな一回限りスクリプト。",
+    "step3_ledger": "music-usage-ledger を7行作成：各行 { musicTrack: <上記 id>, soundtrackEdition: <#32のid>, usedDate, dayOfWeek, reuseAllowed:false }。ginzaCode は #33〜#35 に合わせ未設定（null）。既存 CLI なし → 管理画面 or 一回限りスクリプト。",
+    "step4_verify": "SELECT で #32 の ledger 7行、track/artist 解決、weekday=曜日一致、findExistingEditionForWeek('2026-08-03') が #32 単独、computeNextEditionNumber は 37 のまま不変（#36 が最大）を確認。"
+  }
+}

@@ -14,6 +14,72 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS #32 の historical_import）:
+    #33〜#35 の重複排除台帳が完了扱いである一方、その前週の **#32
+    （2026-08-03〜08-09、CMS 運用開始前に note.com で公開済み）が CMS に
+    一切登録されていない**ことが 2026-08-28 の #32〜#34 台帳確認で判明した
+    （edition 行なし・ledger 行なし・専用 MusicTracks なし）。これにより、
+    クレジット回復後の #36 本文再生成時に #32 の使用曲が「未使用」扱いで
+    再選曲される（気づかれない #32↔#36 重複）リスクがあったため、
+    #33〜#35 と同型の historical_import を実施した。
+    **7曲の確認**：ローカル資料は皆無（DECISION_LOG 2026-08-21 も同旨を
+    記録）。同エントリに記録済みの note #32 URL
+    `https://note.com/ginza_whiskers/n/n0136ca15976d` を WebFetch し
+    DAILY SOUNDTRACK を抽出：月 Babe / Styx、火 白いパラソル / 松田聖子、
+    水 Lotta Love / Nicolette Larson、木 タッチ / 岩崎良美、
+    金 This Time I'm in It for Love / Player、土 LOVELAND, ISLAND / 山下達郎、
+    日 Hard to Say I'm Sorry / Chicago。洋楽4：邦楽3、発表年 1978〜1985——
+    DECISION_LOG 2026-08-21 が記録する「#32 洋楽4曲：邦楽3曲」「全21曲
+    1972〜1987」と一致し、抽出の裏付けとした。
+    **照合（import 前）**：既存 `music_tracks`（id 12〜65）全件を importer と
+    同一の `computeTrackFingerprint`（NFKC → 記号除去 → lowercase）で照合。
+    日曜「Hard to Say I'm Sorry / Chicago」のみ既存 **id=54**（release_year
+    1982 / international / verified=true）と fingerprint 完全一致 → 再利用。
+    残り6曲は exact / 正規化タイトル / 部分一致すべて 0 件 → 新規。
+    表記ゆれ懸念曲も個別確認：「LOVELAND, ISLAND」正規化 fp
+    `lovelandisland::山下達郎`（山下達郎のレコードが DB に 0 件）、
+    「タッチ」正規化 fp `タッチ::岩崎良美`（"Touch"/"TOUCH"/長音表記ゆれ
+    含め該当 0）、「This Time I'm in It for Love / Player」はアポストロフィ
+    が正規化 regex の除去対象外で両側一貫、同一アーティストの既存 id=58
+    「Baby Come Back」は別曲 → いずれも衝突なし・新規で問題なし。
+    **実行**：①`./p2 tns import-tracks _imports/tns_edition_32_tracks_import.csv`
+    → dry-run（6 would_create / 1 skipped_duplicate / 0 invalid）確認 →
+    live 実行で MusicTracks id 66〜71 を作成（`verified=false`、eraEligibility
+    は release_year 1978〜1985 から `showa` 自動付与、genre/tags は未設定）。
+    Chicago 行は fingerprint 一致で `skipped_duplicate`。②一回限りスクリプト
+    `cms/src/scripts/tnsHistoricalImportEdition32.ts`（`getPayload` 直呼び、
+    `--dry-run` 対応、abort guard：#32 未登録・参照 track 実在・当該週 ledger
+    0 件を確認、ledger 作成は (musicTrack, edition) 重複チェック付き）で
+    `soundtrack-editions` id=9（editionNumber 32 / weekStart 2026-08-03 /
+    weekEnd 2026-08-09 / status `historical_import`、他フィールドは #33 に
+    合わせ未設定）＋`music-usage-ledger` id 29〜35（musicTrack=66,67,68,69,70,71,54
+    を月〜日、`reuseAllowed=false`、`dayOfWeek` セット、`ginzaCode` は
+    #33〜#35 に合わせ null）を作成。
+    **検証（独立 SQL 再照会）**：Ledger 総数 21 → **28**（#32=7 / #33=7 /
+    #34=7 / #35=7）。#32 の 7 行すべて track/artist が `music_tracks` に解決
+    （NULL 0・orphan 0）、`day_of_week` = `used_date` の実曜日 7/7 一致、
+    `reuse_allowed=false` 7/7。重複登録 0（track 単位・(track, edition) 単位
+    とも）。`computeNextEditionNumber` 相当（`max(editionNumber)+1`、全 status
+    対象）は **37**（#36 が最大で不変）。
+    **`findExistingEditionForWeek('2026-08-03')` は null を返す——これは
+    正しい挙動**。同関数は `status='historical_import'` を明示除外する仕様で
+    （関数内コメント：「historical_import…は『これから生成しようとしている
+    週』との重複判定には関係しない」）、#33/#34/#35 も自週で null を返す
+    （2026-08-10・08-24 とも null、article_generated の #36 のみ 08-31 で
+    自身を返す）。#32 historical_import の目的は週ロックではなく
+    MusicUsageLedger による選曲重複排除であり、`reuseAllowed=false` の
+    台帳曲が distinct 21 → 28 に増えたことで、クレジット回復後の #36 本文
+    再生成時に #32 の 7 曲も除外対象に入る。#32 Edition の存在は直接クエリ
+    （`where editionNumber=32` → id=9）で担保。
+    **スコープ外（未実施）**：releaseYear / genre / mood / weather / season /
+    ginzaCode の確定、MusicTracks の `verified=true` 化、approve・自動投稿・
+    AI 生成、#36 への変更、本番 push / DNS / Cloudflare 設定。DB 書き込みは
+    ローカル開発（`cms-postgres-1`）のみで、ローカル DB の実データ本体（行
+    ダンプ）はリポジトリにコミットしない。
+    **成果物**：`_imports/tns_edition_32_tracks_import.csv`、
+    `_imports/tns_edition_32_historical_import.json`（edition＋ledger の
+    マッピングと手順）、`cms/src/scripts/tnsHistoricalImportEdition32.ts`。
+
   - 2026-08-28（🌈TNS 2026-08-31週の重複 SoundtrackEditions 整理）:
     次週号（2026-08-31〜09-06）の実運用確認を進める過程で、対象週の
     `SoundtrackEditions` が **3件重複生成**されていることを発見した

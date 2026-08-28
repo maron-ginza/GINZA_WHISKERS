@@ -1,0 +1,8 @@
+title,artist,releaseYear,japaneseOrWestern,verified,active,sourceNote,country,language,genre
+Babe,Styx,1979,international,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 月曜で使用。releaseYearは一般知識ベース・要確認。",United States,English,
+白いパラソル,松田聖子,1981,japanese,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 火曜で使用。releaseYearは一般知識ベース・要確認。",Japan,Japanese,
+Lotta Love,Nicolette Larson,1978,international,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 水曜で使用。releaseYearは一般知識ベース・要確認。",United States,English,
+タッチ,岩崎良美,1985,japanese,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 木曜で使用。releaseYearは一般知識ベース・要確認。",Japan,Japanese,
+This Time I'm in It for Love,Player,1978,international,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 金曜で使用。releaseYearは一般知識ベース・要確認。",United States,English,
+"LOVELAND, ISLAND",山下達郎,1982,japanese,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 土曜で使用。releaseYearは一般知識ベース・要確認。",Japan,Japanese,
+Hard to Say I'm Sorry,Chicago,1982,international,false,true,"note #32 (https://note.com/ginza_whiskers/n/n0136ca15976d) 2026-08-03〜08-09号 DAILY SOUNDTRACK 日曜で使用。既存 music_tracks id=54 と同一のためインポート時は skipped_duplicate になる想定。",United States,English,
