@@ -1,0 +1,8 @@
+# Cloudflare Pages ヘッダールール。
+# 母艦フィード /ja/latest.json は Project 01（ginzawhiskers.com）から
+# クロスオリジンで読まれる公開・published限定・非機微データのため CORS を開放する。
+# より厳しくするなら "*" を "https://ginzawhiskers.com" に置き換える
+# （dev / www / プレビューからも読む場合は "*" のままにする）。
+/ja/latest.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300

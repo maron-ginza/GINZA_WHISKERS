@@ -535,6 +535,12 @@ a.content-card:hover {
   gap: 16px;
 }
 
+/* JSで hidden を外すまで非表示（.latest-list の display:grid が
+   UAの [hidden]{display:none} を上書きしてしまうのを打ち消す） */
+.latest-list[hidden] {
+  display: none;
+}
+
 .latest-fallback {
   margin-top: 24px;
   color: var(--color-ink-muted);
@@ -545,6 +551,61 @@ a.content-card:hover {
   color: var(--color-gold-light);
   border-bottom: 1px solid var(--color-border);
   padding-bottom: 2px;
+}
+
+/* Project 02 フィードから描画される最新記事カード（モバイル基準＝1カラム、
+   720px以上で3カラム。既存 .content-card と同系のトーン） */
+.latest-card {
+  display: block;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  padding: 22px 24px;
+  color: inherit;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.latest-card:hover {
+  background: #1b1b1e;
+  border-color: var(--color-gold);
+}
+
+.latest-card-meta {
+  margin: 0 0 0.5em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  color: var(--color-ink-muted);
+}
+
+.latest-card-pillar {
+  color: var(--color-gold-light);
+}
+
+.latest-card-title {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+
+.latest-card-excerpt {
+  margin: 0.6em 0 0;
+  color: var(--color-ink-muted);
+  font-size: 0.9rem;
+}
+
+@media (min-width: 720px) {
+  .latest-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .latest-card {
+    padding: 26px 28px;
+  }
 }
 
 /* 外部チャンネル */

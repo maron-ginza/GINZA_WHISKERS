@@ -44,6 +44,10 @@ export interface ArticleSummary {
   accessionNumber: string | null
   representedYear: number | null
   historicalPeriod: string | null
+  // ISO日時。publishHistory の channel='site' エントリを優先し、無ければ
+  // Payload組み込みの updatedAt を使う（pickPublishedAt 参照）。
+  // 一覧の新着順ソートや母艦フィード（latest.json）の publishedAt に用いる。
+  publishedAt: string
   pillars: Array<{ id: string; name: string }>
   images: ArticleImage[]
   // false の場合、title/body/seo等は実際の翻訳ではなくプレースホルダー
@@ -71,6 +75,10 @@ interface ArticleRaw {
   accessionNumber: string | null
   representedYear: number | null
   historicalPeriod: string | null
+  // Payload組み込みタイムスタンプ（常時ISO文字列）
+  updatedAt: string
+  // 「サイトへの公開」記録。任意・手動運用のため未設定があり得る（ARCHITECTURE_DRAFT.md 2.4節）
+  publishHistory?: Array<{ channel: string; publishedAt: string | null }> | null
   // Phase 8でTags.nameをlocalized化。`locale=all`のためロケールごとの生値で返る
   pillars: Array<{ id: string; name: Localized<string> }>
   images: ArticleImageRaw[]
@@ -81,6 +89,14 @@ interface ArticleRaw {
   // localizedフィールドではなくja/enを直接持つグループのため、
   // `locale=all`でもフラットな{ja, en}のまま返る
   translationStatus: { ja: TranslationState; en: TranslationState }
+}
+
+// publishedAt の解決：publishHistory に channel='site' の実publish記録が
+// あればその時刻を、無ければ Payload の updatedAt を使う。母艦フィードや
+// 新着順ソートのための「実質の公開日時」。
+function pickPublishedAt(raw: ArticleRaw): string {
+  const site = raw.publishHistory?.find((h) => h.channel === 'site' && h.publishedAt)
+  return site?.publishedAt ?? raw.updatedAt
 }
 
 interface PayloadListResponse<T> {
@@ -117,6 +133,7 @@ function resolveSummary(raw: ArticleRaw, locale: Locale): ArticleSummary {
     accessionNumber: raw.accessionNumber,
     representedYear: raw.representedYear,
     historicalPeriod: raw.historicalPeriod,
+    publishedAt: pickPublishedAt(raw),
     // タグ名は記事本文の翻訳ワークフローとは独立した固定語彙のため、
     // 英語名未入力時はサイレントに日本語名へフォールバックする（Phase 8承認事項）
     pillars: raw.pillars.map((pillar) => ({

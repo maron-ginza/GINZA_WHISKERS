@@ -501,12 +501,64 @@ CLAUDE.md第5.3節参照）。
     内のみ、CSS波括弧対応（102/102）、既存4ページ（index含む）・
     `js/main.js`・`sitemap.xml`への影響なしを確認。**第9章チェック
     リストの状態は変更なし**。
+  - 2026-08-28: 母艦「最新のジャーナル」と Project 02（Discover GINZA、AI
+    GINZA EDITORIAL DESK）の**疎結合フィード方式**を実装した（本番推奨案。
+    「まず実装」の指示による）。**方針**：Project 02 が公開済み記事のみを
+    `latest.json` として提供し、Project 01 はその公開フィードだけを読む。
+    01 から Payload API / DB は一切参照しない。draft / review / approved は
+    フィードに出さない。**Project 02側**（`02-discover-ginza-media-system/
+    site/`）：①Astro エンドポイント `src/pages/ja/latest.json.ts` を新設
+    （`output: 'static'` でビルド時に `/ja/latest.json` を書き出し）。
+    ②対象は published のみ——既存 `fetchPublishedArticleDetails('ja')` を
+    再利用し、これは `where[reviewStatus][equals]=published` を必ず付ける。
+    加えて Payload の `Articles.access.read` が匿名を published に制限して
+    おり二重に担保。③新しい順・最大10件。④DTO は
+    `title / url / excerpt / publishedAt / pillar / image` に限定（本文
+    Lexical・内部ID・reviewStatus は出さない）。`excerpt` は
+    `seo.metaDescription` ないし本文先頭120字。`publishedAt` は
+    `publishHistory` の `channel='site'` を優先し無ければ `updatedAt`
+    （`site/src/lib/payload.ts` に `ArticleSummary.publishedAt` を追加）。
+    `image` は hero が無ければ `null`。⑤記事URLの絶対化ベースは
+    `PUBLIC_FEED_BASE_URL` → `astro.config.mjs` の `site` → ローカル既定、
+    の順で解決し**本番ドメインをコードに直書きしない**。⑥CORS は静的配信
+    用に `site/public/_headers` で `/ja/latest.json` に付与（`*`。より
+    厳しくするなら `https://ginzawhiskers.com`）。**Project 01側**：
+    `js/main.js` に `initLatestJournal()` を追加——`#latest-list[data-endpoint]`
+    が空でなければ 4秒タイムアウト付き `fetch`、成功かつ1件以上なら最新3件を
+    `.latest-card`（pillar・日付・title・excerpt）として描画し `#latest-list`
+    の `hidden` を外して `.latest-fallback` を隠す。0件・取得失敗・HTTP非200・
+    タイムアウト・`data-endpoint` 空のときは既存の note fallback を維持
+    （例外は投げない）。URL は `http(s)` のみ許可、全テキストは `textContent`
+    で挿入（XSS対策）。`css/style.css` に `.latest-card*` と
+    `.latest-list[hidden]{display:none}`（`display:grid` が UA の
+    `[hidden]` を上書きするのを打ち消す修正）を追加、モバイル1カラム／
+    720px以上3カラム。`index.html` の `#latest` は **`data-endpoint` を空の
+    まま**にし（本番URL・DNSは今回変更しない）、実データ疎通確認後に
+    `https://discover.ginzawhiskers.com/ja/latest.json` を設定して公開する
+    手順をコメントに明記。**Discover GINZAカード**：「準備中」は維持し、
+    公開先 `https://discover.ginzawhiskers.com/ja/` を `data-href` に用意
+    （疎通確認後に `href` へ移して `is-pending` 解除）。**検証（ローカル）**：
+    02 は `astro check`（0エラー）・`tsc --noEmit`（0エラー）、`astro dev`
+    で `/ja/latest.json` が 200・`Content-Type: application/json`・
+    `Access-Control-Allow-Origin: *`・CMS 未起動時は `{count:0,items:[]}` を
+    返す（クラッシュしない）ことを確認。`astro build` 全体は Payload 稼働が
+    前提（`articles/[slug].astro` の getStaticPaths にフォールバックが無い
+    既存事情）で、今回のエンドポイントが原因ではない。01 は `js/main.js` の
+    ロジックを DOM スタブ＋fetch モックで検証し、6シナリオ（3件描画／0件／
+    reject／HTTP500／`data-endpoint`空でfetch未発火／不正url・title欠落の
+    ふるい落とし）19アサーション全 PASS。**本番URL・DNS・GitHub Pages・
+    Cloudflare Pages 設定・git push は今回行っていない。第9章チェック
+    リストの状態は変更なし。**
 - **未決事項**：記事アーカイブ方針、英語版の要否、ドメイン取得・DNS設定・
   GitHub Pages有効化の実施（決定済み、付録D参照）、GA4タグの実際の実装
   （10月公開直前、Root CLAUDE.md第9章参照。実装後はprivacy.htmlの
   アクセス解析条項を「導入予定」から実態に合わせて更新する必要あり）、
-  02・03への導線リンクを01のコードへ実際に追加するかどうか・追加する
-  場合の内容（2026-08-19診断で判明、方針決定のみでコード未着手）、
+  Discover GINZA（02）連携の公開切り替え——`index.html` の
+  `#latest-list[data-endpoint]` に本番フィードURL
+  （`https://discover.ginzawhiskers.com/ja/latest.json`）を設定し、Discover
+  GINZAカードの `data-href` を `href` へ移して `is-pending` を解除する作業。
+  Project 02 本番が稼働し published 記事が3件以上そろい、フィードの疎通を
+  確認してから実施する（2026-08-28 実装、切り替えは未実施）、
   Contact窓口のメールアドレス（現状は`ginzashowaromanticclub@gmail.com`を
   index等と共用の仮アドレスとして流用中。Charmant専用Contactまたは
   GINZA WHISKERS共通Contactへの移行を将来検討——2026-08-28 Phase 2で

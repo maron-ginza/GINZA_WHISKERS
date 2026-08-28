@@ -82,9 +82,14 @@
     <div class="container">
       <p class="eyebrow">LATEST FROM GINZA</p>
       <h2>最新のジャーナル</h2>
-      <!-- Phase 2 受け口：Project 02 / Payload の Published 最新3件をJSで描画する。
-           取得成功時のみ hidden を外し、.latest-fallback を隠す。
-           API未接続・取得失敗・0件のときはこの空要素のまま .latest-fallback を表示する。 -->
+      <!-- Project 02（Discover GINZA）が公開する疎結合フィード /ja/latest.json を
+           js/main.js が読み、published 最新3件を描画する。母艦は Payload API / DB を
+           直接参照しない。取得成功かつ1件以上のときだけ hidden を外し .latest-fallback を隠す。
+           data-endpoint 空 / 取得失敗 / タイムアウト / 0件 のときはこの空要素のまま
+           .latest-fallback（note連載への案内）を表示する。
+           実データ接続を確認したら data-endpoint に
+           https://discover.ginzawhiskers.com/ja/latest.json を設定して公開する
+           （本番URL・DNSは別途。CLAUDE.md 第10章 2026-08-28 参照）。 -->
       <div id="latest-list" class="latest-list" data-endpoint="" hidden></div>
       <p class="latest-fallback">
         最新の記事は note にて連載しています。
@@ -99,8 +104,12 @@
       <h2>今の銀座を知る</h2>
       <div class="content-grid">
         <!-- Discover GINZA：母艦における主要入口。既存6本柱はこのコンテンツ配下のテーマとして扱う。
-             公開時に discover.ginzawhiskers.com/ja/ を href に設定し、target/rel を付与、is-pending を削除する。 -->
-        <a class="content-card content-card--lead is-pending" aria-disabled="true">
+             公開先（Project 02 の公開記事一覧）は data-href に用意済み。実データ接続
+             （/ja/latest.json フィードの疎通）を確認したら、data-href を href へ移し
+             target/rel を付与、is-pending / aria-disabled を削除して公開状態にする。
+             それまでは「準備中」を維持する（CLAUDE.md 第10章 2026-08-28 参照）。 -->
+        <a class="content-card content-card--lead is-pending" aria-disabled="true"
+           data-href="https://discover.ginzawhiskers.com/ja/">
           <h3>Discover GINZA</h3>
           <p>
             AI編集部が銀座の「旬」を集めて編集し、日々発信する情報メディア。
