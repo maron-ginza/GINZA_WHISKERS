@@ -86,7 +86,10 @@ if failures:
 
 if mode == "dry-run":
     print()
-    print("  → 実際に生成するには: ./p2 draft-today --yes")
+    if selected:
+        print(f"  → この{len(selected)}件を実際に生成するには: ./p2 draft-today --yes（Claude API課金あり）")
+    else:
+        print("  → 本日ドラフト化対象の承認候補はありません（curation で approved にした候補が増えたら再確認）")
 elif created:
     print()
     print("  → Payload管理画面の Articles（reviewStatus=draft）で編集長レビューへ進めてください")

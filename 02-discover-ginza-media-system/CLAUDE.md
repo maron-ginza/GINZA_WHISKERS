@@ -567,6 +567,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-28: `./p2 draft-today`の品質検収（本番運用可判定）と`./p2 morning`への接続——morningは手順13で`draft-today --dry-run`（当日ドラフト化予定の確認のみ、AI呼び出し・DB書き込みなし）を実行、実生成は人間が`./p2 draft-today --yes`を明示実行（morningの「課金・自動投稿しない」方針を維持）。日次パイプラインの処理順（情報収集→抽出・採点→curation→approved判定→draft-today→最大5本を承認待ちへ）をmorning内コメントに明示。Railway本番の`TZ=Asia/Tokyo`必須範囲に`draft-today`の当日判定を追記（RUNBOOKS付録F）。`〈LEAK〉`等の記号入りタイトル・slug・`#LEAK`ハッシュタグの整形は既知TODOとして記録（RUNBOOKS付録C、今回未変更）。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 「旬の銀座」日次オーケストレーション`./p2 draft-today`を実装——当日approved DiscoveredContentを類似テーマで束ね、上位トピック（既定最大5、`--limit`可）を各1本ずつmulti-angleのCORE角度で`Article(draft)`化。冪等（editorialProvenance逆引きで既ドラフト化を除外）、`--dry-run`は計画のみ、live実行は`--yes`必須、生成物は既存reviewStatus人間承認ゲートを通る。AIツールスキーマは不変（`angles`絞り込みはプロンプト＋保存ループのみ）。実Claude API 2回でArticle #35/#36を生成しローカルDBでE2E確認。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 2026-08-27の未コミット変更（下記multi-angle・TNSエンジン・02-2 Phase A/B）を整理——`tsc --noEmit`（cms、0エラー）で型健全性を確認し修正不要、CLAUDE.md/DECISION_LOG_02へ反映、Project 02配下のみを1コミット化（Project 01の未コミット分は対象外）。実AI呼び出し・DB反映・push はなし
 - 2026-08-27: 「旬の銀座」multi-angle記事生成（Project 02-1）を実装——approved DiscoveredContent 1件→CORE/NEED/EXPERIENCE/INTEREST/GINZA_WHISKERSの最大5記事（`draft`）。品質Gate（薄さ・重複除外、決定的・AI非依存）付き。`POST /api/ai/generate-multi-angle-draft`＋手動CLI。既存2系統の下書き生成は無変更。実AI E2Eは id=97 で1回のみ（metaTitle欠落バグ修正後の再検証・`./p2`統合は未）。詳細は`DECISION_LOG_02.md`
@@ -771,6 +772,16 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   取得できている（本文自由テキストからの推測は行っていない、既知の
   限界として本文がJSON-LD/メタタグを持たないページでは日付が
   取得できない）。
+  **2026-08-28 `draft-today`検収で追加**：①`draft-today`の類似テーマ統合
+  （バイグラムJaccard≥0.6）と上限スライス（最大5）は、承認候補が2件
+  （かつ非類似）のため実データE2E未発火——型検査・コードレビューのみ。
+  distinctトピック>5、または類似2件、の状況が来たら一度`--dry-run`で
+  発火を実確認する。②AI生成ドラフトの記号入りタイトル・`slug`・英語
+  固有名詞ハッシュタグ（例：`〈LEAK〉`／`#LEAK`）の自動整形は未処理
+  （RUNBOOKS付録C、既知TODO、公開前に編集長が手動整形する前提）。
+  ③`draft-today`の「当日」判定はサーバープロセスのローカルTZ依存——
+  本番Railwayは`TZ=Asia/Tokyo`必須（RUNBOOKS付録F、SOURCE LEDGER cronと
+  同じ設定でまとめて解消）。
 
 - **次回セッション最初に行うべき作業（2026-08-17時点）**：SOURCE LEDGERの
   「巡回→Snapshot→Diff→Sources接続→定期実行（Payload Jobs Queue）→

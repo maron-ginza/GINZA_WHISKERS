@@ -14,6 +14,60 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（`./p2 draft-today` 品質検収 → 本番運用可判定 → `./p2 morning` 接続）:
+    前エントリで実装した `./p2 draft-today` の品質検収を実データ
+    （ローカルDocker/Postgres）で実施し、**本番運用可**と判定した。
+    **検収結果の要点**：(1) 本セッションで `draft-today` が生成したのは
+    Article #35（DiscoveredContent #100「EXHIBITION LEAK ASSEMBLY」、
+    core/medium）・#36（#150「赤地陶房のうつわ」、core/short）の2本
+    （※Article #25〜29 は 2026-08-27 の multi-angle エンドポイントE2E由来で
+    別コードパス）。(2) 最大5本ルール：approved 3件 → 既ドラフト化除外1件
+    （#97）→ pending 2件 → 類似統合0件 → distinct 2件 → 上限5未満のため
+    全2件採用・繰り越し0。Editorial Score降順（#100=51点 > #150=33点）。
+    (3) ドラフト相互の実質重複なし（別イベント・別会場・別出典）。
+    (4) Editorial Trust Layer：#35/#36 とも provenance 全4件が
+    `verificationStatus=confirmed`・`sourceType=official`、会期・会場・
+    営業時間は出典excerptと逐語一致、出典URLは本文SOURCE行＋provenance
+    双方に保持、推定はヘッジ表現（#36「親子とみられる」「個別に確認する
+    ことが望ましい」）。(5) 鮮度：#35 は 8/28 開幕・開催中、#36 は
+    8/19〜9/7 開催中——終了済み情報なし、開催中候補を優先できている。
+    (6) `tsc --noEmit`（cms、0エラー）・`bash -n`・`./p2 doctor` 全緑。
+    冪等性：`--yes` 再実行で #97/#100/#150 すべて除外・0件生成を確認。
+    (7) 副作用なし：DiscoveredContent #100/#150 の `curationStatus`・
+    `decisionAt` 不変、`social_posts` 0件のまま。
+    **検収で確認した既知の限界（ブロッカーではない、今回は変更しない）**：
+    ①類似統合（Jaccard≥0.6）・上限スライス（5）は承認候補が2件のため
+    実データE2E未発火（型検査・コードレビューのみ）。②`〈LEAK〉`等の記号
+    入りタイトル・`slug`・英語固有名詞ハッシュタグ（`#LEAK`）の自動整形は
+    未処理——RUNBOOKS付録Cへ既知TODOとして追記（既存のスラッグ整形TODOと
+    同じ扱い、公開前に編集長が手動整形する前提）。③#36本文の「2026年7月
+    27日付で公開」は出典excerpt内の「2026.07.27」に基づくが構造化
+    provenance未登録の軽い解釈——編集長レビューでの一瞥推奨。
+    **`./p2 morning` 接続**：morning の既存方針（外部ログイン・課金操作・
+    自動投稿・本番デプロイを一切行わない、ローカル起動＋診断のみ）を
+    崩さないため、morning は手順13で **`draft_today --dry-run`**
+    （当日approved → 本日ドラフト化予定の確認まで。AI呼び出し・DB書き込み
+    なし）を実行する。実生成は人間が別途 **`./p2 draft-today --yes`** を
+    明示実行する——`--yes` 必須＝Claude API課金の明示確認、という既存方針
+    （`./p2 tns next` と同型）をそのまま維持。morning 関数冒頭に日次
+    パイプラインの処理順（情報収集 = SOURCE LEDGER Jobs Queue → 抽出・採点
+    = `./p2 crawl`/`score`/`score-articles`〈morning外・課金あり〉→
+    curation = 人間の Maron Editor's Choice → approved判定 = 人間承認ゲート
+    `DiscoveredContent.curationStatus=approved`〈req.user必須〉→ draft-today
+    → 最大5本が reviewStatus:draft の承認待ちへ）をコメントで明示した。
+    フォーマッタ（`format_draft_today_status.py`）の dry-run 末尾ヒントを、
+    採用トピックがある時のみ `./p2 draft-today --yes` を案内し、0件時は
+    「対象なし」と表示するよう小改修。
+    **Railway本番の `TZ=Asia/Tokyo`（RUNBOOKS付録F追記）**：`draft-today`
+    の「当日」判定（`decisionAt >= その日の0時`）の0時は
+    `Date.setHours(0,0,0,0)` ＝サーバープロセスのローカルTZ基準のため、
+    UTCのRailwayでは日境界が9時間ずれる。SOURCE LEDGER cron と同じく
+    `TZ=Asia/Tokyo` の設定でまとめて解消する（`draft-today` 側の追加設定は
+    不要、`--since=YYYY-MM-DD` の解釈も同じローカルTZ基準）。
+    **今回行っていないもの**：新規機能追加、`draft-today --yes` の再実行
+    （#35/#36 は `draft` のまま）、「興味関心×銀座 5本/日」（Project 02-2
+    Phase C以降）への接続、`recommend_next_step` の変更、git push。
+
   - 2026-08-28（「旬の銀座」日次オーケストレーション `./p2 draft-today` の実装）:
     これまで手作業でエンドポイント/スクリプトを個別に叩いていた「Maron
     Editor's Choiceで承認 → 記事ドラフト生成」を1つの日次ルーチンへまとめ、

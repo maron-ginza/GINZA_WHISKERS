@@ -1480,6 +1480,16 @@ morning() {
   echo "🌅 Project 02 Morning Startup — $(date '+%Y-%m-%d %H:%M:%S')"
   echo "外部ログイン・課金操作・本番デプロイは行いません（ローカル起動・診断・状態確認のみ）"
   echo
+  # 「旬の銀座」日次パイプラインの位置づけ（2026-08-28、draft-today接続時に明示）:
+  #   情報収集（SOURCE LEDGER自動巡回 = Jobs Queue、morning外・課金なし）
+  #     → 抽出・採点（./p2 crawl / ./p2 score / ./p2 score-articles、morning外・Claude課金あり）
+  #     → curation（人間: Payload管理画面で Maron Editor's Choice）
+  #     → approved判定（人間承認ゲート: DiscoveredContent.curationStatus = approved、req.user必須）
+  #     → draft-today（当日approved → 類似除外 → 上位最大5トピックを各1本 reviewStatus:draft 生成）
+  #     → 最大5本が「承認待ち（reviewStatus:draft）」へ = 編集長レビュー対象
+  # morning はこのうち draft-today を --dry-run で「予定確認」まで行う（AI呼び出し・
+  # DB書き込みなし）。実生成は人間が別途 ./p2 draft-today --yes を明示実行する
+  # ——morning は課金操作・自動投稿を一切行わない、という既存方針の維持。
 
   ensure_env || {
     echo
@@ -1549,6 +1559,9 @@ morning() {
 
   echo "--- 10〜12. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
   preflight
+
+  echo "--- 13. ./p2 draft-today --dry-run 相当（当日approved → 本日ドラフト化予定の確認。AI呼び出し・DB書き込みなし。実生成は別途 ./p2 draft-today --yes を明示実行） ---"
+  draft_today --dry-run
 
   recommend_next_step
 

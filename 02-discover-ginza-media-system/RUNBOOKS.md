@@ -91,7 +91,19 @@ npm run build           # astro check + astro build。DB未起動でも空デー
 - Lexicalのノード形状（`cms/src/lib/ai/lexical.ts`）は実際のPayload管理画面で
   保存した内容と一度照合すること（バージョン依存のため）
 - スラッグ整形（記号除去・ローマ字化）は`createDraftFromSource.ts`内でTODOの
-  ままになっている
+  ままになっている（`createWeeklyDraftFromDiscoveredContent.ts`・
+  `createMultiAngleDraftsFromDiscoveredContent.ts`・`draft-today`経由の
+  生成物も同じTODOを共有——`slug`は日本語生タイトルのまま）
+- **AI生成ドラフトの記号・英語トークン・ハッシュタグ整形は未処理（2026-08-28、
+  `draft-today`検収で確認。既知TODO、今回は変更しない）**：
+  multi-angle／`draft-today`が生成するドラフトで、タイトル・`slug`に
+  `〈〉『』──[]`等の記号が生のまま残る（例：Article #35「音響生命体〈LEAK〉が
+  銀座に集結。銀座 蔦屋書店で『EXHIBITION LEAK ASSEMBLY』開催」）。
+  また`socialCopy`のハッシュタグが英語固有名詞をそのまま採用する
+  （例：`#LEAK`——英単語"leak"＝漏洩の語義と紛らわしい）。いずれも
+  `reviewStatus: draft`段階の想定内で、公開前に編集長が手動整形する前提。
+  自動整形（slug正規化・記号除去・ハッシュタグ語彙の妥当性チェック）は
+  上記スラッグ整形TODOとまとめて別途対応する。
 - Phase 9で`ImageAssets.ts`にHEIC→JPEG変換フックを実装。実機HEICファイル
   での検証は2026-07-29完了（Phase 13、第12章参照）
 
@@ -276,6 +288,17 @@ Managerアカウントでの操作が必要なため、私（Claude）が代行�
      未設定だとRailwayコンテナの既定タイムゾーン〈通常UTC〉基準になり
      実行時刻が6時間ずれる。ローカル開発機はAsia/Tokyoのため未設定でも
      正しく動くが、本番では明示設定が必須）。
+     **2026-08-28追記——`draft-today` も同じ環境変数に依存する**：
+     `./p2 draft-today`（`cms/src/lib/ai/createDailyDraftsFromApproved.ts`）は
+     「当日 `curationStatus=approved` になった DiscoveredContent」を
+     `decisionAt >= その日の0時` で判定する。この「0時」は
+     `Date.setHours(0,0,0,0)` ＝サーバープロセスのローカルタイムゾーン基準
+     のため、`TZ=Asia/Tokyo` 未設定のRailway（UTC）では日境界が9時間ずれ、
+     JSTの当日夜に承認した候補が翌朝まで拾われない／前日分が混ざる等の
+     ずれが起きる。SOURCE LEDGER cronと同じく、本番では
+     `TZ=Asia/Tokyo` の設定でまとめて解消する（`draft-today` 側の
+     追加設定は不要）。なお `--since=YYYY-MM-DD` 明示指定時の解釈も
+     同じローカルTZ基準。
    - カスタムドメインとして`api.discover.ginzawhiskers.com`を追加する。
    - **Cloudflare Pagesより先にRailwayをデプロイし、疎通確認まで済ませる
      こと**（2026-08-10のPreflightで確認：Astroの`getStaticPaths`が
