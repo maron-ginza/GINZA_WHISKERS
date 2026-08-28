@@ -10,3 +10,6 @@
 
 # wranglerのローカルキャッシュ（Cloudflareのアカウント識別子を含むため追跡しない）
 02-discover-ginza-media-system/.wrangler/
+
+# 運用作業前のDB行退避（ローカル環境固有のスナップショット。ソースではない）
+02-discover-ginza-media-system/_backups/

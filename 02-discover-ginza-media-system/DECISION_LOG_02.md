@@ -14,6 +14,49 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-28（🌈TNS 2026-08-31週の重複 SoundtrackEditions 整理）:
+    次週号（2026-08-31〜09-06）の実運用確認を進める過程で、対象週の
+    `SoundtrackEditions` が **3件重複生成**されていることを発見した
+    （2026-08-27 のTNSエンジンE2E由来。id=1/#0〈`editionNumber` が壊れた
+    初期成果物〉、id=2/#36、id=3/#37）。3件とも `weekStart=2026-08-31`・
+    `status=article_generated` のため、`findExistingEditionForWeek` が
+    live `./p2 tns next --yes` を必ずブロックし、かつ残存最大 `editionNumber`
+    が 37 のため次回採番が #38 になる状態だった。**依存関係の事前確認**
+    （読み取りのみ）：3件のいずれも MusicUsageLedger 参照 0 件（既存台帳
+    21件はすべて historical `#33`/`#34`/`#35` 由来）、`SocialPosts` 0件、
+    他Articleの `relatedArticles` からの参照なし、note公開実績なし
+    （3件の紐づく Article 30/31/32 はすべて `reviewStatus=draft`・
+    `publishHistory:[]`）。**判断**：id=2/#36 のみ7日分の選曲が完成
+    （`pendingDays=0`、trackRefs=[64,47,38,36,61,50,52]）し `editionNumber`
+    も Article 31 の `series.editionNumber=36` と整合、かつ note.com の
+    historical `#35` の次番号として正しいため、**id=2/#36 を正本として
+    そのまま保持**（マロン確定：既存ドラフトを作り直さず正本とする）。
+    id=1/#0・id=3/#37 とそれらの空生成 Article 30・32 を削除。**実施**：
+    ①削除前に SoundtrackEditions id 1/2/3・Articles 30/31/32 の全文を
+    `locale:'all'` で JSON 退避（`_backups/tns_edition_cleanup_backup_
+    20260828.json`、167KB。Article 31 本文63ブロックも含む）→ ②依存
+    ゼロを再確認（abort guard 付き）→ ③`payload.delete` で
+    soundtrack-editions id 1,3 と articles id 30,32 を削除 → ④再確認
+    （`_backups/tns_edition_cleanup_verify_20260828.json`）。**削除後の
+    状態**：残存 editions は `#33`/`#34`/`#35`（historical_import）＋
+    `#36`（id=2, article_generated）のみ。`findExistingEditionForWeek
+    ('2026-08-31')` は id=2/#36 単独を返す。`computeNextEditionNumber` は
+    37 を返す（次の新規週が #37）。MusicUsageLedger は 21件のまま不変。
+    Article 31（#36 正本）は `reviewStatus=draft`・`series #36`・本文63
+    ブロック・slug「雨音の境目に」で（整理作業による）破損なし。
+    **ただし #36 の本文自体はドラフトとして未完成であり、Anthropic の
+    クレジット回復後に AI 再生成で本文を作り直す必要がある**（正本として
+    の号数 #36・週 2026-08-31・7日分の選曲 trackRefs・series は確定済みで、
+    要再構築なのは本文プローズのみ。既存 Edition/Article レコードは破棄せず
+    保持したまま本文だけ差し替える方針）。**未実施**：live 生成・
+    approve・自動投稿。号数の付け替えは id=2 が元々 #36 のため不要だった。
+    既知の軽微な不整合として id=2 の `music.musicBalance` サマリカウンタ
+    （`effectiveJapaneseCount:0` 等）が dailyScenes の実選曲7件と乖離した
+    ままだが、選曲実体は `dailyScenes[].musicSelected.trackRef` に正しく
+    保持されており表示用集計値のみの問題。整理用スクリプト
+    `cms/src/scripts/tnsCleanupDupEditions.ts` はこの1回限りの作業用で、
+    冪等ではない（削除済みIDの再 findByID で STEP1 エラー）。
+
   - 2026-08-28（`./p2 draft-interest`（収益化②）を `./p2 morning` へ接続）:
     要件（既存 draft-today 接続維持／処理順の明示／通常実行は①②とも `--dry-run`／
     実生成は人間の `--yes` のみ／自動投稿しない／同日再実行で重複生成なし／
