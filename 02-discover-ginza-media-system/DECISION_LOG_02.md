@@ -14,6 +14,303 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-30（Project 02-2 収益化② Social Copy 媒体別最適化 Tier S1／S2 実装）:
+    直前の Tier 1（下記エントリ）で生成した Article #53 の Social Copy を評価
+    したところ、note と X がほぼ同文で、X が「ある画家」と固有名詞をぼかして
+    いた。マロン指示（媒体別の役割差を強める。note＝記事要約＋読む理由、
+    X＝冒頭フック＋誰/どこ/いつ/何ができるか＋「今行く理由」必須、Instagram＝
+    情景・体験・余韻。共通＝Factにないことを足さない・日付根拠のない
+    「今だけ/旬」禁止・3媒体で同一文を横展開しない・AIっぽい定型表現を避ける）
+    を受けて Tier S1／S2 を実装した。実装範囲は S1／S2 のみ（media別スキーマ化・
+    媒体別の追加 Claude 呼び出し・A/B 2案生成は Tier 2 送り）。
+    **Tier S1（プロンプト＋数行）**：
+    - `generateMultiAngleArticleDrafts.ts` の `MULTI_ANGLE_SYSTEM_PROMPT`
+      「## SNS用コピー」節を、媒体別ルール（note / X / Instagram それぞれの
+      役割・構成・ハッシュタグ上限）＋「3媒体の共通ルール」に全面差し替え。
+      X の「誰」は固有名詞を明示させる（「ある画家」等のぼかし禁止）、
+      「今行く理由」は確認済みの会期・季節文脈に接地させる、日付根拠のない
+      時期性表現の禁止、3媒体で同一文・同一語順を使い回さない、AI定型句
+      （「いかがでしょうか」「ぜひ〜してみてください」等）を避ける、を明記。
+    - `normalizeSocialCopy.ts`：ハッシュタグ上限を関数引数（caps）へ切り出し、
+      既定を **note 5→3 / X 2→3 / Instagram 未処理→2** に変更。**Instagram も
+      `normalizeOne` に通す**ようにし、重複除去・上限・`#銀座` 保証を3媒体
+      すべてに適用（従来 Instagram は素通しだった）。`#銀座` は上限に関わらず
+      1枠を必ず残す既存ロジックを維持。
+    **Tier S2（新規・決定的・AI呼び出しなし）**：
+    - 新規 `cms/src/lib/curation/socialCopyGate.ts`。`normalizeSocialCopy`
+      適用後の最終テキストに対し、以下4つを WARNING として検出する：
+      (a) `xMissingWhoWhereWhen`：X本文に「誰＝sourceProvenance の fact から
+          抽出した固有名詞候補（『』「」内・カタカナ連続・英字連続）のいずれか
+          ／どこ＝銀座 or DC.venue（またはその語片）／いつ＝実日付語」の
+          いずれかが欠落。固有名詞候補が fact に1つも無い場合は「誰」は不問。
+      (b) `socialCopyCrossMediaDuplicate`：note/X/IG の任意2媒体間の
+          char-bigram Jaccard 類似度 ≥ `SOCIALCOPY_DUP_SIM`（既定 0.65）。
+      (c) `aiBoilerplatePhrase`：`SOCIALCOPY_BOILERPLATE`（既定16語の CSV、
+          env 上書き可）の部分文字列がいずれかの媒体にヒット。
+      (d) `recencyClaimUnbacked`：「今だけ／今しか／いま話題／旬／待望の／
+          ついに解禁／急げ／見逃すな」等が、provenance の実日付・会期語にも
+          その媒体自身の日付語にも接地せず出現。
+    - `generateMultiAngleArticleDrafts.ts` の post-gate ブロックで、
+      `normalizeSocialCopy` の直後に `evaluateSocialCopyGate` を呼び、その
+      `warnings` を既存 post-gate（`interestArticlePostGate`）の `warnings` と
+      **同じ配列へ合流**（`aiGeneratedBy` の `|warnings=<csv>` と
+      `format_draft_interest_status.py` の `⚠ post-gate WARNING` にそのまま
+      表示。9月Trial は hard drop せず WARNING 記録のみ）。
+    - `config.ts` に `SOCIALCOPY_NOTE_MAX_TAGS`(3) / `_X_MAX_TAGS`(3) /
+      `_INSTAGRAM_MAX_TAGS`(2) / `_DUP_SIM`(0.65) / `_BOILERPLATE`（CSV）を
+      追加（すべて env 上書き可、9月Trial の誤検知調整用）。
+    **伝搬経路**：`createInterestDrivenDraftsFromThemes.ts` が config の
+    `SOCIALCOPY_*` を `enableInterestPostGate` に載せ →
+    `createMultiAngleDraftsFromDiscoveredContent.ts` が `postGate` へ →
+    `generateMultiAngleArticleDrafts.ts` が `normalizeSocialCopy` の caps と
+    `socialCopyGate` の config に使う。
+    **変更ファイル**：`generateMultiAngleArticleDrafts.ts`（プロンプト差し替え
+    ＋socialCopyGate 呼び出し）／`normalizeSocialCopy.ts`（caps引数化・IG対応）／
+    `createMultiAngleDraftsFromDiscoveredContent.ts`（options 拡張・伝搬）／
+    `createInterestDrivenDraftsFromThemes.ts`（config→options）／`config.ts`
+    （`SOCIALCOPY_*`）。**新規**：`cms/src/lib/curation/socialCopyGate.ts`。
+    **スキーマ変更・migration なし**（`payload generate:types` 差分ゼロ）。
+    `draft-today`（CORE 生成）は `postGate`／`socialCopyGate`／媒体別 caps を
+    一切通さず**無影響**。
+    **検証**：`npx tsc --noEmit`（cms）0エラー。使い捨てユニットスクリプト
+    （実行後削除）で socialCopyGate を確認——「ある画家」ぼかし＋日付なし＋
+    「ぜひ足を運」の X →`xMissingWhoWhereWhen`＋`aiBoilerplatePhrase`／
+    note と X がほぼ同文 →`socialCopyCrossMediaDuplicate`（note-X=1.00）／
+    「話題の/旬/今だけ」＋provenance に実日付なし →`recencyClaimUnbacked`／
+    provenance に「9月2日」あり →発火せず／役割差のある健全な3媒体
+    →**warnings 0**（過検知なし）。`normalizeSocialCopy`：note 6→3タグ・
+    IG 3→2タグ・X に `#銀座` 付与を確認。**誤検知修正1件**：
+    `recencyClaimUnbacked` の日付根拠判定が provenance の「開催」単体を
+    日付とみなしていたため、`DATE_HINT_RE` から「開催」「まで」「から」単体を
+    外し、実日付（月/日/年）・明示会期語（会期／開催期間／開催中）・具体的な
+    時期語のみを根拠とするよう厳格化。**回帰**：`./p2 draft-interest --dry-run`
+    正常（新 param 伝搬・クラッシュなし）、`./p2 doctor` 全緑、`./p2 editorial`
+    Draft 19・Published 1（#53 以降不変）、`./p2 draft-today --dry-run` 正常。
+    **実AI E2E は未実施**——現在の承認済みテーマ（アート id31／写真 id29）は
+    いずれも生成済み（#53／#51,#52）で枯渇しており、live 実行には新テーマ＋
+    DC の承認が必要。commit・approve・本番反映はしていない。
+
+  - 2026-08-30（Project 02-2 収益化② Tier 1：ginza_whiskers 主稿化＋記事生成前後の4品質ゲート実装＋after比較Trial #53）:
+    8/30 の記事生成 Trial（Article #51＝interest 型／#52＝ginza_whiskers 型）の
+    評価を受けたマロン方針——**今後は #52 型「GINZA WHISKERS 独自の編集視点で
+    再解釈した記事」を主稿にする。#51 型の一般的な関心接続記事は常時生成せず、
+    必要な場合のみ補助稿とする**——を実装した。あわせて「記事生成前の4品質
+    ゲート（銀座固有性／今行く理由／読者が銀座でできること・体験価値／
+    GINZA WHISKERS 独自の編集視点）」を pre-gate＋post-gate＋人間レビューの
+    3層で実効化。実装範囲は Tier 1 のみ（`titleShape.ts`・`titleOptions`
+    スキーマ追加は Tier 2 送り）。
+    **1. 主稿＝ginza_whiskers 1本**：`createInterestDrivenDraftsFromThemes.ts`
+    の `INTEREST_ANGLES = ['interest','ginza_whiskers']` 定数を config 駆動
+    （`config.primaryAngle`、env `INTEREST_PRIMARY_ANGLE`、既定 `ginza_whiskers`）
+    に置換。既定は 1テーマ＝Claude 1回＝draft 1本。`--with-interest` ／
+    `INTEREST_INCLUDE_INTEREST_ANGLE=true` 指定時のみ `['ginza_whiskers',
+    'interest']` を要求し、**interest 補助稿は同テーマの ginza_whiskers 主稿が
+    生成成立した場合のみ保存**（`createMultiAngleDraftsFromDiscoveredContent`
+    に `requirePrimaryAngle` オプションを追加。主稿が included に無ければ
+    その DC からは一切生成しない）。
+    **2. 生成前 pre-gate（新規 `interestArticlePreGate.ts`、AI呼び出しなし）**：
+    (a) 銀座固有性〈下限〉＝DC の title/excerpt/venue に「銀座｜GINZA｜中央区」
+        トークン、または `editorialScore.ginza ≥ INTEREST_GATE_GINZA_MIN`
+        （既定13、最大25）、または `resolvePillarHints(theme)` が
+        `CONTENT_TYPE_TO_PILLAR_NAME[dc.contentType]` と一致。
+    (b) 今行く理由＝`deriveEventStatus ∈ {ongoing}`、または
+        `isUpcomingSoon`（`INTEREST_GATE_UPCOMING_DAYS` 既定14日以内）、
+        または `deriveTemporalRelevance ∈ {now,soon,next}`、または
+        `publishedAt` が `INTEREST_GATE_PUBLISHED_RECENCY_DAYS`（既定21）以内。
+    (c) 体験価値〈下限〉＝`dc.uxType`（設定済みかつ ≠ other）または
+        `classifyUxType` が other 以外、または `dc.contentType ∈
+        INTEREST_EXPERIENCE_CONTENT_TYPES`（既定 event/exhibition/food/shopping）。
+    (d) 素材充足＝`assessContentRichness(dc.excerpt).tier ≠ 'boilerplate'`。
+    いずれか不成立なら `plan.status='gate_failed'`（`gateReasons` 付き）とし、
+    **Claude を一切呼ばない**。とくに (b) が「日付根拠のない『今行く理由』は
+    生成しない」の実効化——`eventStartAt`/`eventEndAt`/`publishedAt` のどれも
+    無い DC は必ず落ちる（Editorial Trust Layer「推測で補完しない」準拠）。
+    使い捨てユニットで「日付なし DC → `timelyReason` 失敗で gate_failed」
+    「銀座語ゼロ DC → `ginzaSignal` 失敗」「DC#324相当 → pass」を確認。
+    **3. 生成後 post-gate（新規 `interestArticlePostGate.ts`＋
+    `unsourcedHistoryGuard.ts`＋`factNoteSeparation.ts`、AI呼び出しなし）**：
+    `weakGinzaSpecificity`（会場/日付の出典も銀座での具体的行為の記述も無い）／
+    `noConcreteGinzaExperience`（本文に「銀座で見る/歩く/訪れる/体験する具体
+    対象」が無い＝応募・告知のみの可能性、要件3）／`weakEditorialViewpoint`
+    （editorsNote が空・`INTEREST_POSTGATE_EDNOTE_MIN_CHARS` 既定60未満・
+    content+whyNow との char-bigram 類似度 ≥ `INTEREST_POSTGATE_RESTATE_SIM`
+    既定0.5・選定理由の語が無い、要件4）／`whyNowNotDateBacked`（whyNow が
+    空 or 日付/会期に接地せず、要件5後段）／`unsourcedHistory`（明治/大正/
+    昭和/かつて/創業N年/N年代/「日本人は昔から」等が sourceProvenance の
+    fact・DC excerpt に現れない、要件6）／`factLeakInEditorsNote`・
+    `editorsNoteRestatesContent`（editorsNote に日付/料金/時刻/会期の混入、
+    または content の言い換え、要件6）。**9月Trial は hard drop せず WARNING
+    記録のみ**（`config.warnObserveMode` 既定 true）——`aiGeneratedBy` 末尾の
+    `|warnings=<csv>` と `format_draft_interest_status.py` の
+    `⚠ post-gate WARNING` に表示し、編集長レビューで採否判断。Trial で
+    誤検知率を観測してから hard drop 化（Tier 1.5）。使い捨てユニットで
+    「editorsNote=content コピー → weakEditorialViewpoint」「無根拠の1923年
+    → weakEditorialViewpoint＋unsourcedHistory」「健全な稿 → warnings 0」を
+    確認。
+    **4. 冪等キーの正規表現修正**：`aiGeneratedBy` に `|warnings=` を足すため
+    テーマキー抽出を `interestTheme=([^)]+)\)?$` → `interestTheme=([^|)]+)` へ。
+    **5. スキーマ変更・migration なし**（`payload generate:types` 差分ゼロ）。
+    WARNING は `aiGeneratedBy` 文字列に載せるのみ（`Articles` テーブル不変）。
+    `draft-today`（CORE 生成、`createDailyDraftsFromApproved.ts`）は
+    `angles:['core']` のみで `requirePrimaryAngle`／`enableInterestPostGate`
+    を渡さず**完全に無影響**（`./p2 draft-today --dry-run` で確認）。
+    **6. 実AI E2E（after 比較 Trial）**：`interest_themes` id31「アート」（inbox
+    →approved）＋ DiscoveredContent #324「永井博『Now and Then』刊行記念
+    ＠銀座 蔦屋書店」（inbox→approved、event、会期 2026-09-02〜09-30、venue
+    明示、参照0）を承認 → `./p2 draft-interest --dry-run` で
+    `status=selected`／`matchMethod=inclusion`／pre-gate 通過（`gate_failed`
+    無し）を確認 → `time ./p2 draft-interest --yes --limit=1` で **Article #53**
+    「銀座で辿る、ある画家の「過去と現在」——永井博フェアが誘う9月の一室」
+    （ginza_whiskers/medium、`reviewStatus=draft`、`aiGeneratedBy`
+    ＝`claude-sonnet-5 (multi-angle:ginza_whiskers:medium|interestTheme=アート)`
+    ＝**post-gate WARNING 0件**、`editorialProvenance` 2件〈venue：銀座 蔦屋
+    書店＋会期、other：エディション数、いずれも confirmed〉、pillars 1、
+    callToAction あり、本文 3,310字、socialCopy は normalizeSocialCopy 適用済
+    〈note 4タグ・X 2タグ、いずれも #銀座 含む〉）を生成。所要 **57.1秒**。
+    `interest_themes` id31 の `generatedArticles=[53]`（冪等リンク）。
+    `./p2 editorial` Draft 18→**19**（+1、ginza_whiskers 1本のみ＝Tier 1 前の
+    #51+#52＝2本から半減）。
+    **コスト訂正（重要）**：設計報告では「output トークン約半減」と見積もった
+    が、**実測は逆で増加**——8/30 Trial（2角度 interest+ginza_whiskers）は
+    input 5,828 / output 3,618、今回（ginza_whiskers 単角度）は
+    input 6,766 / **output 4,556（＋26%）**。理由：5候補スキーマ（minItems:5
+    maxItems:5）は不変で「4角度を include:false で埋める」出力が残るうえ、
+    Tier 1 で system プロンプトに ginza_whiskers 追加ルール（具体対象／編集
+    視点／whyNow 日付／無根拠史観禁止／タイトル型固定回避）を足したため主稿
+    1本がより厚く書かれた。**真のコスト削減は per-call output ではなく、
+    (i) 1テーマ＝1 draft（従来2）で下流の承認・レビュー・DB 行が半減、
+    (ii) pre-gate で銀座接続の弱いテーマは Claude を呼ばない（gate_failed は
+    0 API コスト）、の2点**。
+    **観察事項**：#53 のタイトルが再び `——`（em dash）型——Tier 1 の禁止指示は
+    プロンプトのみで、`titleShape.ts`（構文型重複の機械検出）は Tier 2 のため
+    強制されていない。post-gate が #53 に対し 0 WARNING ＝整形の良い記事に
+    対する過検知が無いことは確認できたが、WARNING 経路を実データで発火させて
+    はいない（不良入力での発火は実装時の使い捨てユニットで確認済み）。
+    **既存 #51/#52 は before 比較用に保持**（`reviewStatus=draft`、
+    `interest_themes` id29 の `generatedArticles`、DC #337 の承認状態はすべて
+    無変更）。
+    **変更ファイル**：`config.ts`（Tier 1 の 9 パラメータ、すべて env 上書き
+    可）／`createInterestDrivenDraftsFromThemes.ts`（config 駆動 angles・
+    pre-gate 呼び出し・`gate_failed` ステータス・`withInterest`・
+    `requirePrimaryAngle`・冪等正規表現）／
+    `createMultiAngleDraftsFromDiscoveredContent.ts`（`requirePrimaryAngle`・
+    `enableInterestPostGate`・`aiGeneratedBy` の `|warnings=`）／
+    `generateMultiAngleArticleDrafts.ts`（system プロンプト ginza_whiskers
+    追加ルール・`postGate` オプション・post-gate 実行・結果に `warnings`）／
+    `draftInterest.ts`（`--with-interest`）／`scripts/project02`（`--with-interest`
+    を PASSTHRU＋usage）／`format_draft_interest_status.py`（`gate_failed` 行・
+    `⚠ post-gate WARNING`・主稿/補助稿・pre-gate 除外件数）。**新規**：
+    `interestArticlePreGate.ts`／`interestArticlePostGate.ts`／
+    `unsourcedHistoryGuard.ts`／`factNoteSeparation.ts`／`normalizeSocialCopy.ts`。
+    `npx tsc --noEmit`（cms）0エラー。正本は
+    `PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md`§9（同日追記済み）。commit・
+    approve・本番反映はしていない。
+
+  - 2026-08-30（Project 02-2 収益化② 9月Trial 日次データ収集の自動化実装＋手動一括テスト）:
+    9月Trial（Phase A 観測データを毎日蓄積し freshness減衰 / persistence /
+    cross-source overlap / W_PAID / C_MATCH を実データで確定するための期間）を
+    開始するにあたり、日次のデータ収集を最小変更で自動化した。設計方針を先に
+    提示・承認（薄い bash オーケストレーターのみ、`cms/**`・Payload スキーマ・
+    capture ロジックは一切変更しない／launchd は Mac ネイティブで再起動耐性が
+    あるため cron ではなく LaunchAgent を採用／追跡タグはコード外の
+    プレーンテキストにして Trial 中に増減可能にする）。
+    **新コマンド `./p2 interest trial-morning [--force]`**（`scripts/project02`
+    の `interest_dispatch` に `trial-morning)` 分岐を追加）。処理順：
+    step0 = `( ensure_env && start_db )` をサブシェルで実行し DB（Docker +
+    PostgreSQL）のみ起動（`start_db` の `exit` をサブシェルで封じ込め、CMS/Astro
+    は起動しない——capture スクリプトは `getPayload` で Postgres 直結のため
+    HTTP サーバー不要）→ step1 `interest_fetch_note_rising` → step2
+    `interest_fetch_note_official` → step3 `config/trial_hashtags.txt` を毎回
+    読み直し（`#` コメント・空行・前後空白を除去）各タグで
+    `interest_fetch_note_hashtag <tag>` → step4 `interest_score`（読み取り専用）
+    → score の JSON を `interest_score_YYYY-MM-DD.json` へ日付別保存 →
+    `trial_collect.log` へサマリブロック追記。
+    **1処理失敗で全体を壊さない**：`scripts/project02` は `set -e` なし。
+    `_trial_step <label> <fn> [args…]` が各ステップの出力を捕捉してそのまま
+    画面/launchd.out へ流しつつ rc を個別記録し、**失敗しても次のステップへ
+    進む**。例外は step0 のみで、DB 起動に失敗した場合は fetch を1つも実行せず
+    `return 1`（＝データ無変更、翌日リトライ）。
+    **同日重複防止（二重）**：(a) 既存 capture コードの当日/恒久 dedup
+    （`note_rising`・`note_hashtag_popular` は当日重複、`note_official_topic` は
+    恒久重複を capture 側が排除——新規ロジックは書いていない）。(b)
+    オーケストレーター側の同日ガード＝`run_YYYY-MM-DD.jsonl` に
+    `"step": "score"` かつ `"exitCode": 0` の行があれば即 `return 0`
+    （`--force` で無効化）。手動 `./p2 interest fetch-*` と自動実行が同日重複
+    しても既存 dedup で二重保存されない。
+    **ログ（すべて `.devlogs/trial/` 配下＝`.devlogs/` は gitignore 済み）**：
+    `run_YYYY-MM-DD.jsonl`（1ステップ1行 JSON：`ts` / `step` / `exitCode` /
+    `elapsedSec` / `fetchedCount` / `createdCount` / `skippedTodayCount` /
+    `skippedCount` / `relatedTagCount` / `rowCount` / `warning`）、
+    `interest_score_YYYY-MM-DD.json`（その日の score 全 rows、**日付別・上書き
+    しない**＝日次 diff で推移を追える）、`trial_collect.log`（人間可読サマリの
+    追記式、各ステップ OK/FAIL＋件数・warning 一覧・`RESULT: OK|PARTIAL`・所要
+    秒）、`launchd.out` / `launchd.err`（launchd 実行時のみ）。加えて既存の
+    `.devlogs/interest_fetch_note_*.log` はそのまま（無変更）。
+    **呼ばないもの（設計で明示的に除外）**：`draft-interest` / `draft-today`
+    （記事生成）、`interest paid-ratio`（既存行の `monetization` を書き込むため
+    承認後に手動運用）、Payload 管理画面での承認。Claude API 呼び出し・課金は
+    ゼロ。
+    **変更・新規ファイル**：
+    - 変更：`scripts/project02`（+192行、**追加のみ**。新規関数
+      `_trial_step` / `interest_trial_morning` / `_trial_write_summary`、
+      `interest_dispatch` に `trial-morning)` 分岐1つ、usage 2行。既存関数
+      `interest_fetch_note_*` / `interest_score` および既存 dispatch 分岐は
+      1バイトも変更していない）
+    - 新規：`config/trial_hashtags.txt`（追跡タグ7件＝銀座 / 写真 / カフェ /
+      建築 / 読書 / アート / 散歩。1行1タグ、`#` コメント可。Trial 中の増減は
+      このファイルを編集するだけ、再ロード不要）
+    - 新規：`scripts/trial_collect_logline.py`（各ステップ標準出力から JSON を
+      1つ抽出して `run_*.jsonl` と要約行と warning を書くログ整形ヘルパー。
+      DB・ネットワーク・AI に非接続、終了コードは受け取った rc をそのまま返す）
+    - 新規：`scripts/launchd/com.ginzawhiskers.p2-trial-collect.plist.template`
+      （`__REPO__` プレースホルダ入り LaunchAgent 定義、毎朝 07:00、
+      `RunAtLoad=false`）、`scripts/launchd/load.sh`（テンプレ→実 plist 生成＋
+      `launchctl bootstrap`、冪等）、`scripts/launchd/unload.sh`（`bootout`、
+      `--purge` で plist も削除）。いずれも chmod +x 済み。
+    **launchd は未登録・未有効化**——テンプレートと登録/解除ヘルパーを用意した
+    だけで `load.sh` は実行していない。リポジトリを clone しただけでは何も
+    スケジュールされない。
+    **静的検査**：`bash -n scripts/project02` OK／
+    `python3 -m py_compile scripts/trial_collect_logline.py` OK／`bash -n`
+    launchd ヘルパー2本 OK／同日ガード正規表現の単体確認（score
+    `exitCode:1` では非マッチ・`exitCode:0` でマッチ）OK／`./p2 interest`
+    usage に `trial-morning` 行が出ることを確認。
+    **手動一括テスト（`./p2 interest trial-morning`、2026-08-30 16:05:21）成功**：
+    全11ステップ（`ensure_db` + `rising` + `official` + `hashtag:銀座/写真/
+    カフェ/建築/読書/アート/散歩` + `score`）が `exitCode:0`、
+    `trial_collect.log` 末尾 `RESULT: OK   (failed steps: none)   elapsed 20s`、
+    `warnings: (none)`。ステップ別 `run_2026-08-30.jsonl`：
+    rising `createdCount=0 skippedTodayCount=5`（当日先に手動取得済みのため
+    正しくスキップ）、official `createdCount=0 skippedCount=9`（恒久 dedup）、
+    hashtag:銀座 `createdCount=0 skippedTodayCount=7`、
+    hashtag:写真/カフェ/建築/読書 各 `createdCount=4 skippedTodayCount=3`、
+    hashtag:アート `createdCount=3 skippedTodayCount=4`、
+    hashtag:散歩 `createdCount=2 skippedTodayCount=5`、
+    score `rowCount=50`（32→50、カフェ/建築/読書/アート/散歩 の関連タグが
+    新規追加されたため。**重複ではなく新規テーマの増加**）。生成ログ3ファイル
+    （`run_2026-08-30.jsonl` 11行 / `interest_score_2026-08-30.json` 23KB /
+    `trial_collect.log` 1ブロック）、一時ファイル `.summ.* / .warn.*` の残存
+    なし（正常に掃除）。
+    **DBレベルの重複検証**（`interest_themes` テーブル、`discover_ginza` DB、
+    `docker exec cms-postgres-1 psql -U discover_ginza`）：本日
+    `note_rising` 5行 / distinct theme 5、`note_hashtag_popular` 28行 /
+    distinct theme 28、`SELECT theme, source_type, count(*) … WHERE
+    captured_at::date = CURRENT_DATE GROUP BY theme, source_type HAVING
+    count(*) > 1` の結果 **0行**＝同日二重挿入なし。全期間 54行 / 本日 33行
+    （2026-08-27 の 21行 ＋ 本日 33行 ＝ 54、整合）。
+    **本セッションのそれ以前の作業**（同日、記録のため）：Trial 開始前チェック
+    （`./p2 start` / `doctor` / `preflight` / `editorial` / `articles` /
+    `interest score`）を実行しベースラインを控えた。`preflight` で
+    `ANTHROPIC_API_KEY` が正常な形式（`sk-ant-` 始まり・108文字）になって
+    いることを確認（CLAUDE.md §12 に記録の過去の異形式・無効状態から改善。
+    ただし実認証成功は未検証）。R2/X/IG の env 空・wrangler 認証無効は本番
+    インフラ用で Trial に無関係。最初の手動データ収集も実施：
+    `./p2 interest fetch-note-rising`（5行）・`./p2 interest fetch-note-official`
+    （0行＝既取得）・`./p2 interest fetch-note-hashtag 銀座`（7行）。
+    **未実施**：launchd の登録・有効化、記事生成、承認、`paidRatio` 取得、
+    W_PAID/C_MATCH の調整、commit。本番 Railway・push・課金・DNS・Editor's
+    Choice の承認/変更はいずれも行っていない。
+
   - 2026-08-28（🌈TNS #36 note 転記用完成稿の確定〈気象庁主軸再生成版〉）:
     気象庁主軸で再生成し Human Editorial パスを適用した #36 を、**note 転記
     用の完成稿として確定**する（2回目の「完成稿確定」——1回目は Open-Meteo

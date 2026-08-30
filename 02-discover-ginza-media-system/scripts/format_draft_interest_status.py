@@ -19,6 +19,9 @@ except json.JSONDecodeError:
 
 mode = data.get("mode", "?")
 print(f"  モード: {mode}（{'選定計画のみ・AI/DB書き込みなし' if mode == 'dry-run' else '実生成'}）")
+_primary = data.get("primaryAngle", "ginza_whiskers")
+_wi = data.get("withInterest", False)
+print(f"  主稿: {_primary}  /  interest補助稿: {'生成する（--with-interest）' if _wi else '生成しない'}")
 print(f"  W_PAID = {data.get('wPaid')} / C_MATCH = {data.get('cMatch')} / 上限 = {data.get('maxDrafts')} 本/日"
       + ("  [--strict]" if data.get("strict") else ""))
 print(f"  承認済み interest-themes: {data.get('approvedThemeRecords', 0)}行 / "
@@ -26,6 +29,9 @@ print(f"  承認済み interest-themes: {data.get('approvedThemeRecords', 0)}行
 _xf = data.get("crossFlowExcludedDiscoveredContent", 0)
 print(f"  プレマッチ対象の承認済み DiscoveredContent: {data.get('approvedDiscoveredContent', 0)}件"
       + (f"（収益化①で記事化済みのため {_xf}件を除外後）" if _xf else ""))
+_gf = data.get("gateFailedCount", 0)
+if _gf:
+    print(f"  記事生成前ゲート（pre-gate）で除外: {_gf}件（Claude 呼び出しなし）")
 
 plan = data.get("plan", [])
 
@@ -35,6 +41,7 @@ STATUS_LABEL = {
     "no_ginza_match": "銀座接続なし",
     "already_generated": "生成済み",
     "strict_skipped": "strict除外",
+    "gate_failed": "ゲート不成立",
 }
 
 def fmt_row(r: dict) -> str:
@@ -52,6 +59,8 @@ def fmt_row(r: dict) -> str:
             f"(paid {pr_str}) = final {r.get('finalRankScore')}{dc_str}")
     if r.get("note"):
         line += f"\n      ↳ {r['note']}"
+    if r.get("gateReasons"):
+        line += f"\n      ↳ pre-gate 不成立: {', '.join(r['gateReasons'])}"
     if r.get("monetizationNote"):
         line += f"\n      ↳ monetization: {r['monetizationNote']}"
     return line
@@ -69,6 +78,9 @@ if created:
         print(f"  Article #{c.get('articleId')}  ← DC #{c.get('discoveredContentId')} "
               f"× 関心「{c.get('interestTheme')}」  [{c.get('angle')}/{c.get('volume')}]  "
               f"{c.get('title','')[:50]}")
+        if c.get("warnings"):
+            print(f"      ⚠ post-gate WARNING: {', '.join(c['warnings'])}"
+                  f"（9月Trialは記録のみ・編集長レビューで判断）")
 
 failures = data.get("failures", [])
 if failures:

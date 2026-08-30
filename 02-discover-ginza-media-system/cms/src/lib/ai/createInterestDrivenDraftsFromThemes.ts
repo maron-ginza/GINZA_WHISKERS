@@ -1,6 +1,10 @@
 import type { Payload } from 'payload'
 
 import { CONTENT_TYPE_TO_PILLAR_NAME } from '../curation/contentTypeToPillar'
+import {
+  evaluateInterestArticlePreGate,
+  type InterestPreGateName,
+} from '../curation/interestArticlePreGate'
 import { computeThemeBigramContainment } from '../curation/textSimilarity'
 import {
   loadInterestMonetizationConfig,
@@ -62,6 +66,12 @@ export interface RunInterestDrivenDraftsOptions {
   dryRun?: boolean
   /** paidRatio が取得済みのテーマのみに絞る（既定 false） */
   strict?: boolean
+  /**
+   * Project 02-2 収益化② Tier 1（2026-08-30）：interest 補助稿も生成する。
+   * 省略時は config.includeInterestAngle（既定 false）。主稿は常に ginza_whiskers。
+   * 補助稿は主稿（ginza_whiskers）が同テーマで生成成功した場合のみ保存される。
+   */
+  withInterest?: boolean
 }
 
 interface MatchedDc {
@@ -92,8 +102,16 @@ export interface InterestDraftPlanRow {
   monetizationNote: string | null
   finalRankScore: number
   matchedDc: MatchedDc | null
-  status: 'selected' | 'deferred' | 'no_ginza_match' | 'already_generated' | 'strict_skipped'
+  status:
+    | 'selected'
+    | 'deferred'
+    | 'no_ginza_match'
+    | 'already_generated'
+    | 'strict_skipped'
+    | 'gate_failed'
   note: string | null
+  /** status='gate_failed' のとき、失敗した pre-gate 名（Tier 1） */
+  gateReasons?: InterestPreGateName[]
 }
 
 export interface RunInterestDrivenDraftsResult {
@@ -102,11 +120,16 @@ export interface RunInterestDrivenDraftsResult {
   maxDrafts: number
   wPaid: number
   cMatch: number
+  /** Tier 1：主稿の角度（既定 ginza_whiskers）と interest 補助稿の有無 */
+  primaryAngle: string
+  withInterest: boolean
   approvedThemeRecords: number
   approvedThemeClusters: number
   approvedDiscoveredContent: number
   /** 収益化①（draft-today 等）で既に記事化済みのためプレマッチ対象から外した承認済み DC 数 */
   crossFlowExcludedDiscoveredContent: number
+  /** Tier 1：pre-gate（4品質ゲート前置）で落ちたテーマ数 */
+  gateFailedCount: number
   /** finalRankScore 降順の全クラスタ計画 */
   plan: InterestDraftPlanRow[]
   /** 実際に作成された Article ドラフト（dryRun 時は空） */
@@ -117,12 +140,12 @@ export interface RunInterestDrivenDraftsResult {
     title: string
     angle: MultiAngleKey
     volume: ArticleVolume
+    /** Tier 1：post-gate WARNING コード（9月Trial は記録のみ・生成はブロックしない） */
+    warnings?: string[]
   }[]
   /** テーマ単位の生成失敗（両角度 include:false ＝銀座接続不成立 / AIエラー等） */
   failures: { interestTheme: string; discoveredContentId: number | null; reason: string }[]
 }
-
-const INTEREST_ANGLES: MultiAngleKey[] = ['interest', 'ginza_whiskers']
 
 function newestMonetization(
   rows: { monetization?: unknown }[],
@@ -168,6 +191,20 @@ export async function runInterestDrivenDraftsFromThemes(
   }
   const maxDrafts = config.maxDailyDrafts
   if (maxDrafts < 1) throw new Error(`maxDrafts は 1 以上を指定してください（現在: ${maxDrafts}）`)
+
+  // Tier 1（2026-08-30）：主稿は ginza_whiskers（config.primaryAngle）。
+  // interest 補助稿は --with-interest / config.includeInterestAngle 指定時のみ。
+  const primaryAngle = config.primaryAngle as MultiAngleKey
+  const withInterest = options.withInterest ?? config.includeInterestAngle
+  const generationAngles: MultiAngleKey[] = withInterest
+    ? [primaryAngle, 'interest']
+    : [primaryAngle]
+  const preGateConfig = {
+    gateUpcomingDays: config.gateUpcomingDays,
+    gatePublishedRecencyDays: config.gatePublishedRecencyDays,
+    gateGinzaMin: config.gateGinzaMin,
+    experienceContentTypes: config.experienceContentTypes,
+  }
 
   // === Phase A: 承認済み interest-themes → topicInterestScore ===
   const { docs: approvedThemeDocs } = await payload.find({
@@ -255,7 +292,7 @@ export async function runInterestDrivenDraftsFromThemes(
   const alreadyCoveredDcIds = new Set<number>()
   for (const a of allArticles) {
     const gen = String((a as { aiGeneratedBy?: string }).aiGeneratedBy ?? '')
-    const m = gen.match(/interestTheme=([^)]+)\)?$/)
+    const m = gen.match(/interestTheme=([^|)]+)/)
     if (m) generatedThemeKeys.add(m[1])
     const prov = (a as unknown as {
       editorialProvenance?: { discoveredContentSource?: number | { id?: number } | null }[] | null
@@ -323,6 +360,7 @@ export async function runInterestDrivenDraftsFromThemes(
     }
 
     let best: MatchedDc | null = null
+    let bestDcDoc: (typeof approvedDcs)[number] | null = null
     for (const dc of approvedDcs) {
       const method = dcMatchMethod(t.originalTheme, dc)
       if (!method) continue
@@ -332,7 +370,10 @@ export async function runInterestDrivenDraftsFromThemes(
         editorialScore: dcScore(dc) >= 0 ? dcScore(dc) : null,
         matchMethod: method,
       }
-      if (!best || dcScore(dc) > (best.editorialScore ?? -1)) best = cand
+      if (!best || dcScore(dc) > (best.editorialScore ?? -1)) {
+        best = cand
+        bestDcDoc = dc
+      }
     }
 
     if (!best) {
@@ -344,6 +385,42 @@ export async function runInterestDrivenDraftsFromThemes(
       })
       continue
     }
+
+    // === Tier 1（2026-08-30）: 記事生成前の決定的 pre-gate（4品質ゲート前置）===
+    // ここで gate_failed のテーマは Claude を一切呼ばない。
+    if (bestDcDoc) {
+      const es = (bestDcDoc as { editorialScore?: { ginza?: number | null; contentRichnessTier?: string | null } })
+        .editorialScore
+      const pre = evaluateInterestArticlePreGate(
+        t.originalTheme,
+        {
+          id: best.discoveredContentId,
+          title: (bestDcDoc as { title?: string | null }).title ?? null,
+          excerpt: (bestDcDoc as { excerpt?: string | null }).excerpt ?? null,
+          venue: (bestDcDoc as { venue?: string | null }).venue ?? null,
+          contentType: (bestDcDoc as { contentType?: string | null }).contentType ?? null,
+          uxType: (bestDcDoc as { uxType?: string | null }).uxType ?? null,
+          eventStartAt: (bestDcDoc as { eventStartAt?: string | null }).eventStartAt ?? null,
+          eventEndAt: (bestDcDoc as { eventEndAt?: string | null }).eventEndAt ?? null,
+          publishedAt: (bestDcDoc as { publishedAt?: string | null }).publishedAt ?? null,
+          editorialScoreGinza: typeof es?.ginza === 'number' ? es.ginza : null,
+          contentRichnessTier: es?.contentRichnessTier ?? null,
+        },
+        now,
+        preGateConfig,
+      )
+      if (pre.verdict === 'gate_failed') {
+        plan.push({
+          ...basePlan,
+          matchedDc: best,
+          status: 'gate_failed',
+          note: `記事生成前ゲート不成立: ${pre.failedGates.join(' / ')}（Claude 呼び出しなし）`,
+          gateReasons: pre.failedGates,
+        })
+        continue
+      }
+    }
+
     if (usedDcIds.has(best.discoveredContentId)) {
       plan.push({
         ...basePlan,
@@ -369,10 +446,13 @@ export async function runInterestDrivenDraftsFromThemes(
     maxDrafts,
     wPaid: config.wPaid,
     cMatch: config.cMatch,
+    primaryAngle,
+    withInterest,
     approvedThemeRecords: approvedThemeDocs.length,
     approvedThemeClusters: scoreRows.length,
     approvedDiscoveredContent: approvedDcs.length,
     crossFlowExcludedDiscoveredContent,
+    gateFailedCount: plan.filter((p) => p.status === 'gate_failed').length,
     plan,
     createdDrafts: [],
     failures: [],
@@ -388,16 +468,32 @@ export async function runInterestDrivenDraftsFromThemes(
         payload,
         dc.discoveredContentId,
         {
-          angles: INTEREST_ANGLES,
+          angles: generationAngles,
           readerInterestTheme: theme.originalTheme,
           interestThemeKey: theme.normalizedTheme,
+          // Tier 1：主稿（ginza_whiskers）が品質基準を満たさなければ補助稿も作らない。
+          requirePrimaryAngle: primaryAngle,
+          // Tier 1：生成後の 4品質ゲート本判定 ＋ Social Copy 正規化を有効化。
+          // Tier S1/S2：媒体別上限＋socialCopyGate（媒体別 WARNING）も同時に渡す。
+          enableInterestPostGate: {
+            restateSim: config.postgateRestateSim,
+            edNoteMinChars: config.postgateEdNoteMinChars,
+            socialCopyCaps: {
+              note: config.socialCopyNoteMaxTags,
+              x: config.socialCopyXMaxTags,
+              instagram: config.socialCopyInstagramMaxTags,
+            },
+            socialCopyDupSim: config.socialCopyDupSim,
+            socialCopyBoilerplate: config.socialCopyBoilerplatePhrases,
+          },
         },
       )
       if (createdArticles.length === 0) {
         result.failures.push({
           interestTheme: theme.originalTheme,
           discoveredContentId: dc.discoveredContentId,
-          reason: 'interest / ginza_whiskers 角度がどちらも生成されませんでした（AI判定で銀座接続不成立の可能性）',
+          reason:
+            '主稿（ginza_whiskers）が生成されませんでした（AI判定で銀座接続不成立、または品質基準未達の可能性）',
         })
         continue
       }
@@ -409,6 +505,7 @@ export async function runInterestDrivenDraftsFromThemes(
           title: created.title,
           angle: created.angle,
           volume: created.volume,
+          warnings: created.warnings,
         })
       }
       // 冪等: このテーマクラスタの全承認行に generatedArticles を紐付ける

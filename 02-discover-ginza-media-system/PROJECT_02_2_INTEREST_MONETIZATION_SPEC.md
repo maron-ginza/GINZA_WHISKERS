@@ -429,3 +429,191 @@ reviewStatus:draft で生成。**interest・ginza_whiskers の4本すべてに
 
 **残タスク**：W_PAID / C_MATCH の 9月Trial 調整、pillarHint 表の拡充、
 テーマ近似束ね・上限スライスの実データ発火確認（承認済みテーマ6件以上待ち）。
+
+---
+
+## 9. Tier 1：ginza_whiskers 主稿化 ＋ 記事生成前後の4品質ゲート（2026-08-30 確定・実装）
+
+8/30 の記事生成 Trial（Article #51＝interest 型／#52＝ginza_whiskers 型）評価を
+受けたマロン方針：**#52 型「GINZA WHISKERS 独自の編集視点で再解釈した記事」を
+主稿にする。#51 型の一般的な関心接続記事は常時生成せず、必要な場合のみ補助稿**。
+あわせて「記事生成前の4品質ゲート（銀座固有性／今行く理由／読者が銀座でできる
+こと・体験価値／GINZA WHISKERS 独自の編集視点）」を pre-gate＋post-gate＋人間
+レビューの3層で実効化。実装範囲は Tier 1 のみ（`titleShape.ts`・`titleOptions`
+スキーマ追加は Tier 2 送り）。
+
+### 9.1 主稿／補助稿
+
+- 主稿＝`config.primaryAngle`（env `INTEREST_PRIMARY_ANGLE`、既定 `ginza_whiskers`）。
+  既定は 1テーマ＝Claude 1回＝draft 1本。
+- interest 補助稿は `./p2 draft-interest --with-interest` ／
+  `INTEREST_INCLUDE_INTEREST_ANGLE=true` 指定時のみ。かつ **同テーマの主稿
+  （ginza_whiskers）が生成成立した場合のみ保存**（`createMultiAngleDraftsFrom
+  DiscoveredContent` の `requirePrimaryAngle`。主稿が included に無ければその DC
+  からは一切生成しない＝補助稿も抑止）。
+
+### 9.2 生成前 pre-gate（`cms/src/lib/curation/interestArticlePreGate.ts`、AI呼び出しなし）
+
+`(theme, matchedDc)` に対し、いずれか不成立なら `plan.status='gate_failed'`
+（`gateReasons` 付き）とし **Claude を一切呼ばない**。
+
+| gate | pass 条件（OR） | 対応 |
+|---|---|---|
+| `ginzaSignal` | DC の title/excerpt/venue に「銀座｜GINZA｜中央区」／`editorialScore.ginza ≥ INTEREST_GATE_GINZA_MIN`（既定13、最大25）／`resolvePillarHints(theme)` が `CONTENT_TYPE_TO_PILLAR_NAME[dc.contentType]` と一致 | 銀座固有性（下限） |
+| `timelyReason` | `deriveEventStatus ∈ {ongoing}`／`isUpcomingSoon`（`INTEREST_GATE_UPCOMING_DAYS` 既定14日）／`deriveTemporalRelevance ∈ {now,soon,next}`／`publishedAt` が `INTEREST_GATE_PUBLISHED_RECENCY_DAYS`（既定21）以内 | 今行く理由（**HARD**） |
+| `experienceCategory` | `dc.uxType`（設定済みかつ ≠ other）／`classifyUxType` が other 以外／`dc.contentType ∈ INTEREST_EXPERIENCE_CONTENT_TYPES`（既定 event/exhibition/food/shopping） | 体験価値（下限） |
+| `materialSufficiency` | `assessContentRichness(dc.excerpt).tier ≠ 'boilerplate'` | 素材充足 |
+
+`timelyReason` が「日付根拠のない『今行く理由』は生成しない」の実効化——
+`eventStartAt`/`eventEndAt`/`publishedAt` のどれも無い DC は必ず落ちる。
+
+### 9.3 生成後 post-gate（`interestArticlePostGate.ts`＋`unsourcedHistoryGuard.ts`＋`factNoteSeparation.ts`、AI呼び出しなし）
+
+主稿候補の本文に対し以下を検出。**9月Trial は hard drop せず WARNING 記録のみ**
+（`config.warnObserveMode` 既定 true）。`aiGeneratedBy` 末尾の `|warnings=<csv>`
+と `format_draft_interest_status.py` の `⚠ post-gate WARNING` に表示し、編集長
+レビューで採否判断。Trial で誤検知率を観測してから hard drop 化（Tier 1.5）。
+
+- `weakGinzaSpecificity`：会場/日付の sourceProvenance も、銀座での具体的行為の
+  記述も無い。
+- `noConcreteGinzaExperience`：本文に「銀座で見る/歩く/訪れる/体験する具体対象」
+  が無い（応募・告知のみの可能性）。
+- `weakEditorialViewpoint`：editorsNote が空・`INTEREST_POSTGATE_EDNOTE_MIN_CHARS`
+  （既定60）未満・content+whyNow との char-bigram 類似度 ≥
+  `INTEREST_POSTGATE_RESTATE_SIM`（既定0.5）・選定理由の語が無い。
+- `whyNowNotDateBacked`：whyNow が空、または日付/会期に接地していない。
+- `unsourcedHistory`：明治/大正/昭和/かつて/創業N年/N年代/「日本人は昔から」等が
+  sourceProvenance の fact・DC excerpt に現れない。
+- `factLeakInEditorsNote` / `editorsNoteRestatesContent`：editorsNote に日付/
+  料金/時刻/会期の混入、または content の言い換え。
+
+### 9.4 影響範囲
+
+- **スキーマ変更・migration なし**（`payload generate:types` 差分ゼロ）。WARNING は
+  `aiGeneratedBy` 文字列に載せるのみ（`Articles` テーブル不変）。
+- 冪等キー抽出の正規表現を `interestTheme=([^)]+)\)?$` → `interestTheme=([^|)]+)` へ
+  （`|warnings=` 追加への対応）。
+- `draft-today`（CORE 生成、`createDailyDraftsFromApproved.ts`）は `angles:['core']`
+  のみで `requirePrimaryAngle`／`enableInterestPostGate` を渡さず**完全に無影響**。
+
+### 9.5 実AI E2E（after 比較 Trial、2026-08-30）
+
+`interest_themes` id31「アート」＋ DiscoveredContent #324「永井博『Now and Then』
+刊行記念 ＠銀座 蔦屋書店」（event、会期 2026-09-02〜09-30、venue 明示）を承認 →
+`time ./p2 draft-interest --yes --limit=1` で **Article #53**（ginza_whiskers/
+medium、`reviewStatus=draft`、**post-gate WARNING 0件**、`editorialProvenance`
+2件〈venue＋会期／エディション数、いずれも confirmed〉、本文 3,310字）を生成。
+所要 57.1秒。`interest_themes` id31 の `generatedArticles=[53]`。`./p2 editorial`
+Draft 18→19（ginza_whiskers 1本のみ＝従来 #51+#52 の2本から半減）。既存 #51/#52
+は before 比較用に保持（無変更）。
+
+**コスト訂正（重要）**：設計時「output トークン約半減」の見積もりは誤りで実測は
+増加——8/30 Trial（2角度）は input 5,828 / output 3,618、今回（単角度）は
+input 6,766 / **output 4,556（＋26%）**。5候補スキーマ不変＋プロンプト強化で
+主稿が厚く書かれたため。**真のコスト削減は per-call output ではなく、
+(i) 1テーマ＝1 draft（従来2）、(ii) pre-gate で弱いテーマは Claude を呼ばない
+（gate_failed は 0 API コスト）、の2点**。
+
+### 9.6 config（`cms/src/lib/interestDiscovery/config.ts`、すべて env 上書き可）
+
+`INTEREST_PRIMARY_ANGLE`(ginza_whiskers) / `INTEREST_INCLUDE_INTEREST_ANGLE`(false) /
+`INTEREST_GATE_UPCOMING_DAYS`(14) / `INTEREST_GATE_PUBLISHED_RECENCY_DAYS`(21) /
+`INTEREST_GATE_GINZA_MIN`(13) / `INTEREST_EXPERIENCE_CONTENT_TYPES`
+(event,exhibition,food,shopping) / `INTEREST_POSTGATE_RESTATE_SIM`(0.5) /
+`INTEREST_POSTGATE_EDNOTE_MIN_CHARS`(60) / `INTEREST_WARN_OBSERVE_MODE`(true)
+
+### 9.7 変更ファイル
+
+**新規**：`interestArticlePreGate.ts` / `interestArticlePostGate.ts` /
+`unsourcedHistoryGuard.ts` / `factNoteSeparation.ts` / `normalizeSocialCopy.ts`。
+**変更**：`config.ts` / `createInterestDrivenDraftsFromThemes.ts` /
+`createMultiAngleDraftsFromDiscoveredContent.ts` / `generateMultiAngleArticleDrafts.ts` /
+`draftInterest.ts` / `scripts/project02`（`--with-interest`）/
+`format_draft_interest_status.py`。
+
+### 9.8 Tier 1 の残タスク
+
+- WARNING 群の誤検知率・分布を1〜2週観測 → 閾値調整 → 確定した項目から hard drop 化
+  （Tier 1.5）。
+- `titleShape.ts`（タイトル構文型の重複検出）・`titleOptions` スキーマ追加（Tier 2）。
+- `pillarHint.ts` キーワード表の拡充。
+
+---
+
+## 10. Tier S1／S2：Social Copy 媒体別最適化（2026-08-30 確定・実装）
+
+Tier 1 で生成した #53 の Social Copy を評価したところ、note と X がほぼ同文で、
+X が「ある画家」と固有名詞をぼかしていた。3媒体の役割差を強めるための最小変更。
+実装範囲は S1／S2 のみ（media別スキーマ化・媒体別の追加 Claude 呼び出し・A/B
+2案生成は Tier 2 送り）。
+
+### 10.1 媒体別の役割（Tier S1、`generateMultiAngleArticleDrafts.ts` の system プロンプト「## SNS用コピー」節を全面差し替え）
+
+- **note**：記事の要約（何が書かれているか）＋今読む理由をそれぞれ1文。事実は
+  簡潔に1〜2文。editorsNote の核を一言。ハッシュタグ **3個まで**。定型の書き出し
+  （「話題の」「〜をご紹介します」）禁止。
+- **X**：1行目に短いフック（施設名・イベント名を主語にしない）。**誰（固有名詞を
+  明示、「ある画家」等のぼかし禁止）／どこ（銀座の具体的な場所）／いつ（確認済みの
+  会期）／何ができるか** を全部そろえる。**「今行く理由」を必ず入れる**（確認済み
+  の会期・季節文脈に接地）。2〜3文・おおむね120字以内。ハッシュタグ **2〜3個**。
+- **Instagram**：情景・体験価値を主に。「銀座を歩く途中で立ち寄る」導線のイメージ。
+  説明しすぎない。**余韻の一文で締める**（断定・呼びかけで終わらせない）。
+  ハッシュタグ **1〜2個**。誇張・断定禁止。
+- **3媒体共通**：Fact にないことを足さない／日付根拠のない「今だけ・旬・話題の」
+  禁止／GINZA WHISKERS の視点を各媒体に1要素・ただし自然に／**3媒体で同一文・
+  同一語順を横展開しない**／AIっぽい定型表現を避ける。
+
+### 10.2 決定的正規化（Tier S1、`normalizeSocialCopy.ts`、AI呼び出しなし）
+
+- ハッシュタグ重複除去（先勝ち）。
+- 上限を関数引数（caps）へ切り出し、既定 **note 3 / X 3 / Instagram 2**。
+- **Instagram も `normalizeOne` に通す**（従来は素通しだった）——3媒体すべてに
+  重複除去・上限・`#銀座` 保証を適用。`#銀座` は上限に関わらず1枠を必ず残す。
+
+### 10.3 媒体別 WARNING（Tier S2、新規 `cms/src/lib/curation/socialCopyGate.ts`、AI呼び出しなし）
+
+`normalizeSocialCopy` 適用後の最終テキストに対し検出。`interestArticlePostGate`
+の WARNING と同じ配列へ合流（`aiGeneratedBy` の `|warnings=` と CLI 出力）。
+9月Trial は hard drop せず WARNING 記録のみ。
+
+- `xMissingWhoWhereWhen`：X本文に「誰＝sourceProvenance の fact から抽出した固有
+  名詞候補（『』「」内・カタカナ連続・英字連続）のいずれか／どこ＝銀座 or
+  DC.venue（またはその語片）／いつ＝実日付語」のいずれかが欠落。固有名詞候補が
+  fact に1つも無ければ「誰」は不問。
+- `socialCopyCrossMediaDuplicate`：note/X/IG の任意2媒体間の char-bigram Jaccard
+  類似度 ≥ `SOCIALCOPY_DUP_SIM`（既定 0.65）。
+- `aiBoilerplatePhrase`：`SOCIALCOPY_BOILERPLATE`（既定16語 CSV、env 上書き可）の
+  部分文字列がいずれかの媒体にヒット。
+- `recencyClaimUnbacked`：「今だけ／今しか／いま話題／旬／待望の／ついに解禁／
+  急げ／見逃すな」等が、provenance の実日付・会期語にもその媒体自身の日付語にも
+  接地せず出現。実日付判定は月/日/年・明示会期語（会期／開催期間／開催中）・
+  具体的な時期語のみ（「開催」「まで」「から」単体は根拠にしない）。
+
+### 10.4 config（`cms/src/lib/interestDiscovery/config.ts`、すべて env 上書き可）
+
+`SOCIALCOPY_NOTE_MAX_TAGS`(3) / `SOCIALCOPY_X_MAX_TAGS`(3) /
+`SOCIALCOPY_INSTAGRAM_MAX_TAGS`(2) / `SOCIALCOPY_DUP_SIM`(0.65) /
+`SOCIALCOPY_BOILERPLATE`（CSV、既定：いかがでしょうか／してみてはいかが／
+ぜひチェック／ぜひ足を運／ぜひご覧／ぜひお立ち寄り／おすすめです／おすすめの一／
+方におすすめ／話題の／話題沸騰／必見／見逃せない／要チェック／マストバイ／大注目）
+
+### 10.5 影響範囲・検証
+
+- **スキーマ変更・migration なし**（`generate:types` 差分ゼロ）。
+- `draft-today`（CORE）は `socialCopyGate`／媒体別 caps を通さず**無影響**。
+- `npx tsc --noEmit`（cms）0エラー。使い捨てユニットで socialCopyGate の4 WARNING
+  の発火・非発火（役割差のある健全な3媒体＝warnings 0、過検知なし）と新 caps を
+  確認。誤検知修正1件：`recencyClaimUnbacked` の日付根拠判定が provenance の
+  「開催」単体を日付とみなしていたため `DATE_HINT_RE` を厳格化。
+- 回帰：`./p2 draft-interest --dry-run` 正常、`./p2 doctor` 全緑、`./p2 editorial`
+  不変、`./p2 draft-today --dry-run` 正常。
+- **実AI E2E は未実施**——現在の承認済みテーマ（アート id31／写真 id29）は生成済み
+  で枯渇。live には新テーマ＋DC の承認が必要。
+
+### 10.6 変更ファイル
+
+**新規**：`cms/src/lib/curation/socialCopyGate.ts`。**変更**：
+`generateMultiAngleArticleDrafts.ts`（プロンプト差し替え＋`socialCopyGate` 呼び出し）／
+`normalizeSocialCopy.ts`（caps 引数化・Instagram 対応）／
+`createMultiAngleDraftsFromDiscoveredContent.ts`（options 拡張・伝搬）／
+`createInterestDrivenDraftsFromThemes.ts`（config→options）／`config.ts`。

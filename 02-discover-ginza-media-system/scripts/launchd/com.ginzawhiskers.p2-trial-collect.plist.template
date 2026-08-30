@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  GINZA WHISKERS / Project 02-2 収益化② — 9月Trial 日次データ収集 LaunchAgent（テンプレート）
+
+  これは版管理用テンプレート。__REPO__ を実際の絶対パスへ置換したものを
+    ~/Library/LaunchAgents/com.ginzawhiskers.p2-trial-collect.plist
+  へ配置し、`scripts/launchd/load.sh` でロードする。
+
+  現時点では **未登録・未有効化**（設計・ファイル整備のみ）。
+
+  挙動:
+    - 毎朝 07:00 に `./p2 interest trial-morning` を1回実行
+      （fetch-note-rising → fetch-note-official → config/trial_hashtags.txt の
+        各タグで fetch-note-hashtag → interest score）
+    - stdout/stderr は .devlogs/trial/launchd.out / launchd.err へ追記
+    - RunAtLoad=false（ログイン毎の即時実行はしない）
+    - Mac がスリープ/オフで 07:00 を逃した場合、launchd が復帰後に1回だけ実行する
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ginzawhiskers.p2-trial-collect</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>__REPO__/p2 interest trial-morning &gt;&gt; __REPO__/.devlogs/trial/launchd.out 2&gt;&gt; __REPO__/.devlogs/trial/launchd.err</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/.devlogs/trial/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/.devlogs/trial/launchd.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+</dict>
+</plist>

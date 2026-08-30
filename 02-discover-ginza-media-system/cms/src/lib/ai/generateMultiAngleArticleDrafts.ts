@@ -1,6 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 import { applyMultiAngleQualityGate } from '../curation/multiAngleQualityGate'
+import {
+  evaluateInterestArticlePostGate,
+  type InterestPostGateDcContext,
+} from '../curation/interestArticlePostGate'
+import { evaluateSocialCopyGate } from '../curation/socialCopyGate'
+import { normalizeSocialCopy, type SocialCopyCaps } from './normalizeSocialCopy'
 import { blocksToLexicalState, type TextBlock } from './lexical'
 import {
   formatVerifiedAtForDisplay,
@@ -69,6 +75,26 @@ export interface GenerateMultiAngleDraftsInput {
    * 「この関心テーマは銀座に接続しない」というPhase Cの最終判定になる。
    */
   readerInterestTheme?: string
+  /**
+   * Project 02-2 収益化② Tier 1（2026-08-30）：生成後の決定的 post-gate を有効化する。
+   * 指定時のみ、included 候補に対して interestArticlePostGate（4品質ゲートの本判定）を
+   * 実行し、WARNING コードを result.warnings へ載せる（9月Trial は WARNING 記録のみ・
+   * included からは除外しない）。あわせて socialCopyNote/X の決定的正規化も行う。
+   * **未指定なら従来どおり（draft-today の CORE 生成などは一切影響を受けない）。**
+   */
+  postGate?: {
+    restateSim: number
+    edNoteMinChars: number
+    /** DiscoveredContent の会場・excerpt・title（post-gate の「具体対象」判定に使う） */
+    dcContext?: InterestPostGateDcContext
+    // --- Tier S1 / S2（2026-08-30、Social Copy 媒体別最適化） ---
+    /** ハッシュタグ上限（既定 note 3 / X 3 / IG 2）。normalizeSocialCopy へ渡す */
+    socialCopyCaps?: SocialCopyCaps
+    /** 2媒体間の横展開とみなす char-bigram 類似度しきい値（socialCopyGate、既定 0.65） */
+    socialCopyDupSim?: number
+    /** AI定型句の部分文字列リスト（socialCopyGate） */
+    socialCopyBoilerplate?: string[]
+  }
 }
 
 export interface MultiAngleDraftResult {
@@ -82,9 +108,24 @@ export interface MultiAngleSkipResult {
   reason: string
 }
 
+export interface MultiAngleWarningResult {
+  angle: MultiAngleKey
+  /** post-gate の WARNING コード（例: noConcreteGinzaExperience） */
+  codes: string[]
+  /** コード → 人間向け説明 */
+  details: Record<string, string>
+  /** normalizeSocialCopy が実際に直した内容（あれば） */
+  socialCopyChanged: string[]
+}
+
 export interface GenerateMultiAngleDraftsResult {
   included: MultiAngleDraftResult[]
   skipped: MultiAngleSkipResult[]
+  /**
+   * Project 02-2 収益化② Tier 1：post-gate（4品質ゲートの本判定）の WARNING。
+   * postGate オプション指定時のみ非空になりうる。included の各角度に対応。
+   */
+  warnings: MultiAngleWarningResult[]
 }
 
 const MULTI_ANGLE_SYSTEM_PROMPT = `あなたはGINZA WHISKERS「AI GINZA EDITORIAL DESK」編集部のAI編集ライターです。
@@ -186,13 +227,67 @@ const MULTI_ANGLE_SYSTEM_PROMPT = `あなたはGINZA WHISKERS「AI GINZA EDITORI
   "long"（複数論点を持つ厚めの記事）から選ぶこと。角度ごとに機械的に
   固定せず、実際に書ける内容量で判断すること。
 
-## SNS用コピー
+## SNS用コピー（媒体別。2026-08-30 Tier S1 で役割を明確化）
 
-- **socialCopyNote**：note投稿の添え文（短い紹介文）。ハッシュタグは
-  テーマに直接関係するもの3〜5個までとする。
-- **socialCopyX**：役割は「気になる」と思わせてnoteへ誘導すること。
-  内容を全部説明しない。ハッシュタグは1〜2個まで。未確認情報は書かない。
-- **socialCopyInstagram**：簡潔なキャプション。誇張・断定を避ける。`
+3媒体は役割が異なる。**同じ文・同じ語順を横展開しない**——構成も語彙も媒体ごとに変える。
+
+### socialCopyNote（note の添え文）
+- **記事の要約**（何が書かれているか）と**今この記事を読む理由**を、それぞれ1文で。
+- 事実（会場・会期・内容）は簡潔に、1〜2文に収める（羅列しない）。
+- editorsNote の核（GINZA WHISKERS がなぜ選んだか）を一言だけ添える。
+- ハッシュタグはテーマに直接関係するもの **3個まで**。
+- 定型の書き出し（「話題の」「〜をご紹介します」「注目の」）を使わない。
+
+### socialCopyX（X／Twitter）
+- **1行目に短いフック**（問い・意外性・情景の断片）。施設名やイベント名を主語にしない。
+- **誰／どこ／いつ／何ができるか** を全部そろえる：
+  - 誰＝**固有名詞を明示**（作家名・ブランド名・作品名。「ある画家」等のぼかしをしない）
+  - どこ＝銀座の具体的な場所（会場名）
+  - いつ＝確認済みの会期・時期
+  - 何ができるか＝読者の行為（見比べる・立ち寄る等）
+- **「今行く理由」を必ず入れる**——確認済みの会期・季節文脈に接地させる。
+- 全体 2〜3文・**おおむね120字以内**。
+- ハッシュタグ **2〜3個**。
+- note で何が読めるかを一言（「詳しくは記事で」等の定型は避ける）。
+
+### socialCopyInstagram
+- **情景・体験価値**を主に描く（時間帯・光・気分、どんな一室か）。
+- 「**銀座を歩く途中で立ち寄る**」導線のイメージ。
+- 説明しすぎない（会期・料金の羅列をしない、事実は最小限）。
+- **余韻の一文で締める**（断定・呼びかけで終わらせない）。
+- ハッシュタグは **必要最小限（1〜2個）**、\`#銀座\` ＋ テーマか場所。
+- 誇張・断定（「必見」「絶対」「話題沸騰」）を避ける。
+
+### 3媒体の共通ルール
+- **Fact にないことを足さない**（会場・会期・人物・作品名・数量は sourceProvenance / content の範囲内）。
+- **日付根拠のない「今だけ」「旬」「話題の」表現は禁止**——確認済みの会期・季節文脈があるときのみ時期性を書く。
+- GINZA WHISKERS の視点（選定理由・銀座の見方）を各媒体に1要素、ただし自然に。
+- **AIっぽい定型表現を避ける**（「いかがでしょうか」「ぜひ〜してみてください」「〜な方におすすめ」「〜は必見です」「見逃せない」）。
+
+## ginza_whiskers 角度の追加ルール（2026-08-30、収益化② Tier 1）
+
+ginza_whiskers 角度を主稿として書くときは、以下を必ず守ること。
+
+- **銀座で具体的に「見る／歩く／訪れる／体験する」対象を本文に1つ以上含める**
+  こと。オンライン応募・告知の紹介だけで終わらせない。会場が分かるなら会場名を
+  本文で示し、対応する事実を sourceProvenance（factType: venue）に入れること。
+- **GINZA WHISKERS独自の編集視点をeditorsNoteで明示する**こと。editorsNoteは
+  「なぜGINZA WHISKERSがこれを選んだか」「読者に提示したい新しい銀座の見方」だけを
+  書く。contentやwhyNowの要約・言い換えにしない。日付・料金・時刻・会期などの
+  事実情報をeditorsNoteに書かない（それらはcontent/whyNow/sourceProvenanceのみ）。
+- **whyNowは確認済みの日付・会期に基づいて書く**こと。「秋は写真がきれいな季節」
+  のような日付非依存の一般論だけでwhyNowを構成しない。
+- **裏付けのない歴史・年代・一般論を混ぜない**こと。銀座の歴史的事実・年代・人物・
+  出来事に言及する場合は、核情報（元となる旬の銀座情報）に含まれるものだけを使う。
+  核情報にない年代・固有名詞・出来事を新たに持ち出さない。「日本人は昔から」
+  「銀座はいつの時代も」等、出典のない一般化で編集視点を作らない。編集視点は
+  「この核情報をGINZA WHISKERSの関心（昭和浪漫・6本柱）のどれに接続するか」という
+  選定の説明にとどめる。検証できない歴史語りが必要になるなら、その角度は
+  include:false とすること。
+- **タイトルは毎回同じ型にしない**こと。「〜——〜、〜」のようにem dash（——）で
+  従属節をつなぐ型を機械的に多用しない。体言止め／問いかけ／呼びかけ／副詞句起点
+  ／数字起点 など、記事内容に合った構文型を選ぶ。過剰な煽り・クリックベイトは
+  避ける。`
 
 const MULTI_ANGLE_CANDIDATE_SCHEMA = {
   type: 'object',
@@ -406,6 +501,7 @@ export async function generateMultiAngleArticleDrafts({
   discoveredContentId,
   angles,
   readerInterestTheme,
+  postGate,
 }: GenerateMultiAngleDraftsInput): Promise<GenerateMultiAngleDraftsResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -532,6 +628,7 @@ export async function generateMultiAngleArticleDrafts({
 
   const keptAngles = new Set(gateResult.kept.map((k) => k.angle))
   const sourceMeta = { sourceName, sourceUrl, verifiedAt }
+  const warnings: MultiAngleWarningResult[] = []
 
   const included: MultiAngleDraftResult[] = includedRaw
     .filter(({ angle }) => keptAngles.has(angle))
@@ -541,6 +638,61 @@ export async function generateMultiAngleArticleDrafts({
         console.error(
           `[generateMultiAngleArticleDrafts] 角度"${angle}"のvolume値が不正のため"medium"に既定化: ${candidate.volume}`,
         )
+      }
+
+      // Project 02-2 収益化② Tier 1：post-gate（4品質ゲートの本判定）＋ Social Copy 正規化。
+      // postGate 未指定なら completely no-op（draft-today の CORE 生成などは影響を受けない）。
+      let socialNote = candidate.socialCopyNote!
+      let socialX = candidate.socialCopyX!
+      let socialInstagram = candidate.socialCopyInstagram!
+      if (postGate) {
+        const provFacts = (candidate.sourceProvenance ?? []).map((p) => ({
+          fact: p.fact,
+          factType: p.factType,
+          verificationStatus: p.verificationStatus,
+        }))
+        const pg = evaluateInterestArticlePostGate(
+          {
+            angle,
+            title: candidate.title ?? '',
+            content: candidate.content ?? '',
+            whyNow: candidate.whyNow ?? '',
+            editorsNote: candidate.editorsNote ?? '',
+            sourceProvenanceFacts: provFacts,
+          },
+          postGate.dcContext ?? {},
+          { restateSim: postGate.restateSim, edNoteMinChars: postGate.edNoteMinChars },
+        )
+        // Tier S1：媒体別上限で正規化 → Tier S2：正規化後テキストへ媒体別 WARNING 検査
+        const norm = normalizeSocialCopy(
+          { note: socialNote, x: socialX, instagram: socialInstagram },
+          postGate.socialCopyCaps,
+        )
+        socialNote = norm.note
+        socialX = norm.x
+        socialInstagram = norm.instagram
+        const sc = evaluateSocialCopyGate(
+          {
+            note: socialNote,
+            x: socialX,
+            instagram: socialInstagram,
+            provenanceFacts: provFacts.map((f) => f.fact),
+            venue: postGate.dcContext?.venue ?? null,
+          },
+          {
+            dupSim: postGate.socialCopyDupSim ?? 0.65,
+            boilerplatePhrases: postGate.socialCopyBoilerplate ?? [],
+          },
+        )
+        const allCodes = [...pg.warnings, ...sc.warnings]
+        if (allCodes.length > 0 || norm.changed.length > 0) {
+          warnings.push({
+            angle,
+            codes: allCodes,
+            details: { ...pg.details, ...sc.details },
+            socialCopyChanged: norm.changed,
+          })
+        }
       }
 
       const { blocks, provenance } = buildAngleArticleBlocks(
@@ -569,9 +721,9 @@ export async function generateMultiAngleArticleDrafts({
           body: blocksToLexicalState(blocks),
           seo: { metaTitle: candidate.metaTitle!, metaDescription: candidate.metaDescription! },
           socialCopy: {
-            note: candidate.socialCopyNote!,
-            x: candidate.socialCopyX!,
-            instagram: candidate.socialCopyInstagram!,
+            note: socialNote,
+            x: socialX,
+            instagram: socialInstagram,
           },
           editorialProvenance: provenance,
           callToAction: candidate.callToAction!,
@@ -579,5 +731,5 @@ export async function generateMultiAngleArticleDrafts({
       }
     })
 
-  return { included, skipped }
+  return { included, skipped, warnings }
 }

@@ -579,7 +579,7 @@ draft_interest() {
     case "$arg" in
       --dry-run) DRY_RUN_ARG="--dry-run" ;;
       --yes) CONFIRMED="1" ;;
-      --limit=*|--strict|--w-paid=*|--c-match=*) PASSTHRU="$PASSTHRU $arg" ;;
+      --limit=*|--strict|--w-paid=*|--c-match=*|--with-interest) PASSTHRU="$PASSTHRU $arg" ;;
       --*) : ;; # 未知の--オプションは無視
     esac
   done
@@ -592,7 +592,8 @@ draft_interest() {
     echo "    まず ./p2 draft-interest --dry-run で選定計画（W_PAID/C_MATCH・finalRankScore・接続先DC）を確認できます。"
     echo "    実際に生成するには --yes を付けて再実行してください。"
     echo "    例: ./p2 draft-interest --dry-run"
-    echo "        ./p2 draft-interest --yes"
+    echo "        ./p2 draft-interest --yes                          # ginza_whiskers 主稿を1テーマ1本"
+    echo "        ./p2 draft-interest --yes --with-interest          # interest 補助稿も（主稿成立時のみ）"
     echo "        ./p2 draft-interest --yes --limit=3 --strict"
     echo "        ./p2 draft-interest --dry-run --w-paid=6 --c-match=0.5   # 9月Trialの感度確認"
     echo "================================================"
@@ -1250,6 +1251,192 @@ interest_paid_ratio() {
   echo
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Project 02-2 収益化② — 9月Trial 日次データ収集オーケストレーター（2026-08-30 追加）
+#
+# 既存の interest_fetch_note_rising / _official / _hashtag / interest_score を
+# そのまま順に呼ぶだけの薄いラッパー。cms/ 配下・スキーマ・capture ロジックは無変更。
+#   - このファイルは set -e なし。1ステップが失敗しても残りは続行する。
+#   - 同日重複保存は既存 capture コードが担保（新規ロジックなし）。加えて
+#     「本日すでに score まで成功済みなら再実行しない」ガードを持つ（--force で無効化）。
+#   - 取得件数 / warning / score 全文を .devlogs/trial/ 配下へ保存。
+#   - 記事生成（draft-interest / draft-today）・承認・paid-ratio は一切呼ばない。
+# launchd への登録は scripts/launchd/load.sh（このコマンドは登録・有効化しない）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1ステップ実行 + ログ化。$1=ラベル、$2..=呼び出す関数と引数。
+# 生出力はそのまま流しつつ、trial_collect_logline.py で JSONL / 要約 / warning を記録する。
+# グローバル TRIAL_LAST_RAW に最後の生出力を残す（score スナップショット用）。
+_trial_step() {
+  _ts_label="$1"; shift
+  _ts_start=$(date +%s)
+  _ts_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  _ts_out="$("$@" 2>&1)"
+  _ts_rc=$?
+  _ts_end=$(date +%s)
+
+  printf '%s\n' "$_ts_out"
+  TRIAL_LAST_RAW="$_ts_out"
+
+  printf '%s\n' "$_ts_out" | python3 "$ROOT/scripts/trial_collect_logline.py" \
+    "$_ts_label" "$_ts_rc" "$_ts_ts" "$((_ts_end - _ts_start))" \
+    "$TRIAL_RUNLOG" "$TRIAL_SUMM_TMP" "$TRIAL_WARN_TMP" >/dev/null || true
+
+  if [ "$_ts_rc" -ne 0 ]; then
+    TRIAL_FAIL_COUNT=$((TRIAL_FAIL_COUNT + 1))
+    TRIAL_FAILED_STEPS="$TRIAL_FAILED_STEPS $_ts_label"
+  fi
+  return "$_ts_rc"
+}
+
+interest_trial_morning() {
+  FORCE=0
+  for arg in "$@"; do
+    case "$arg" in
+      --force) FORCE=1 ;;
+    esac
+  done
+
+  TRIAL_DIR="$LOG_DIR/trial"
+  mkdir -p "$TRIAL_DIR"
+  TRIAL_DATE="$(date +%F)"
+  TRIAL_RUNLOG="$TRIAL_DIR/run_${TRIAL_DATE}.jsonl"
+  TRIAL_SUMMARY="$TRIAL_DIR/trial_collect.log"
+  TRIAL_SCORE_SNAP="$TRIAL_DIR/interest_score_${TRIAL_DATE}.json"
+  TRIAL_SUMM_TMP="$(mktemp "$TRIAL_DIR/.summ.XXXXXX")"
+  TRIAL_WARN_TMP="$(mktemp "$TRIAL_DIR/.warn.XXXXXX")"
+  TRIAL_FAIL_COUNT=0
+  TRIAL_FAILED_STEPS=""
+  TRIAL_LAST_RAW=""
+  _trial_started_at=$(date +%s)
+
+  echo
+  echo "=== GINZA WHISKERS / Project 02-2 収益化② 9月Trial 日次収集 — $(date '+%Y-%m-%d %H:%M:%S') ==="
+  echo "記事生成・承認・課金は行いません（fetch-note-rising / -official / -hashtag / interest score のみ）"
+
+  TAGS_FILE="$ROOT/config/trial_hashtags.txt"
+
+  # --- 同日ガード: 本日すでに score まで成功していれば何もしない ---
+  if [ "$FORCE" -ne 1 ] && [ -f "$TRIAL_RUNLOG" ] && \
+     grep -q '"step": *"score"[^}]*"exitCode": *0' "$TRIAL_RUNLOG" 2>/dev/null; then
+    ok "本日（${TRIAL_DATE}）は収集済み（score まで成功）。再実行するなら ./p2 interest trial-morning --force"
+    rm -f "$TRIAL_SUMM_TMP" "$TRIAL_WARN_TMP"
+    echo "================================================"
+    echo
+    return 0
+  fi
+
+  # --- step 0: ローカル DB 起動（CMS/Astro は起動しない。capture は Postgres 直結）---
+  echo
+  echo "--- step 0: ensure DB (Docker + PostgreSQL) ---"
+  if ( ensure_env && start_db ); then
+    ok "DB ready"
+    printf '{"ts":"%s","step":"ensure_db","exitCode":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRIAL_RUNLOG"
+    printf '  %-22s : OK\n' "ensure_db" >> "$TRIAL_SUMM_TMP"
+  else
+    fail "DB を起動できませんでした。今回の収集を中止します（データは変更していません）"
+    printf '{"ts":"%s","step":"ensure_db","exitCode":1}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRIAL_RUNLOG"
+    printf '  %-22s : FAIL  (中止)\n' "ensure_db" >> "$TRIAL_SUMM_TMP"
+    _trial_write_summary 1
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  # --- step 1: note 急上昇タグ ---
+  echo
+  echo "--- step 1: fetch-note-rising ---"
+  _trial_step "rising" interest_fetch_note_rising
+
+  # --- step 2: note 公式お題/コンテスト ---
+  echo
+  echo "--- step 2: fetch-note-official ---"
+  _trial_step "official" interest_fetch_note_official
+
+  # --- step 3: 追跡ハッシュタグ（config/trial_hashtags.txt、1行1タグ・# コメント可）---
+  echo
+  echo "--- step 3: fetch-note-hashtag（config/trial_hashtags.txt）---"
+  if [ ! -f "$TAGS_FILE" ]; then
+    fail "追跡タグ設定が見つかりません: $TAGS_FILE（step 3 をスキップ）"
+    printf '{"ts":"%s","step":"hashtags","exitCode":1,"note":"tags file missing"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRIAL_RUNLOG"
+    printf '  %-22s : FAIL  (設定ファイルなし)\n' "hashtags" >> "$TRIAL_SUMM_TMP"
+    TRIAL_FAIL_COUNT=$((TRIAL_FAIL_COUNT + 1))
+    TRIAL_FAILED_STEPS="$TRIAL_FAILED_STEPS hashtags"
+  else
+    _trial_tag_count=0
+    while IFS= read -r _raw_line || [ -n "$_raw_line" ]; do
+      _tag="$(printf '%s' "$_raw_line" | sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+      [ -z "$_tag" ] && continue
+      _trial_tag_count=$((_trial_tag_count + 1))
+      echo "  · tag: $_tag"
+      _trial_step "hashtag:$_tag" interest_fetch_note_hashtag "$_tag"
+    done < "$TAGS_FILE"
+    if [ "$_trial_tag_count" -eq 0 ]; then
+      warn "追跡タグが0件でした（$TAGS_FILE の中身を確認してください）"
+      printf '  %-22s : OK   (タグ0件)\n' "hashtags" >> "$TRIAL_SUMM_TMP"
+    fi
+  fi
+
+  # --- step 4: Interest Score（読み取り専用）＋ 日付別スナップショット保存 ---
+  echo
+  echo "--- step 4: interest score（読み取り専用）---"
+  _trial_step "score" interest_score
+  _score_rc=$?
+  if [ "$_score_rc" -eq 0 ] && [ -n "$TRIAL_LAST_RAW" ]; then
+    if printf '%s\n' "$TRIAL_LAST_RAW" | python3 -c '
+import json, sys
+raw = sys.stdin.read()
+i = raw.find("{")
+while i != -1:
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(raw[i:])
+        break
+    except json.JSONDecodeError:
+        i = raw.find("{", i + 1)
+else:
+    sys.exit(1)
+json.dump(obj, open(sys.argv[1], "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+' "$TRIAL_SCORE_SNAP"; then
+      ok "score スナップショット保存: $TRIAL_SCORE_SNAP"
+    else
+      warn "score スナップショットの保存に失敗（JSON を取り出せませんでした）"
+    fi
+  fi
+
+  _trial_write_summary "$([ "$TRIAL_FAIL_COUNT" -gt 0 ] && echo 1 || echo 0)"
+  echo "================================================"
+  echo
+  [ "$TRIAL_FAIL_COUNT" -eq 0 ]
+}
+
+# サマリブロックを trial_collect.log へ追記し、tmp を掃除する。$1: 0=全OK / 1=失敗あり
+_trial_write_summary() {
+  _overall="$1"
+  _elapsed=$(( $(date +%s) - ${_trial_started_at:-$(date +%s)} ))
+  {
+    echo "=== Trial Collect  $(date '+%Y-%m-%d %H:%M:%S')  (${TRIAL_DATE}) ==="
+    [ -f "$TRIAL_SUMM_TMP" ] && cat "$TRIAL_SUMM_TMP"
+    if [ -s "$TRIAL_WARN_TMP" ]; then
+      echo "  warnings:"
+      sed 's/^/    - /' "$TRIAL_WARN_TMP"
+    else
+      echo "  warnings: (none)"
+    fi
+    if [ "$_overall" -eq 0 ]; then
+      echo "  RESULT: OK   (failed steps: none)   elapsed ${_elapsed}s"
+    else
+      echo "  RESULT: PARTIAL   (failed steps:${TRIAL_FAILED_STEPS:- none})   elapsed ${_elapsed}s"
+    fi
+    echo
+  } >> "$TRIAL_SUMMARY"
+
+  echo
+  echo "--- サマリ（$TRIAL_SUMMARY へ追記済み）---"
+  tail -n "$(( $(wc -l < "$TRIAL_SUMM_TMP" 2>/dev/null || echo 0) + 6 ))" "$TRIAL_SUMMARY"
+
+  rm -f "$TRIAL_SUMM_TMP" "$TRIAL_WARN_TMP"
+}
+
 interest_dispatch() {
   case "$1" in
     fetch-note-rising)
@@ -1271,6 +1458,10 @@ interest_dispatch() {
       shift
       interest_paid_ratio "$@"
       ;;
+    trial-morning)
+      shift
+      interest_trial_morning "$@"
+      ;;
     *)
       echo "Usage:"
       echo "  ./p2 interest fetch-note-rising [--dry-run]"
@@ -1278,6 +1469,7 @@ interest_dispatch() {
       echo "  ./p2 interest fetch-note-hashtag <tag> [--dry-run]"
       echo "  ./p2 interest score  (読み取り専用、Phase A統合Interest Score表示)"
       echo "  ./p2 interest paid-ratio <theme|id> [--dry-run]  (Phase B、note.com公開ページから paidRatio を算出し monetizationグループへ保存)"
+      echo "  ./p2 interest trial-morning [--force]  (9月Trial 日次収集: rising→official→追跡タグ→score を一括。1処理失敗でも続行、同日再実行はガード、記事生成なし)"
       return 1
       ;;
   esac
@@ -1814,6 +2006,7 @@ case "${1:-status}" in
     echo "  ./p2 interest fetch-note-official [--dry-run]  Project 02-2 Phase A試験取得：note.com/info/rssから現在開催中と推定できるお題/コンテストのみInterestThemesへ保存（confidence: low、同一企画は恒久的に重複防止、Claude API・有料API呼び出しなし）"
     echo "  ./p2 interest fetch-note-hashtag <tag> [--dry-run]  Project 02-2 Phase A試験取得：note.com/hashtag/<tag>（人気=既定ソート）の総記事数・関連タグをInterestThemesへ保存（confidence: high、本日分は自動的に二重取得防止、Claude API・有料API呼び出しなし）"
     echo "  ./p2 interest score  Project 02-2 Phase A統合ロジック：note_rising/note_official_topic/note_hashtag_popularを正規化・confidence比例配分・freshness減衰・cross-source overlapで統合しInterest Score降順表示（読み取り専用、DB書き込み・API呼び出しなし）"
+    echo "  ./p2 interest trial-morning [--force]  Project 02-2 収益化② 9月Trial 日次収集：DB起動→fetch-note-rising→fetch-note-official→config/trial_hashtags.txtの各タグでfetch-note-hashtag→interest score を一括実行。1ステップ失敗でも継続、同日にscoreまで成功済みなら再実行しない（--forceで無効化）、取得件数/warning/score全文を.devlogs/trial/へ保存。記事生成・承認・paid-ratio・課金は行わない。launchd登録はscripts/launchd/load.sh（このコマンドは登録しない）"
     echo "  ./p2 score [--force]  「旬の銀座」Editorial Score/Audience Tags採点（サイト単位Inbox候補。鍵無効時は自動でヒューリスティック仮採点にフォールバック）"
     echo "  ./p2 ranking [--all]  Editorial Score順ランキング表示（サイト単位Inbox候補、既定は読み取り専用）"
     echo "  ./p2 articles   個別記事・イベント（DiscoveredContent）の現在状態サマリー（件数・公開日/開催期間取得状況、読み取り専用）"
@@ -1821,7 +2014,7 @@ case "${1:-status}" in
     echo "  ./p2 daily      Daily Editorial Desk（本日新規/更新＋開催中＋近日開催、Story Cluster単位のTop10、読み取り専用）"
     echo "  ./p2 draft-today [--dry-run] [--yes] [--limit=N] [--since=YYYY-MM-DD]  「旬の銀座」日次ドラフト生成：当日curationStatus=approvedのDiscoveredContentを類似テーマで束ね、上位トピック（既定最大5）を各1本ずつmulti-angleのCORE角度で記事draftにする。--dry-runは選定計画のみ（AI・DB書き込みなし）、live実行は--yes必須、生成物はreviewStatus:draftで承認待ち一覧へ"
     echo "  ./p2 interest paid-ratio <theme|id> [--dry-run]  Project 02-2 Phase B：note.com/hashtag/<tag>と?paid_only=trueの総記事数差分からpaidRatioを算出しinterest-themes.monetizationへ保存（Claude API・有料API呼び出しなし）"
-    echo "  ./p2 draft-interest [--dry-run] [--yes] [--limit=N] [--strict] [--w-paid=N] [--c-match=N]  Project 02-2 収益化②：承認済みinterest-themes → topicInterestScore（既存Phase A）× monetizationMultiplier（Phase B）で順位付け → 承認済みDiscoveredContentへプレマッチ（C_MATCH）→ multi-angleのinterest/ginza_whiskers角度で記事draft生成。--dry-runは選定計画のみ、live実行は--yes必須、--w-paid/--c-matchは9月Trial調整用。生成物はreviewStatus:draftで承認待ち一覧へ"
+    echo "  ./p2 draft-interest [--dry-run] [--yes] [--with-interest] [--limit=N] [--strict] [--w-paid=N] [--c-match=N]  Project 02-2 収益化②（Tier 1）：承認済みinterest-themes → topicInterestScore×monetizationMultiplierで順位付け → 承認済みDiscoveredContentへプレマッチ → 記事生成前の決定的4品質ゲート（銀座固有性/今行く理由/体験価値/素材充足。日付根拠のない「今行く理由」は生成しない）→ ginza_whiskers主稿を1テーマ1本生成（--with-interestでinterest補助稿も、主稿成立時のみ）→ 生成後の4品質ゲート本判定をWARNING記録（9月Trialはhard dropしない、aiGeneratedByの|warnings=とCLI出力に表示）。--dry-runは選定計画のみ、live実行は--yes必須"
     echo "  ./p2 clusters [--dry-run]  Story Clustering再計算・StoryClustersコレクションへ反映（同一イベントの複数URLを統合、DiscoveredContentは変更しない）"
     echo "  ./p2 refresh-dates [--dry-run] [--limit=N] [--all]  既存DiscoveredContentの個別ページを安全に再確認（--allで全件対象・誤抽出の訂正も反映。新規行は作成せず、discoveryStatus/curationStatusも変更しない）"
     echo "  ./p2 recompute-richness [--dry-run]  既存の採点済みSources/DiscoveredContentへ本文情報量ペナルティを遡及反映（新規AI呼び出しなし・課金なし）"

@@ -374,6 +374,53 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
       `payload generate:types`・`tsc --noEmit`（cms、0エラー）による
       静的検証のみ。既存のSources/DiscoveredContent/Editorial Score等の
       データ・既存フローへの変更は一切行っていない。
+- **収益化② Tier 1／S1／S2（ginza_whiskers主稿化＋4品質ゲート＋Social Copy
+  媒体別最適化、2026-08-30確定）**：収益化②（`./p2 draft-interest`）の記事
+  生成を、8/30 Trial 評価（#52型＝GINZA WHISKERS独自の編集視点で再解釈した
+  記事を主稿にする、#51型＝一般的な関心接続記事は補助稿）を受けて改訂した。
+  正本は`PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md`§9（Tier 1）・§10
+  （Tier S1／S2）。要点：
+  1. **主稿＝ginza_whiskers 1本**（config `INTEREST_PRIMARY_ANGLE`）。interest
+     補助稿は`--with-interest`／`INTEREST_INCLUDE_INTEREST_ANGLE=true`指定時
+     のみ、かつ主稿が同テーマで生成成立した場合のみ保存（`requirePrimaryAngle`）。
+     既定パスは1テーマ＝Claude1回＝draft1本。
+  2. **記事生成前の決定的 pre-gate**（`interestArticlePreGate.ts`、AI呼び出し
+     なし）：①銀座固有性（下限）②今行く理由 ③体験価値（下限）④素材充足。
+     いずれか不成立なら`plan.status='gate_failed'`で**Claudeを一切呼ばない**。
+     とくに**日付根拠のない「今行く理由」はこの時点で生成をブロックする**
+     （`deriveEventStatus`／`deriveTemporalRelevance`／`publishedAt`近接の
+     いずれも無ければ落とす、Editorial Trust Layer準拠）。
+  3. **生成後の決定的 post-gate**（`interestArticlePostGate.ts`ほか、AI呼び出し
+     なし）：銀座で具体的に見る/歩く/体験する対象がない／GINZA WHISKERS独自の
+     編集視点が弱い（editorsNoteが空・短すぎ・contentの言い換え）／裏付けの
+     ない歴史・一般論（`unsourcedHistoryGuard.ts`）／FactとEDITOR'S NOTEの
+     混同（`factNoteSeparation.ts`）を検出。**9月Trialではhard dropせず
+     WARNING記録のみ**（`config.warnObserveMode`既定true）——`aiGeneratedBy`
+     末尾の`|warnings=<csv>`とCLI出力（`format_draft_interest_status.py`）
+     に表示し、編集長レビューで採否判断。Trialで誤検知率を観測してから
+     hard drop化（Tier 1.5）。
+  4. **Social Copy 媒体別最適化（Tier S1／S2）**：3媒体の役割差をsystem
+     プロンプトで明確化（note＝記事要約＋読む理由・ハッシュタグ3個／X＝
+     冒頭フック＋誰(固有名詞明示)・どこ・いつ・何ができるか＋「今行く理由」・
+     2〜3個／Instagram＝情景・体験・余韻・1〜2個。共通＝Factにないことを
+     足さない・日付根拠のない「今だけ/旬」禁止・3媒体で同一文を横展開しない・
+     AI定型句を避ける）。決定的処理：`normalizeSocialCopy.ts`（ハッシュタグ
+     重複除去・上限note3/X3/IG2・`#銀座`保証、AI呼び出しなし）＋新規
+     `socialCopyGate.ts`（Tier S2、WARNING：X の誰/どこ/いつ 欠落・媒体間
+     横展開〈char-bigram類似度≥0.65〉・AI定型句・日付根拠のない時期性表現）。
+     閾値・定型句リストは`config.ts`の`SOCIALCOPY_*`でenv上書き可。
+  5. **スキーマ変更・migration・既存データ変更なし**。WARNINGは`aiGeneratedBy`
+     文字列に載せるのみ（`Articles`テーブル不変）。`draft-today`（CORE生成）は
+     `postGate`／`socialCopyGate`／媒体別capsを一切通さない＝無影響。
+  6. **実AI E2E**：Tier 1 は「アート×DC#324」で1回実施し**Article #53**
+     （ginza_whiskers/medium、`reviewStatus=draft`、post-gate WARNING 0件、
+     confirmed fact 2件〈venue＋会期〉）を生成。**コスト訂正**：設計時に
+     「output約半減」と見積もったが実測は逆で増加（8/30の2角度3,618→
+     単角度4,556、＋26%。5候補スキーマ不変＋プロンプト強化で主稿が厚く
+     書かれたため）。真の削減は「1テーマ1draft（従来2）」と「pre-gateで
+     弱いテーマはClaude呼ばない」の2点であり per-call output は減らない。
+     Tier S1／S2 は実AI E2E未実施（`tsc --noEmit`0エラー・使い捨てユニット
+     検証のみ）。詳細は`DECISION_LOG_02.md`。
 - **Visual Asset Library（世界観挿絵・ジャンルアイコン、2026-08-19
   確定）**：Editorial Style Engine（項目5 Visual Rhythm）を実際の
   画像素材レベルで支える仕様。詳細は`VISUAL_ASSET_LIBRARY.md`
@@ -567,6 +614,9 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-08-30: Project 02-2 収益化② **Social Copy 媒体別最適化（Tier S1／S2）**を実装（Tier 1 に続く同日の追加変更）。**Tier S1**：`generateMultiAngleArticleDrafts.ts` の system プロンプト「SNS用コピー」節を媒体別ルールへ差し替え（note＝記事要約＋読む理由＋ハッシュタグ3個／X＝冒頭フック＋誰〈固有名詞明示、「ある画家」等のぼかし禁止〉・どこ・いつ・何ができるか＋「今行く理由」必須＋2〜3個／Instagram＝情景・体験・余韻＋1〜2個。共通＝Factにないことを足さない・日付根拠のない「今だけ/旬」禁止・3媒体で同一文を横展開しない・AI定型句を避ける）。`normalizeSocialCopy.ts` の上限を param 化（既定 note3/X3/IG2、**Instagram も正規化対象に追加**、`#銀座` 保証）。**Tier S2**：新規 `cms/src/lib/curation/socialCopyGate.ts`（決定的・AI呼び出しなし）で媒体別 WARNING を検出——`xMissingWhoWhereWhen`（X本文に 誰=sourceProvenance由来の固有名詞／どこ=銀座or会場／いつ=実日付語 のいずれか欠落）・`socialCopyCrossMediaDuplicate`（2媒体の char-bigram 類似度 ≥ 0.65）・`aiBoilerplatePhrase`（定型句リスト）・`recencyClaimUnbacked`（「今だけ/旬/話題」等が provenance の実日付／会期語に接地せず）。`interestArticlePostGate` の WARNING と同じく `aiGeneratedBy` の `|warnings=` と CLI 出力に合流、**9月Trial は hard drop せず WARNING 記録のみ**。閾値・定型句・上限は `config.ts` の `SOCIALCOPY_*`（env 上書き可）。変更＝`generateMultiAngleArticleDrafts.ts`／`normalizeSocialCopy.ts`／`createMultiAngleDraftsFromDiscoveredContent.ts`／`createInterestDrivenDraftsFromThemes.ts`／`config.ts`、新規＝`socialCopyGate.ts`。**スキーマ変更・migration なし**（`generate:types` 差分ゼロ）。`draft-today`（CORE）は `socialCopyGate`／媒体別 caps を通さず無影響。`tsc --noEmit` 0エラー、使い捨てユニットで4 WARNING の発火・非発火（役割差のある健全な3媒体＝warnings 0）と新 caps を確認。誤検知修正1件：`recencyClaimUnbacked` の日付根拠判定が provenance の「開催」単体を日付とみなしていたため、実日付（月/日/年）・明示会期語（会期/開催期間/開催中）のみを根拠とするよう `DATE_HINT_RE` を厳格化。**実AI E2E は未実施**（現在の承認済みテーマ＝アート/写真は生成済みで枯渇、live 実行には新テーマ＋DC 承認が必要）。詳細は`DECISION_LOG_02.md`
+- 2026-08-30: Project 02-2 収益化② **Tier 1（ginza_whiskers 主稿化＋記事生成前後の4品質ゲート）**を実装し、after 比較 Trial（アート×DC#324）で **Article #53** を live 生成。8/30 Trial 評価（#52型＝GINZA WHISKERS独自の編集視点で再解釈した記事を主稿に／#51型＝一般的な関心接続記事は `--with-interest` 時のみの補助稿）を反映。**(1) 主稿＝ginza_whiskers 1本**（config `INTEREST_PRIMARY_ANGLE`）、補助稿は主稿成立時のみ保存（`requirePrimaryAngle`）。**(2) pre-gate**（`interestArticlePreGate.ts`、AI呼び出しなし）：銀座固有性〈下限〉／今行く理由／体験価値〈下限〉／素材充足。不成立なら `plan.status='gate_failed'` で **Claude を呼ばない**。**日付根拠のない「今行く理由」はここで生成をブロック**。**(3) post-gate**（`interestArticlePostGate.ts`＋`unsourcedHistoryGuard.ts`＋`factNoteSeparation.ts`、AI呼び出しなし）：銀座での具体対象なし／編集視点が弱い／裏付けのない歴史・一般論／FactとEDITOR'S NOTEの混同 を検出し、**9月Trial は hard drop せず WARNING 記録のみ**（`aiGeneratedBy` の `|warnings=` と CLI 出力）。**(4) スキーマ変更・migration・既存データ変更なし**。`draft-today`（CORE）は `postGate` を通さず無影響。**実AI E2E（#53）**：ginza_whiskers/medium・`reviewStatus=draft`・post-gate WARNING 0件・confirmed fact 2件（venue＋会期）・normalizeSocialCopy 適用済み。所要 57s。**コスト訂正**：設計時「output 約半減」の見積もりは誤りで実測は増加（8/30の2角度 output 3,618 → 単角度 4,556、＋26%。5候補スキーマ不変＋プロンプト強化で主稿が厚く書かれた）。真の削減は「1テーマ1draft（従来2）」＋「pre-gate で弱いテーマは Claude を呼ばない」の2点で、per-call output は減らない。既存 #51/#52 は before 比較用に保持（無変更）。変更＝`createInterestDrivenDraftsFromThemes.ts`／`createMultiAngleDraftsFromDiscoveredContent.ts`／`generateMultiAngleArticleDrafts.ts`／`config.ts`／`draftInterest.ts`／`scripts/project02`（`--with-interest`）／`format_draft_interest_status.py`、新規＝`interestArticlePreGate.ts`／`interestArticlePostGate.ts`／`unsourcedHistoryGuard.ts`／`factNoteSeparation.ts`／`normalizeSocialCopy.ts`。正本は`PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md`§9。詳細は`DECISION_LOG_02.md`
+- 2026-08-30: Project 02-2 収益化② **9月Trial の日次データ収集を自動化**（既存コマンドを束ねる薄いラッパーのみ、`cms/**`・スキーマ・capture ロジックは無変更）。新コマンド `./p2 interest trial-morning [--force]`：step0 DB起動（Docker+PostgreSQLのみ、CMS/Astroは起動しない）→ `fetch-note-rising` → `fetch-note-official` → `config/trial_hashtags.txt`（7タグ＝銀座/写真/カフェ/建築/読書/アート/散歩、1行1タグ・#コメント可・Trial中に増減可）の各タグで `fetch-note-hashtag` → `interest score` → 日付別 score スナップショット保存。**このファイルは `set -e` なし**で各ステップの rc を個別に捕捉し1処理失敗でも継続（step0 失敗時のみ fetch 前に中止＝データ無変更）。**同日ガード**：`run_YYYY-MM-DD.jsonl` に score `exitCode:0` があれば再実行しない（`--force` で無効化）＋既存 capture の当日/恒久 dedup。ログは `.devlogs/trial/` 配下（gitignore済み）：`run_YYYY-MM-DD.jsonl`（機械可読・取得件数/warning）／`interest_score_YYYY-MM-DD.json`（日付別・上書きしない）／`trial_collect.log`（人間可読サマリ追記）／`launchd.out|err`（launchd実行時のみ）。**記事生成（`draft-interest`/`draft-today`）・承認・`paid-ratio`・Claude API・課金は一切呼ばない**。変更＝`scripts/project02`（+192行、追加のみ：`interest_trial_morning`/`_trial_step`/`_trial_write_summary` 関数＋`trial-morning)` dispatch分岐1つ＋usage2行、既存関数・既存分岐は無変更）。新規＝`config/trial_hashtags.txt`／`scripts/trial_collect_logline.py`（ログ整形ヘルパー、DB/net/AI非接続）／`scripts/launchd/{com.ginzawhiskers.p2-trial-collect.plist.template, load.sh, unload.sh}`。**launchd は未登録・未有効化**（テンプレートと登録/解除ヘルパーのみ作成、`load.sh` は実行していない）。静的検査：`bash -n scripts/project02` OK／`python3 -m py_compile scripts/trial_collect_logline.py` OK／`bash -n` launchd ヘルパー OK。**手動一括テスト（`./p2 interest trial-morning`、2026-08-30 16:05）成功**：全11ステップ `exitCode:0`、`RESULT: OK`、elapsed 20s。rising created 0/skip 5（当日既取得）・official created 0/skip 9（恒久dedup）・hashtag:銀座 created 0/skip 7・写真/カフェ/建築/読書 各 created 4・アート created 3・散歩 created 2・score rowCount 50（32→50、新規関連タグ由来。重複ではない）。DBレベル検証（`interest_themes`、`discover_ginza` DB）：本日 note_rising 5行/distinct 5・note_hashtag_popular 28行/distinct 28、`GROUP BY theme, source_type HAVING count(*)>1` の当日行 **0件**＝同日二重挿入なし。全期間54行/本日33行。ログ3ファイル生成・一時ファイル残存なし。commit・launchd登録・記事生成・承認・本番反映はしていない。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 🌈TNS #36（2026-08-31〜09-06、気象庁主軸再生成版）の **note 転記用完成稿を確定**。実体：SoundtrackEditions id=11 / editionNumber 36 / Article id=50「残暑のやわらぐ場所で」（`reviewStatus=draft` のまま維持）。本文＝各日 h3 見出しの内部コード除去済み（「GINZA CODE N：<日本語ムード>」表記）、EDITORIAL POINT OF VIEW 読者向け整形済み、note 向けハッシュタグ6個、`translationStatus.ja=complete`。7曲＝月 All Right/Christopher Cross・火 恋人よ/五輪真弓・水 September/竹内まりや・木 みずいろの雨/八神純子・金 Cool Night/Paul Davis・土 **I LOVE YOU/オフコース**（Human Editorial 継続、自動選曲「夏の日」から差し替え維持）・日 Sailing/Christopher Cross（邦4:洋3・週内重複0・過去使用重複0）。週テーマ＝coreTheme「残暑の名残／過ぎゆく夏を静かに見送る」、englishSubtitle「A Week Where Summer Loosens Its Grip on Ginza」、weekSummary「くもり時々晴れが中心、21.6〜35℃」。天気 provenance（primary＝気象庁 週間天気予報 東京地方130010・気温 東京44132、secondary＝Open-Meteo jma_seamless、jmaReportDatetime＝2026-08-28 17:00 JST、`humanReviewRequired=true`／humanReviewReasons 6件＝8/31・9/1 major・9/2 minor＋信頼度C・9/5・9/6 気象庁範囲外フォールバック）を DB 保持。旧版（Open-Meteo、Article 49「雷雨の輪郭、季節の境目」）は `_backups/tns_edition_36_jma_regen_backup_20260828.json` に退避済み（比較用）。**確定＝CMS 上の内容確定であり、`approve`／`reviewStatus` 変更・自動投稿は未実施**。残りは note 転記時の Human Editorial 工程（曜日ごとの挿絵7点配置・7曲の YouTube 動画URL 挿入・note 上での最終レイアウト確認）と、その後の approve。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 🌈TNS週間天気を **気象庁主軸＋Open-Meteo補助** の新仕様へ正式実装（TNS_SPEC.md §5 改訂対象、要改訂）。**主ソース＝気象庁「週間天気予報」**（`bosai/forecast/data/forecast/130000.json`、東京都府県予報区。天気コード・降水確率・信頼度＝東京地方 130010、最高/最低気温＝東京 44132。天気コード→日本語ラベルはインライン表）。**補助ソース＝Open-Meteo**（`models=jma_seamless`＝気象庁数値モデル、`precipitation_probability_max` 追加、基準地点を銀座一丁目駅 35.6742,139.7668 に更新）。`reconcileWeeklyWeather` が日別に主／補助を比較し、**通常は気象庁を優先して自動確定**、気象庁週間予報の範囲外の日（金曜実行時の対象週 土日など）は補助ソースで確定。乖離判定（`weatherDivergence.ts`、しきい値定数化：天候カテゴリ反転／降水確率差≥40pt／気温差≥4℃ で major）で **major乖離 or 範囲外フォールバックがあれば `humanReviewRequired=true`**（生成はブロックしない）。SoundtrackEditions に `context.weather.provenance`（primaryWeatherSource / secondaryWeatherSource / fetchedAt / jmaReportDatetime / humanReviewRequired / humanReviewReasons）と日別 `pop` `reliability` `daySource` `divergenceLevel` を追加し永続化。`musicScoring.ts` の weatherTag 語彙に気象庁のひらがなラベル（くもり／ひょう／にわか雨）を追加。`createWeeklySoundtrackEdition` の戻り値に provenance を追加。新規：`fetchJmaWeekForecast.ts`／`weatherDivergence.ts`。改修：`fetchWeeklyWeather.ts`（全面）／`musicScoring.ts`／`SoundtrackEditions.ts`／`createWeeklySoundtrackEdition.ts`／`testWeeklySoundtrackSelection.ts`。`tsc --noEmit` 0エラー。**ローカル開発DBは dev-push で列追加済み。本番は `payload migrate:create` によるスキーマ移行生成が必要（未実施）**。**この仕様で #36（2026-08-31〜09-06）を再生成**：旧 #36（id=10 / Article 49）を `_backups/tns_edition_36_jma_regen_backup_20260828.json` へ退避のうえ削除 → `./p2 tns next --yes "<週間観察>"` で新 #36（SoundtrackEditions id=11 / editionNumber 36 / Article id=50「残暑のやわらぐ場所で」、reviewStatus=draft）を生成。新天気は「くもり時々晴れが中心、21.6〜35℃」（旧＝雷雨中心20.2〜30.2℃）で `humanReviewRequired=true`（8/31・9/1 が major＝晴れ寄り vs 雷雨＋気温差4.7℃、9/2 minor＋信頼度C、9/5・9/6 は気象庁範囲外→Open-Meteoフォールバック）。天気変更が mood→GINZA CODE→選曲→本文へ反映され、旧版から水⇄木の曲入替（みずいろの雨⇄September、雨の日が水→木へ移動したため）＋土曜は自動選曲が「夏の日/オフコース」を選出（旧の手動採用 I LOVE YOU はリセット。邦4:洋3・重複0 維持）。approve・自動投稿・本番push/DNS は未実施。詳細は`DECISION_LOG_02.md`
 - 2026-08-28: 🌈TNS の note 投稿運用方針を更新——**CMS から note への自動投稿は行わず、「完成原稿をマロンが note へ転記する」運用に確定**。理由：①曜日ごとの挿絵7点を note 上で配置する、②7曲の YouTube 動画URLを人間が確認して挿入する、③note 上で最終レイアウトを確認する、の3工程が人手前提のため。**「挿絵の配置・YouTube URL の挿入・最終レイアウト確認」は note 転記時の Human Editorial 工程**と位置づける（CMS 側の Article 本文には持たせない）。これに伴い #36（Article 49）について：①本文・選曲を**完成稿候補として確定**（火曜=恋人よ/五輪真弓、土曜=I LOVE YOU/オフコース〈Human Editorial により 夏の日 から差し替え、金の高揚→土の静けさ→日の余韻のトーン設計を優先。邦4:洋3・重複0 維持〉、木曜=September/竹内まりや は据え置き）。②各日 h3 見出しから内部コード「TNS Editorial Code: codeN」を除去し「GINZA CODE N：<日本語ムード>」へ、EDITORIAL POINT OF VIEW を内部メモ調から読者向けへ整形、本文末尾に note 向けハッシュタグ6個（`#TokyoNostalgicSoundtrack #銀座 #昭和歌謡 #シティポップ #AOR #GINZAWHISKERS`）を追加。③**ヘッダー画像 / OGP画像 未設定は note 投稿のブロッカーとして扱わない**（転記時に note 上で挿絵を配置するため）。④日本語本文完成に伴い `translationStatus.ja` を `not_started` → **`complete`**（`translationStatus.en` は `not_started` のまま、英語版は未着手）。**Article 49 は `reviewStatus=draft` のまま維持。approve・自動投稿は未実施。** 使用スクリプト（いずれも `--dry-run` 対応・一回限り）：`cms/src/scripts/tnsEditArticle49Body.ts`（見出し/EPOV/ハッシュタグ）、`tnsSwapSaturdayEdition36.ts`（土曜差し替え＝dailyScenes[土]＋本文8ブロック）、`tnsMarkArticle49JaComplete.ts`（translationStatus.ja）。DB はローカル開発（`cms-postgres-1`）のみ。詳細は`DECISION_LOG_02.md`
@@ -854,7 +904,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-08-28
+- **最終更新日**：2026-08-30
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

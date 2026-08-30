@@ -29,12 +29,21 @@ export interface CreatedMultiAngleArticle {
   title: string
   angle: MultiAngleKey
   volume: ArticleVolume
+  /** Project 02-2 収益化② Tier 1：この角度の post-gate WARNING コード（あれば） */
+  warnings?: string[]
 }
 
 export interface CreateMultiAngleDraftsResult {
   discoveredContentId: string | number
   createdArticles: CreatedMultiAngleArticle[]
   skipped: { angle: MultiAngleKey; reason: string }[]
+  /** Project 02-2 収益化② Tier 1：角度別の post-gate WARNING 詳細（ログ用） */
+  warnings: {
+    angle: MultiAngleKey
+    codes: string[]
+    details: Record<string, string>
+    socialCopyChanged: string[]
+  }[]
 }
 
 export interface CreateMultiAngleDraftsOptions {
@@ -54,6 +63,24 @@ export interface CreateMultiAngleDraftsOptions {
   readerInterestTheme?: string
   /** aiGeneratedBy 用に事前正規化したテーマキー（呼び出し元が normalizeThemeKey 済みで渡す） */
   interestThemeKey?: string
+  /**
+   * Project 02-2 収益化② Tier 1（2026-08-30）：この角度が included に無ければ
+   * 何も生成しない（補助稿も抑止）。主稿（ginza_whiskers）が品質基準を満たさなかった
+   * DC からは interest 補助稿も作らない、という運用のためのガード。
+   */
+  requirePrimaryAngle?: MultiAngleKey
+  /**
+   * 指定時、生成後に interestArticlePostGate（4品質ゲートの本判定）＋ Social Copy 正規化＋
+   * socialCopyGate（媒体別 WARNING、Tier S2）を実行し、WARNING を aiGeneratedBy の
+   * `|warnings=` と結果へ載せる（9月Trial は WARNING のみ）。未指定なら従来どおり。
+   */
+  enableInterestPostGate?: {
+    restateSim: number
+    edNoteMinChars: number
+    socialCopyCaps?: { note: number; x: number; instagram: number }
+    socialCopyDupSim?: number
+    socialCopyBoilerplate?: string[]
+  }
 }
 
 export async function createMultiAngleDraftsFromDiscoveredContent(
@@ -105,7 +132,7 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
   // 回遊導線（2026-08-26追加の既存関数を再利用）：同じ収蔵室を持つ公開済み記事をDBから機械的に拾う
   const related = await findRelatedArticles(payload, pillarIds)
 
-  const { included, skipped } = await generateMultiAngleArticleDrafts({
+  const { included, skipped, warnings } = await generateMultiAngleArticleDrafts({
     sourceText: [doc.title, doc.excerpt].filter(Boolean).join('\n'),
     sourceName,
     sourceUrl: doc.articleUrl,
@@ -119,7 +146,40 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
     discoveredContentId,
     angles: options.angles,
     readerInterestTheme: options.readerInterestTheme,
+    postGate: options.enableInterestPostGate
+      ? {
+          restateSim: options.enableInterestPostGate.restateSim,
+          edNoteMinChars: options.enableInterestPostGate.edNoteMinChars,
+          dcContext: {
+            venue: doc.venue ?? null,
+            excerpt: doc.excerpt ?? null,
+            title: doc.title ?? null,
+            contentType: doc.contentType ?? null,
+          },
+          socialCopyCaps: options.enableInterestPostGate.socialCopyCaps,
+          socialCopyDupSim: options.enableInterestPostGate.socialCopyDupSim,
+          socialCopyBoilerplate: options.enableInterestPostGate.socialCopyBoilerplate,
+        }
+      : undefined,
   })
+
+  // 収益化② Tier 1：主稿（primary angle）が included に無ければ、この DC からは
+  // 補助稿も含め一切生成しない。
+  if (options.requirePrimaryAngle && !included.some((i) => i.angle === options.requirePrimaryAngle)) {
+    return {
+      discoveredContentId,
+      createdArticles: [],
+      skipped: [
+        ...skipped,
+        {
+          angle: options.requirePrimaryAngle,
+          reason:
+            '主稿（primary angle）が品質基準を満たさなかったため、この DiscoveredContent からは生成しない（補助稿も抑止）',
+        },
+      ],
+      warnings,
+    }
+  }
 
   // 収益化②：interest / ginza_whiskers がどちらも include:false（＝Phase Cの
   // 「銀座に接続しない」最終判定）だった場合、下の included.length===0 ガードで
@@ -136,8 +196,12 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
     )
   }
 
+  const warningsByAngle = new Map(warnings.map((w) => [w.angle, w.codes]))
+
   const createdArticles: CreatedMultiAngleArticle[] = []
   for (const { angle, volume, draft } of included) {
+    const angleWarnings = warningsByAngle.get(angle) ?? []
+    const warnSuffix = angleWarnings.length > 0 ? `|warnings=${angleWarnings.join(',')}` : ''
     const article = await payload.create({
       collection: 'articles',
       locale: 'ja',
@@ -174,7 +238,9 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
         // volumeは専用スキーマフィールドを新設せず、aiGeneratedByへ角度と共に
         // 記録する（トレーサビリティ確保のための最小差分、Articles.ts無変更）。
         // 収益化②経由の場合は末尾に |interestTheme=<正規化テーマ> を付与する。
-        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume}${interestSuffix})`,
+        // 収益化② Tier 1：post-gate WARNING があれば |warnings=<csv> も付与する
+        // （9月Trial は WARNING 記録のみ・生成はブロックしない）。
+        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume}${interestSuffix}${warnSuffix})`,
       },
     })
 
@@ -183,8 +249,9 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
       title: String(article.title),
       angle,
       volume,
+      warnings: angleWarnings.length > 0 ? angleWarnings : undefined,
     })
   }
 
-  return { discoveredContentId, createdArticles, skipped }
+  return { discoveredContentId, createdArticles, skipped, warnings }
 }

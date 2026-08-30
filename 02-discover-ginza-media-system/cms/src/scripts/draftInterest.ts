@@ -27,6 +27,9 @@ async function main() {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry-run')
   const strict = args.includes('--strict')
+  // Tier 1（2026-08-30）：主稿は ginza_whiskers。--with-interest 指定時のみ
+  // interest 補助稿も生成する（主稿が成立した場合のみ保存される）。
+  const withInterest = args.includes('--with-interest')
   const maxDrafts = parseNum(args, '--limit')
   const wPaid = parseNum(args, '--w-paid')
   const cMatch = parseNum(args, '--c-match')
@@ -51,6 +54,7 @@ async function main() {
     maxDrafts,
     wPaid,
     cMatch,
+    withInterest,
   })
 
   console.log(JSON.stringify({ mode: dryRun ? 'dry-run' : 'live', ...result }))
