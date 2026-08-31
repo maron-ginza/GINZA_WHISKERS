@@ -166,6 +166,13 @@ other、`classifyContentType.ts`）は、粒度も分類軸も異なり単純な
 改めて行う（今回はスコープ外、§10「まだHuman Editor判断として残る項目」
 参照）。
 
+**運用格上げ（2026-08-31）**：本18カテゴリは、日次シリーズ「銀座情報局
+by GINZA WHISKERS」（`GINZA_JOHOKYOKU_SPEC.md` §5）において Project 02 の
+正式なカテゴリ資産として採用された。原則1記事につき Primary Category を
+1つ選択し、対応アイコンを付す。`uxType`/`contentType` との正式マッピング
+テーブルの設計、および `Articles` への Primary Category フィールド追加の
+要否は引き続き次工程（`GINZA_JOHOKYOKU_SPEC.md` §20）。
+
 ---
 
 ## 5. 季節挿絵の自動選択ロジック
@@ -287,6 +294,8 @@ icon_rainyday
   ツール選定）
 - Icon Libraryと既存`uxType`/`contentType`分類の正式なマッピング
   テーブル（§4末尾参照）
+  → 18カテゴリの運用採用自体は2026-08-31に確定（`GINZA_JOHOKYOKU_SPEC.md`
+    §5）。マッピングテーブルとスキーマ反映のみが次工程。
 - Visual Asset Libraryの実際の保存先・配信方法（Cloudflare R2等、
   第6章の技術選定との接続）
 - 実コード実装の要否・範囲（DiscoveredContentへのPrimary Categoryフィールド

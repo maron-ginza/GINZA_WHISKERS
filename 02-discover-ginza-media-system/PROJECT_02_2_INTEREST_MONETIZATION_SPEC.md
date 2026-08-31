@@ -196,6 +196,16 @@ Phase B自体の実装ではなく、Phase A発見済みバグの最小修正と
   人間による手動転記運用を想定。CLAUDE.md第8章項目11「Performance Learning
   Layer」（未実装）が接続先になる見込み。
 
+**`GINZA_JOHOKYOKU_SPEC.md` の Paid Candidate 判定との関係（2026-08-31）**：
+日次シリーズ「銀座情報局」仕様（`GINZA_JOHOKYOKU_SPEC.md` §13）に、記事
+生成後の「Paid Candidate 5軸判定」（希少性・編集価値・実用価値・GINZA
+WHISKERS固有性・購入意欲）が追加された。これは**記事単位**で「生成された
+1本を有料 note 記事にする価値があるか」を見るもの。本章 Phase B の
+paidRatio／monetizationMultiplier は**テーマ単位**で「そのテーマが note で
+有料化されやすいか」を見る上流のトピック選定シグナルであり、両者は指す
+対象が異なる別レイヤーとして併存する（矛盾しない）。学習は両方とも
+Performance Learning Layer（本節・§4）へ集約する。
+
 ---
 
 ## 5. 禁止事項（Phase A/B共通、継続して守ること）
