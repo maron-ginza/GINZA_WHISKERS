@@ -14,6 +14,59 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-08-31（🧩 Claude in Chrome 接続準備 — STEP 1〜4 完了、note.com は
+    「クリック時のみ」許可・実操作は未実施）:
+    9月Trial フローの「Claude in Chrome で note 下書き作成まで」を実行可能に
+    する環境準備を、マロンの「安全第一・1手ずつ・一度に複数工程を進めない」
+    方針で実施。
+    **STEP 1（Chrome 導入）**：`brew install --cask google-chrome` を実行
+    （マロン、`!` プレフィックス）。google-chrome 152.0.7977.65、
+    `/Applications/Google Chrome.app` に配置、`com.apple.quarantine` 付き
+    （初回起動で Gatekeeper 確認が出る）。この STEP では Chrome を起動しない
+    方針だった。
+    **STEP 2（拡張導入）**：`claude-in-chrome` skill を STEP 2 の案内目的で
+    起動したところ、この Claude Code ビルドの機能フラグ `tengu_chrome_auto_enable`
+    （＝true、事前確認済み）が働き、環境が自動で：Chrome 起動（PID 16456、
+    profile `Default` 新規作成、`lang=ja`）＋ Claude Code ブラウザ拡張のブリッジ
+    導入（`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/
+    com.anthropic.claude_code_browser_extension.json`、8/31 10:25）＋
+    `mcp__claude-in-chrome__*` ツールがこのセッションで利用可能（deferred）。
+    ユーザー設定の MCP サーバーは増えていない（`claude mcp list` 空、
+    `mcpServers:{}`。Claude in Chrome は MCP 設定ではなくハーネス内蔵ブリッジ）。
+    → skill 起動が「案内のみ」でなく接続まで進めた点をマロンへ即時報告し、
+    以降の判断を仰いだ。
+    **STEP 4（接続確認・読み取りのみ／マロン承認済み）**：
+    `mcp__claude-in-chrome__list_connected_browsers` を **1回だけ** 呼び出し。
+    結果＝`[{deviceId:"40bb4ae6-8041-49f9-9094-4a988984542a", name:"Browser 1",
+    osPlatform:"macOS", isLocal:true, connectedAt: 本日}]`。ローカル Chrome
+    1インスタンスが接続済み。**ページは開かず・note.com に触れず・ナビゲート
+    なし・書き込みなし。** 未確認事項：どの Chrome profile か（API は
+    "Browser 1" としか返さない）、Claude アカウントのサインイン状態。
+    **STEP 3（サイト権限の方針＝マロン確定・修正版）**：当初は Chrome 標準の
+    「特定のサイト」に `note.com` を追加する案を提示したが、マロン判断で
+    **拡張の「サイトへのアクセス」は「クリックされた場合のみ」のまま維持**
+    （note.com を常時許可リストに入れない）。
+    **Claude in Chrome 運用ルール（確定）**：
+      ① note.com はマロンが手動で開く。
+      ② 必要な時だけ Claude in Chrome アイコンをクリックして都度許可する
+         （セッション単位。作業のたびに明示操作）。
+      ③ 作業終了後は常時アクセスさせない（"On click" のまま）。
+      ④ **禁止**：note 公開／記事削除／有料・無料（販売）設定変更／
+         アカウント・プロフィール設定変更。権限レベルでは分離できないため、
+         `note-draft.json` の `chromeHandoff.guardrails`（下書き保存のみ 等）＋
+         Same-day Review でマロンが最終公開、で担保する。
+      ⑤ 追加 API 課金なし——ブラウザツールは Claude Code の契約内で、Project 02
+         の `ANTHROPIC_API_KEY` 従量課金とは別勘定。note.com への課金は発生
+         しない（下書き保存のみ）。
+    **STEP 5（実操作はまだしない）＝維持**：note.com への実際の下書き作成・
+    ページ操作は未実施。次にブラウザツールで note を触るのは、マロンの明示
+    指示があってから（その際も `list_connected_browsers` → `AskUserQuestion`
+    でブラウザ選択 → 手動でサイト許可、の順で1手ずつ）。
+    **今回の実施範囲**：STEP 1（Chrome 導入、マロン実行）／STEP 4 の
+    `list_connected_browsers` 1回（読み取り）／本記録。ブラウザ操作・
+    ナビゲート・note.com アクセス・コード変更・commit はしていない。
+    カスケード：`CLAUDE.md` §12。
+
   - 2026-08-30（Project 02-2 収益化② Social Copy 媒体別最適化 Tier S1／S2 実装）:
     直前の Tier 1（下記エントリ）で生成した Article #53 の Social Copy を評価
     したところ、note と X がほぼ同文で、X が「ある画家」と固有名詞をぼかして
