@@ -8,6 +8,7 @@ import type { ImageUrlSource } from './extractImageUrl'
 import type { DateFieldResult } from './extractStructuredDates'
 import type { DiscoveredLink } from './extractLinks'
 import { fetchArticleMetadata } from './fetchArticlePage'
+import { normalizeFloorTokens } from './normalizeVenueText'
 import { classifyUxType } from '../curation/uxType'
 
 interface DateExtractionMeta {
@@ -152,7 +153,9 @@ async function processOneLink(
       contentUpdatedAt = fetched.updatedAt.value
       eventStartAt = fetched.eventStartAt.value
       eventEndAt = fetched.eventEndAt.value
-      venue = fetched.venue.value
+      // 再発防止 #2（2026-09-01 Trial）：保存前に地下階表記を正規化（B2F の先頭 B を
+      // 落とさない／Ｂ２Ｆ→B2F）。地上階「2F」や「地下2階」表記は変更しない。
+      venue = fetched.venue.value ? normalizeFloorTokens(fetched.venue.value) : fetched.venue.value
       imageUrl = fetched.imageUrl.value
       imageUrlSource = fetched.imageUrl.source
       dateExtraction = {

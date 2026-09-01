@@ -2,6 +2,7 @@ import type { Payload } from 'payload'
 
 import { generateArticleDraft } from './generateArticleDraft'
 import { findRelatedArticles } from './relatedArticles'
+import { slugify } from './slugify'
 
 // Source(情報収集) -> AI下書きArticle(status: draft) への変換オーケストレーション。
 // 生成された下書きは編集長レビュー（status: review以降）を経ないと公開されない。
@@ -35,8 +36,9 @@ export async function createDraftFromSource(payload: Payload, sourceId: string) 
     data: {
       reviewStatus: 'draft',
       title: draft.title,
-      // TODO: 記号除去・ローマ字化を含むスラッグ整形は編集長レビュー前に行う
-      slug: draft.title,
+      // 再発防止 #3（2026-09-01 Trial）：文字参照デコード・施設ボイラープレート除去・
+      // 角括弧タグ除去・URL 危険文字除去。ローマ字化は将来課題（§20）。
+      slug: slugify(draft.title) || draft.title,
       body: draft.body,
       pillars: pillarIds,
       seo: {

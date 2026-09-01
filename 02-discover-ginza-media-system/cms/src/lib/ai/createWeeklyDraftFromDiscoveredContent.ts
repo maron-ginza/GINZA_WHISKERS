@@ -3,6 +3,7 @@ import type { Payload } from 'payload'
 import { CONTENT_TYPE_TO_PILLAR_NAME } from '../curation/contentTypeToPillar'
 import { generateWeeklyArticleDraft, type WeeklyCandidateInput } from './generateArticleDraft'
 import { findRelatedArticles } from './relatedArticles'
+import { slugify } from './slugify'
 
 // 週次「旬の銀座」記事のaiGeneratedBy識別子。generateArticleDraft.tsの
 // AI呼び出し部分とcreateWeeklyDraftFromDiscoveredContent.ts（本ファイル）の
@@ -146,9 +147,9 @@ export async function createWeeklyDraftFromDiscoveredContent(
     data: {
       reviewStatus: 'draft',
       title: draft.title,
-      // TODO: 記号除去・ローマ字化を含むスラッグ整形は編集長レビュー前に行う
-      // （createDraftFromSource.tsの既知TODOと同一課題、今回未着手）
-      slug: draft.title,
+      // 再発防止 #3（2026-09-01 Trial）：文字参照デコード・施設ボイラープレート除去・
+      // 角括弧タグ除去・URL 危険文字除去。ローマ字化は将来課題（§20）。
+      slug: slugify(draft.title) || draft.title,
       body: draft.body,
       pillars: pillarIds,
       seo: {

@@ -12,14 +12,14 @@
 // 一般的に有効な設計とした。トレードオフとして、ページ内での要素の並び順「だけ」が
 // 意味を持つケース（例：ランキング順）ではその変化を検知できなくなる（既知の制約）。
 
+import { decodeHtmlEntities } from './htmlEntities'
+
+// 再発防止 #3（2026-09-01 Trial）：数値文字参照（&#8211; 等）も含めてデコードする
+// 共通実装へ委譲する。この関数は差分検知の正規化ハッシュ（normalizeHtmlForDiff）に
+// のみ使われるため、初回巡回で一度だけ diffStatus=changed が出うる
+// （既知の一度きり再ベースライン。取得内容そのものの変化ではない）。
 function decodeBasicEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  return decodeHtmlEntities(text)
 }
 
 // href/src/alt/title は、要素がどのタグ種別であっても意味のある内容を運んでいる

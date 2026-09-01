@@ -3,6 +3,7 @@ import type { ContentType } from './discoveredContentTypes'
 import { emptyImageUrlResult, extractRepresentativeImageUrl, type ImageUrlResult } from './extractImageUrl'
 import { extractStructuredDates, type DateFieldResult, type VenueFieldResult } from './extractStructuredDates'
 import { BOT_TOKEN, USER_AGENT } from './fetchSource'
+import { decodeAndNormalizeDisplayText, decodeHtmlEntities } from './htmlEntities'
 import { checkRobotsAllowed } from './robotsTxt'
 import { getSiteDateAdapter } from './siteAdapters/registry'
 
@@ -48,20 +49,19 @@ export interface ArticleFetchOutcome {
 const MAX_EXCERPT_CHARS = 1200
 const MAX_TITLE_CHARS = 300
 
+// 再発防止 #3（2026-09-01 Trial）：旧実装は &nbsp; &amp; &lt; &gt; &quot; &#39; の
+// 6種のみで、数値文字参照（&#8211; 等）を素通ししてタイトルにそのまま残っていた
+// （DiscoveredContent.title「… &#8211; GINZA SIX」）。名前付き＋10進＋16進を
+// まとめてデコードする共通実装へ委譲する。
 function decodeBasicEntities(text: string): string {
-  return text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+  return decodeHtmlEntities(text)
 }
 
 function extractTitle(html: string): string | null {
   const match = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
   if (!match) return null
-  const raw = decodeBasicEntities(match[1]).replace(/\s+/g, ' ').trim()
+  // タイトル表示前に文字参照デコード＋空白正規化（#3）
+  const raw = decodeAndNormalizeDisplayText(match[1])
   if (!raw) return null
   return raw.length > MAX_TITLE_CHARS ? raw.slice(0, MAX_TITLE_CHARS) : raw
 }

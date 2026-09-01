@@ -1,12 +1,14 @@
 import type { Payload } from 'payload'
 
 import { CONTENT_TYPE_TO_PILLAR_NAME } from '../curation/contentTypeToPillar'
+import { computeEventTiming } from '../curation/eventTiming'
 import {
   generateMultiAngleArticleDrafts,
   type MultiAngleKey,
   type ArticleVolume,
 } from './generateMultiAngleArticleDrafts'
 import { findRelatedArticles } from './relatedArticles'
+import { slugify } from './slugify'
 
 // Project 02-1「核情報→最大5記事」拡張（2026-08-27）。
 //
@@ -81,6 +83,14 @@ export interface CreateMultiAngleDraftsOptions {
     socialCopyDupSim?: number
     socialCopyBoilerplate?: string[]
   }
+  /**
+   * 再発防止 #1/#2/#4（2026-09-01 Trial）：draft-today の CORE 経路向けの決定的ガードを
+   * 有効化する。DC の eventStartAt/eventEndAt から computeEventTiming を算出し、
+   * DC の title/excerpt/venue を裏付けテキストとして generateMultiAngleArticleDrafts へ
+   * 渡す。WARNING は aiGeneratedBy の `|warnings=` へ載る（既定は WARNING のみ・非 block）。
+   * 未指定なら従来どおり（no-op）。
+   */
+  enableCoreGuards?: boolean
 }
 
 export async function createMultiAngleDraftsFromDiscoveredContent(
@@ -161,6 +171,16 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
           socialCopyBoilerplate: options.enableInterestPostGate.socialCopyBoilerplate,
         }
       : undefined,
+    coreGuards: options.enableCoreGuards
+      ? {
+          // 日付が揃わない場合は computeEventTiming が phase:'unknown' を返し、
+          // eventTimingClaimGate は相対表現を timingClaimUnverifiable として扱う（計算しない）。
+          eventTiming: computeEventTiming(doc.eventStartAt, doc.eventEndAt, new Date()),
+          backingTexts: [doc.title, doc.excerpt, doc.venue].filter(
+            (s): s is string => typeof s === 'string' && s.length > 0,
+          ),
+        }
+      : undefined,
   })
 
   // 収益化② Tier 1：主稿（primary angle）が included に無ければ、この DC からは
@@ -208,10 +228,11 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
       data: {
         reviewStatus: 'draft',
         title: draft.title,
-        // TODO: 記号除去・ローマ字化を含むスラッグ整形は編集長レビュー前に行う
-        // （createDraftFromSource.ts / createWeeklyDraftFromDiscoveredContent.ts
-        // と同じ既知のTODO、今回未着手）
-        slug: draft.title,
+        // 再発防止 #3（2026-09-01 Trial）：slug 生成前に文字参照デコード・施設
+        // ボイラープレート除去・角括弧タグ除去・URL 危険文字除去を行う。
+        // ローマ字化は将来課題（GINZA_JOHOKYOKU_SPEC §20）。空になった場合のみ
+        // title へフォールバック。
+        slug: slugify(draft.title) || draft.title,
         body: draft.body,
         pillars: pillarIds,
         seo: {

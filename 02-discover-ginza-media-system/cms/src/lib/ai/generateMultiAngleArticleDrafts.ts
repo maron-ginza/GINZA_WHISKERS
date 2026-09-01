@@ -6,6 +6,11 @@ import {
   type InterestPostGateDcContext,
 } from '../curation/interestArticlePostGate'
 import { evaluateSocialCopyGate } from '../curation/socialCopyGate'
+// 再発防止 #1/#2/#4（2026-09-01 Trial）：draft-today の CORE 経路向け決定的ガード
+import { checkEventTimingClaims } from '../curation/eventTimingClaimGate'
+import type { EventTiming } from '../curation/eventTiming'
+import { checkUnsourcedClaims } from '../curation/unsourcedClaimGate'
+import { detectBasementFloorDrop } from '../crawler/normalizeVenueText'
 import { normalizeSocialCopy, type SocialCopyCaps } from './normalizeSocialCopy'
 import { blocksToLexicalState, type TextBlock } from './lexical'
 import {
@@ -94,6 +99,21 @@ export interface GenerateMultiAngleDraftsInput {
     socialCopyDupSim?: number
     /** AI定型句の部分文字列リスト（socialCopyGate） */
     socialCopyBoilerplate?: string[]
+  }
+  /**
+   * 再発防止 #1/#2/#4（2026-09-01 Trial）：draft-today の CORE 経路向けの決定的ガード。
+   * 指定時のみ、included 各角度の生成本文に対して
+   *   - checkEventTimingClaims（経過/残日数の相対表現 vs computeEventTiming の数値。
+   *     日付が揃わない場合は計算せず timingClaimUnverifiable）
+   *   - checkUnsourcedClaims（季節一般化/混雑推測/会話可能性/地域一般化、warn 運用）
+   *   - detectBasementFloorDrop（出典 B2F・本文 2F の先頭B欠落）
+   * を実行し、WARNING コードを result.warnings へ追記する（included からは除外しない）。
+   * postGate（収益化②の interest 経路）とは独立。**未指定なら完全に no-op。**
+   */
+  coreGuards?: {
+    eventTiming: EventTiming
+    /** 季節・会話・地域・フロアの裏付けに使うテキスト（DC の title/excerpt/venue 等） */
+    backingTexts: string[]
   }
 }
 
@@ -287,7 +307,25 @@ ginza_whiskers 角度を主稿として書くときは、以下を必ず守る�
 - **タイトルは毎回同じ型にしない**こと。「〜——〜、〜」のようにem dash（——）で
   従属節をつなぐ型を機械的に多用しない。体言止め／問いかけ／呼びかけ／副詞句起点
   ／数字起点 など、記事内容に合った構文型を選ぶ。過剰な煽り・クリックベイトは
-  避ける。`
+  避ける。
+
+## すべての角度で守る禁止事項（2026-09-01 Trial 再発防止）
+
+- **会期の経過日数・残り日数を自分で計算・概算しない**。「開幕からN日」「あと半分」
+  「会期の折り返し」「あと少しで終了」等の相対表現を書かない。時間に触れるときは
+  確認済みの会期日付（period）にそのまま基づく（例：「9月15日まで」）。period が
+  「不明」のときは時間経過・残りの表現を一切書かない。
+- **出典にない季節の一般論を書かない**（例：「9月の銀座は〜の季節です」「秋は〜の
+  時期」「秋の夜長に」）。季節に触れるのは、確認済みの会期・催事がその季節に
+  紐づくときだけ。
+- **混雑・空き具合を推測しない**（例：「平日は空いている」「ゆっくり見られる」
+  「穴場」「行列」「待ち時間」）。出典に記載がある場合のみ書く。
+- **作り手・作家・店員と会話できる／質問できる等の接触可能性を、出典に「在廊」
+  「トーク」「実演」等の記載がない限り書かない**。
+- **産地・地域の一般化を書かない**（例：「産地でもそう多くない」「古くから
+  知られる」「全国的に定番」）。出典で確認できる範囲にとどめる。
+- **フロア表記は出典どおりに書く**。地下階は先頭の「B」を省略しない
+  （B1F／B2F を 1F／2F と書かない）。`
 
 const MULTI_ANGLE_CANDIDATE_SCHEMA = {
   type: 'object',
@@ -502,6 +540,7 @@ export async function generateMultiAngleArticleDrafts({
   angles,
   readerInterestTheme,
   postGate,
+  coreGuards,
 }: GenerateMultiAngleDraftsInput): Promise<GenerateMultiAngleDraftsResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
@@ -692,6 +731,48 @@ export async function generateMultiAngleArticleDrafts({
             details: { ...pg.details, ...sc.details },
             socialCopyChanged: norm.changed,
           })
+        }
+      }
+
+      // 再発防止 #1/#2/#4（2026-09-01 Trial）：CORE 経路向けの決定的ガード。
+      // coreGuards 未指定なら completely no-op（従来挙動を広げない）。
+      // WARNING 記録のみ——included からは外さない（block へは変更しない）。
+      if (coreGuards) {
+        const bodyForGate = [
+          candidate.hook,
+          candidate.content,
+          candidate.whyNow,
+          candidate.editorsNote,
+          candidate.closing,
+        ]
+          .filter(Boolean)
+          .join('\n')
+
+        const timing = checkEventTimingClaims(bodyForGate, coreGuards.eventTiming)
+        const claims = checkUnsourcedClaims([bodyForGate], coreGuards.backingTexts) // 既定 mode:'warn'
+        const floor = detectBasementFloorDrop(bodyForGate, coreGuards.backingTexts)
+
+        const guardCodes: string[] = [
+          ...timing.hits.map((h) => h.code),
+          ...claims.hits.map((h) => `unsourced_${h.category}`),
+          ...(floor.dropped ? ['basementFloorPrefixDropped'] : []),
+        ]
+        if (guardCodes.length > 0) {
+          const guardDetails: Record<string, string> = {}
+          for (const h of timing.hits) guardDetails[h.code] = `「${h.phrase}」 ${h.detail}`
+          for (const h of claims.hits) guardDetails[`unsourced_${h.category}`] = `「${h.phrase}」（出典に裏付けなし）`
+          if (floor.dropped) {
+            guardDetails.basementFloorPrefixDropped = floor.floors
+              .map((f) => `出典 ${f.source} → 本文 ${f.body}`)
+              .join(' / ')
+          }
+          const existing = warnings.find((w) => w.angle === angle)
+          if (existing) {
+            existing.codes.push(...guardCodes)
+            Object.assign(existing.details, guardDetails)
+          } else {
+            warnings.push({ angle, codes: guardCodes, details: guardDetails, socialCopyChanged: [] })
+          }
         }
       }
 

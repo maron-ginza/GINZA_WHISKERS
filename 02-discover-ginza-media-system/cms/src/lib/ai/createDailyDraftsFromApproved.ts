@@ -234,7 +234,10 @@ export async function runDailyDraftsFromApproved(
       const { createdArticles } = await createMultiAngleDraftsFromDiscoveredContent(
         payload,
         discoveredContentId,
-        { angles: ['core'] },
+        // 再発防止 #1/#2/#4（2026-09-01 Trial）：CORE 経路にだけ決定的ガードを接続。
+        // 経過/残日数の不一致・出典外の一般論・地下階B欠落を WARNING 記録する
+        // （aiGeneratedBy の |warnings= に載る。draft は破棄しない＝既定 non-block）。
+        { angles: ['core'], enableCoreGuards: true },
       )
       for (const created of createdArticles) {
         result.createdDrafts.push({
