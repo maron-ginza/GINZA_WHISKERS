@@ -14,6 +14,760 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-04（🌏 GINZA CROSS CULTURE MAP v1 — 5市場文化視点フィルターの新規実装。
+    **ローカル検証まで・commit なし・DB 書き込みなし・追加課金なし**）:
+
+    **目的**：「情報収集 → 裏どり → 旬判定 → GINZA WHISKERS 適合判定」の**後段**に
+    CROSS CULTURE FILTER を置き、記事候補ごとに UAE / Singapore / France /
+    United States / Italy の5市場との相性を **0-100 で決定的に採点**する。既存フロー・
+    スケジュール・安全性 gate は無変更。AI 呼び出しなし・ネットワークなし・DB 非依存・
+    追加課金なし。例外時は `mode='normal_only'` を返し通常処理を継続（呼び出し側も
+    try/catch で隔離）。
+
+    **仮説軸（`cms/src/lib/crossCulture/marketAxes.ts` の1ファイルで追加・修正可）**：
+    UAE=Space/Privacy/Quiet Luxury、Singapore=Craft/Authenticity/Participation、
+    France=Culture/Heritage/Immersion、United States=Experience/Story/
+    Personalization/Specialist Culture、Italy=Design/Material/Craft/Cultural
+    Exchange。各軸に日英の語彙（include / boost）＋相性の悪い語（negative 減点）。
+    しきい値は env（`CROSS_CULTURE_ENABLED` / `_MIN_DERIVATIVE`〈既定70〉 /
+    `_MIN_EDITORIAL`〈既定50〉 / `_DISABLED_MARKETS`）で上書き可。
+
+    **スコアリング**（`crossCultureFilter.ts`、決定的）：haystack ＝ title ＋ venue ＋
+    primaryCategory ＋ extraText ＋ contentType/uxType/templateType の意味ヒント。
+    **excerpt はサイトナビ由来のノイズが多いため意図的に不使用**（既存の
+    provisionalCategory.ts / ginzaRelevance.ts と同じ判断）。軸のヒット数 → 得点
+    （1ヒット26／2ヒット36／3+ヒット42、boost +10）、negative は -18/件。
+    matchedAxes（hit>0 の軸）、confidence（high/medium/low）、articlePotential
+    （none/free/paid）、suggestedAngle、paidBasis を出力。
+
+    **判定ルール（マロン確定）**：score≥70→派生記事候補／50-69→編集候補として保持
+    （自動派生しない）／≤49→本文生成に使わない／5市場すべて<50→`mode='normal_only'`
+    （通常記事のみ）。**有料候補**は「文化差の解説（Heritage/Culture/Cultural
+    Exchange 軸）／比較（Craft/Material/Specialist Culture 軸）／具体的な歩き方
+    （体験・参加軸＋実体のある催事）／現地検証（event かつ会場が銀座）」のいずれか
+    成立時のみ。単なるイベント紹介・1軸のみの商品ニュースは free。
+
+    **キャッシュ**（`crossCultureCache.ts`）：`.devlogs/crossculture/<hash>.json`。
+    キーは version ＋ 意味に効くフィールドの正規化ハッシュ。同一テーマは再計算しない。
+    I/O 失敗は握りつぶす。
+
+    **接続**：`assessInboxPool.ts` の候補生成後に read-only パスを追加し
+    `ThemeCandidate.crossCulture` へ付与（選定ロジックには一切影響しない）。
+    `runThemeToNoteDraft.ts`（`./p2 pipeline`）は ArticleFacts の構造化フィールドを
+    extraText に渡して FILTER 実行 → 監査カード（`buildAuditCard` に
+    `crossCulture` フィールド追加）＋`.devlogs/pipeline/<date>/crossculture/dc<id>.json`
+    ＋item サマリへ付与。`themesRecommend.ts` の推奨一覧に1行サマリ。
+    CLI `./p2 crossculture <theme|run|audit|config>`（実体 `crossCultureRun.ts`）。
+
+    **新規**＝`cms/src/lib/crossCulture/{marketAxes,crossCultureFilter,
+    crossCultureCache,index}.ts`／`cms/src/scripts/crossCultureRun.ts`／
+    `cms/src/lib/__checks__/crossCultureFilter.check.ts`（13件）。**変更（追加のみ）**＝
+    `assessInboxPool.ts`／`selectRecommendedThemes.ts`（`ThemeCandidate.crossCulture?`
+    型のみ）／`runThemeToNoteDraft.ts`／`buildAuditCard.ts`／`themesRecommend.ts`／
+    `run-all.ts`／`scripts/project02`／`scripts/format_pipeline_status.py`。
+    **スキーマ変更・migration なし。DB 書き込みなし。commit なし（HEAD d5b0f72）。**
+    検証：`tsc --noEmit`（cms）0エラー／`run-all.ts` **199 passed 0 failed**（既存186＋
+    新規13）／`./p2 pipeline --dry-run` 回帰なし。実データ3ケース：A 工芸（DC#390 九谷焼）
+    →Singapore、B 静かな体験（合成）→UAE、C 一般新店（DC#381）→派生なし＝normal_only。
+    inbox 90件 audit で has_derivative 2件＝過剰派生なし。
+
+  - 2026-09-04（🌏 CROSS CULTURE FILTER → 記事生成への接続（v2）＋ UAE/France の
+    SOURCE LEDGER 補強。**ローカル検証まで・commit なし・DB 書き込みなし・
+    実 live 生成は最小限**）:
+
+    **【1】記事生成への安全な接続**。`buildCrossCultureDerivativePlan`
+    （`derivativeCandidate.ts`、純粋・決定的・AI なし・例外時 `mode='none'`）が
+    FILTER 結果を「派生記事プラン」へ変換：score≥70 の市場を記事価値順
+    （score→confidence→paid→深い軸数）でランクし、**既定 `maxMarkets=1`**
+    （複数≥70でも無理に5カ国記事にしない）。50-69 は `editorialOnlyMarkets`
+    として保持（自動派生しない）、≤49 は `excludedMarkets`。各選定市場に
+    `promptInjection`（「これは別記事＝通常本文を上書きしない／複数国を1記事に
+    混ぜない／文化的仮説は断定禁止・『〜と考えられる』等の推定表現／『◯◯の人は
+    こう感じる』と一般化しない／confirmedForBody 以外を事実として書かない／FILTER の
+    スコア・軸を確認済み事実と混同しない」を含む）、`guardrails`、`confirmedForBody`
+    （既存 Article の `editorialProvenance`〈confirmed〉＋ArticleFacts の
+    `sourceProvenanceFacts` から機械収集、空なら「断定させない」旨）、
+    `culturalHypotheses` を持たせる。
+
+    `createCrossCultureDerivativeDrafts`（`cms/src/lib/ai/`、既定 dry-run）が
+    プランを組み立て、live（`--yes`）時のみ既存の
+    `createMultiAngleDraftsFromDiscoveredContent` を `angles:['ginza_whiskers']`
+    ＋`crossCultureContext` 付きで呼び、`【CROSS CULTURE｜<market>】` プレフィックス・
+    `aiGeneratedBy` に `|crossCulture=<market>` を付けた**別 Article(draft)** を作る
+    （通常記事は上書きしない）。`generateMultiAngleArticleDrafts` / 
+    `createMultiAngleDraftsFromDiscoveredContent` への追加は `readerInterestTheme`
+    と同型の任意パラメータ `crossCultureContext` / `crossCultureMarket` のみ
+    ——**未指定なら draft-today の CORE も収益化②も完全に no-op**。CLI
+    `./p2 crossculture derive <ID> [--yes] [--market=France] [--max=N]`。
+    `runThemeToNoteDraft.ts` はプラン提案（生成はしない）を
+    `.devlogs/pipeline/<date>/crossculture-derivative/dc<id>.json` ＋監査カード
+    （`buildAuditCard` に `crossCultureDerivative` フィールド追加）へ出力。
+
+    **【2】UAE / France の SOURCE LEDGER 補強**。SOURCE LEDGER の**構造・
+    `seedData.ts`・enum は一切変更せず**、既存の巡回済み情報源12件（和光・
+    SEIKO HOUSE・資生堂ギャラリー・資生堂パーラー・銀座もとじ・歌舞伎座・
+    相田みつを美術館・教文館・月光荘・中央区観光関連・銀座蔦屋書店・
+    POLA MUSEUM ANNEX）を市場×軸へ対応づける外付けマッピング
+    `cms/src/lib/crossCulture/sourceAffinity.ts` を追加。UAE には和光/SEIKO
+    HOUSE/資生堂パーラーの quiet luxury / craftsmanship / high-end dining 面、
+    France には上記＋もとじ/歌舞伎座/教文館/月光荘/中央区観光の heritage /
+    culture / architecture / Japanese cultural interpretation 面を寄せる。
+    **affinity は本文語彙で hits>0 の軸にしか加点しない**（+12/軸、上限 +24/市場。
+    ゼロから市場を作らない＝過剰派生・誤検出を防ぐ）。luxury-hospitality 専用
+    情報源（ホテル公式ニュース等）は現行台帳に無く、公開・巡回可能な個別記事
+    一覧を確認できないため**追加せず**、`UAE_GAP` コメントに将来の追加条件を記録。
+    新規のスクレイピング基盤・外部有料 API・外部サービスは追加していない。
+    `CrossCultureInput` に `sourceName`/`sourceUrl` を追加し、`assessInboxPool` /
+    `runThemeToNoteDraft` / `crossCultureRun` から渡す。過剰派生抑制のため
+    Specialist Culture 語彙から単独「専門」を除外・「専門店」を boost から外す
+    微修正（初回 audit で「◯◯専門店オープン」等が US 72 で派生入りしたため）。
+
+    **新規**＝`cms/src/lib/crossCulture/{sourceAffinity,derivativeCandidate}.ts`／
+    `cms/src/lib/ai/createCrossCultureDerivativeDrafts.ts`／
+    `cms/src/scripts/crossCultureDerive.ts`／
+    `cms/src/lib/__checks__/crossCultureDerivative.check.ts`（15件）。
+    **変更（追加のみ）**＝`crossCultureFilter.ts`（sourceName 入力＋affinity）／
+    `marketAxes.ts`（version .1→.5、Craft 語彙拡充、Specialist Culture 絞り込み）／
+    `crossCultureCache.ts`（キーに sourceName）／`index.ts`／
+    `generateMultiAngleArticleDrafts.ts`（`crossCultureContext?`）／
+    `createMultiAngleDraftsFromDiscoveredContent.ts`（pass-through ＋
+    `|crossCulture=<market>`）／`runThemeToNoteDraft.ts`／`buildAuditCard.ts`／
+    `assessInboxPool.ts`／`crossCultureRun.ts`／`run-all.ts`／`scripts/project02`／
+    `scripts/format_pipeline_status.py`。**スキーマ変更・migration なし。commit なし。**
+
+    検証：`tsc` 0エラー／`run-all.ts` **214 passed 0 failed**（既存199＋新規15）／
+    `selectRecommendedThemes.check` PASS／`./p2 pipeline --dry-run` 回帰なし。
+    4ケース（derive dry-run）：A 工芸（DC#390 九谷焼）→Singapore 82 paid／
+    B 静かな体験（合成 会員制サロン）→UAE 100／C 歴史・文化（DC#582 明治大正昭和の
+    着物・銀座もとじ）→France 92 paid（もとじ affinity 補強）／D 一般新店
+    （DC#381 アプリ入会）→mode=none（通常記事のみで正常）。実データ audit＝
+    inbox+approved 587件で `has_derivative` 9件（1.5%）＝過剰派生なし（内訳
+    Singapore×6 / France×3 / Italy×1、いずれも工芸・染織・江戸文化体験等の妥当な
+    派生）。**live `--yes` E2E を DC#310 で1回だけ実行**し Article #56
+    （`【CROSS CULTURE｜Singapore】…`、draft、Claude が注入指示を反映した本文）を
+    生成→内容確認後**削除して DB baseline（articles 22件）へ復元**。これに伴い
+    Claude API 約¥15 の一度きり課金が発生（設計・dry-run・回帰テストは ¥0。
+    恒常的な追加課金・無人自動 API 実行・新規有料サービスはなし。派生生成は
+    人間が `--yes` を明示実行時のみ・既定 dry-run）。`ANTHROPIC_API_KEY` は
+    メモリ記載の「無効」から現在は有効。マロンの手作業は市場判定＋角度選定＋
+    プロンプト作文の3工程が自動化（最終の採否・有料判断・編集長レビューは人間）。
+
+  - 2026-09-04（🎯 通常候補抽出〈`./p2 themes recommend`〉に偏り補正＋コアターゲット
+    適合を追加。**ローカル検証まで・commit なし・DB 書き込みなし・追加課金なし**）:
+
+    **目的**：GINZA SIX / 銀座蔦屋書店 / アート・文化系への偏重を避け、18カテゴリーを
+    ある程度幅広くカバーしつつ、20代後半〜30代女性が「今日知りたい・行ってみたい・
+    保存したい」と思う候補を上位に出す。**完全均等配分にはしない**——旬度・情報
+    信頼性・銀座関連性を落としてまでカテゴリーを埋めない。既存の候補抽出ロジック・
+    安全性 gate・ハードキャップ（`recFacilityMax:2` 等）は無変更で**追加のみ**。
+
+    **新オプション `enableTargetFitRanking`（既定 false）**：false のとき
+    `scoreParts` は従来どおり（fixture／既存回帰テストは非設定なので**挙動完全不変**）。
+    `themesRecommend.ts` の実データ経路のみ true で呼ぶ。true のとき既存5軸へ以下を
+    加算（すべて「フィールドが無ければ 0」）：
+
+    ① **target_fit**（新規 `cms/src/lib/pipeline/targetFitScore.ts`、純粋・AI なし）：
+    Editorial Compass の配分（かわいい20／上質30／自分を整える25／新しい発見15／
+    少し背伸び10）を面ごとの重みとし、タイトル＋会場＋暫定カテゴリー＋
+    contentType/uxType の**明記語のみ**で 0-100 採点（excerpt 不使用）。
+    カテゴリー基礎点（SWEETS/CAFE/BEAUTY/WELLNESS +20、FOOD/FASHION/LIFESTYLE/
+    GIFT +14…／ART・CULTURE -2、HISTORY -4）を加算。選定では実分布中央値 35 を
+    中立に `±0.35`（`w.targetFit`）で加減点。
+
+    ② **category_diversity（履歴）**：`assessInboxPool` が直近 approved 20件＋
+    その ArticleFacts の primaryCategory／施設キーを集計。同一カテゴリーが直近で
+    多いほど `-0.07×(件数-1)`（上限 -0.2）。リスト内分散（`marginalSpread(catCount)`）
+    ＋ハードキャップ `categoryMaxInRec:3` は従来どおり維持。
+
+    ③ **venue_diversity**：直近履歴の施設過多で `-0.08×(件数-1)`（上限 -0.2）。
+    さらに推奨に同一施設が既に1件あれば2件目を減点（**上位5件は -0.18／
+    6件目以降 -0.10**）。ハードキャップ `recFacilityMax:2` は維持。
+
+    ④ **ART/CULTURE 抑制**：ART＋CULTURE の**合計**採用数に応じ `-0.12×合計件数`
+    （3件目以降が逓増減点。旬度が高ければ freshness で相殺可＝原則3件・例外可）。
+
+    ⑤ **source_balance**：ソース種別（`sourceTypeOf`＝百貨店／商業施設／飲食・菓子／
+    美容・ウェルネス／ファッション／ホテル／街・行政イベント／老舗・専門店／
+    アート・文化）で未出のものを `w.sourceBalance×marginalSpread`（既定 0.12）で
+    軽く優先。
+
+    ⑥ **editorial_score**：DC の editorial_score（0-100 → 0-1）を `w.editorial`
+    （既定 0.15）で加算。未採点は中立 0.5。
+
+    **完全均等にしない担保**：旬度（freshness、最大 0.30 相当）・安全性 gate
+    （必須・不変）・銀座関連性（gate 落ち）は削らない。カテゴリーが埋まらなければ
+    `finalized=false` / `shortfall=true`（GINZA SIX 等で穴埋めしない）。18
+    カテゴリーは日次で埋めず**週単位で不足カテゴリーを補正**。
+
+    **変更**＝新規 `cms/src/lib/pipeline/targetFitScore.ts`（＋
+    `cms/src/lib/__checks__/targetFitScore.check.ts` 10件）／`selectRecommendedThemes.ts`
+    （`ThemeCandidate` に任意フィールド〈`targetFit`・`editorialScoreTotal`・
+    `categoryHistoryPenalty`・`venueHistoryPenalty`・`sourceTypeKey` 等〉、
+    `weights` に `targetFit`/`sourceBalance`/`editorial`、`scoreParts` の補正項、
+    `opts.enableTargetFitRanking`、`selectRecommendedThemes.check` に S14/S15）／
+    `assessInboxPool.ts`（直近履歴集計＋各候補への素性付与、read-only・try/catch
+    隔離）／`themesRecommend.ts`（`enableTargetFitRanking:true`、出力に target_fit /
+    editorial_score / 最終score・偏り補正サマリー・JSON 追加）／`run-all.ts`。
+    **スキーマ変更・migration なし。DB 書き込みなし。commit なし。**
+
+    検証：`tsc` 0エラー／`run-all.ts` **224 passed 0 failed**（既存214＋新規10。
+    既存199テストも維持）／`selectRecommendedThemes.check` PASS（S14＝flag 未指定なら
+    target_fit を付けても並び不変＝回帰ガード、S15＝flag true で高 target_fit 優先・
+    ART+CULTURE 抑制）／`./p2 pipeline --dry-run` 回帰なし。実データ再抽出＝
+    ART 一辺倒（九谷焼 #390）と弱い PR（#346 TOTEME スタイリング紹介）が推奨から
+    外れ、WELLNESS（#327 target_fit 51）・季節スイーツ（#352）・ギフト性のある
+    商品（#354）が上位化。ART+CULTURE は 2→1、GINZA SIX 2／蔦屋 2（gate 通過が
+    30/250 と薄く情報源が偏るため各2件どまり。`finalized=false`／`shortfall=true`
+    で「情報源の追加が必要」を可視化）。editorial_score は現候補プールで全 NULL
+    のため中立値で加算＝現状は差がつかない（Phase 14 採点が進めば自動で効く）。
+
+  - 2026-09-04（📝 通常記事の実運用テスト — DC#327「韓国ウェルネス アフタヌーンティー」
+    を「旬の銀座」通常記事として note 転記用パッケージまで作成。
+    **note 公開なし・DB 書き込みなし・live 生成なし・追加課金なし・
+    CROSS CULTURE 派生ではない**）:
+
+    **目的**：2026-09-04 の通常候補で上位だった DC#327 を、20代後半〜30代女性の
+    コアターゲットに適した「旬の銀座」通常記事として、公式・一次情報で裏どりしたうえで
+    note 下書き〜転記用パッケージまで作成する。
+
+    **裏どり**（WebFetch のみ＝ANTHROPIC_API_KEY 課金なし）：一次情報＝NAMIKI667 公式
+    （韓国ウェルネス アフタヌーンティー告知ページ＋アクセスページ）、二次＝GINZA
+    OFFICIAL おすすめニュース（2026.08.25 掲載）。**確認できた**＝会場（NAMIKI667
+    Bar & Lounge／ハイアット セントリック 銀座 東京 3階、住所 中央区銀座6-6-7）・
+    期間（2026/9/1〜10/31）・デイ 12:00-18:30〈最終受付15:30・3時間制〉／ナイト
+    18:00-21:30〈最終受付20:00・90分制〉・料金3種（平日6,957／土日祝7,590／ナイト
+    6,072、すべて税サ込み）・予約導線（TableCheck）・アクセス・メニュー正式表記。
+    **確認できなかった**＝予約が必須か/推奨か/当日可否（公式に明記なし）、K-Night
+    Market の開催日・時間・料金（「9月・10月限定」以外なし）、韓国伝統茶の個別の
+    種類。→ 本文でこれらは**断定しない**。
+
+    **記事**：本文は Claude が直接執筆（`./p2 draft-*` の live 生成は未実行＝
+    課金なし）。20代後半〜30代女性向けに「自分を整える／少し背伸び／上質／新しい
+    発見／週末・仕事帰り／保存価値」の価値軸を、実際の開催条件に合う範囲で反映。
+    タイトル「秋だけの“韓国ウェルネス”アフタヌーンティー ― 銀座・NAMIKI667で
+    自分を整える午後」。品質＝宣伝文の転載なし・事実と編集見解を分離・公式にない
+    表現を事実として書かない・note 向け改行・適量。最終裏どりでメニュー名を公式
+    表記（五味子ヴェリーヌ／柚子ムース 山椒サブレ／ドバイチョコインジョルミ／
+    ヨモギシュークリーム／薬菓風 最中／サツマイモンブラン／サムゲタンスープ／
+    十六穀米キンパ／カンジャンセウ）へ差し替え。GINZA WHISKERS 視点の一文を
+    「高級だから選ぶのではなく、自分のために少し丁寧な時間を使う日として予約する」
+    へ、硬い「韓国の伝統素材」を「韓国で親しまれてきた素材や味わい」へ調整。
+
+    **挿絵**：ChatGPT 生成イメージ「銀座の秋の午後、自分を整える時間」1枚を導入
+    直後（記事冒頭）に配置する前提。画像は改変しない・実際の料理/会場写真ではない。
+    画像直下に必須注記「※画像は記事内容をもとに生成したイメージです。実際の提供
+    内容・内装とは異なります。」。ハッシュタグ4個＝#旬の銀座／#銀座アフタヌーン
+    ティー／#韓国ウェルネス／#自分を整える時間。
+
+    **成果物**＝`.devlogs/manual-drafts/2026-09-04-korean-wellness-afternoon-tea/`
+    配下の `note-body.md`（最終本文）／`note-draft.json`（メタ：確認済み事実・
+    未確認項目・出典・品質チェック・chromeHandoff guardrails・executed:false）／
+    `note-transcription-package.md`（note へ貼るブロック順：タイトル→導入→挿絵→
+    画像注記→本文→実用情報→GINZA WHISKERS の視点→出典→ハッシュタグ）。`.devlogs`
+    は gitignore 済み。**DB の Articles には未登録（articles=22 のまま）・DC#327 は
+    inbox のまま・note.com への転記／投稿は未実施。commit なし。**
+
+    **公開可否＝NO**：本文の事実誤りは解消済みだが、マロンの編集長レビュー・
+    公開直前の公式再照合・挿絵の扱い確認が前提（Human-in-the-loop 維持）。
+
+  - 2026-09-02 続き5（🛠 記事タイプ分類ゲートの追加 ＋ 誤登録 ArticleFacts ID 1・ID 2 の削除 —
+    全候補をイベント扱いしない P0 修正。**ローカル検証まで・commit なし**）:
+
+    **根本原因**：morning パイプラインが承認済み DiscoveredContent を一律「イベント」とみなし、
+    `EventArticleFields`（会場・時刻・申込期限・定員 等）を全候補に必須要求していた。GINZA SIX の
+    商品ニュース（DC #369／#370、`content_type=news`）は永遠に必須を満たせず常に B、かつ
+    続き4 の初回実運用で event スキーマの `article-facts` に draft 2 行（id 1／2）を誤登録した。
+
+    【誤登録 ID 1・ID 2 の削除】削除前に全条件一致を確認（count=2／両方 draft／notes に
+    `[auto:morning]`／entered_by_id・human_reviewed_by_id・human_reviewed_at すべて NULL／
+    DC ∈ {369,370}／登録前バックアップ〈`_backups/project02-articlefacts-first-write-20260902_164015/`〉
+    存在＝ALL_MATCH）。日時入りバックアップ `_backups/project02-articlefacts-misclassified-delete-<日時>/`
+    （JSON 全カラム＋子テーブル、復元用 `--column-inserts` SQL）を作成。
+    `delete from article_facts_provenance where _parent_id in (1,2); delete from article_facts where id in (1,2);`
+    （id in (1,2) のみ・他行を対象にしない）。削除後 `article_facts` = 0。
+
+    【分類ゲート（新規 `cms/src/lib/morning/classifyFactKind.ts`・純粋・AI なし）】ArticleFacts 抽出・
+    登録より**前**に `event` / `product_news` / `unknown` へ振り分け。対応は 2 タイプのみ（新タイプを
+    増やさない）。判定根拠＝contentType／uxType／タイトル・excerpt のキーワード（発売中・価格：◯円・
+    店頭・フロア vs 申込・予約・抽選・定員・参加費・体験会・展覧会・会期・開催時刻）／source_type／
+    `--fetch` 時の JSON-LD `@type:Product`・`@type:Event`（存在のみ）。**単語 1 つでは決めない**
+    （片方 ≥2 シグナルかつ他方 ≤1 で確定、両方 ≥2 or どちらも <2 → unknown、矛盾検出で信頼度を
+    medium へ）。分類理由・信頼度・シグナルを `.devlogs/morning/<date>/articlefacts-audit.jsonl` の
+    `{"kind":"classify",…}` 行へ全候補分記録。7:10 レポートの各候補行に `記事タイプ` / `分類理由` を表示。
+    unknown は **B判定**（推測分類しない・7:30 で人間が判断）。
+
+    【タイプ別の構造化事実】event → 既存 `extractArticleFactsCandidate`（EventArticleFields・無変更）。
+    product_news → 新規 `extractProductNewsFacts.ts`（商品ニュース用必須のみ：productName／brandOrSeller／
+    salesLocation／saleStartAt／saleEndAt or limitedTime／price／productSummary／purchaseConditions／
+    stockNotes＋sourceName／sourceUrl／verifiedAt）。**商品ニュースへ event 用の会場・時刻・申込期限・
+    定員・体験時間・ハッシュタグ・eventName を要求しない**（`notApplicable` に「該当なし（不要）」）。
+    **「不明（unknownItems）」「該当なし（notApplicable）」「公式記載なし（officiallyNotStated）」を
+    3 配列で区別**。`saleStartAt/saleEndAt` は「開催期間」ラベル由来で当該記事のものか不明瞭なため
+    `conflicts` に「dateExtraction が別記事の期間を拾った疑い・要人間確認」を記録。推測補完しない。
+    unknown はどちらの抽出も行わない。
+
+    【A/B/C 判定 ／ 登録ゲート】`assessCandidate` に `factKind` を渡し、event のみ従来どおり mapper で
+    A 判定。product_news / unknown は event 用 `missing`/`templateEligible` を参照せず**常に B**
+    （C 条件は共通）。`registerArticleFacts` に `factKind` を渡し、**event のみ** event 用 `article-facts`
+    へ draft 登録。product_news / unknown は `skipped`（「event 用 ArticleFacts には登録しない」）。
+    → ID 1・ID 2 の再発は構造的に不可能。
+
+    【保存設計（最小変更）】`ArticleFacts` コレクションのスキーマ・フックは**無変更**。product_news の
+    構造化事実は `.devlogs/morning/<date>/facts/<dcId>.json`（`schemaVersion:2`・`factKind`・
+    `classification`・`eventExtraction`・`productNewsExtraction`）のプロポーザルに留め DB へ書かない
+    （`factKind` 列や `productNewsFacts` グループ追加は P1）。既存 mapper・Stage 1〜4 に影響なし。
+
+    【#369・#370 の再分類（dry-run）】`./p2 am-run --fetch --register-facts --no-write`：
+    factKind＝**event=6 / product_news=3 / unknown=2**。#369 → product_news（信頼度 high・product
+    シグナル 7／event 0）、#370 → product_news（信頼度 medium・product 6／event 1・矛盾
+    「contentType=news vs uxType=participate_workshop」記録）。B 表に product_news 必須（productName／
+    brand／floor／price／summary／purchaseConditions／stockNotes）＋「該当なし（不要）」＋#369 は
+    「発売中表記があるのに販売期間が設定」の矛盾を表示。**event 項目は要求しない。** register は
+    event 候補 6 件のみ通過（すべて C 重複で skipped）、product_news/unknown は register に到達しない。
+    **DB 書き込み 0**（`article_facts` = 0）。
+
+    【変更ファイル】新規＝`cms/src/lib/morning/{classifyFactKind,extractProductNewsFacts}.ts`。
+    変更＝`cms/src/lib/morning/{types,assessCandidate,registerArticleFacts,buildMorningReport,
+    verifyP0Morning.check}.ts`、`cms/src/scripts/morningRun.ts`（分類ゲート・タイプ別抽出分岐・
+    `buildSourceLedgerMaps`〈許可ドメインと source_type を 1 回で取得〉・factKind を machine/audit/
+    proposal へ）、`cms/src/lib/__checks__/run-all.ts`、`scripts/project02`（AM 相コメント）、
+    `RUNBOOKS.md` 付録G（G.19・G.20）。**スキーマ変更・migration なし。**
+    【検証】`tsc --noEmit` 0エラー ／ `run-all.ts` **94 passed / 0 failed**（前 83 ＋ 分類・product_news
+    11）＋ 非同期 fetch/SSRF 7/7 ＋ ArticleFacts register 11/11（product_news/unknown ゲート 2 件追加）／
+    Stage 1〜4（renderArticleFromTemplate / verifyPhase2b / verifyStage2 / verifyStage4）すべて PASS ／
+    `bash -n` OK。
+    【不変の証拠】`article_facts=0`（ID 1・2 削除・product_news は登録しない）／DB
+    `discovered_content=386 / articles=21 / articles_draft=20` 不変・DC #369/#370 の `updated_at` は
+    2026-09-01 21:33 のまま（分類ゲートは DC を触っていない）／Night 投稿層 5ファイル sha256 一致 ／
+    `cms/src/collections/ArticleFacts.ts` 無変更（mtime 09-02 12:51）／空の無題下書き `n987644e020ee`
+    未操作（このセッションで note/Chrome/X ツール未使用）／実 API 呼び出しなし・課金 0 円 ／
+    差分・`.devlogs` に認証情報なし。
+    【ロールバック】新規 2 ファイルを削除し、`cms/src/lib/morning/{types,assessCandidate,
+    registerArticleFacts,buildMorningReport,verifyP0Morning.check}.ts` と `morningRun.ts` を
+    `_backups/project02-p0-cond-go-20260902_163150/` から復元、`run-all.ts` の該当行を除去。
+    削除した ID 1・2 は `_backups/project02-articlefacts-misclassified-delete-<日時>/…data.sql` の
+    `\i` で復元可能（ただし修正後は同 DC が product_news 分類となり event 用 ArticleFacts へは
+    登録されないため再現不要）。
+    【残タスク（P1・今回未着手）】product_news の DB 永続化（`ArticleFacts` へ `factKind` 列＋
+    `productNewsFacts` グループ、または別コレクション）／product_news の ready 化 UI／
+    `officiallyNotStated` の決定的自動判定。
+
+  - 2026-09-02 続き4（🛠 ArticleFacts 自動登録の初回実運用 — マロン立ち会いで
+    `./p2 morning --write-facts` を1回。**実 DB に draft ArticleFacts 2件を作成。commit なし**）:
+
+    続き3 で実装した ArticleFacts 自動登録の初回を、実行前確認 → 事前表示 → 1回実行 →
+    実行後確認 の順で実施。目的＝収集済み DiscoveredContent から draft を登録できることの
+    実 DB 検証（明朝 6:00 自動処理の前に安全性確認）。記事生成・投稿には進まない。
+
+    【実行前】article_facts=0 を確認 ／ Articles 21・DC 386(approved 11)・Night 層 sha256 を記録 ／
+    日時入りバックアップ `_backups/project02-articlefacts-first-write-20260902_164015/`
+    （`pg_dump -t article_facts --data-only`＋各種 count＋Night sha256＋morning コード一式）／
+    `MORNING_WRITE_FACTS` は未設定（`--write-facts` フラグで1回のみ有効化）／
+    **事前表示（dry-run）＝would_create=2：DC #369・#370**（ともに `ginza6.tokyo`＝SOURCE LEDGER
+    許可ドメイン・`curationStatus=approved`・`sourceUrl` あり・`trustedSource=true`・
+    provenance 5キー・`conflicts` なし・`proposedStatus=draft`）／skipped=9（C＝既投稿重複）。
+
+    【実行】`./p2 morning --write-facts` を **1回のみ**（バックグラウンド、rc=0、"Morning Startup 完了"）。
+    同じ処理は再試行していない。AM 相で `[articlefacts] write: created=2 skipped=9`。
+
+    【実行後（実 DB）】
+    ・作成件数 2 ／ 対象 DC #369・#370 ／ `enrichment_status` 両方 `draft`
+      （`<> 'draft'` は 0件）。`entered_by_id` / `human_reviewed_by_id` / `human_reviewed_at`
+      すべて NULL＝**ready 遷移していない**（`beforeChange` の ready ブロックに入っていない）。
+    ・`notes` に機械記録：出典 GINZA SIX ／ URL（#369 …/224270、#370 …/224269）／
+      verifiedAt=capturedAt=2026-09-01T21:33:09.966Z ／「未取得（推測補完しない）: 申込期限・
+      料金・定員・所要時間・対象者・本文テキスト系」。
+    ・`article_facts_provenance` 4行（各 2件、`[auto:morning]` タグ・`source_type=official`・
+      `fact_type=date`・`verification_status=confirmed`＝開催開始/終了）。
+    ・不足項目：eventName / whatHappens / eventDate / eventTime / areaLead / audienceNote /
+      officialInfoNote すべて null、venues 0、hashtags 0、paid=`unknown`（スキーマ既定
+      `defaultValue:'unknown'`。`registerArticleFacts.ts` は paid を書かない）→ ready 不能が
+      DB 側でも保証。
+    ・**重複行 0**（total_rows=2 / distinct_dc=2、`GROUP BY dc HAVING count>1` 空）。
+      読み取り専用の冪等性確認（`./p2 am-run --register-facts --no-write`、`--write-facts` なし）で
+      2回目は `unchanged=2 / would_create=0`。
+    ・Articles 21（draft 20 / published 1）不変 ／ DiscoveredContent 386（approved 11）不変・
+      DC #369/#370 の `updated_at` は登録前（2026-09-01 21:33）のまま＝ArticleFacts 作成が
+      DC を触っていない ／ Night 投稿層 5ファイル sha256 完全一致 ／
+      note・Chrome・X 未操作 ／ 実 API 呼び出し痕跡なし・課金 0 円（ログの anthropic 一致は
+      preflight の鍵名表示のみ）／ ログに認証情報の実値なし（「設定済み（値は表示しません）」）。
+    ・監査ログ：`.devlogs/morning/2026-09-02/articlefacts-audit.jsonl`（created 2件・
+      dryRun=False・差分つき、skipped 9件・C の全シグナル理由つき）。
+    ・`tsc --noEmit` 0エラー ／ `run-all.ts` 83 passed 0 failed（回帰なし）。
+
+    【後続】ArticleFacts を `ready` へ変更しない（7:00〜7:10 に人間が admin で）。
+    新規記事生成・銀座イベント curation・note 転記・`sudo pmset`・追加改善へは進まない。
+    ロールバック＝admin から `notes` に `[auto:morning]` を含み `enrichment_status='draft'` の
+    id 1・2 を削除、または
+    `docker exec cms-postgres-1 psql -U discover_ginza -d discover_ginza -c "delete from article_facts where id in (1,2)"`
+    （子テーブル `article_facts_provenance` は cascade）。DB スナップショットは
+    `_backups/project02-articlefacts-first-write-20260902_164015/article_facts.data.sql`（前＝0件）。
+    Articles / DiscoveredContent / Night 層 / コードは無変更のため復元対象なし。
+
+  - 2026-09-02 続き3（🛠 明朝を CONDITIONAL GO 以上にする 3 項目 — ArticleFacts 自動登録
+    ／morning フル E2E ／A=0 時の安全運用。**ローカル検証まで・実データ書き込みなし・commit なし**）:
+
+    現状 `article_facts` 0 件で 7:10 レポートが A=0 になるため「明朝はまだ NO-GO」との判断を受け、
+    CONDITIONAL GO 以上にするための 3 項目のみを実装（他の追加改善へは進まない）。
+
+    【1. ArticleFacts 自動登録（新規 `cms/src/lib/morning/registerArticleFacts.ts`）】
+    `./p2 morning` の中で、取得済みの事実を ArticleFacts へ**冪等に登録／更新**できるようにした。
+    I/O は注入する `ArticleFactsStore`（本番＝payload、テスト＝in-memory モック）。
+    ・**書くのは `enrichmentStatus:'draft'` のみ**。`ready` はこの経路から絶対に書かない
+      （`ArticleFacts.beforeChange` が `req.user` を要求＝Local API では物理的に不可）。
+      ready 化は事実確認条件だけで人間が admin で行う＝記事公開承認とは分離。
+    ・登録ゲート：C判定（根拠不足・期限切れ・重複）→ skipped（reject 相当）／開催終了・既投稿重複 → skipped ／
+      `trustedSource`（出典が SOURCE LEDGER のドメイン）でない → skipped ／
+      sourceUrl・sourceName・verifiedAt（capturedAt）・根拠つき事実 の欠落 → skipped。
+    ・登録値（推測補完なし）：`eventDateISO`（DC の eventStartAt）、`sourceProvenanceFacts[]`
+      （会場・開催開始・開催終了・公開日 を `[auto:morning]` タグ＋`verificationStatus:'confirmed'`）、
+      `notes`（出典 URL・sourceName・verifiedAt・capturedAt・相互矛盾・`[auto:lastVerifiedAt=<iso>]` を機械生成）。
+      申込期限・料金・定員・所要時間・対象者・本文テキスト系は書かない。
+    ・冪等：DC と 1 対 1（unique index）。同一内容の再実行は `unchanged`（書き込み 0）。
+      candidate の `verifiedAt` が前回登録（notes の `[auto:lastVerifiedAt=]`）より新しいときだけ `updated`。
+      既存 provenance の人間追加分（タグ無し）は保持。既存が `ready`/`withdrawn` の行は一切触らない
+      （skipped・downgrade しない）。
+    ・監査ログ：`.devlogs/morning/<date>/articlefacts-audit.jsonl` に 1 行 1 判定（at/dcId/action/reason/
+      verifiedAt/provenanceCount/diff/dryRun）。
+    ・**有効化は段階制**：`./p2 morning` は既定で `--register-facts` を渡す＝**登録予定差分の表示のみ・
+      DB 書き込みなし**。実際に draft を書くには `./p2 morning --write-facts` または `MORNING_WRITE_FACTS=1`。
+      `--no-write` はどちらも抑止。`buildArticleFactsStore(payload,false)` は create/update を呼ばれると例外。
+    ・Article / note 下書きを生成しない。公開へ接続しない。**`cms/src/collections/ArticleFacts.ts` は
+      スキーマ・フック・データとも無変更。**
+    ・**検証は in-memory モックのみ（実 DB に触れない）**：9 ケース PASS（would_create dry-run 書き込み 0 ／
+      write モード created・draft 固定・auto タグ ／冪等 unchanged ／verifiedAt 更新で would_update ／
+      ready 行は skip・downgrade しない ／C は reject 相当 skip ／trustedSource=false skip ／
+      推測した料金・定員は登録しない ／write 無効ストアへの create は例外）。
+    ・**今この場で実データ登録は実行していない**（`--write-facts` 未指定・`MORNING_WRITE_FACTS` 未設定）。
+      「明朝 morning で登録を有効化する設定」＝ `./p2 morning` へ `--register-facts` を組み込んだこと。
+      draft を実書きするかはマロンが `--write-facts` / env で選ぶ。
+
+    【2. morning フル E2E（dry-run・1回）】
+    Docker/CMS/PostgreSQL/Astro は既存起動を再利用（sudo・パスワード・本番接続なし）。
+    `./p2 morning` を1回実行：preflight → 収集完了確認（再収集しない）→ 公式ページ取得
+    （`--fetch`：attempted=2 success=2 timeout=0 rejected=0）→ 重複除去（C=9・多シグナル）→
+    ArticleFacts 抽出 → **ArticleFacts 登録予定差分（would_create=2 / skipped=9・DB 書き込み 0）** →
+    A/B/C 判定（A=0 / B=2 / C=9）→ 画像 preflight → 順位付け → 7:10 レポート＋7:30 意思決定サポート
+    → draft-today `--dry-run`（0 本）→ draft-interest `--dry-run` まで完走。
+    AM パイプライン所要 `total ≈ 1.4s`（fetch 込み）＝6:00 開始で 7:10 完了は余裕（70 分制限を大きく下回る）。
+    1件の取得失敗で全体停止しない・失敗候補は B/C・A を無理に作らない、を確認。
+    DB 実データ・Articles・Night 層・`article_facts`（0 のまま）不変。note/Chrome/X 未操作・課金 0 円。
+
+    【3. A判定 0 件 / 5 件未満の安全運用（7:30 意思決定サポート）】
+    `buildMorningReport.ts` に `buildDecisionSupport` / `renderDecisionSupport` を追加、
+    `renderMorningReport` が必ず末尾に出力。内容：A判定の実数・A判定各案件・B案件と不足項目・
+    C案件と除外理由・「B を admin で ready 化すれば A 化」候補＋追加時間・最短で A 1 本の時間・
+    8:00 投稿可否・8:30 まで可否・見送るべきか・7:30 にマロン＋レナが判断すべき事項。
+    A=0 のとき：「候補なし」を正常結果として扱う／無理に記事生成しない／推測で不足補完しない／
+    投稿数目標より正確性・安全性を優先。実運用サンプル（本日）＝A=0・B を +約90分で昇格可・
+    8:00 不可・8:30 不可・推奨「本日は投稿を見送る」。
+    重複はレポート末尾に「システム外の note 公開履歴は未確認——最終ゲートは 7:30 の人間確認、
+    Chrome・note ログイン・Cookie は不使用」を常時明示。
+
+    【新規】`cms/src/lib/morning/registerArticleFacts.ts`。
+    【変更】`cms/src/lib/morning/{types,buildMorningReport,verifyP0Morning.check}.ts`、
+    `cms/src/scripts/morningRun.ts`（`--register-facts`/`--write-facts`、`buildArticleFactsStore`、
+    登録ループ・監査ログ・メトリクス）、`scripts/project02`（`morning` の AM 相を
+    `am_run --fetch --register-facts "$@"` に・usage）、`RUNBOOKS.md` 付録G（G.8・G.14・G.17・G.18）。
+    **スキーマ変更・migration なし。**
+    【検証】`tsc --noEmit` 0エラー ／ `run-all.ts` **83 passed / 0 failed**（前 80 ＋ 意思決定サポート 3）／
+    非同期 fetch/SSRF 7/7 ＋ ArticleFacts register（in-memory）9/9 ／ `bash -n` OK ／
+    `./p2 morning` フル E2E 完走。
+    【不変の証拠】`article_facts=0`（登録は差分のみ・実書き込みなし）／DB 行数
+    `discovered_content=386 / articles=21 / articles_draft=20` 不変 ／ Night 投稿層 5ファイル sha256 一致 ／
+    `cms/src/collections/ArticleFacts.ts` 無変更（mtime 09-02 12:51 のまま）／
+    空の無題下書き `n987644e020ee` 未操作（このセッションで note/Chrome/X ツール未使用）／
+    課金 0 円・AI SDK 参照 0 ／ 差分・`.devlogs` に認証情報なし ／ 6:00 LaunchAgent 1 件・Hour=6・旧 7:00 なし。
+    【ロールバック】`_backups/project02-p0-cond-go-<日時>/` から復元、または
+    `cms/src/lib/morning/registerArticleFacts.ts` 削除＋`morningRun.ts`/`buildMorningReport.ts`/
+    `verifyP0Morning.check.ts` を前スナップショットへ戻す＋`scripts/project02` の `--register-facts` を除去。
+    実 ArticleFacts 行は未作成のため DB 側の復元は不要。
+    【残タスク（P1 以降・今回未着手）】(a) `--write-facts` での実 draft 登録の初回実施（マロン判断）／
+    (b) 新規銀座イベントの curation で承認キューに A 化に値する候補を入れる運用（明朝の GO の前提）／
+    (c) `sudo pmset` での 5:50 自動復帰の恒久化。
+    詳細は `RUNBOOKS.md` 付録G.17・G.18。
+
+  - 2026-09-02 続き2（🛠 P0 ブロッカー4点の修正・検証 — 公式ページ取得の SSRF/許可
+    ドメイン/robots 強化＋実運用検証、ArticleFacts readyCheck、重複判定の多シグナル化、
+    `./p2 morning` フル E2E dry-run。**ローカル検証まで・commit なし**）:
+
+    【B1: 公式ページ取得（`--fetch`）の安全強化＋実運用検証】
+    `fetchOfficialSignals.ts` を全面強化：①**許可ドメイン限定**（SOURCE LEDGER の
+    enabled URL からホスト導出、`morningRun` が実行時生成、14 ホスト。完全一致 or
+    サブドメイン、`www.` 無視。`evil-ginza.jp` 等は不許可）②**SSRF 防止**（localhost・
+    ループバック・プライベート/リンクローカル/CGNAT/予約/マルチキャスト IPv4・IPv6
+    loopback/ULA/link-local・`169.254.169.254` クラウドメタデータ・`.local`/`.internal`
+    等・埋め込み認証情報・非 80/443 ポート・`file://`/`ftp://` 等を拒否）③**手動
+    リダイレクト**（最大3ホップ、各ホップで SSRF＋許可ドメイン再検証）④**robots.txt
+    尊重**（既存 `checkRobotsAllowed`）⑤接続 8s＋全体 15s タイムアウト、本文 512KB 上限
+    ⑥過剰アクセス防止（同一 URL 1回・同一ホスト 8本・300ms 間隔）⑦Cookie/認証/
+    トークン非送信・ブラウザ偽装なし。取得不能は B のまま（推測補完なし）。
+    **実運用検証（`./p2 am-run --fetch --no-write`、dry-run）**：attempted=2 /
+    success=2 / httpFail=0 / timeout=0 / rejected=0 → 成功率 1.0・timeout 率 0.0・
+    JSON-LD 率 0.0（対象 2 件は GINZA SIX shop-news で JSON-LD 非搭載）。SSRF/allowlist/
+    robots は 37 ユニットで検証。**成功条件を満たしたため `./p2 morning` の AM 相で
+    `--fetch` を既定 ON に切替**（`scripts/project02` の `am_run --fetch "$@"`。緊急停止は
+    環境変数 `MORNING_FETCH=0`）。`./p2 am-run` 単体は明示 `--fetch` が必要。
+
+    【B2: ArticleFacts の readyCheck ＋ PDF】
+    `extractArticleFactsCandidate.ts` を強化：取得した各事実に value / sourceUrl /
+    sourceName / capturedAt / **verifiedAt** / method / **confirmationStatus** を保存。
+    `readyCheck`（allRequiredPresent / everyRequiredHasSourceUrl / datesValidNow /
+    noConflicts / trustedSource / noSpeculativeFill ＋ blockers 一覧）を明示評価。
+    `conflicts`（開催開始>終了、DC と JSON-LD の日付>2日乖離）を検出。
+    **PDF はリンク検出・記録のみで本文取得/解析はしない（新規実装しない）**——PDF 内に
+    しかない可能性のある料金・定員・所要時間は推測補完せず `missingRequired` に残す
+    ＝draft/B。`trustedSource`（出典ホストが SOURCE LEDGER にある）を `morningRun` から
+    渡す。DC 由来だけでは `readyEligible=false` は不変（ready 化は 7:00〜7:10 に人間が
+    admin で実施）。7:10 レポートに抽出結果を反映。記事生成・公開には自動接続しない。
+
+    【B3: 重複判定の多シグナル化】
+    新規 `dedupCheck.ts`（純粋関数）。突き合わせ：Articles（`editorialProvenance` の
+    DC 参照・sourceUrl・タイトル）／`.devlogs/night/queue` の `note-draft.json`・
+    `note-body.txt`（DC 参照・`links.sourceUrls`・1行目タイトル・published 有無）。
+    シグナル＝**強**（同一 DC 参照・同一**正規化** sourceUrl〈末尾スラッシュ・`utm_*`・
+    `www.` 差を吸収〉。published か否かを問わない）→ 重複確定、**弱**（類似タイトル
+    char-bigram Jaccard≥0.72／同一開催日＋会場部分一致）→ 両方揃えば確定・片方は
+    `possibleDuplicate`（verdict を動かさず「未確認事項」に出す）。**外部 note の巡回・
+    Chrome・ログインは不使用。** 結果に常に `externalPublicationUnverified: true` を立て、
+    レポートに「外部公開記録は未確認・マロン最終確認」と明示、7:30 の人間選定が最終
+    ゲート。E2E で #386 は 6 シグナル、#371/#373/#368 は note 記録で C、#371 は
+    未 published の note-draft でも DC 参照ヒットで C（7:30 でマロンが引き戻し可能）。
+
+    【B4: `./p2 morning` フル E2E dry-run（1回）】
+    Docker/CMS/Astro 起動確認のうえ実施。実行順どおり preflight → 収集完了確認
+    （score 成功。**収集は再実行しない**）→ 公式ページ取得（`--fetch`：attempted=2
+    success=2）→ 重複除去（C=9・多シグナル）→ ArticleFacts 抽出（プロポーザル保存）→
+    A/B/C 判定（A=0 / B=2 / C=9）→ 画像 preflight → 順位付け（topA 空・aShortfall）→
+    7:10 レポート（`.devlogs/morning/2026-09-02/report.txt` 保存）→ draft-today
+    `--dry-run`（0 本・全て重複）→ draft-interest `--dry-run`。DB 実データ変更なし・
+    記事生成なし・note/Chrome/X 操作なし・自動公開なし・課金なし。ロックは正常解放、
+    CMS/Astro は既存を再利用。
+
+    【新規ファイル】`cms/src/lib/morning/dedupCheck.ts`。
+    【変更】`cms/src/lib/morning/{fetchOfficialSignals,extractArticleFactsCandidate,types,
+    assessCandidate,buildMorningReport,verifyP0Morning.check}.ts`、`cms/src/scripts/morningRun.ts`
+    （許可ドメイン生成・記事/note 記録ロード・dedupCheck 適用・fetch キャッシュ/ホスト上限/
+    間隔・メトリクス出力。旧 `buildNotePublishedDcIds` は dedupCheck へ吸収し削除）、
+    `scripts/project02`（`morning` の AM 相を `am_run --fetch "$@"` に）、`RUNBOOKS.md`
+    付録G（G.4・G.8・G.12・G.14・G.15・G.16）。**スキーマ変更・migration なし。**
+    【検証】`tsc --noEmit` 0エラー ／ `run-all.ts` **80 passed / 0 failed**
+    （前 68 ＋ P0 morning 12 追加：SSRF/allowlist/dedup/readyCheck/PDF/conflict）＋
+    非同期 fetch/SSRF 7/7 ／ `bash -n` OK ／ `./p2 am-run --fetch` 実運用検証成功 ／
+    `./p2 morning` フル E2E 完走。
+    【不変の証拠】Night 投稿層 5ファイル sha256 一致 ／ DB 行数
+    `discovered_content=386 / articles=21 / article_facts=0 / articles_draft=20` 不変 ／
+    空の無題下書き `n987644e020ee` 未操作（このセッションで note/Chrome/X ツール未使用）／
+    課金 0 円・AI SDK 参照 0 ／ 差分・`.devlogs` に認証情報なし ／ `.devlogs/` は gitignore。
+    【ロールバック】`_backups/project02-p0-blocker-fix-<日時>/` から復元、または
+    `cms/src/lib/morning/` と `cms/src/scripts/morningRun.ts` を削除し
+    `scripts/project02` を `_backups/project02-p0-20260902_150955/` から復元。
+    launchd は無変更（前エントリで 06:00 化済み）。
+    【X Trial／5:50 復帰】X Trial 保留と再開条件は前エントリ・付録G.13・
+    `.devlogs/morning/2026-09-02/X_TRIAL_HOLD.md` に記録済み（今回追記不要）。X 投稿・
+    文案作成・自動投稿は行っていない。5:50 復帰は `sudo pmset` 未実行・OS 未変更・
+    パスワード非要求。6:00 LaunchAgent 登録済み（Hour=6・1 件のみ・旧 7:00 なし）を再確認。
+
+  - 2026-09-02 続き（🛠 P0 残項目 — 6:00 収集ジョブの実登録・`./p2 morning` 単一経路統合・
+    ArticleFacts 候補の自動抽出・時間制御・X Trial 保留。**ローカル検証まで。commit なし**）:
+
+    前エントリ（同日 P0）に続き、明朝運用に必要な残り P0 を安全条件の範囲で実装した。
+
+    【1. 6:00 収集ジョブの実登録（launchctl・sudo なし）】
+    マロンの明示指示により `scripts/launchd/load.sh` を実行（`launchctl bootout → bootstrap`、
+    `gui/$(id -u)` ＝ユーザースコープ、sudo・管理者権限は不使用）。結果：
+    `launchctl list | grep ginzawhiskers` は `com.ginzawhiskers.p2-trial-collect` 1 行のみ、
+    `launchctl print` の `StartCalendarInterval` が `"Hour" => 6 / "Minute" => 0`、
+    インストール実体 `~/Library/LaunchAgents/...plist` も `Hour=6`、7:00 の旧ジョブは残らず
+    （bootout→bootstrap で入れ替え）、`RunAtLoad=<false/>` かつ `state = not running` /
+    `last exit code = (never exited)` で **load.sh は収集を発火していない**
+    （`.devlogs/trial/run_2026-09-02.jsonl` は当日 07:01 の実収集のまま・未更新、
+    `trial-morning` プロセスなし）。収集経路は launchd 1 件・crontab 0 件で単一。
+
+    【2. `./p2 morning` を明朝パイプラインの単一経路に統合】
+    新オーケストレーター `cms/src/scripts/morningRun.ts` を追加し、`./p2 morning` の相へ
+    `am_run "$@"` を組み込んだ。`./p2 am-run`（フル：レポートと候補プロポーザルを
+    `.devlogs/morning/<date>/` へ保存）と `./p2 am-candidates`（同一実体の読み取り専用ビュー・
+    `--no-write` 相当）は同じ `morningRun.ts` を呼ぶ。前エントリの `morningCandidates.ts` は
+    これへ統合し削除（退避：`_backups/project02-p0-20260902_150955/morningCandidates.ts.pre-consolidation`）。
+    パイプライン順：軽量 preflight（Docker/PG/Payload）→ 6:00 収集の完了確認
+    （`.devlogs/trial/run_<date>.jsonl` に score exitCode:0 があるか。**収集自体は実行しない**）→
+    承認済み DiscoveredContent 読込 → 重複除去 → （`--fetch` かつ `MORNING_FETCH=1` のときだけ）
+    公式/詳細/PDF 取得確認 → ArticleFacts 候補抽出 → A/B/C 判定 → 画像 preflight →
+    7:10 候補レポート生成。
+
+    【3. ArticleFacts 候補の自動抽出（DB 書き込みなし）】
+    `cms/src/lib/morning/extractArticleFactsCandidate.ts`（純粋関数）＋
+    `cms/src/lib/morning/fetchOfficialSignals.ts`（`--fetch` 時のみ・決定的パース）。
+    出力は `.devlogs/morning/<date>/facts/<dcId>.json` のプロポーザル。**DB へは書かない。**
+    フィールドごとに根拠（value / sourceUrl / capturedAt / method）を保存。
+    公式情報源・sourceUrl・sourceName・verifiedAt・公開日・開催日/終了日・会場・
+    詳細ページ取得状況・PDF 取得状況・画像利用方針・既投稿との重複 を構造化。
+    **申込期限・料金・定員・対象者・本文テキスト系は DiscoveredContent に構造化
+    フィールドが無く `null` のまま `missingRequired` に列挙（推測補完しない）**。
+    そのため DC 由来だけでは常に `readyEligible=false` / `proposedStatus='draft'` → B 判定。
+    `ready` 化（＝A の前提）は 7:00〜7:10 に人間が admin で必須項目を確定入力して行う
+    （`mapDiscoveredContentToEventFields` が `templateEligible:true` を返す完全性＋
+    `enrichmentStatus:ready` の `req.user`＋完全性チェック）。
+    `fetchOfficialSignals`：`articleUrl`（SOURCE LEDGER 由来＝銀座公式系）を 1 回 GET し、
+    `application/ld+json` の `JSON.parse`・`og:image` メタ・同ホストの `.pdf` リンクのみ
+    決定的抽出。**本文中の命令・コード・プロンプトは実行しない**（eval / new Function /
+    動的 import なし、LLM に渡さない）。8 秒タイムアウト・512KB 上限・クロスホストの
+    リダイレクト不採用。**既定 OFF**（`--fetch` ＋ `MORNING_FETCH=1` の両方が必要）。
+
+    【4. 時間制御】取得先ごとに 8 秒タイムアウト（`--fetch-timeout=MS`）。候補ごとに
+    try/catch で例外を握り、失敗候補は `processingError` つきで C にして全体は継続。
+    ロックディレクトリ `.devlogs/morning/.lock`（`mkdir` 原子性）で二重起動を防止、
+    30 分より古いロックは自動奪取、`process.on('exit')` で解放。前回処理が実行中なら
+    `exit 3` で安全停止（bash 側は ⚠️ 表示）。
+
+    【5. 候補レポート】A 判定を順位付きで（順位/ID/タイトル/推薦理由/公式出典+URL/
+    確認日時/開催期間・申込期限/ArticleFacts 状態/A・B・C/重複判定/画像方針/想定記事化時間、
+    A候補には抽出フィールドの根拠つき要約も）。B・C は別表で不足項目・除外理由・
+    追加確認時間を表示。**A が 5 件未満でも B/C で埋めない。** レポートは
+    `.devlogs/morning/<date>/report.txt`＋`report.json` に保存。
+
+    【6. X 認知拡大 Trial の保留】2026-09-02 予定の「銀座情報局 by GINZA WHISKERS」
+    X Trial を中止・保留。今日の X 投稿を作成・投稿しない／X 自動投稿を実装しない／
+    既存 X 投稿を編集・削除しない／「毎日発信中」等の表現を使わない。
+    **再開条件（すべて 3 日連続で達成してから）**：①7:10 までに A 判定候補提示
+    ②8:30 までに第 1 投稿完了 ③14:00・18:00 を含む 1 日 3 投稿 ④1 投稿 20〜30 分
+    ⑤誤情報・重複投稿・誤公開 0 件 ⑥note 転記経路が安定。**達成まで再提案しない。**
+    記録：`RUNBOOKS.md` 付録G.13、`.devlogs/morning/2026-09-02/X_TRIAL_HOLD.md`、本エントリ。
+
+    【7. 5:50 自動復帰】`sudo pmset` は実行しない・OS 設定を変更しない・パスワードを
+    求めない。現状＝`wakepoweron at 6:55AM every day`。後日マロンが実行する場合：
+    `sudo pmset repeat wakeorpoweron MTWRFSU 05:50:00`（確認 `pmset -g sched` ／
+    復元 `sudo pmset repeat wakeorpoweron MTWRFSU 06:55:00` または `sudo pmset repeat cancel`）。
+    5:50 化まで「今夜は Mac をスリープさせず AC 運用」を前夜チェックリスト（付録G.8-1）へ記録。
+
+    【新規ファイル】`cms/src/lib/morning/{fetchOfficialSignals,extractArticleFactsCandidate}.ts`、
+    `cms/src/scripts/morningRun.ts`。
+    【削除（統合）】`cms/src/scripts/morningCandidates.ts`（→ `morningRun.ts`。退避済み）。
+    【変更】`cms/src/lib/morning/{types,buildMorningReport,verifyP0Morning.check}.ts`、
+    `cms/src/lib/__checks__/run-all.ts`、`scripts/project02`
+    （`am_run`/`_am_run_impl`/`am_candidates` 関数・`am-run` dispatch・`morning` の AM 相・usage。
+    既存関数の本体は無改変。dispatch `morning)` を `shift; morning "$@"` に変更＝引数受け渡し
+    のみで零引数時の挙動は不変）、`scripts/launchd/{com.ginzawhiskers.p2-trial-collect.plist.template,load.sh}`
+    （前エントリで 06:00 化済み。今回は load.sh を実行して反映）、
+    `RUNBOOKS.md` 付録G（G.1・G.8・G.11・G.12・G.13・G.14 を追記）、
+    `CLAUDE.md` §12。**スキーマ変更・migration なし。**
+    【検証】`tsc --noEmit`（cms）0エラー ／ `run-all.ts` 68 passed / 0 failed
+    （前 62 ＋ P0 morning 6件：extract 3・injection 3。加えて非同期 fetch 2/2）／
+    `bash -n scripts/project02` OK ／ `./p2 am-run`（--fetch なし＝外部リクエスト 0 件）
+    実行成功：承認済み 11 件 → A=0 / B=3 / C=8、候補プロポーザル 8 件と report.txt/json を
+    `.devlogs/morning/2026-09-02/` へ保存。ロック（新規＝安全停止 exit 3・古い＝自動奪取）、
+    `--limit`、`--json` を確認。プロンプトインジェクション耐性（JSON-LD 内の命令文は
+    データとして parse されるだけ・実行経路なし・クロスホスト PDF は除外）をユニットで確認。
+    【不変の証拠】Night 投稿層 5 ファイルの sha256 はベースライン
+    （`_backups/project02-p0-20260902_150955/MANIFEST.txt`）と完全一致 ／
+    DB 行数 `discovered_content=386 / articles=21 / article_facts=0 / articles_draft=20` 不変 ／
+    空の無題下書き `n987644e020ee` は未操作（このセッションで note/Chrome/X ツールを一度も
+    呼んでいない） ／ Claude API・外部有料 API・課金 0 円 ／ 差分に認証情報・秘密なし ／
+    `.devlogs/` は gitignore 済み。
+    【ロールバック】`unload.sh`（launchd を解除）／テンプレを 07:00 に戻して `load.sh` 再実行 ／
+    `_backups/project02-p0-20260902_150955/` から `project02` / `load.sh` /
+    `com.ginzawhiskers.p2-trial-collect.plist.template` を復元 ／
+    `cms/src/lib/morning/{fetchOfficialSignals,extractArticleFactsCandidate}.ts` と
+    `cms/src/scripts/morningRun.ts` を削除、`morningCandidates.ts` を退避先から復元、
+    `run-all.ts` の追加行を除去、`.devlogs/morning/` を削除。
+    【P1/P2（今回未着手）】(a) `buildNoteDraftPackage.ts` の `chromeHandoff.executed`
+    フィールド分割 ／ (b) `--fetch` 実運用での公式ページ能動取得の検証 ／
+    (c) PDF 本文の内容パース（現状は取得状況の記録のみ） ／ (d) A 候補が出た状態での
+    7:10 レポート実地確認（ArticleFacts の実データ投入が前提）。詳細は `RUNBOOKS.md` 付録G。
+
+  - 2026-09-02（🛠 P0 システム改善 — 9月Trial 固定運用の安定化。収集 06:00 化・
+    早朝 preflight・A/B/C 候補レポート・画像 preflight・note 経路の安全化方針を
+    実装＋仕様固定。**ローカル検証まで。OS 設定変更・本番反映・commit なし**）:
+
+    2026-09-02 の投稿 Trial（Claude in Chrome → note エディタ自動転記が SPA への
+    スクリプト注入不能で失敗。診断結果：9/1 の note 転記はマロン手動であり、
+    9/2 が Claude in Chrome 経路の初回試行＝リグレッションではなく初回失敗）を
+    受け、新規投稿より「明日以降の安定運用」を優先し P0 改善を実装した。
+
+    【固定運用スケジュール（今回スペックへ固定。新証拠がない限り再議論しない）】
+    5:50 Mac 復帰・環境確認 ／ 6:00 情報自動収集 ／ 6:10〜7:00 自動裏取り ／
+    7:00〜7:10 ArticleFacts 作成・A/B/C 判定 ／ 7:10 A判定候補を優先順位5位まで提示 ／
+    7:30 マロンとレナで選定 ／ 8:00 第1投稿目標（遅くとも 8:30）／ 14:00 第2投稿 ／
+    18:00 第3投稿 ／ 1投稿 20〜30分目標。
+
+    【実装（P0）】
+    1. **収集 07:00 → 06:00**：`scripts/launchd/com.ginzawhiskers.p2-trial-collect.plist.template`
+       の `StartCalendarInterval.Hour` を 7→6、ヘッダーコメントと `load.sh` の
+       案内文言も 06:00 へ。収集経路は `./p2 interest trial-morning` を起動する
+       launchd 1件のみ（crontab なし）で統一済み、`load.sh` が bootout→bootstrap で
+       入れ直すため同一 Label の二重登録は起きない。**`launchctl` の再ロード自体は
+       OS 設定変更のため Claude は実行していない**——反映はマロンが
+       `scripts/launchd/load.sh` を実行する。現在ロード中のジョブは依然 07:00
+       （テンプレ更新だけでは有効化されない）。
+    2. **早朝 preflight**：`./p2 am-preflight`（新規・読み取り専用）。電源(AC/バッテリー)・
+       スリープ復帰スケジュール(pmset は読み取りのみ)・ディスク空き・ネットワーク到達
+       (ginza.jp / note.com へ HEAD のみ＝本文は取得しない)・Docker・PostgreSQL
+       (pg_isready)・Payload API・必要コマンドを確認。sudo・管理者権限・OS 設定変更・
+       DB 書き込み・課金・ブラウザ操作は一切なし。5:50 自動復帰が必要な場合の
+       `sudo pmset repeat wakeorpoweron MTWRFSU 05:50:00` と復元手順は**表示のみ**
+       （実行しない。現状は 6:55 復帰）。
+    3〜5,7. **A/B/C 候補レポート**：`./p2 am-candidates`（新規・読み取り専用）。
+       承認済み DiscoveredContent ＋（あれば）ready な ArticleFacts ＋ 画像在庫を
+       **決定的に**（Claude API なし・課金なし・DB 書き込みなし）評価。
+       - **C（除外）**：開催終了 ／ 既投稿と重複（Article.editorialProvenance 逆引き
+         ＋ `.devlogs/night/queue/**/note-draft.json` の published 痕跡の両方で判定）／
+         銀座関連性を確認できない ／ 追跡可能な公式出典 URL が無い。
+       - **A（上位提示対象）**：C でない かつ ArticleFacts が ready（必須項目すべて確認済み・
+         `mapDiscoveredContentToEventFields` の templateEligible:true）かつ 公式 URL あり
+         かつ 情報の確認日時が新しい（既定 14 日以内）。想定 20〜30 分。
+       - **B（未確認あり・上位5件に入れない）**：C でも A でもない。不足項目(missing)と
+         A化までの追加所要時間を明示。
+       - **「完璧」＝必須項目を確認できた案件だけを A**。未確認情報は推測で補完せず
+         missing / unconfirmed に列挙するだけ。**A が5件未満なら B/C で埋めず A の実数を報告**。
+       - 画像 preflight：季節→`world_<season>`、カテゴリ→`icon_<slug>` を在庫
+         （`media/image-assets/` ＋ image-assets コレクション）から決定的に探索。
+         無ければ「画像なし」（外部画像の転載は常に禁止＝Editorial Trust Layer、
+         新規生成はマロン判断後、画像なし公開は許容＝BLOCKER にしない）。
+       実 DB（ローカル `cms-postgres-1`）で実行確認：承認済み 11 件 → A=0 / B=3 / C=8。
+       A=0 は正しい挙動（`article_facts` テーブルは 0 行のため ready な facts が無い。
+       今日の #54 は AI 経路 `draft-today --yes` で生成済み）。#368 #373 は
+       .devlogs の published 痕跡で C に落ちることを確認。
+    6. **note 投稿経路の安全化＝方針を仕様へ固定（今回はコード化せず）**：Claude in Chrome は
+       「切り分け未了の実験的オプション」であり安定確認まで標準経路にしない ／
+       `/notes/new` へ自動遷移しない ／ マロンが開いた既存の空下書きだけを操作対象とする ／
+       操作再試行は1回・10秒以内・失敗時は空下書きを追加作成せず安全停止 ／
+       `chromeHandoff.executed` は「人間が handoff を完了した記録」と「Claude in Chrome が
+       実行した記録」を分離（`buildNoteDraftPackage.ts` は Night 投稿層のため今回は
+       触れず＝P1。verification #11「Night 投稿層 未変更」を優先）／ 自動公開禁止 ／
+       Article は必ず `reviewStatus:draft` ／ 公開はマロンの明示承認後。
+    8. **運用記録**：本エントリ ＋ `RUNBOOKS.md` 付録G（9月Trial 固定運用ランブック）へ
+       集約。重複ドキュメントは作らない。
+
+    【新規ファイル】`cms/src/lib/morning/{types,imagePreflight,assessCandidate,buildMorningReport,verifyP0Morning.check}.ts`
+    ／`cms/src/scripts/morningCandidates.ts`。
+    【変更（追記のみ）】`scripts/project02`（+154行・既存関数と既存 case は無改変。
+    `am_preflight()` / `am_candidates()` と dispatch 2件・usage 2行を追加）／
+    `scripts/launchd/com.ginzawhiskers.p2-trial-collect.plist.template`（Hour 7→6・コメント）／
+    `scripts/launchd/load.sh`（案内文言 07:00→06:00）／
+    `cms/src/lib/__checks__/run-all.ts`（新スイート1件を追加）／`RUNBOOKS.md`（付録G）／
+    `CLAUDE.md` §12（一文要約）。**スキーマ変更・migration なし。**
+    【検証】`tsc --noEmit`（cms）0エラー ／ `run-all.ts` 62 passed / 0 failed
+    （既存 50 ＋ P0 morning 12）／ `bash -n scripts/project02` OK ／
+    `plutil -lint`（テンプレ＋実パス置換版）OK ／ `./p2 am-preflight`・`./p2 am-candidates`
+    実行成功（読み取りのみ）。
+    【不変の証拠】Night 投稿層 5ファイルの sha256 はベースライン（`_backups/project02-p0-20260902_150955/MANIFEST.txt`）
+    と完全一致 ／ DB 行数 `discovered_content=386 / article_facts=0 / articles=21 / dc_approved=11`
+    が検証前後で不変 ／ 空の無題下書き `n987644e020ee` は操作・削除していない ／
+    差分に認証情報・秘密なし。
+    【ロールバック】`_backups/project02-p0-20260902_150955/` から
+    `com.ginzawhiskers.p2-trial-collect.plist.template` / `load.sh` / `project02` を上書き復元 ／
+    `cms/src/lib/morning/` と `cms/src/scripts/morningCandidates.ts` を削除 ／
+    `run-all.ts` の追加 import と `p0Morning()` 行を除去。launchd は未再ロードのため
+    OS 側の復元は不要（反映していない）。
+    【残タスク（P1 以降。今回未着手）】(a) `buildNoteDraftPackage.ts` の
+    `chromeHandoff.executed` フィールド分割（Night 層バックアップ＋承認が前提）／
+    (b) ArticleFacts の実データ投入（現在 0 行のため A 判定が構造上 0）／
+    (c) 6:10〜7:00 の自動裏取りの実処理（現状は候補提示前チェックの枠組みのみ。
+    公式ページ・PDF の自動取得は未実装）／(d) `./p2 morning` への am-preflight /
+    am-candidates 組み込み（今回は独立コマンドに留めた）。
+    詳細は `RUNBOOKS.md` 付録G。
+
   - 2026-08-31（📓 Project 02 Revenue Goal — 10〜12月の収益化ゴールと
     「1日10投稿＝戦略的な最低運用基準」を明文化〈同日 follow-up その5、
     committed decision は書き換えず追記〉）:
@@ -472,7 +1226,7 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
     読前読後で何が変わるか／ベネフィット＝有料部分で何が得られるか）。
     有料部分の前に「この先に何があるか」を具体的に示すが煽りすぎない。
     ⑤Paid Candidate 判定＝記事生成後に5軸（希少性・編集価値・実用価値・
-    GINZA WHISKERS固有性・購入意欲）をスコア化、高評価のみ有料候補。
+    GINZA WHISKERS 固有性・購入意欲）をスコア化、高評価のみ有料候補。
     9月Trial の `interestArticlePostGate` と同じく hard gate にせず
     WARNING／候補フラグ記録に留め、最終判断はマロン。有料価値が弱ければ
     無料記事として公開。⑥有料記事の分類（内部）＝Concierge／Selection／
@@ -522,11 +1276,10 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
     §20）、CLAUDE.md §8（新規ブレット、基本原則＋参照先のみ）・§9
     （Phase 14 行）・§12（未決事項の解消）・§13（コスト想定1項目）、
     `VISUAL_ASSET_LIBRARY.md` §4・§9（18カテゴリの運用採用へのステータス
-    更新）、`PROJECT_02_2_INTEREST_MONETIZATION_SPEC.md` §4末（Paid
-    Candidate 判定との関係を明記）。既存の Editorial Trust Layer・
-    Editorial Style Engine（項目10 の出典表示形を除く）・読者接続の編集
-    ロジック・Character Standard／Dominance・Music Provenance・TNS 仕様・
-    週次まとめ記事仕様・収益化② Phase A/B は変更していない。
+    更新）。既存の Editorial Trust Layer・Editorial Style Engine（項目10 の
+    出典表示形を除く）・読者接続の編集ロジック・Character Standard／
+    Dominance・Music Provenance・TNS 仕様・週次まとめ記事仕様・収益化②
+    Phase A/B は変更していない。
 
     【次工程（未実装、`GINZA_JOHOKYOKU_SPEC.md` §20）】
     `buildNoteDraftPackage.ts`（マーカー除去・出典整形・無料エリア境界の
@@ -592,7 +1345,333 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
     ナビゲート・note.com アクセス・コード変更・commit はしていない。
     カスケード：`CLAUDE.md` §12。
 
-  - 2026-08-30（Project 02-2 収益化② Social Copy 媒体別最適化 Tier S1／S2 実装）:
+  - 2026-08-31（⏰ 朝の自動収集の安定化 — 06:55 Mac Wake → 07:00 trial-collect）:
+    9月Trial の朝7:00 `trial-collect`（launchd `com.ginzawhiskers.p2-trial-collect`、
+    2026-08-31 に node/nvm PATH 修正済み）が Mac スリープで取りこぼされないよう、
+    macOS 標準の `pmset` で毎朝の自動 Wake を追加。
+    **事前確認（読み取り専用）**：`pmset -g sched` に `Repeating power events:` が
+    無く＝ユーザー定義の `pmset repeat` 未設定、ユーザー単発 `schedule` も無し。
+    既存の `[0][1]` は `com.apple.alarm.*`（macOS がアプリ用に張る動的アラーム、
+    `pmset` のユーザー枠とは別系統・共存）。→ **競合なし**と判断。
+    **設定（マロンが `sudo` で実行）**：`sudo pmset repeat wakeorpoweron MTWRFSU 06:55:00`。
+    `pmset -g sched` で `Repeating power events:  wakepoweron at 6:55AM every day`
+    を確認済み。既存の電源管理設定（`custom`/`batt`/`ac` の各項目、`com.apple.alarm.*`）
+    は無変更（`repeat` 枠が空だったため上書き無し）。
+    **運用シーケンス**：06:55 Mac Wake（スリープ復帰）→ 07:00 launchd `trial-collect`
+    （note.com 収集のみ、Anthropic API 呼び出しなし・課金なし）→ 当日午前に候補確認・
+    approved → Claude Code で記事生成 → `./p2 night package` で `/note-draft` 化 →
+    Claude in Chrome（未接続の間は手動）で note 下書き → Same-day Review →
+    マロン最終確認 → 当日公開。
+    **ハードウェア制約（記録）**：本機は MacBook Air / Apple M5（Apple Silicon）。
+    ① **完全シャットダウンからのスケジュール起動は非対応**——Apple Silicon は
+       `poweron` を実装しておらず、`wakeorpoweron` は実質 `wake`（スリープ復帰）のみ。
+       電源オフ状態で 06:55 を迎えるとその日の収集はスキップ（launchd の
+       calendar-interval も遡り実行しない → 翌日まで走らない）。
+    ② **蓋を閉じた状態＋バッテリー駆動**：Wake は発生するが復帰後の起動ウィンドウが
+       短く、`trial-morning` step0 の Docker コールドスタート（`docker info` 応答を
+       最大120秒待機）が間に合わず `ensure_db` 失敗の可能性。**夜間は AC 接続＋
+       Docker Desktop「ログイン時に起動」＋ログイン状態のままスリープ**を推奨。
+    ③ launchd はこのジョブのために Mac を起こさない（wake キー未設定）ため、
+       pmset の Wake がその役割を担う。
+    **解除方法**：`sudo pmset repeat cancel`。カスケード：`CLAUDE.md` §12。
+
+  - 2026-08-31（📅 9月Trial 標準運用ルール確定 — Same-day Review を標準化、
+    Morning Review Queue は保険に降格。追加API課金 0円）:
+    **確定した標準フロー（9月Trial）**：
+      07:00 自動収集（launchd `trial-collect` ＝ `./p2 interest trial-morning`、
+        HTTP取得のみ・Anthropic呼び出しなし。SOURCE LEDGER crawl は CMS 稼働中に
+        Payload Jobs Queue が実行）
+      → 当日午前中に候補確認・approved（人手。Payload 管理画面で
+        DiscoveredContent.curationStatus=approved ／ interest-themes.status=approved。
+        補助：`./p2 daily` `ranking` `articles` `interest score`、必要なら
+        `./p2 score-articles --heuristic`〈決定的・0円〉）
+      → Claude Code で記事生成（契約内・従量課金なし。approved の DiscoveredContent
+        を読み、`CLAUDE.md` §8 Editorial Style Engine / Editorial Trust Layer に沿って
+        本文・タイトル3〜5案・Editor's Note・WHY NOW・`editorialProvenance`
+        （fact/sourceName/sourceUrl/verifiedAt/sourceType/factType/verificationStatus）・
+        social copy・callToAction を作成 → `Articles` に `reviewStatus:draft` で登録。
+        `./p2 draft-today --yes` / `draft-interest --yes` / `tns next --yes` /
+        `night run --yes` は使わない）
+      → /note-draft 化（`./p2 night package <articleId>` ＝ `buildNoteDraftPackage`、
+        決定的・0円。fact/source 検証で BLOCKER/WARNING を付与）
+      → Claude in Chrome で note 下書き完成（未接続の間は手動：`note-body.txt` を
+        note.com へ貼付、`[IMAGE:…]` 位置に画像、ハッシュタグ・出典URL、**下書き保存**。
+        接続後は Claude in Chrome が同手順、ただし `chromeHandoff.guardrails` 厳守
+        ＝下書き保存のみ・公開しない・既存記事削除しない・有料無料変更しない・
+        アカウント設定変更しない・不明項目は空で残す）
+      → **Same-day Review（標準）**：生成した当日のうちに、マロンが `note-draft.json`
+        と note.com 下書きを点検（BLOCKER 解消、タイトル確定、画像・ハッシュタグ・
+        出典、Trust Layer / Style Engine 準拠、トーン）
+      → マロン最終確認 → **当日公開**（Payload で reviewStatus draft→review→approved
+        〈ログイン人間必須ゲート〉、note.com で**マロンが手動で「公開」**）
+    **変更点（前回 2026-08-31 の Night Automation ルールからの差分）**：
+      ① 「翌朝 Morning Review を回してから公開」を標準運用にしない。標準は
+         **Same-day Review**（生成〜レビュー〜公開を同日で完結）。
+      ② `.devlogs/night/queue/<date>/_index.json`（Morning Review Queue）と ERROR
+         ログは廃止せず、**エラー・未処理・持ち越し案件用の保険**として残す
+         （BLOCKER で `night package` 化を止めた項目、当日レビューしきれなかった
+         項目の記録先）。翌日以降に `./p2 night review` で拾う運用は例外扱い。
+      ③ 追加 API 課金は使わない（前回ルールを踏襲。`NIGHT_RUN_LIVE_ENABLED` は
+         未設定のまま、launchd は 07:00 の `trial-collect` のみ）。
+      ④ note 公開は必ずマロンが実行。自動公開は禁止（前回ルールを踏襲）。
+    **自動／人手の境界**：自動でよいのは「07:00 収集」と「/note-draft 化」だけ。
+      候補承認・Same-day Review・公開は人手の判断が本体。記事生成・note 下書きは
+      「Claude Code / Claude in Chrome が作業、人間が起動と点検」の半自動。
+      公開操作はいかなる自動化も禁止。
+    **費用 0 円の allow/deny（コマンド）**：
+      allow ＝ launchd `trial-collect`（07:00）／Jobs Queue crawl／
+        `./p2 score-articles --heuristic` ／ `./p2 score --heuristic` ／
+        `./p2 daily` `ranking` `articles` `editorial` `interest score` ／
+        `./p2 night run --dry-run` ／ `./p2 night package <id>` ／
+        `./p2 night review` ／ `./p2 night status` ／ Payload 管理画面の手作業 ／
+        Claude Code セッション ／ Claude in Chrome（接続後、下書きまで）。
+      deny ＝ `./p2 draft-today --yes` ／ `./p2 draft-interest --yes` ／
+        `./p2 night run --yes` ／ `./p2 tns next --yes` ／
+        `./p2 score-articles`・`./p2 score`（`--heuristic` なし＝既定 claude）／
+        `evaluate` 系 ／ `scripts/launchd/load-night.sh` の実行。
+      多重防御：(a) deny を実行しない、(b) `ANTHROPIC_API_KEY` は壊れたまま＝
+        万一実行しても課金でなく認証エラー、(c) `night run` は明示ゲートで停止。
+
+    **既存コードの名称・運用上の矛盾 洗い出し（今回はコード変更しない）**：
+    ── 分類A：命名（「Morning Review」を標準レビュー名として使用。標準は
+       Same-day Review、queue は保険）──
+      1. `cms/src/lib/night/types.ts` L104-121：型名 `MorningReviewQueueItem` /
+         `MorningReviewQueueIndex`。L5・L19・L85：コメント「morning review queue」
+         「morning review で判断」。
+      2. `cms/src/scripts/nightBuild.ts` L5-6（型 import）・L19（コメント
+         「morning review queue まで書き出す」）・L118（`ERROR.txt` 文言
+         「morning review でマロンが判断してください」）・L301（サマリ
+         「morning review queue に記録」）。
+      3. `cms/src/lib/night/buildNoteDraftPackage.ts` L272（guardrail
+         「不明な項目は空のままにし morning review へ回す」）・L278（step
+         「画像は別途 morning review で用意」）。
+      4. `scripts/format_night_status.py` L43（「Morning Review Queue / 直近状態の
+         確認」）・L49（ヘッダー `=== Morning Review Queue  {date} ===`）・
+         L169（「morning review queue: …」）。
+      5. `scripts/project02` L1490（disabled-night メッセージ内「Morning Review
+         Queue」）・L1533（バナー `Night — Morning Review Queue`）・L1615・L1618・
+         L2209（usage「朝の確認：morning review queue を表示」）。
+      → 提案（後日）：ユーザー向け表示・型名・コメントの「Morning Review」を
+         「Same-day Review」に、queue は「Review Queue（保険）」等へ。`night review`
+         コマンド名は据え置き可（動作は同じ）。
+    ── 分類B：運用フレーミング（「就寝中／夜間／翌朝／無人」前提。新標準は
+       日中 Claude Code ＋ Same-day）──
+      6. `cms/src/lib/night/types.ts` L1-3「Night Automation Layer … マロンが
+         就寝中に …」。
+      7. `cms/src/lib/night/runNightBuild.ts` L7「Night Automation Layer の司令塔」。
+      8. `cms/src/scripts/nightBuild.ts` L10 ヘッダー「Night Automation Layer」。
+      9. `scripts/project02` L1441-1442（節見出し「Night Automation Layer /
+         マロン就寝中に …」）・L1462（バナー「Night Automation Layer（night run）」）。
+      10. `scripts/launchd/com.ginzawhiskers.p2-night.plist.template` 全体が
+          「毎日 02:10 の夜間実行」フレーム（既に無効化済みだが名称）。
+      → 提案（後日）：`night` CLI 名前空間の改称（例 `./p2 draftpkg` / `./p2 review`）
+         は「大きな変更」に当たるため今回は見送り、コメント・バナー文言のみ
+         「日中運用」に合わせる小修正に留める。
+    ── 分類C：実装ロジックの矛盾 ── **無し**。`night package` は `todayStr()` で
+       `queue/<当日>/` に書き、`night review`（引数なし）は最新日付＝当日を表示。
+       Same-day 運用でそのまま機能する。review をスケジュール実行する仕組みも
+       無い（常に手動）。unprocessed 項目は既に「異常により最後まで進めなかった
+       項目」と表示されており、保険という新しい役割と整合する。
+    ── 分類D：矛盾ではない（過剰修正しないこと）──
+      ・`./p2 morning`（Project 02 Morning Startup）＝ローカル環境起動＋診断の
+        別コマンド。レビュー頻度とは無関係。改名不要。
+      ・`./p2 interest trial-morning`／launchd `trial-collect`（07:00）＝朝の収集。
+        新フローでも 07:00 収集は標準のまま。「morning」は正しい。
+      ・`./p2 night run` の無効状態・`NIGHT_RUN_LIVE_ENABLED` ゲート＝新ルールと整合。
+      ・`./p2 night package` の「night」接頭辞は日中実行と厳密には不一致だが機能は
+        正しい。CLI 名前空間の改称は大きな変更のため今回は洗い出しのみ。
+    **今回の実施範囲**：本ルールの記録（`CLAUDE.md` §12 に 1 行、本ファイルに全文）と
+    上記の洗い出しのみ。コード変更・文言修正・改名は行っていない。commit なし。
+
+  - 2026-08-31（🌙 Night Automation Layer 運用ルール確定 — 収益化前は
+    従量課金の夜間自動生成を実施しない）:
+    **背景**：同日、実 API を使う Trial の前にコスト確認を実施
+    （静的分析のみ、API 呼び出しなし）。結果——`night run` 1 記事＝Claude API
+    1 コール（`claude-sonnet-5`、input $2 / output $10 per 1M、プロンプト
+    キャッシュ不使用）、`max_tokens: 8192`、1 記事あたり概算 約 $0.059〜0.095
+    （≈¥9〜15、近い実測値は Article #53 の input 6,766 / output 4,556、
+    CORE 経路の実測はまだ無い）、月額概算は 1 記事/晩 ≈¥280／3 ≈¥840／
+    5 ≈¥1,400／10 ≈¥2,800（最悪ケース ×約1.6）。コード側にスペンド上限・
+    コール上限・kill-switch は無く、`--max` に数値上限ガードも無い。SDK 既定
+    `maxRetries:2` は無効化引数なし。
+    **マロン方針変更（確定）**：Project 02 は収益化前のため、
+    **ANTHROPIC_API_KEY を使う従量課金の夜間自動生成は実施しない**。
+    - API 課金が発生する `night run`（live）を無効化する。
+    - launchd による API 自動実行は登録しない。
+    - `ANTHROPIC_API_KEY` は修正しない。
+    - 有料 API 呼び出しを実行しない。
+    - **残すもの**：Night Automation Layer の骨格、note-draft（`/note-draft`
+      再利用構造）、Morning Review Queue、ERROR ログ、Claude in Chrome への
+      handoff 構造。
+    - 省力化は**現在契約内で使える Claude Code / Claude in Chrome** を優先する。
+    **実装（2 重ガード、既定 OFF）**：
+    (1) `scripts/project02` の `night_run()`：`--dry-run` 以外（＝live）は、
+        `cms/.env` に `NIGHT_RUN_LIVE_ENABLED=1` の行が無ければ **node を起動
+        せずに** 停止（有料 API 呼び出しが構造的に起きない）。停止時に「課金
+        なしで使えるコマンド」「省力化は契約内ツールで」「再開手順」「note-draft
+        等の構造は残っている」を表示。`_night_require_db` の呼び出しも live
+        ゲート通過後に移動（disabled 表示に DB 不要）。
+    (2) `cms/src/scripts/nightBuild.ts` の `runNight()`：`--dry-run` 以外で
+        `process.env.NIGHT_RUN_LIVE_ENABLED !== '1'` なら、`import('payload')`
+        ／Anthropic クライアント生成の**前**に `{mode:'disabled', reason}` を
+        1 行 JSON で返して `exit 0`。
+    (3) `scripts/format_night_status.py`：`mode:'disabled'` を整形表示
+        （運用ルールと代替コマンドを明示）。
+    (4) `scripts/launchd/load-night.sh`：冒頭で `NIGHT_RUN_LIVE_ENABLED=1` が
+        environ に無ければ `exit 1`（登録処理に入らない）。テンプレート
+        コメントと load-night.sh のヘッダも「収益化前は登録しない」に更新。
+    **課金なしで引き続き使えるもの（無変更）**：`./p2 night run --dry-run`
+    （選定計画のみ）／`./p2 night review`／`./p2 night status`／
+    `./p2 night package <articleId>`（既存 draft Article → `/note-draft`
+    パッケージ生成、Claude 非呼び出し）／`./p2 draft-today --dry-run`。
+    **再開条件（将来）**：収益化開始とコスト方針（`CLAUDE.md` §13）の再確認後、
+    `cms/.env` に `NIGHT_RUN_LIVE_ENABLED=1` を追加 → まず手動
+    `./p2 night run --yes --max=1` で 1 記事 → 成功確認 → 1→3→5 と段階拡張 →
+    その後に `NIGHT_RUN_LIVE_ENABLED=1 scripts/launchd/load-night.sh` で登録。
+    **検証（このセッション、API 呼び出しなし）**：`bash -n scripts/project02`
+    OK／`tsc --noEmit`（cms）0 エラー／`py_compile` OK／`bash -n load-night.sh`
+    OK。`./p2 night run --yes` → 「運用ルールにより無効化」表示・**node 未起動**。
+    `node … nightBuild.ts --max=1`（env フラグなし）→ `{"mode":"disabled"}`・
+    payload 未 import。`./p2 night run --dry-run` → 従来どおり選定計画のみ
+    （当日 approved 0 件）。commit はしていない。
+    カスケード：`CLAUDE.md` §12（意思決定ログ 1 行追加）・§13（運用コスト方針に
+    注記）。
+
+  - 2026-08-31（🌙 Night Automation Layer 追加 — 既存機能を壊さず「夜間 →
+    朝に note 下書き確認」の骨格を作る）:
+    マロン指示：就寝中に「source collection → deduplication → scoring/selection
+    → article generation → fact/source validation → /note-draft → Claude in
+    Chrome → note 下書き完成 → morning review」を無人で進め、朝には note 投稿用の
+    下書きが確認できる状態を作る。**公開は絶対に自動化しない**（Human-in-the-loop
+    維持・最終公開は必ずマロン）。Trial は 1 記事のみ → 成功後 3 → 5 と段階拡張。
+    最初から 10 記事の連続実行はしない。Claude in Chrome が未接続ならコード側だけ
+    先に安全に準備する。今日のゴールは「1 記事を夜間処理して note 下書き完成まで
+    持っていける構造」。
+
+    【実装前の調査結果（マロン依頼の7点）】
+    1. 現在の構成：`scripts/project02`（`./p2`、約40サブコマンドの bash）＋
+       `cms/`（Payload、`src/lib/{crawler,curation,ai,tns,interestDiscovery,social,
+       sourceLedger,jobs}`）＋`site/`（Astro）。既存スケジューリング方式は
+       `scripts/launchd/`（plist テンプレート＋load/unload、Trial 収集用のみ・未登録）。
+    2. 昨日までの自動化と最終フローの対応：source collection＝SOURCE LEDGER＋
+       crawler＋Payload Jobs Queue（毎朝6:00）。deduplication＝`normalizeUrl`／
+       `mergeDiscoveredLinks`（crawl 内）＋Story Clustering（`./p2 clusters`）。
+       scoring/selection＝Editorial Score（5軸）＋Daily Editorial Desk＋
+       `runDailyDraftsFromApproved`（score降順→類似統合→上位N、`./p2 draft-today`）。
+       article generation＝multi-angle CORE → `Article(reviewStatus:draft)`。
+       fact/source validation＝draft-today は `multiAngleQualityGate`（薄さ・重複）、
+       draft-interest は `interestArticlePreGate`＋`interestArticlePostGate`＋
+       `unsourcedHistoryGuard`＋`factNoteSeparation`＋`socialCopyGate`。
+       note 投稿パッケージ＝**TNS のみ** `tnsBuildNoteReady36.ts`（`[IMAGE: CODEn]`／
+       `[YOUTUBE URL]` マーカー）。/note-draft 再利用構造・Claude in Chrome 接続・
+       夜間オーケストレーション・morning review queue は**いずれも未実装**
+       （最も近い雛形は `interest_trial_morning()` の step 連鎖）。
+    3. 重複する処理：選定＝`runDailyDraftsFromApproved` を再利用（再実装しない）。
+       生成＝`createMultiAngleDraftsFromDiscoveredContent(…,{angles:['core']})`。
+       dedup＝crawl 内で完結。note パッケージ＝TNS のマーカー規約を汎用化。
+       step 連鎖＝`_trial_step` パターン踏襲。スケジューリング＝launchd テンプレート方式踏襲。
+    4. 追加先：新 CLI 名前空間 `./p2 night <run|review|status|package>`（`night_dispatch()`
+       ＋`case` 分岐1つ＋usage 追記のみ。既存関数・既存分岐は無変更）。新 lib
+       `cms/src/lib/night/`（`runNightBuild.ts`＝司令塔、`buildNoteDraftPackage.ts`＝
+       TNS から汎用化、`types.ts`）。新 CLI スクリプト `cms/src/scripts/nightBuild.ts`。
+       出力領域 `.devlogs/night/`（gitignore 済み・Trial と同型）：`run_YYYY-MM-DD.jsonl`
+       （機械可読 execution log）／`night_collect.log`（人間可読サマリ）／
+       `queue/YYYY-MM-DD/<articleId>/{note-draft.json, note-body.txt, ERROR.txt}`／
+       `queue/YYYY-MM-DD/_index.json`（morning review queue）。
+    5. 変更ファイル：**新規**＝`cms/src/lib/night/{types,buildNoteDraftPackage,runNightBuild}.ts`／
+       `cms/src/scripts/nightBuild.ts`／`scripts/format_night_status.py`／
+       `scripts/launchd/{com.ginzawhiskers.p2-night.plist.template, load-night.sh, unload-night.sh}`。
+       **変更（追記のみ）**＝`scripts/project02`（`night_dispatch()`＋4関数＋`case` 分岐＋
+       usage 4行、既存関数は無変更）／`CLAUDE.md` §12＋本ファイル。
+       **変更しない**＝`Articles.ts`（スキーマ＋人間ゲート）、`createDailyDraftsFromApproved.ts`／
+       `draftToday.ts`／`draft_today()`、`generateMultiAngleArticleDrafts.ts` と各ゲート、
+       `normalizeSocialCopy.ts`、TNS パイプライン（`tnsBuildNoteReady36.ts` はマーカー規約を
+       参考にしただけ）、`social/*` と SocialPosts、Jobs Queue／crawl。
+    6. 既存を壊すリスク：全変更が追記。Night は既存ゲートを読み取り呼び出し、生成は
+       draft-today と同一コードパス（`runDailyDraftsFromApproved`）を再利用。Night は
+       `reviewStatus` を設定しない／SocialPosts を書かない／approve・publish・delete・
+       有料無料変更・アカウント設定変更・`mcp__claude-in-chrome__*` 呼び出しをしない。
+       `Articles.beforeChange` が独立に事故遷移をブロック（`req.user` なし）。`tsc --noEmit`
+       0 エラーで確認。
+    7. Claude in Chrome：skill `claude-in-chrome` は導入済みだが MCP サーバー登録も
+       サイト権限設定も無く**未接続**。今日はコード側の受け渡し構造のみ準備——
+       `note-draft.json` にツール非依存の `chromeHandoff`（target=note.com／guardrails／
+       steps）を持たせる。Night Layer は `mcp__claude-in-chrome__*` を一切呼ばない
+       （`chromeHandoff.executed` は常に false）。接続後に別ステップで note.com を
+       駆動する（navigate → 新規下書き → 本文貼付 → マーカー位置に画像 → ハッシュタグ →
+       リンク → **下書き保存のみ、公開しない**）。
+
+    【マロン確定（AskUserQuestion 4問すべて推奨案）】
+    (a) Night run の対象範囲＝**当日 curationStatus=approved の DiscoveredContent から**
+        （draft-today と同じ前提。夜間に crawl も AI 採点もしない。人間の選定を尊重・最低コスト）。
+    (b) note 下書きパッケージの保存先＝**`.devlogs/night/` のみ**（gitignore 済み・
+        Trial と同型。リポジトリを汚さない）。
+    (c) 今夜の実行方式＝**手動 `./p2 night run --yes --max=1`**。launchd テンプレートは
+        作るが**未登録**。1→3→5 の成功を確認してから登録。
+    (d) `cms/.env` の `ANTHROPIC_API_KEY` が現在も壊れている件（シェル/python 断片混入、
+        CLAUDE.md 2026-08-10 の記録どおり）＝**構造だけ先に作る**。Trial 実行は生成直前
+        まで通り、morning queue に ERROR エントリが残る（異常時経路の実証）。鍵は別途
+        マロンが修正し、後で `./p2 night run --yes --max=1` を再実行。
+
+    【実装内容】
+    - `cms/src/lib/night/types.ts`：`NoteDraftPackage`（schemaVersion 1／body／
+      images〈hero＋section の [IMAGE: …] スロット〉／hashtags〈note/x/instagram〉／
+      links〈sourceUrls／canonical／youtube〉／socialCopy／callToAction／provenance
+      〈confirmed/unconfirmed/conflicting＋facts〉／chromeHandoff／validation〈blockers／
+      warnings〉／status）、`MorningReviewQueueIndex`（items／unprocessed／runs）、
+      `NightBuildRunResult`（plan／articles／failures／haltedReason／queueDir）。
+    - `cms/src/lib/night/buildNoteDraftPackage.ts`：1 件の draft Article（`reviewStatus`
+      が draft 以外なら abort）を読み取り専用で /note-draft パッケージへ変換。本文 Lexical
+      → プレーンテキスト（tnsBuildNoteReady36 の `nodeText` walk 流用）、冒頭に
+      `[IMAGE: アイキャッチ]`、各見出し前に `[IMAGE: 見出し「…」]`（20字で truncate）、
+      内部角度ラベル `【CORE（核記事）】` は読者向けに出さない、末尾に note 用ハッシュタグ行。
+      ハッシュタグは socialCopy テキストから `#…` を抽出（無ければ `#銀座 #GINZAWHISKERS`）。
+      **fact/source 検証（AI 呼び出しなし）**：BLOCKER＝editorialProvenance 空／sourceUrl 欠落
+      Fact あり（Editorial Trust Layer：出典 URL が追えない重要事実）／verificationStatus に
+      conflicting あり。WARNING＝confirmed Fact 0／callToAction 未設定／socialCopy 各媒体空／
+      `aiGeneratedBy` の `|warnings=` 由来（生成時 post-gate）／本文 400 字未満。
+    - `cms/src/lib/night/runNightBuild.ts`：司令塔。`runDailyDraftsFromApproved`
+      （draft-today と同一）で選定＋CORE 生成 →（dry-run はここまで）→ 生成された各 draft を
+      `buildNoteDraftPackage` でパッケージ化。**BLOCKER 検出時点でそれ以降のパッケージ化を
+      停止**し `haltedReason` を立てる。生成失敗（daily.failures）も異常として `haltedReason`。
+    - `cms/src/scripts/nightBuild.ts`：`--review`／`--status` は payload を import せず
+      `.devlogs/night/` を読むだけ（DB 不要）。`--package=<id>` は既存 draft を再パッケージ化。
+      既定（run）は `runNightBuild` → パッケージ書き出し（`note-draft.json`／`note-body.txt`／
+      BLOCKER 時 `ERROR.txt`）→ `_index.json` を upsert（articleId で冪等マージ、`unprocessed`
+      に失敗トピック・異常停止で未処理のトピックを追記）→ `run_*.jsonl`／`night_collect.log`
+      追記。最終行は 1 行 JSON（既存規約 `grep '^{' | tail -1`）。失敗も `{mode:'error'}` で返す。
+    - `scripts/project02`：`night_dispatch()`＋`night_run`／`night_review`／`night_status`／
+      `night_package`／`_night_require_db` を `interest_dispatch()` の直前に追加。`case` に
+      `night)` 分岐、末尾 usage に4行。`night run` は live 時 `--yes` 必須（draft-today と同じ
+      「コスト発生処理は明示フラグ」方針）、`--dry-run`／`--max=N`（既定1）／`--since=`。
+      `night review`／`night status` は `node --import=tsx/esm`（`--env-file` なし）で DB 不要。
+    - `scripts/format_night_status.py`：mode 別（dry-run／live／review／status／package／
+      error）に人間向け整形。review は各 note-draft.json の場所と「公開は必ずマロンが最終確認」
+      を明示。
+    - `scripts/launchd/com.ginzawhiskers.p2-night.plist.template`（毎日 02:10、
+      `./p2 start` → `./p2 night run --yes --max=1`、RunAtLoad=false）＋`load-night.sh`／
+      `unload-night.sh`。**未登録**（`plutil -lint` OK）。
+
+    【検証（このセッション）】
+    - `npx tsc --noEmit`（cms）0 エラー。`bash -n scripts/project02` OK。
+      `python3 -m py_compile scripts/format_night_status.py` OK。`plutil -lint` OK。
+    - `./p2 night status`（DB 不要）→「本日の実行記録はありません」。
+    - `./p2 night run --dry-run`（DB 起動済み）→ 当日 approved 候補 0 件（日中に承認された
+      DiscoveredContent が無いため。設計どおり）。選定計画のみ表示・DB 書き込みなし。
+    - `./p2 night package 53`（既存の draft Article #53〈収益化② interest 稿〉）→ 下流半分
+      （buildNoteDraftPackage ＋ 検証 ＋ note-body.txt ＋ `_index.json` upsert）を実データで
+      E2E 確認。status=ok・BLOCKER 0・WARNING 0・confirmed fact 2（venue＋会期）・
+      `note-body.txt` は `[IMAGE: …]` マーカー＋ハッシュタグ行付きの貼り付け可能テキスト・
+      `chromeHandoff` guardrails 5件。検証後、テスト用 `.devlogs/night/queue/2026-08-31/` は
+      削除（明日の実 run がクリーンな状態で始まるように。`.devlogs/night/` 自体は
+      nightBuild.ts が再生成）。
+    - **未実施**：承認済み DiscoveredContent を入力にした `./p2 night run --yes` の実 AI
+      E2E（当日 approved 候補が 0 件＋`ANTHROPIC_API_KEY` が壊れているため）。鍵修正後に
+      マロンが日中 1 件を approve → 夜 `./p2 night run --yes --max=1` → 朝 `./p2 night review`
+      で完走を確認する。launchd 登録は 1→3→5 の成功後。commit・approve・本番反映・
+      Claude in Chrome 接続はしていない。
+
+
     直前の Tier 1（下記エントリ）で生成した Article #53 の Social Copy を評価
     したところ、note と X がほぼ同文で、X が「ある画家」と固有名詞をぼかして
     いた。マロン指示（媒体別の役割差を強める。note＝記事要約＋読む理由、
@@ -888,6 +1967,269 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
     **未実施**：launchd の登録・有効化、記事生成、承認、`paidRatio` 取得、
     W_PAID/C_MATCH の調整、commit。本番 Railway・push・課金・DNS・Editor's
     Choice の承認/変更はいずれも行っていない。
+
+  - 2026-08-30（🌈TNS #36 note転記前の軽微な整合性修正1点）:
+    マロン指示により、CODE7 の image-asset（id=10）の `altText.ja` を、前回の
+    最終編集で GINZA CODE 7 のラベルを「Soft-Cloud Ginza」→「新しい季節へ」に
+    変更したことに整合させた。`Tokyo Nostalgic Soundtrack #36 世界観挿絵 —
+    日曜日（2026-09-06）／Soft-Cloud Ginza` →
+    `…／新しい季節へ`。`altText.en` は空のまま。変更は image-assets id=10 の
+    `altText.ja` のみ——本文・選曲（7曲）・`dailyScenes[].image` 紐付け・
+    週間天気・GINZA CODE・Article 50 `reviewStatus=draft` には触れていない。
+    実装＝一回限りスクリプト `cms/src/scripts/tnsFixCode7AltText.ts`
+    （`--dry-run` 対応、edition 11 の日曜シーンの image=10・
+    `tnsEditorialCode.fixedMoodLabel="新しい季節へ"`・altText.ja が想定旧値で
+    あることを確認するガード付き、既に新値なら skip、適用前に
+    `_backups/tns_code7_alttext_before_ed11_art50_20260830_023242.json` へ
+    `locale:'all'` バックアップ）。`npx tsc --noEmit`（cms）0エラー。適用後
+    `npm run tns:verify` → `ok=15 warn=0 blocker=0`、READINESS CHECKS 9項目
+    すべて ✓、**`✅ READY FOR NOTE`**。本文64ブロック・邦4:洋3・挿絵7点
+    （image id 4〜10、`visualStatus=attached`）・`translationStatus{ja:complete,
+    en:not_started}` 維持。commit はしていない。
+
+  - 2026-08-30（🌈TNS 週間天気の運用方針を正式仕様化）:
+    マロン指示により、TNS の週間天気の扱いを正式仕様として `TNS_SPEC.md` §5
+    へ反映した（§5 を §5.0〜§5.4 に再構成、§7・§8・ヘッダー改訂履歴へ
+    カスケード）。**基本方針**：TNS記事の週間天気は「日曜日時点の週間天気
+    予報」を基準（ベースライン）に一旦完成させ、以後は毎朝、最新天気との
+    差分を確認して**必要な場合のみ該当曜日だけを部分修正**する。天気の
+    再取得による記事の全面更新・再生成は行わない（日曜に確定した
+    気分→GINZA CODE→選曲→本文の一貫性を毎日の予報変動で崩さないため）。
+    **記録した自動化要件（§5.2）**：
+    1. 日曜：翌週7日分の週間天気を取得 → TNS記事（`SoundtrackEditions` ＋
+       生成 `Article`）を生成 → `reviewStatus=draft` で保持 → マロン確認後に
+       note 投稿。日曜時点の予報を「ベースライン予報」として履歴保存。
+    2. 毎朝：当日と翌日（最低2日、実装で範囲調整可）の最新天気を取得し、
+       日曜ベースラインと日別比較。取得した更新値も履歴保存。
+    3. 差分判定の比較軸：天候区分（`conditionLabel` カテゴリ）／降水（有無・
+       降水確率）／最高気温／最低気温。
+    4. 変更が軽微（§5.3 `minor`）なら記事修正なし（差分結果のみ記録）。
+    5. 変更が大きい（§5.3 `major`）場合のみ、該当曜日だけ「天気・気分・
+       過ごし方・情景文」の更新候補を作成（`dailyScenes[].emotion` /
+       `ginzaExperience` / `sceneDescription` と本文の対応段落）。週レベルの
+       `editorialTheme`（`coreTheme`/`hook`/`afterglow`/`weekSummary`）は
+       原則据え置き。
+    6. 選曲（`musicSelected.trackRef` 7曲）・GINZA CODE（`tnsEditorialCode`・
+       `fixedMoodLabel`）・挿絵（`dailyScenes[].image`）は原則固定。天候変化で
+       明らかに整合性が崩れる場合（雨前提の日が終日快晴等）のみ、その曜日を
+       「再評価候補」として提示（`integrityBreak`、自動差し替えはしない）。
+    7. 差分から生成した更新候補は「変更前／変更後」を一覧表示し、マロン承認を
+       得てから適用。承認前に note本文・`SoundtrackEditions` を書き換えない
+       （exact-match・更新前JSONバックアップ・`reviewStatus=draft` 維持、
+       §9 の `tns:doctor/repair/verify/prepare` と同じ「現在DBを正とした
+       差分更新」パターンを踏襲）。
+    8. 日曜ベースライン予報値と毎朝の更新値を時系列で履歴保存。
+    **§5.3 差分判定の閾値**（§5.1 `weatherDivergence.ts` と一致させる）：
+    天候カテゴリ反転／降水確率差 ≥ 40pt または降水有無反転／最高気温差 ≥ 4℃
+    ／最低気温差 ≥ 4℃ のいずれか1軸で `major` →「該当曜日の更新候補を作成」。
+    未満は `minor` →「記事修正なし」。`major` のうち GINZA CODE の意味や
+    選曲前提と明確に矛盾する変化は `integrityBreak` →「再評価候補の提示のみ」。
+    **§5.1 として 2026-08-28 実装済みの取得手段を明文化**：主＝気象庁
+    「週間天気予報」（東京都府県予報区 130000、天気/降水確率/信頼度＝東京地方
+    130010、気温＝東京 44132）、補助＝Open-Meteo（`jma_seamless`、銀座一丁目駅
+    35.6742,139.7668）。`reconcileWeeklyWeather()` が日別に主優先で確定、
+    範囲外の日は補助で確定、`major`乖離・範囲外フォールバックで
+    `humanReviewRequired=true`。
+    **§5.4：予報履歴の保存は今回は仕様記録のみ**（データモデル・実装は未着手、
+    §8 次工程。`SourceSnapshots` の「台帳＋履歴」パターンを踏襲し、
+    `SoundtrackEditions` へのサブフィールド追加 or 新規 `TnsWeatherLedger` の
+    いずれかは実装着手時に確定）。同様に §5.2 の毎朝差分チェックジョブ・
+    更新候補生成・承認フローの実コードも未着手（§8 に追記）。
+    **#36 への適用**：本方針に従い、#36（SoundtrackEdition id=11 / Article
+    id=50）は**現在DBの週間天気をそのまま採用**（2026-08-30 に再取得した
+    気象庁 2026-08-30 11:00 JST 発表値は不採用）。直前エントリで「要確認」と
+    していた 8/31・9/5・9/6 の乖離は、本運用方針の確定により「日曜ベース
+    ライン予報を採用する」という形で解決（毎朝の差分運用が実装されれば、
+    以後は自動で差分提示される）。天気の再取得・全面更新・再生成は行って
+    いない。DB・`reviewStatus`・approve・本番反映への変更なし。
+
+  - 2026-08-30（🌈TNS #36 note投稿前 最終編集）:
+    対象＝SoundtrackEdition id=11 / editionNumber 36 / Article id=50。
+    `reviewStatus=draft` は最初から最後まで維持。マロン指示の4要件を処理した。
+    **要件1：天気の妥当性確認 → 結論「要確認」（本文は現状維持）**。
+    今日（2026-08-30）時点で `lib/tns/fetchWeeklyWeather.ts` の
+    `reconcileWeeklyWeather()` を対象週（2026-08-31〜09-06）で再実行し、
+    現在DBに保存済みの値（気象庁 2026-08-28 08:00Z 発表版）と突き合わせた。
+    新しい気象庁週間予報（発表 2026-08-30 11:00 JST）との差分：
+    ・weekSummary「くもり時々晴れが中心、21.6〜35℃」→「くもりが中心、20〜35℃」
+    ・8/31：くもり時々晴れ 24–35℃ → 晴れのちくもり 23.1–29.7℃（最高 −5.3℃、晴れ寄り）
+    ・9/1：くもり時々晴れ 25–34℃ → くもり時々晴れ 24–33℃（ほぼ一致）
+    ・9/2：くもり 25–33℃ → くもり 25–35℃（最高 +2℃）
+    ・9/3：くもり一時雨 24–30℃ → くもり一時雨 23–31℃（ほぼ一致）
+    ・9/4：くもり一時雨 22–28℃ → くもり一時雨 22–27℃（ほぼ一致）
+    ・9/5：弱い霧雨 22–25.4℃ → くもり 20–27℃（天候・気温とも差）
+    ・9/6：晴れ 21.6–26.4℃ → くもり 20–27℃（天候反転）
+    新しい予報自体も `humanReviewRequired=true`（9/2・9/3 で Open-Meteo と
+    最高気温差 4.9℃）で、9/5・9/6 は気象庁週間予報の範囲外フォールバック域。
+    マロン指示「確認できない場合は推測で直さず、現状維持し要確認と明示」に従い、
+    **本文の天気・最高最低気温・気分・情景文はDBのまま一切変更していない**。
+    weather の書き換えは mood→GINZA CODE→選曲→本文へ波及し要件4（7曲・曜日
+    構成の維持）と衝突するため、note 転記前にマロンが「#36 を新予報で再生成／
+    本文だけ手直し／現状で容認」のいずれかを判断する事項として残す。
+    **要件2：GINZA CODE 7 のラベル統一**。他曜日（「リスタート／静かな決意」
+    「遠い記憶へ」等の日本語）とトーンが揃っていなかった英語混じりラベル
+    「Soft-Cloud Ginza」を「新しい季節へ」へ変更。本文 h3 見出し
+    「2026-09-06（日曜日）｜GINZA CODE 7：Soft-Cloud Ginza」→
+    「…｜GINZA CODE 7：新しい季節へ」。対応英語サブタイトルは他曜日の
+    「Where the Evening Begins to Cool」型に合わせ
+    「Soft-Cloud Ginza Under a Clear Sky」→「Where a New Season Begins Under a
+    Clear Sky」。DB側も `dailyScenes[日].tnsEditorialCode.fixedMoodLabel`／
+    `weeklyEnglishSubtitle`／内部メモ `editorialPointOfView` を新ラベルへ更新
+    （`editorialPointOfView` は「晴天と季節の境目という週の締めくくりに、
+    『新しい季節へ』という視点を重ねた。」）。
+    **要件3：EDITORIAL POINT OF VIEW 見出しの撤去＋内容の統合**。読者向け本文で
+    7日すべてに繰り返されていた「EDITORIAL POINT OF VIEW　…」という編集会議的な
+    見出し段落を7件すべて削除。各EPOVの内容は破棄せず、その日の**選曲コメント
+    段落へ自然文として統合**した（例：日曜「晴れ渡った空と季節の境目で、一週間を
+    閉じる。新しい季節へと視線を移すこの日の清々しさに、広がる青空によく似合う、
+    この曲の伸びやかさを週の結びとして置いた。」）。本文は 71→64 ブロック。
+    `dailyScenes[*].musicSelected.readerFacingComment` 7件も同一文へ同期し、
+    本文とDBの選曲コメントを一致させた。
+    **要件4：不変項目の維持**。7曲（月 All Right/Christopher Cross・火 恋人よ/
+    五輪真弓・水 September/竹内まりや・木 みずいろの雨/八神純子・金 Cool Night/
+    Paul Davis・土 I LOVE YOU/オフコース・日 Sailing/Christopher Cross、
+    track id 64/43/36/38/61/48/52、邦4:洋3）・曜日構成（月→日）・挿絵紐付け
+    （image id 4〜10、`visual.visualStatus=attached`）・週内重複0・
+    `MusicUsageLedger`（reuseAllowed=false、28曲）との重複0 は**一切変更して
+    いない**（`musicSelected.trackRef`・`dailyScenes` の並び・`image`・台帳に
+    touch していない）。
+    **実装**：一回限りスクリプト `cms/src/scripts/tnsFinalEditEdition36.ts`。
+    現在DBを正として読み、本文は exact-match（各文字列がちょうど1回一致する
+    ことを検証、不一致で abort）でのみ置換、「EDITORIAL POINT OF VIEW」で
+    始まる段落を filter で除去（除去数が7でなければ abort）。ガード＝
+    `reviewStatus!=draft` / `editionNumber!=36` で abort。`--dry-run` 対応。
+    実適用前に共通ヘルパー `lib/tns/maintenance.ts` の `writeBackup()` で
+    `_backups/tns_final_edit_before_ed11_art50_20260830_021606.json`（edition +
+    article の `locale:'all'` 全文）を作成。
+    **検証**：`npx tsc --noEmit`（cms）0エラー。適用後 `npm run tns:verify` →
+    `ok=15 warn=0 blocker=0`、READINESS CHECKS 9項目すべて ✓、
+    **`✅ READY FOR NOTE`**。invariant 再確認スクリプトで 7曲・曜日・挿絵・
+    週内重複0・台帳重複0・邦4洋3・`visualStatus=attached`・`reviewStatus=draft`・
+    `translationStatus{ja:complete,en:not_started}`・本文64ブロックを確認。
+    **未実施**：天気の書き換え（要確認のまま）、approve・`reviewStatus` 変更・
+    自動投稿、本番（Railway）反映。
+
+  - 2026-08-30（🌈TNS 自動診断・修復・検証フローの新規実装 ＋ #36 での dry-run 実行）:
+    **背景**：#36 の note 転記用完成稿（SoundtrackEdition id=11 / Article id=50、
+    2026-08-28 確定）に対して既存の一回限りスクリプト
+    `cms/src/scripts/tnsEditArticle50.ts` の `--dry-run` を再実行すると
+    「土曜の現在の trackRef=48（期待 50）」で abort していた。原因は同スクリプトが
+    `OLD_SAT_TRACK = 50`（夏の日/オフコース）→`NEW_SAT_TRACK = 48`（I LOVE YOU/
+    オフコース）という**過去→未来の固定値**を前提にしたガードを持ち、既に
+    2026-08-28 に土曜差し替えが適用済み（DB は 48）で「期待する過去状態」に
+    もう一致しないため。つまり編集自体は完了しており、スクリプトのガードだけが
+    時代遅れになっていた。
+    **決定・実装**：今後「過去状態を固定値で前提にせず、**常に現在DBを正**として
+    安全に差分更新する」ための恒久フレームワークを新規実装した。既存
+    `tnsEditArticle50.ts`・`tnsSwapSaturdayEdition36.ts` 等は**変更しない**
+    （完了済みの一回限り作業として保持）。共通ロジックは新モジュール
+    `cms/src/lib/tns/maintenance.ts` に切り出し、4つの薄いエントリスクリプトから
+    使う。
+    - **`tnsDoctor.ts`（`npm run tns:doctor`、read-only、終了コード 0=クリーン
+      /1=WARN/2=BLOCKER）**：edition/article の存在・`editionNumber`（既定 36、
+      `--skip-number-check` 可）・相互リンク（`edition.generatedArticle` ↔
+      article id）・`article.reviewStatus`（draft 以外は BLOCKER）・`dailyScenes`
+      7曜日（月→日整列・連続7日・`weekStart`/`weekEnd` 整合）・選曲 `trackRef`
+      7件（未設定＝BLOCKER、ただし `pendingHumanSelection=true` は WARN／週内重複
+      ／`music-usage-ledger` の `reuseAllowed=false` かつ当該エディション以外との
+      重複／邦洋バランスを info 表示）・世界観挿絵 `dailyScenes[].image` 7件・
+      `visual.visualStatus` の実態整合（挿絵7点なら attached）・
+      `translationStatus`（`ja=complete` / `en` は info）・本文の内部コード露出
+      （`TNS Editorial Code` / `fixedMoodLabel` / 裸の `codeN`）・h3 の
+      `｜GINZA CODE N：` 見出し形式・note 向けハッシュタグ行の有無を一覧出力。
+      `--json` で機械可読出力。
+    - **`tnsRepair.ts`（`npm run tns:repair`、既定 dry-run、`--yes` で実適用）**：
+      `OLD_*` 定数を一切持たず、doctor の所見と現在DBだけを見て**機械的整形の
+      差分のみ**を計画・適用する。適用対象＝(a) 本文の内部コード露出除去
+      （`YYYY-MM-DD（W曜日） — TNS Editorial Code: codeN・<mood>` → `…｜GINZA
+      CODE N：<mood>`。mood は見出し中の接尾辞、無ければ現在DBの
+      `dailyScenes[].tnsEditorialCode.fixedMoodLabel` から解決。`fixedMoodLabel
+      「X」` → `「X」`。文中断片は除去）、(b) ハッシュタグ行が無ければ末尾に追加、
+      (c) `translationStatus.ja` が未 complete かつ本文が十分（≥20 ブロック）なら
+      `complete` へ（`en` は据え置き）、(d) `visualStatus` を挿絵実数に合わせて
+      `attached`/`pending_selection` へ。**行わないこと**：選曲 `trackRef` の
+      差し替え、見出しムードの創作、本文プローズの書き換え、`editionNumber`・
+      `reviewStatus`・画像リレーションの変更。自動整形できない項目（例：見出しの
+      mood が現在DBから解決できない、単一テキストノードでないブロック）は
+      `skipped` として報告し、**`--yes` でも適用しない（＝「危険な変更」）**。
+      `reviewStatus != draft` なら停止。実適用時は `_backups/` に
+      `tns_prepare_before_ed11_art50_<timestamp>.json`（edition + article の
+      `locale:'all'` 全文）を作成してから `payload.update`（articles は
+      `body`＋`translationStatus` を1回、soundtrack-editions は `visual` を1回）。
+    - **`tnsVerify.ts`（`npm run tns:verify`、read-only、0=READY/1=NOT READY/
+      2=BLOCKER）**：doctor を再実行したうえで「7曜日 dailyScenes / 7画像 /
+      本文 内部コード露出なし / GINZA CODE 見出し7件 / ハッシュタグ行 /
+      `translationStatus.ja=complete` / `reviewStatus=draft` 維持 /
+      `visualStatus=attached` / 選曲 週内重複なし・台帳重複なし・全曜日
+      trackRef」の READINESS CHECKS を判定。全項目 pass かつ BLOCKER なしなら
+      **`✅ READY FOR NOTE`**（残り工程＝note 上での挿絵配置・YouTube URL 挿入・
+      レイアウト確認・その後 approve、を併記）。
+    - **`tnsPrepare.ts`（`npm run tns:prepare`、`--yes` で apply、`--dry-run` で
+      apply 抑止）**：doctor → repair(dry-run) → repair(apply) → verify を統合。
+      **安全ガード**：STEP1 で BLOCKER があれば exit 2（repair も apply もしない）、
+      STEP2 で `skipped`（危険な変更）が1件でもあれば exit 3（apply しない）、
+      差分なしなら apply をスキップ、`--yes` 未指定なら STEP3 で停止（exit 0）。
+      apply 前に repair と同じバックアップを作成。
+    - **共通引数**（4スクリプト共通）：`--edition=<id>`（既定 11）・
+      `--article=<id>`（既定 50）・`--edition-number=<n>`（既定 36）・
+      `--skip-number-check`。既定値は「現在の #36 の同一性」であり、過去→未来の
+      状態遷移の固定値ではない（identity であって transition ではない）。
+    - `cms/package.json` に `tns:doctor` / `tns:repair` / `tns:verify` /
+      `tns:prepare` を追加（いずれも
+      `node --env-file=.env --import=tsx/esm src/scripts/<name>.ts`、既存の
+      `./p2` 系スクリプトと同じ実行方式）。
+    **#36 での実行結果（今回、ローカル `cms-postgres-1` のみ、DB 書き込みなし）**：
+    `npm run tns:doctor` → `ok=15 info=4 warn=0 blocker=0 -> OK`（全チェック緑。
+    info は「邦楽4/洋楽3」「en=not_started は JA 転記運用のため許容」「本文71
+    ブロック」「`fixedMoodLabel` 未設定 code2/3/4/6＝本文見出しにラベルがあり
+    許容、DECISION_LOG 2026-08-28」）。`npm run tns:repair`（dry-run）→
+    「REPAIR PLAN：適用予定の変更なし／修復すべき差分はありません。現在のDBは
+    健全です」。`npm run tns:verify` → READINESS CHECKS 9項目すべて ✓ →
+    **`✅ READY FOR NOTE`**。`npm run tns:prepare`（`--yes` なし）→
+    STEP1 OK → STEP2 差分なし → STEP3 apply スキップ → STEP4 `✅ READY FOR
+    NOTE`。
+    **追加検証**：`planRepair` / `diagnose` を fabricated な「内部コード露出＋
+    ハッシュタグ欠落＋`ja=not_started`＋`visualStatus` 不整合」スナップショット
+    （DB 非依存の純関数呼び出し）に対して実行し、(a) 接尾辞ムード付き見出しは
+    `｜GINZA CODE 1：リスタート／静かな決意` へ自動整形、(b) `fixedMoodLabel「夜
+    が始まる」` は `「夜が始まる」` へ、(c) ハッシュタグ行追加・`ja→complete`
+    （本文23ブロック）・`visualStatus→attached` を計画、(d) 接尾辞ムードが無く
+    現在DBの `fixedMoodLabel` も空の `code2` 見出しは**自動整形せず `skipped`
+    へ**回す（「推測でムードを創作しない」）ことを確認。
+    **静的検証**：`npx tsc --noEmit`（cms）0エラー。
+    **未実施**：`tns:repair --yes` / `tns:prepare --yes` の実適用（#36 は差分ゼロ
+    のため実行しても no-op）、`reviewStatus` 変更・approve・自動投稿、本番
+    （Railway）への反映。既存の Sources/DiscoveredContent/TNS 生成フロー・
+    他コレクション・Article 50 本文/選曲/天気/翻訳への変更は一切なし。
+
+  - 2026-08-29（🌈TNS 曜日別世界観挿絵の紐付け機構〈方式A〉＋ #36 への適用準備）:
+    #36（SoundtrackEditions id=11 / Article 50）へ CODE1〜7 の世界観挿絵7点を
+    紐付けるため、**方式Aを確定・実装**した。マロン確定方針：①紐付けは
+    `dailyScenes[].image`（relationship → image-assets）を追加して曜日／TNS
+    Editorial Code と1対1に対応させる（案B `visual.codeIllustrations[]`、案C
+    `articles.images[]` は不採用——後者は記事レコードに触れるため）。②挿絵の
+    コンセプト・裏設定は altText には入れず、非公開の `dailyScenes[].
+    imageProductionNote`（textarea）を新設して保存する。③`image-assets.rights`
+    は `owner="GINZA WHISKERS"` / `licenseType="自社生成・独自制作"` で登録。
+    ④Article 50 の本文・選曲・コメント・天気・翻訳は一切変更しない。
+    ⑤`visual.heroImageAsset` は使わず null のまま。7曜日すべてに image が
+    付いたら `visual.visualStatus` を `pending_selection` → `attached` にする。
+    **挿絵の内容方針（imageProductionNote に保存する共通メモ）**：挿絵の猫は
+    三毛猫（白猫コロンとは別存在）、裏コンセプトとして挿絵の女性は白猫コロンの
+    化身、マロン（犬）は主役にしない。**今回実施（ローカルのみ）**：
+    `cms/src/collections/SoundtrackEditions.ts` の `dailyScenes` に `image` /
+    `imageProductionNote` を追加 → `npm run generate:types` →
+    `./p2 stop && ./p2 start` で dev push（`soundtrack_editions_daily_scenes`
+    に `image_id` FK・`image_production_note` text を追加、既存7行は NULL、
+    他コレクション・articles へ影響なし）→ `tsc --noEmit` 0エラーを確認。
+    紐付け実行スクリプト `cms/src/scripts/tnsAttachEdition36Illustrations.ts`
+    （1回限り、`--dry-run` / `--map code<n>=<path>` 対応）を作成し dry-run で
+    dailyScenes[0..6] ↔ code1..7 ↔ 月..日 の対応と「画像未検出時は DB 無変更で
+    中断」を確認。**未実施**：本番（Railway）への反映（`payload migrate:create`
+    が別途必要）、実際の attach（原本7点が
+    `02-discover-ginza-media-system/media/tns-inbox/` に未配置のため保留。
+    命名規約 `tns36_code<1-7>_*.png|jpg`）、`visualStatus` の遷移、
+    approve・自動投稿。
 
   - 2026-08-28（🌈TNS #36 note 転記用完成稿の確定〈気象庁主軸再生成版〉）:
     気象庁主軸で再生成し Human Editorial パスを適用した #36 を、**note 転記
