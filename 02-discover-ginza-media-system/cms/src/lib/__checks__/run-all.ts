@@ -19,6 +19,9 @@ import { suite as ginzaRelevance } from './ginzaRelevance.check'
 import { suite as crossCultureFilter } from './crossCultureFilter.check'
 import { suite as crossCultureDerivative } from './crossCultureDerivative.check'
 import { suite as targetFitScore } from './targetFitScore.check'
+import { suite as extractPriceHint } from './extractPriceHint.check'
+import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
+import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 
 const results: SuiteResult[] = [
@@ -36,6 +39,9 @@ const results: SuiteResult[] = [
   crossCultureFilter(),
   crossCultureDerivative(),
   targetFitScore(),
+  extractPriceHint(),
+  buildEditorialBrief(),
+  buildFinalCandidateDigest(),
   p0Morning(),
 ]
 
