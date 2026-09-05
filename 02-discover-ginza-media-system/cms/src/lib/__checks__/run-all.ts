@@ -11,6 +11,15 @@ import { suite as normalizeVenueText } from './normalizeVenueText.check'
 import { suite as htmlEntities } from './htmlEntities.check'
 import { suite as slugify } from './slugify.check'
 import { suite as unsourcedClaimGate } from './unsourcedClaimGate.check'
+import { suite as classifySourcePageType } from './classifySourcePageType.check'
+import { suite as urlGranularity } from './urlGranularity.check'
+import { suite as extractExplicitPeriod } from './extractExplicitPeriod.check'
+import { suite as adminCandidateUrl } from './adminCandidateUrl.check'
+import { suite as ginzaRelevance } from './ginzaRelevance.check'
+import { suite as crossCultureFilter } from './crossCultureFilter.check'
+import { suite as crossCultureDerivative } from './crossCultureDerivative.check'
+import { suite as targetFitScore } from './targetFitScore.check'
+import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -19,6 +28,15 @@ const results: SuiteResult[] = [
   htmlEntities(),
   slugify(),
   unsourcedClaimGate(),
+  classifySourcePageType(),
+  urlGranularity(),
+  extractExplicitPeriod(),
+  adminCandidateUrl(),
+  ginzaRelevance(),
+  crossCultureFilter(),
+  crossCultureDerivative(),
+  targetFitScore(),
+  p0Morning(),
 ]
 
 reportAndExit(results)

@@ -9,6 +9,7 @@ import type { DateFieldResult } from './extractStructuredDates'
 import type { DiscoveredLink } from './extractLinks'
 import { fetchArticleMetadata } from './fetchArticlePage'
 import { normalizeFloorTokens } from './normalizeVenueText'
+import { classifyUrlGranularity } from './urlGranularity'
 import { classifyUxType } from '../curation/uxType'
 
 interface DateExtractionMeta {
@@ -75,6 +76,13 @@ export interface ProcessLinksStats {
    * 処理を中断させない（詳細は本ファイル冒頭コメント参照）。
    */
   errors: number
+  /**
+   * 年度別アーカイブ・一覧ナビ・ページ送り・店舗案内等（個別記事ではない）と
+   * 判定して新規候補化を見送った件数（2026-09-04、アーカイブ誤取得の修正）。
+   */
+  skippedNonArticle: number
+  /** 見送った URL と理由（監査用） */
+  skippedNonArticleDetail: { url: string; reason: string }[]
 }
 
 interface ProcessDiscoveredLinksParams {
@@ -117,6 +125,17 @@ async function processOneLink(
   const isNew = !existing
   const isChanged = !isNew && existing.linkFingerprint !== newFingerprint
   const discoveryStatus: DiscoveryStatus = isNew ? 'first_seen' : isChanged ? 'changed' : 'unchanged'
+
+  // 年度別アーカイブ・一覧ナビ・ページ送り・店舗案内は「個別記事ではない」ので、
+  // 新規候補（first_seen で未作成）は作らない（2026-09-04、アーカイブ誤取得の修正）。
+  // 既存レコードは削除しない——理由を記録するだけで metadata 更新は従来どおり継続。
+  const gran = classifyUrlGranularity(link.url, link.anchorText, existing?.title ?? null)
+  if (!gran.isIndividual && !existing) {
+    stats.skippedNonArticle += 1
+    if (stats.skippedNonArticleDetail.length < 200)
+      stats.skippedNonArticleDetail.push({ url: link.url, reason: `${gran.granularity}: ${gran.reason}` })
+    return
+  }
 
   if (discoveryStatus === 'first_seen') stats.firstSeen += 1
   else if (discoveryStatus === 'changed') stats.changed += 1
@@ -249,6 +268,8 @@ export async function processDiscoveredLinks(params: ProcessDiscoveredLinksParam
     eventDatesFound: 0,
     duplicatesRemoved: 0,
     errors: 0,
+    skippedNonArticle: 0,
+    skippedNonArticleDetail: [],
   }
 
   const budget: Budget = { remaining: stage2Budget }

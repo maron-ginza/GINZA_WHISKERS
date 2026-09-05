@@ -226,6 +226,31 @@ export const SoundtrackEditions: CollectionConfig = {
             { name: 'readerFacingComment', type: 'textarea', admin: { description: 'note本文用の短い編集コメント' } },
           ],
         },
+        // 2026-08-29追加（案A）：曜日／TNS Editorial Code ごとの世界観挿絵。
+        // VISUAL_ASSET_LIBRARY.md §2 の世界観挿絵を人間が用意し、ここで1対1に
+        // 紐付ける。自動画像生成・自動選択は行わない（既存方針どおり）。7曜日
+        // すべてに image が設定されたら visual.visualStatus を attached にする。
+        {
+          name: 'image',
+          label: '世界観挿絵（この曜日／TNS Editorial Code）',
+          type: 'relationship',
+          relationTo: 'image-assets',
+          admin: {
+            description:
+              'この曜日・TNS Editorial Code の世界観挿絵（人間が用意した1点、VISUAL_ASSET_LIBRARY.md §2）。' +
+              '7曜日すべてに設定されたら visual.visualStatus を attached にする。',
+          },
+        },
+        {
+          name: 'imageProductionNote',
+          label: '挿絵の非公開制作メモ',
+          type: 'textarea',
+          admin: {
+            description:
+              '挿絵のコンセプト・裏設定などの非公開メモ。公開表示・alt textには使わない' +
+              '（altは image-assets 側 altText を使う）。note転記時の参考／将来の再制作用。',
+          },
+        },
       ],
     },
     {

@@ -9,13 +9,29 @@
 
   現時点では **未登録・未有効化**（設計・ファイル整備のみ）。
 
+  収集時刻（2026-09-02 P0 改善で 07:00 → 06:00 へ変更）:
+    9月Trial の固定運用（5:50 Mac 復帰 → 6:00 情報自動収集 → 6:10〜7:00 裏取り
+    → 7:10 A判定候補提示 → 8:00 第1投稿）に合わせ、収集を 06:00 開始へ前倒しした。
+    この .plist.template を更新しただけでは有効にならない。実際に反映するには
+    マロンが `scripts/launchd/load.sh` を実行する（launchctl bootout → bootstrap、
+    冪等。OS 設定変更のため Claude は実行しない）。
+
   挙動:
-    - 毎朝 07:00 に `./p2 interest trial-morning` を1回実行
+    - 毎朝 06:00 に `./p2 interest trial-morning` を1回実行
       （fetch-note-rising → fetch-note-official → config/trial_hashtags.txt の
         各タグで fetch-note-hashtag → interest score）
     - stdout/stderr は .devlogs/trial/launchd.out / launchd.err へ追記
     - RunAtLoad=false（ログイン毎の即時実行はしない）
-    - Mac がスリープ/オフで 07:00 を逃した場合、launchd が復帰後に1回だけ実行する
+    - Mac がスリープ/オフで 06:00 を逃した場合、launchd が復帰後に1回だけ実行する
+    - 収集経路はこの1ジョブに統一（`./p2 interest trial-morning` を起動する
+      launchd/cron は他に無い。load.sh が bootout→bootstrap で入れ直すため
+      同一 Label の二重登録は起きない）
+
+  node 解決（2026-08-31 修正）:
+    launchd の非対話セッションでは ~/.zshrc（nvm 初期化）が読まれず
+    `node: command not found` になっていた。ProgramArguments の zsh コマンド
+    先頭で NVM_DIR を設定し nvm.sh を明示 source して node を解決する。
+    node のバージョンは固定せず nvm の default alias に従う（収集ロジックは無変更）。
 -->
 <plist version="1.0">
 <dict>
@@ -26,13 +42,13 @@
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>__REPO__/p2 interest trial-morning &gt;&gt; __REPO__/.devlogs/trial/launchd.out 2&gt;&gt; __REPO__/.devlogs/trial/launchd.err</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; . "$NVM_DIR/nvm.sh"; __REPO__/p2 interest trial-morning &gt;&gt; __REPO__/.devlogs/trial/launchd.out 2&gt;&gt; __REPO__/.devlogs/trial/launchd.err</string>
   </array>
 
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>7</integer>
+    <integer>6</integer>
     <key>Minute</key>
     <integer>0</integer>
   </dict>

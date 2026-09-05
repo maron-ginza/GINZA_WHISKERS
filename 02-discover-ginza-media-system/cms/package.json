@@ -12,7 +12,11 @@
     "migrate": "payload migrate",
     "migrate:create": "payload migrate:create",
     "payload": "payload",
-    "start": "next start"
+    "start": "next start",
+    "tns:doctor": "node --env-file=.env --import=tsx/esm src/scripts/tnsDoctor.ts",
+    "tns:repair": "node --env-file=.env --import=tsx/esm src/scripts/tnsRepair.ts",
+    "tns:verify": "node --env-file=.env --import=tsx/esm src/scripts/tnsVerify.ts",
+    "tns:prepare": "node --env-file=.env --import=tsx/esm src/scripts/tnsPrepare.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

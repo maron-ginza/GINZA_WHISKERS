@@ -7,12 +7,14 @@ import { s3Storage } from '@payloadcms/storage-s3'
 import { buildConfig } from 'payload'
 import sharp from 'sharp'
 
+import { ArticleFacts } from './collections/ArticleFacts'
 import { Articles } from './collections/Articles'
 import { DiscoveredContent } from './collections/DiscoveredContent'
 import { ImageAssets } from './collections/ImageAssets'
 import { InterestThemes } from './collections/InterestThemes'
 import { MusicTracks } from './collections/MusicTracks'
 import { MusicUsageLedger } from './collections/MusicUsageLedger'
+import { OfficialSnapshots } from './collections/OfficialSnapshots'
 import { SocialPosts } from './collections/SocialPosts'
 import { SoundtrackEditions } from './collections/SoundtrackEditions'
 import { SourceLedger } from './collections/SourceLedger'
@@ -58,6 +60,8 @@ export default buildConfig({
     SourceLedger,
     SourceSnapshots,
     DiscoveredContent,
+    ArticleFacts,
+    OfficialSnapshots,
     InterestThemes,
     StoryClusters,
     MusicTracks,

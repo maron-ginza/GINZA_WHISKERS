@@ -12,13 +12,11 @@ import type { EventTiming } from '../curation/eventTiming'
 import { checkUnsourcedClaims } from '../curation/unsourcedClaimGate'
 import { detectBasementFloorDrop } from '../crawler/normalizeVenueText'
 import { normalizeSocialCopy, type SocialCopyCaps } from './normalizeSocialCopy'
-import { blocksToLexicalState, type TextBlock } from './lexical'
+import { blocksToLexicalState } from './lexical'
+import { buildAngleArticleBlocks } from './articleBlocks'
 import {
-  formatVerifiedAtForDisplay,
-  buildRelatedArticlesBlocks,
   WEEKLY_SOURCE_PROVENANCE_SCHEMA,
   type ArticleDraft,
-  type EditorialProvenanceEntry,
   type RelatedArticleForPrompt,
 } from './generateArticleDraft'
 
@@ -80,6 +78,14 @@ export interface GenerateMultiAngleDraftsInput {
    * 「この関心テーマは銀座に接続しない」というPhase Cの最終判定になる。
    */
   readerInterestTheme?: string
+  /**
+   * GINZA CROSS CULTURE MAP（2026-09-04）：CROSS CULTURE 派生記事の生成時のみ指定。
+   * 呼び出し側（createCrossCultureDerivativeDrafts）が buildCrossCultureDerivativePlan
+   * で組み立てた「断定禁止・仮説明示・別記事・事実/仮説の分離」を含む注入テキストを
+   * そのまま user メッセージへ足す。**AI ツールスキーマは変更しない**。
+   * 未指定なら従来どおり（draft-today の CORE も収益化②も一切影響を受けない）。
+   */
+  crossCultureContext?: string
   /**
    * Project 02-2 収益化② Tier 1（2026-08-30）：生成後の決定的 post-gate を有効化する。
    * 指定時のみ、included 候補に対して interestArticlePostGate（4品質ゲートの本判定）を
@@ -401,14 +407,14 @@ const MULTI_ANGLE_DRAFT_TOOL: Anthropic.Tool = {
   },
 }
 
-interface RawSourceProvenance {
+export interface RawSourceProvenance {
   fact: string
   sourceType: 'primary' | 'official' | 'secondary'
   verificationStatus: 'confirmed' | 'unconfirmed' | 'conflicting'
   factType: 'date' | 'venue' | 'price' | 'reservation' | 'hours' | 'access' | 'other'
 }
 
-interface RawMultiAngleCandidate {
+export interface RawMultiAngleCandidate {
   angle: string
   include: boolean
   skipReason: string
@@ -455,77 +461,9 @@ function isArticleVolume(value: string | undefined): value is ArticleVolume {
   return !!value && (VOLUMES as readonly string[]).includes(value)
 }
 
-// 角度1件分の記事本文をTextBlockへ組み立てる。buildEditorialBlocks
-// （generateArticleDraft.ts、単一Source版）・buildWeeklyEditorialBlocks
-// （同、週次版）と同じ「見出し＋段落＋SOURCE quote＋回遊導線」という骨格を
-// 踏襲しつつ、角度ラベルを冒頭に明示する点のみ異なる。
-function buildAngleArticleBlocks(
-  angle: MultiAngleKey,
-  input: Required<
-    Pick<
-      RawMultiAngleCandidate,
-      | 'hook'
-      | 'angleSummary'
-      | 'content'
-      | 'whyNow'
-      | 'editorsNote'
-      | 'closing'
-      | 'callToAction'
-    >
-  > &
-    Pick<RawMultiAngleCandidate, 'audience'>,
-  sourceMeta: { sourceName: string; sourceUrl: string; verifiedAt?: string },
-  sourceProvenanceInput: RawSourceProvenance[],
-  discoveredContentId: string | number,
-  relatedArticles: RelatedArticleForPrompt[],
-): { blocks: TextBlock[]; provenance: EditorialProvenanceEntry[] } {
-  const blocks: TextBlock[] = []
-  const provenance: EditorialProvenanceEntry[] = []
-
-  blocks.push({ type: 'paragraph', text: `【${MULTI_ANGLE_LABELS[angle]}】` })
-  blocks.push({ type: 'paragraph', text: input.hook })
-  blocks.push({ type: 'heading', level: 2, text: input.angleSummary })
-
-  const contentParagraphs = input.content
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-  for (const paragraph of contentParagraphs) {
-    blocks.push({ type: 'paragraph', text: paragraph })
-  }
-
-  blocks.push({ type: 'paragraph', text: `WHY NOW？ ${input.whyNow}` })
-  blocks.push({ type: 'paragraph', text: `EDITOR'S NOTE　${input.editorsNote}` })
-  if (input.audience) {
-    blocks.push({ type: 'paragraph', text: input.audience })
-  }
-
-  blocks.push({
-    type: 'quote',
-    text:
-      `SOURCE: ${sourceMeta.sourceName}／確認: ` +
-      `${formatVerifiedAtForDisplay(sourceMeta.verifiedAt)}／${sourceMeta.sourceUrl}`,
-  })
-
-  for (const p of sourceProvenanceInput) {
-    provenance.push({
-      discoveredContentId,
-      sourceName: sourceMeta.sourceName,
-      sourceUrl: sourceMeta.sourceUrl,
-      verifiedAt: sourceMeta.verifiedAt,
-      fact: p.fact,
-      sourceType: p.sourceType,
-      factType: p.factType,
-      verificationStatus: p.verificationStatus,
-    })
-  }
-
-  blocks.push({ type: 'paragraph', text: input.closing })
-  blocks.push({ type: 'paragraph', text: `→ 次に：${input.callToAction}` })
-  blocks.push(...buildRelatedArticlesBlocks(relatedArticles))
-
-  return { blocks, provenance }
-}
+// buildAngleArticleBlocks は再利用可能な共通モジュール ./articleBlocks へ
+// 移設した（2026-09-02、Project 02 改善 第1段階）。処理内容・引数・戻り値は
+// 変更していない。
 
 export async function generateMultiAngleArticleDrafts({
   sourceText,
@@ -539,6 +477,7 @@ export async function generateMultiAngleArticleDrafts({
   discoveredContentId,
   angles,
   readerInterestTheme,
+  crossCultureContext,
   postGate,
   coreGuards,
 }: GenerateMultiAngleDraftsInput): Promise<GenerateMultiAngleDraftsResult> {
@@ -573,6 +512,16 @@ export async function generateMultiAngleArticleDrafts({
       `「関心テーマと元情報の間に自然な接点がない」）を書くこと。`
     : ''
 
+  // GINZA CROSS CULTURE MAP（2026-09-04）：CROSS CULTURE 派生記事のときのみ。
+  // 呼び出し側が組み立てた注入テキストをそのまま足す（断定禁止・仮説明示を含む）。
+  const crossCultureNote = crossCultureContext
+    ? `\n\n${crossCultureContext}\n` +
+      `- 上記の市場視点・軸は「文化的仮説」であり確認済み事実ではない。断定表現を避け、` +
+      `元情報（本文素材）にない事実を作らないこと。\n` +
+      `- 元情報とこの市場視点の間に無理のない接点がなければ、当該角度を include:false とし ` +
+      `skipReason にその旨を書くこと。`
+    : ''
+
   const message = await client.messages.create({
     model: 'claude-sonnet-5',
     max_tokens: 8192,
@@ -589,7 +538,8 @@ export async function generateMultiAngleArticleDrafts({
           `venue: ${venue ?? '不明'}\nperiod: ${period ?? '不明'}\n\n` +
           `本文素材:\n${sourceText}` +
           focusNote +
-          interestThemeNote,
+          interestThemeNote +
+          crossCultureNote,
       },
     ],
   })

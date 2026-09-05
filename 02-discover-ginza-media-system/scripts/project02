@@ -621,6 +621,120 @@ draft_interest() {
   echo
 }
 
+# 第2段階C Stage 3（2026-09-02）：テンプレート適格性チェック（読み取り専用）。
+# DiscoveredContent と（あれば ready な）ArticleFacts を読み、
+# mapDiscoveredContentToEventFields の判定（templateEligible / route / 不足項目）を表示する。
+# DB 書き込み・Claude API・記事生成・note 投稿・NIGHT_RUN_LIVE_ENABLED 参照はしない。
+# draft-today / draft-interest / night / trial 系には接続しない。
+template_check() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 テンプレート適格性チェック（template-check・読み取り専用） ==="
+
+  DCID=""
+  for arg in "$@"; do
+    case "$arg" in
+      --*) : ;;
+      *) [ -z "$DCID" ] && DCID="$arg" ;;
+    esac
+  done
+
+  if [ -z "$DCID" ]; then
+    echo "Usage: ./p2 template-check <DiscoveredContent の数値ID>"
+    echo "  例: ./p2 template-check 386"
+    echo "  DiscoveredContent と（あれば ready な）ArticleFacts を読み取り、"
+    echo "  templateEligible / route / human_review の理由（不足項目）を表示する。"
+    echo "  DB 書き込み・AI 呼び出し・記事生成・note 投稿はしない。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/templateCheck.ts "$DCID" 2>"$LOG_DIR/template_check.log" )
+  _tc_rc=$?
+  if [ "$_tc_rc" -ne 0 ]; then
+    fail "template-check の実行に失敗しました"
+    echo "--- $LOG_DIR/template_check.log 末尾 ---"
+    tail -20 "$LOG_DIR/template_check.log" 2>/dev/null
+  fi
+  echo "================================================"
+  echo
+  return "$_tc_rc"
+}
+
+# 第2段階C Stage 4（2026-09-02）：テンプレート経路 → Article(reviewStatus:draft)。
+# ready かつ必須充足の ArticleFacts を持つ templateEligible:true の DiscoveredContent
+# だけを、決定的テンプレ（AI なし・¥0）で Article(draft) 化する。
+#   ・既定は必ず dry-run（DB 書き込みなし）。--yes 明示時のみ作成。
+#   ・reviewStatus は draft 固定。自動公開・note 投稿はしない。
+#   ・二重生成は editorialProvenance 逆引きで防止。
+#   ・AI 経路（draft-today/draft-interest）・night・trial には接続しない。
+#   ・生成した Article は既存の ./p2 night package <articleId> がそのまま処理する
+#     （昨日の Night 投稿層は無変更）。
+draft_template() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 テンプレート経路ドラフト生成（draft-template） ==="
+
+  HAS_YES=""
+  HAS_TARGET=""
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) HAS_YES="1" ;;
+      --all) HAS_TARGET="1" ;;
+      --*) : ;;
+      *) HAS_TARGET="1" ;;
+    esac
+  done
+
+  if [ -z "$HAS_TARGET" ]; then
+    echo "Usage: ./p2 draft-template <DiscoveredContent の数値ID> [--dry-run] [--yes] [--force] [--regenerate]"
+    echo "       ./p2 draft-template --all [--limit=N] [--dry-run] [--yes] [--force] [--regenerate]"
+    echo "  例: ./p2 draft-template 386 --dry-run              # 何が作られるか確認（DB 書き込みなし）"
+    echo "      ./p2 draft-template 386 --yes                  # Article(reviewStatus:draft) を新規作成"
+    echo "      ./p2 draft-template 386 --yes --regenerate     # 既存の機械生成 draft を同じ Article へ上書き更新（重複を作らない）"
+    echo "  ready な ArticleFacts と templateEligible:true の両方を満たす DC のみ対象。"
+    echo "  既定は dry-run。--yes 明示時のみ作成。AI 呼び出し・note 投稿・自動公開はしない。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  # 安全側：--yes が無ければ確実に dry-run にする（スクリプト側も既定 dry-run だが二重化）
+  DT_ARGS="$*"
+  if [ -z "$HAS_YES" ]; then
+    case " $DT_ARGS " in
+      *" --dry-run "*) : ;;
+      *) DT_ARGS="$DT_ARGS --dry-run" ;;
+    esac
+  fi
+
+  ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/draftTemplate.ts $DT_ARGS 2>"$LOG_DIR/draft_template.log" )
+  _dt_rc=$?
+  if [ "$_dt_rc" -ne 0 ]; then
+    fail "draft-template の実行に失敗しました"
+    echo "--- $LOG_DIR/draft_template.log 末尾 ---"
+    tail -20 "$LOG_DIR/draft_template.log" 2>/dev/null
+  fi
+  echo "================================================"
+  echo
+  return "$_dt_rc"
+}
+
 refresh_dates() {
   echo
   echo "=== GINZA WHISKERS / Project 02 個別ページ日付再確認（Source Coverage拡張） ==="
@@ -1437,6 +1551,192 @@ _trial_write_summary() {
   rm -f "$TRIAL_SUMM_TMP" "$TRIAL_WARN_TMP"
 }
 
+# ============================================================================
+# Night Automation Layer（2026-08-31）
+#   マロン就寝中に「承認済み DiscoveredContent → 記事ドラフト生成 →
+#   fact/source 検証 → /note-draft パッケージ → Same-day Review Queue」までを
+#   無人で進める。**公開・approve・削除・有料/無料変更・アカウント設定変更は
+#   一切しない**（既存 Articles.beforeChange 人間承認ゲートも無変更）。
+#   選定＋生成は ./p2 draft-today と同一コードパス（CORE 角度・reviewStatus:draft）。
+# ============================================================================
+
+_night_require_db() {
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+  return 0
+}
+
+night_run() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Night Automation Layer（night run） ==="
+
+  DRY_RUN_ARG=""
+  CONFIRMED=""
+  MAX_ARG="--max=1"
+  SINCE_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY_RUN_ARG="--dry-run" ;;
+      --yes) CONFIRMED="1" ;;
+      --max=*) MAX_ARG="$arg" ;;
+      --since=*) SINCE_ARG="$arg" ;;
+      --*) : ;;
+    esac
+  done
+
+  # ── 運用ルール（2026-08-31 方針変更）─────────────────────────────
+  # Project 02 は収益化前のため、ANTHROPIC_API_KEY を使う従量課金の
+  # 夜間自動生成は実施しない。live 実行（= --dry-run なし）は既定で無効。
+  # 再開するには cms/.env に NIGHT_RUN_LIVE_ENABLED=1 を明示的に追加する
+  # （収益化開始・コスト方針の再確認後）。--dry-run / review / status /
+  # package は課金なしのため常に利用可。
+  if [ -z "$DRY_RUN_ARG" ]; then
+    if ! grep -q '^NIGHT_RUN_LIVE_ENABLED=1' "$ROOT/cms/.env" 2>/dev/null; then
+      warn "night run（live）は現在の運用ルールで無効化されています（Project 02 は収益化前・従量課金の夜間自動生成は実施しない）。"
+      echo "    ・課金なしで使えるもの: ./p2 night run --dry-run / ./p2 night review / ./p2 night status / ./p2 night package <id>"
+      echo "    ・省力化は契約内の Claude Code / Claude in Chrome を使う（有料 API を呼ばない）"
+      echo "    ・再開する場合のみ: 収益化開始とコスト方針の再確認後、cms/.env に NIGHT_RUN_LIVE_ENABLED=1 を追加"
+      echo "    ・note-draft / Same-day Review Queue / ERROR ログ / Claude in Chrome handoff 構造は残っている"
+      echo "      （既存 draft から手動生成: ./p2 night package <articleId>）"
+      echo "================================================"
+      echo
+      return 1
+    fi
+    echo "⚠️  NIGHT_RUN_LIVE_ENABLED=1 が検出されました。night run（live）は選定トピック数だけ"
+    echo "    Claude API を呼び出します（従量課金）。方針を再確認のうえ実行してください。"
+  fi
+
+  _night_require_db || return 1
+
+  if [ -z "$DRY_RUN_ARG" ] && [ -z "$CONFIRMED" ]; then
+    echo "⚠️  live 実行には --yes が必要です（例: ./p2 night run --yes --max=1）。"
+    echo "    まず ./p2 night run --dry-run で当日の選定計画を確認できます。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -n "$DRY_RUN_ARG" ]; then
+    echo "（Dry Runモード：AI呼び出し・DB書き込み・キュー書き出しは行いません。選定計画のみ表示）"
+  fi
+
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/nightBuild.ts \
+    $DRY_RUN_ARG $MAX_ARG $SINCE_ARG 2>"$LOG_DIR/night.log" | grep '^{' | tail -1)
+
+  if [ -z "$RAW" ]; then
+    fail "night run スクリプトの実行に失敗しました"
+    echo "--- $LOG_DIR/night.log 末尾 ---"
+    tail -20 "$LOG_DIR/night.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  echo "$RAW" | python3 "$ROOT/scripts/format_night_status.py"
+  echo "================================================"
+  echo
+}
+
+night_review() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Night — Same-day Review Queue ==="
+  DATE_ARG=""
+  for arg in "$@"; do
+    case "$arg" in
+      --date=*) DATE_ARG="$arg" ;;
+    esac
+  done
+  RAW=$(cd "$ROOT/cms" && node --import=tsx/esm src/scripts/nightBuild.ts --review $DATE_ARG 2>"$LOG_DIR/night.log" | grep '^{' | tail -1)
+  if [ -z "$RAW" ]; then
+    fail "night review の実行に失敗しました"
+    tail -20 "$LOG_DIR/night.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+  echo "$RAW" | python3 "$ROOT/scripts/format_night_status.py"
+  echo "================================================"
+  echo
+}
+
+night_status() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Night — 状態確認（読み取り専用） ==="
+  RAW=$(cd "$ROOT/cms" && node --import=tsx/esm src/scripts/nightBuild.ts --status 2>"$LOG_DIR/night.log" | grep '^{' | tail -1)
+  if [ -z "$RAW" ]; then
+    fail "night status の実行に失敗しました"
+    tail -20 "$LOG_DIR/night.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+  echo "$RAW" | python3 "$ROOT/scripts/format_night_status.py"
+  echo "================================================"
+  echo
+}
+
+night_package() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Night — /note-draft パッケージ再生成 ==="
+  ID="$1"
+  if [ -z "$ID" ]; then
+    echo "Usage: ./p2 night package <articleId>（既存の draft Article を /note-draft 構造へ再変換）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+  _night_require_db || return 1
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/nightBuild.ts --package="$ID" 2>"$LOG_DIR/night.log" | grep '^{' | tail -1)
+  if [ -z "$RAW" ]; then
+    fail "night package の実行に失敗しました"
+    tail -20 "$LOG_DIR/night.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+  echo "$RAW" | python3 "$ROOT/scripts/format_night_status.py"
+  echo "================================================"
+  echo
+}
+
+night_dispatch() {
+  case "$1" in
+    run)
+      shift
+      night_run "$@"
+      ;;
+    review)
+      shift
+      night_review "$@"
+      ;;
+    status)
+      night_status
+      ;;
+    package)
+      shift
+      night_package "$@"
+      ;;
+    *)
+      echo "Usage:"
+      echo "  ./p2 night run [--dry-run] [--yes] [--max=N] [--since=YYYY-MM-DD]"
+      echo "        当日 curationStatus=approved の DiscoveredContent から最大N本（既定1）を"
+      echo "        CORE角度で記事draft化 → fact/source検証 → /note-draft パッケージ →"
+      echo "        Same-day Review Queue（.devlogs/night/）へ書き出す。--dry-run は選定計画のみ、"
+      echo "        実生成は --yes 必須。異常検出時は処理を停止し ERROR ログと未処理項目をキューに残す。"
+      echo "        公開・approve・削除・有料/無料変更は行わない。"
+      echo "  ./p2 night review [--date=YYYY-MM-DD]   当日レビュー：Same-day Review Queue を表示（DB不要）"
+      echo "  ./p2 night status                       直近の night run の結果を表示（DB不要）"
+      echo "  ./p2 night package <articleId>          既存の draft Article を /note-draft 構造へ再変換"
+      return 1
+      ;;
+  esac
+}
+
 interest_dispatch() {
   case "$1" in
     fetch-note-rising)
@@ -1877,6 +2177,11 @@ morning() {
   echo "--- 10〜12. Phase 12 Preflight状態確認（Claude APIキー形式・Railway/Cloudflare認証は警告表示のみ、ログインは行いません） ---"
   preflight
 
+  echo "--- AM. 明朝パイプライン（単一経路）: preflight → 6:00収集確認 → 公式ページ取得(--fetch) → 重複除去 → ArticleFacts候補抽出 → ArticleFacts登録(差分) → A/B/C判定 → 画像preflight → 順位付け → 7:10候補レポート＋8:00意思決定サポート ---"
+  echo "    （DB書き込みなし・Claude API・課金なし。--fetch は 2026-09-02 検証で有効化〈緊急停止 MORNING_FETCH=0〉。"
+  echo "     --register-facts は ArticleFacts の登録予定差分を表示するのみ。実書き込みは ./p2 morning --write-facts か MORNING_WRITE_FACTS=1 のとき draft のみ登録。レポートは .devlogs/morning/<date>/ へ保存）"
+  am_run --fetch --register-facts "$@" || true
+
   echo "--- 13. 収益化① ./p2 draft-today --dry-run 相当（当日approved DiscoveredContent → 本日ドラフト化予定の確認。AI呼び出し・DB書き込みなし。実生成は別途 ./p2 draft-today --yes） ---"
   draft_today --dry-run
 
@@ -1887,6 +2192,182 @@ morning() {
 
   echo "🌅 Project 02 Morning Startup 完了"
   echo
+}
+
+# ─────────────────────────────────────────────────────────────
+# ./p2 am-preflight  — 早朝（5:50）環境確認（読み取り専用・P0 2026-09-02）
+#   電源／ネットワーク／ディスク／Docker／PostgreSQL／Payload／必要プロセスを
+#   確認するだけ。sudo・管理者権限・OS 設定変更・DB 書き込み・課金は一切しない。
+#   pmset のスリープ復帰スケジュールは「読み取り」のみ（変更は提案に留める）。
+#   Claude in Chrome / ブラウザには一切触れない。
+# ─────────────────────────────────────────────────────────────
+am_preflight() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 早朝 preflight（読み取り専用・5:50 チェック） ==="
+  echo "（このコマンドは OS 設定変更・sudo・DB 書き込み・課金・ブラウザ操作を一切行いません）"
+  local WARN=0
+
+  # 1. 電源（AC 接続 / バッテリー残量）
+  if command -v pmset >/dev/null 2>&1; then
+    local PWRLINE
+    PWRLINE=$(pmset -g batt 2>/dev/null | tail -n +1 | tr '\n' ' ')
+    case "$PWRLINE" in
+      *"'AC Power'"*) ok "電源: AC 接続" ;;
+      *"'Battery Power'"*) warn "電源: バッテリー駆動（夜間は AC 接続推奨。Docker コールドスタートが間に合わない場合あり）"; WARN=$((WARN+1)) ;;
+      *) warn "電源: 状態を判定できません（$PWRLINE）"; WARN=$((WARN+1)) ;;
+    esac
+  else
+    warn "電源: pmset が使えません"; WARN=$((WARN+1))
+  fi
+
+  # 2. スリープ復帰スケジュール（読み取りのみ）
+  local SCHED
+  SCHED=$(pmset -g sched 2>/dev/null | grep -iE 'wake|poweron' | head -3 | sed 's/^ *//')
+  if [ -n "$SCHED" ]; then
+    ok "スリープ復帰スケジュール（読み取り）:"
+    echo "$SCHED" | sed 's/^/     /'
+    if echo "$SCHED" | grep -qiE '6:5[0-9]AM|06:5[0-9]'; then
+      warn "現在の自動復帰は 6:55 頃。固定運用は 5:50 復帰 → 6:00 収集。5:50 化は要 OS 設定変更（下記）"
+      WARN=$((WARN+1))
+    fi
+  else
+    warn "スリープ復帰スケジュール未設定（`sudo pmset repeat` はマロンが実行）"; WARN=$((WARN+1))
+  fi
+
+  # 3. ディスク空き容量
+  local DISKAVAIL DISKPCT
+  DISKAVAIL=$(df -h "$ROOT" 2>/dev/null | awk 'NR==2{print $4}')
+  DISKPCT=$(df -h "$ROOT" 2>/dev/null | awk 'NR==2{gsub("%","",$5); print $5}')
+  if [ -n "$DISKPCT" ] && [ "$DISKPCT" -lt 92 ] 2>/dev/null; then
+    ok "ディスク空き: ${DISKAVAIL}（使用 ${DISKPCT}%）"
+  else
+    warn "ディスク空き: ${DISKAVAIL:-不明}（使用 ${DISKPCT:-?}%）— 収集ログの保存先を確認"; WARN=$((WARN+1))
+  fi
+
+  # 4. ネットワーク到達性（HEAD のみ・本文は取得しない＝未信頼データを読み込まない）
+  local NET_OK=0
+  for host in "https://www.ginza.jp" "https://note.com"; do
+    if curl -sI -m 6 -o /dev/null -w '%{http_code}' "$host" 2>/dev/null | grep -qE '^[23]'; then
+      ok "ネットワーク到達: $host"
+      NET_OK=$((NET_OK+1))
+    else
+      warn "ネットワーク到達不可: $host"; WARN=$((WARN+1))
+    fi
+  done
+  [ "$NET_OK" -eq 0 ] && fail "収集元へ到達できません（6:00 収集は失敗する見込み）"
+
+  # 5. Docker Engine
+  if docker info >/dev/null 2>&1; then
+    ok "Docker Engine"
+  else
+    fail "Docker Engine 停止中（./p2 start で起動。夜間は Docker Desktop を『ログイン時に起動』推奨）"; WARN=$((WARN+1))
+  fi
+
+  # 6. PostgreSQL コンテナ + 応答
+  if [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" = "true" ]; then
+    if docker exec "$DB_CONTAINER" pg_isready -U discover_ginza >/dev/null 2>&1; then
+      ok "PostgreSQL (${DB_CONTAINER}): 応答あり"
+    else
+      warn "PostgreSQL コンテナは起動しているが pg_isready が応答しません"; WARN=$((WARN+1))
+    fi
+  else
+    warn "PostgreSQL (${DB_CONTAINER}) 停止中（./p2 start で起動）"; WARN=$((WARN+1))
+  fi
+
+  # 7. Payload CMS（任意。6:00 収集は Local API 経由のため必須ではない）
+  if http_ok "$CMS_URL/api/articles"; then
+    ok "Payload API: HTTP 200（起動済み）"
+  else
+    warn "Payload API 応答なし（6:00 収集自体は node の Local API で動くため必須ではない。裏取り・候補提示で必要）"
+  fi
+
+  # 8. 必要コマンド
+  local MISSING=""
+  for c in node curl python3 jq docker; do
+    command -v "$c" >/dev/null 2>&1 || MISSING="$MISSING $c"
+  done
+  if [ -z "$MISSING" ]; then ok "必要コマンド: node/curl/python3/jq/docker すべて解決"
+  else warn "不足コマンド:$MISSING"; WARN=$((WARN+1)); fi
+
+  echo "------------------------------------------------"
+  if [ "$WARN" -eq 0 ]; then
+    ok "早朝 preflight: 問題なし（6:00 収集を実行できる状態）"
+  else
+    warn "早朝 preflight: 注意 ${WARN} 件（上記を確認。多くは夜間の準備で解消）"
+  fi
+  echo
+  echo "▼ 5:50 自動復帰が必要な場合（OS 設定変更。Claude は実行しません。マロンが実行）"
+  echo "   現在値 : $(pmset -g sched 2>/dev/null | grep -iE 'wake|poweron' | head -1 | sed 's/^ *//')"
+  echo "   変更案 : sudo pmset repeat wakeorpoweron MTWRFSU 05:50:00"
+  echo "   確認   : pmset -g sched"
+  echo "   復元   : sudo pmset repeat wakeorpoweron MTWRFSU 06:55:00   （元の 6:55 に戻す）"
+  echo "           sudo pmset repeat cancel                            （繰り返しイベントを全解除）"
+  echo "================================================"
+  echo
+}
+
+# ─────────────────────────────────────────────────────────────
+# 明朝運用パイプラインの単一経路（P0 2026-09-02 続き）
+#   ./p2 am-run   … preflight → 収集確認 → 重複除去 → （--fetch 時）公式/詳細/PDF 取得確認
+#                    → ArticleFacts 候補抽出 → A/B/C 判定 → 画像 preflight → 7:10 レポート
+#                    レポートと候補プロポーザルを .devlogs/morning/<date>/ へ保存（DB 書き込みなし）
+#   ./p2 am-candidates … 上の読み取り専用ビュー（ファイル保存も外部取得もしない）
+#   実体は cms/src/scripts/morningRun.ts（唯一のオーケストレーター）。
+#   Claude API・課金・DB 書き込み・note/Chrome/X 操作・自動公開は一切なし。
+#   ロックで二重起動を防止。1件の失敗で全体を止めない。
+# ─────────────────────────────────────────────────────────────
+_am_run_impl() {
+  # $1 以降を morningRun.ts へそのまま渡す
+  local JSON_MODE=0
+  for a in "$@"; do [ "$a" = "--json" ] && JSON_MODE=1; done
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    return 1
+  fi
+
+  # Payload/drizzle の起動ノイズは stderr へ寄せ、stdout は本文 or JSON のみ
+  (cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningRun.ts "$@" 2>"$LOG_DIR/am-run.log")
+  local RC=$?
+  if [ "$RC" -eq 3 ]; then
+    warn "morning パイプラインは前回処理が未完了のため安全停止しました（二重実行防止）"
+    tail -5 "$LOG_DIR/am-run.log" 2>/dev/null
+    return 3
+  fi
+  if [ "$RC" -ne 0 ]; then
+    fail "候補レポートの生成に失敗しました（rc=$RC）"
+    echo "--- $LOG_DIR/am-run.log 末尾 ---"
+    tail -20 "$LOG_DIR/am-run.log" 2>/dev/null
+    return "$RC"
+  fi
+  return 0
+}
+
+am_run() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 明朝パイプライン（単一経路・7:10 候補レポート） ==="
+  echo "（DB 書き込み・Claude API・課金・note/Chrome/X 操作・自動公開なし。--fetch なしなら外部リクエスト 0 件）"
+  _am_run_impl "$@"
+  local RC=$?
+  echo "================================================"
+  echo
+  return "$RC"
+}
+
+am_candidates() {
+  # 読み取り専用ビュー：ファイル保存も外部取得もしない
+  local JSON_MODE=0
+  for a in "$@"; do [ "$a" = "--json" ] && JSON_MODE=1; done
+  if [ "$JSON_MODE" -eq 0 ]; then
+    echo
+    echo "=== GINZA WHISKERS / Project 02 A/B/C 候補レポート（読み取り専用ビュー） ==="
+    echo "（--no-write 相当。ファイル保存・外部取得なし。フル実行は ./p2 am-run または ./p2 morning）"
+  fi
+  _am_run_impl --no-write "$@"
+  local RC=$?
+  [ "$JSON_MODE" -eq 0 ] && { echo "================================================"; echo; }
+  return "$RC"
 }
 
 case "${1:-status}" in
@@ -1927,6 +2408,10 @@ case "${1:-status}" in
     shift
     interest_dispatch "$@"
     ;;
+  night)
+    shift
+    night_dispatch "$@"
+    ;;
   score)
     shift
     score "$@"
@@ -1952,6 +2437,121 @@ case "${1:-status}" in
     shift
     draft_interest "$@"
     ;;
+  template-check)
+    shift
+    template_check "$@"
+    ;;
+  draft-template)
+    shift
+    draft_template "$@"
+    ;;
+  themes)
+    shift
+    # 候補選定の自動化（読み取り専用）。推奨10＋予備5（合計15固定）＋バランス表。
+    # DB 書き込み・AI 呼び出し・課金なし。
+    case "$1" in
+      recommend)
+        shift
+        if ! docker info >/dev/null 2>&1 ||
+           [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+          # --fixture 指定時は DB 不要
+          case " $* " in *" --fixture="*) : ;; *)
+            fail "PostgreSQL が起動していません（先に ./p2 start）。--fixture=path で DB なし検証も可"
+            return 1 2>/dev/null || exit 1 ;;
+          esac
+        fi
+        ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/themesRecommend.ts "$@" )
+        ;;
+      *)
+        echo "Usage: ./p2 themes recommend [--limit=N] [--include-approved] [--from-report[=date]] [--fixture=path.json] [--json]"
+        echo "  既定は承諾前（curationStatus=inbox）の候補を read-only 評価 → 推奨10＋予備5。DB書き込みなし。"
+        return 1 2>/dev/null || exit 1
+        ;;
+    esac
+    ;;
+  pipeline)
+    shift
+    # テーマ承認後の自動制作パイプライン（記事化→裏取り→監査→green/yellow/red→note下書き候補）。
+    # 既定 dry-run（DB書き込みなし）。--yes で green/yellow を Article(reviewStatus:draft) 化。
+    # 有料APIなし・auto-readyなし・自動公開なし。4:00/6:00の収集には接続しない（承認後に手動起動）。
+    echo
+    echo "=== GINZA WHISKERS / Project 02 自動制作パイプライン（pipeline） ==="
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+      echo "================================================"; echo
+      return 1 2>/dev/null || exit 1
+    fi
+    _PIPE_LOG="$LOG_DIR/pipeline.log"
+    _PIPE_OUT="$( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/pipelineRun.ts "$@" 2>"$_PIPE_LOG" )"
+    _pipe_rc=$?
+    if [ "$_pipe_rc" -ne 0 ]; then
+      fail "pipeline の実行に失敗しました"
+      tail -20 "$_PIPE_LOG" 2>/dev/null
+      echo "================================================"; echo
+      return $_pipe_rc 2>/dev/null || exit $_pipe_rc
+    fi
+    # 末尾の1行JSONをフォーマッタへ、それ以外はそのまま表示
+    echo "$_PIPE_OUT" | grep -v '^{'
+    echo "$_PIPE_OUT" | grep '^{' | tail -1 | python3 "$ROOT/scripts/format_pipeline_status.py" 2>/dev/null || true
+    echo "================================================"; echo
+    ;;
+  bypass-draft)
+    shift
+    # 8:15 迂回経路（RUNBOOK 付録G.21）。confirmed の事実だけから note 用 Markdown を生成。
+    # DB 書き込み・ready 化・note/X 投稿・課金なし。既定 dry-run（--write でファイル出力）。
+    if [ -z "$1" ]; then
+      echo "Usage: ./p2 bypass-draft <DiscoveredContent の数値ID> --reason=\"標準経路で詰まった理由\" [--write]"
+      echo "  例: ./p2 bypass-draft 390 --reason=\"exhibition だが venues が公式で取れず ready 化に15分超\"           # dry-run"
+      echo "      ./p2 bypass-draft 390 --reason=\"...\" --write   # content/drafts/<date>-<slug>-bypass.md ＋ 迂回ログ出力"
+      echo "  confirmed の事実だけを本文へ。未確認は「確認事項」として分離。マロンが判断して起動する（無人実行しない）。"
+      return 1 2>/dev/null || exit 1
+    fi
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/bypassDraft.ts "$@" )
+    ;;
+  crossculture)
+    shift
+    # GINZA CROSS CULTURE MAP（5市場）FILTER。GINZA WHISKERS 適合判定の後段。
+    # 決定的・AI なし・ネットワークなし・DB 書き込みなし・追加課金なし。結果は .devlogs/crossculture/ にキャッシュ。
+    case "$1" in
+      theme|config)
+        ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crossCultureRun.ts "$@" )
+        ;;
+      run|audit)
+        if ! docker info >/dev/null 2>&1 ||
+           [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+          fail "PostgreSQL が起動していません（先に ./p2 start）。DB 不要の単発判定は ./p2 crossculture theme \"...\""
+          return 1 2>/dev/null || exit 1
+        fi
+        ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crossCultureRun.ts "$@" )
+        ;;
+      derive)
+        shift
+        # CROSS CULTURE 派生記事の生成。既定 dry-run（プラン＋注入プロンプト表示・DB書き込み/AI/課金なし）。
+        # --yes で ginza_whiskers 角度の別候補(reviewStatus:draft)を生成（通常記事は上書きしない）。
+        if ! docker info >/dev/null 2>&1 ||
+           [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+          fail "PostgreSQL が起動していません（先に ./p2 start）"
+          return 1 2>/dev/null || exit 1
+        fi
+        ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crossCultureDerive.ts "$@" )
+        ;;
+      *)
+        echo "Usage: ./p2 crossculture <theme|run|audit|derive|config>"
+        echo "  theme \"<自由テキスト>\" [--json]              DB 不要の単発判定"
+        echo "  run <DiscoveredContent の数値ID> [--force] [--json]"
+        echo "  audit [--limit=N] [--status=inbox|approved] [--json]   プールを一括判定（読み取り専用）"
+        echo "  derive <数値ID> [--yes] [--market=France] [--max=N] [--json]  派生記事プラン（既定dry-run）／--yesで別候補生成"
+        echo "  config                                        現在の軸・しきい値を表示"
+        return 1 2>/dev/null || exit 1
+        ;;
+    esac
+    ;;
   clusters)
     clusters "$2"
     ;;
@@ -1973,8 +2573,20 @@ case "${1:-status}" in
   preflight)
     preflight
     ;;
+  am-preflight)
+    am_preflight
+    ;;
+  am-run)
+    shift
+    am_run "$@"
+    ;;
+  am-candidates)
+    shift
+    am_candidates "$@"
+    ;;
   morning)
-    morning
+    shift
+    morning "$@"
     ;;
   prod-status)
     prod_status
@@ -2015,13 +2627,23 @@ case "${1:-status}" in
     echo "  ./p2 draft-today [--dry-run] [--yes] [--limit=N] [--since=YYYY-MM-DD]  「旬の銀座」日次ドラフト生成：当日curationStatus=approvedのDiscoveredContentを類似テーマで束ね、上位トピック（既定最大5）を各1本ずつmulti-angleのCORE角度で記事draftにする。--dry-runは選定計画のみ（AI・DB書き込みなし）、live実行は--yes必須、生成物はreviewStatus:draftで承認待ち一覧へ"
     echo "  ./p2 interest paid-ratio <theme|id> [--dry-run]  Project 02-2 Phase B：note.com/hashtag/<tag>と?paid_only=trueの総記事数差分からpaidRatioを算出しinterest-themes.monetizationへ保存（Claude API・有料API呼び出しなし）"
     echo "  ./p2 draft-interest [--dry-run] [--yes] [--with-interest] [--limit=N] [--strict] [--w-paid=N] [--c-match=N]  Project 02-2 収益化②（Tier 1）：承認済みinterest-themes → topicInterestScore×monetizationMultiplierで順位付け → 承認済みDiscoveredContentへプレマッチ → 記事生成前の決定的4品質ゲート（銀座固有性/今行く理由/体験価値/素材充足。日付根拠のない「今行く理由」は生成しない）→ ginza_whiskers主稿を1テーマ1本生成（--with-interestでinterest補助稿も、主稿成立時のみ）→ 生成後の4品質ゲート本判定をWARNING記録（9月Trialはhard dropしない、aiGeneratedByの|warnings=とCLI出力に表示）。--dry-runは選定計画のみ、live実行は--yes必須"
+    echo "  ./p2 night run [--dry-run] [--yes] [--max=N] [--since=YYYY-MM-DD]  Night Automation Layer：当日approvedのDiscoveredContentから最大N本（既定1）をCORE角度で記事draft化→fact/source検証→/note-draftパッケージ→Same-day Review Queue（.devlogs/night/）へ書き出す。draft-todayと同一コードパス。--dry-runは選定計画のみ、実生成は--yes必須。異常時は処理停止＋ERRORログ＋未処理項目をキューに残す。公開・approve・削除・有料/無料変更はしない"
+    echo "  ./p2 night review [--date=YYYY-MM-DD]  当日レビュー：Same-day Review Queueを表示（DB不要・読み取り専用）"
+    echo "  ./p2 night status  直近のnight runの結果サマリを表示（DB不要・読み取り専用）"
+    echo "  ./p2 night package <articleId>  既存のdraft Articleを/note-draft構造へ再変換（.devlogs/night/queue/へ書き出し）"
+    echo "  ./p2 template-check <dcId>  テンプレート適格性チェック（読み取り専用）：DiscoveredContentと（あればreadyな）ArticleFactsを読み、mapDiscoveredContentToEventFieldsのtemplateEligible/route/factsSource/不足項目(missing)を表示。eligibleなら生成予定のタイトル・note本文もプレビュー表示。--yesなし・DB書き込みなし・AI不使用・記事生成なし・note投稿なし。draft-today/draft-interest/night/trial系には接続しない"
+    echo "  ./p2 draft-template <dcId>|--all [--limit=N] [--dry-run] [--yes] [--force]  テンプレート経路ドラフト生成：readyなArticleFactsとtemplateEligible:trueの両方を満たすDiscoveredContentを、決定的テンプレ（AI不使用・¥0）でArticle(reviewStatus:draft)化。既定は必ずdry-run（DB書き込みなし）、--yes明示時のみ作成。reviewStatusはdraft固定・自動公開なし・note投稿なし。editorialProvenance逆引きで二重生成防止。draft-today/draft-interest/night/trial系には接続しない。生成物は既存の ./p2 night package <articleId> がそのまま処理する"
     echo "  ./p2 clusters [--dry-run]  Story Clustering再計算・StoryClustersコレクションへ反映（同一イベントの複数URLを統合、DiscoveredContentは変更しない）"
+    echo "  ./p2 crossculture <theme|run|audit|derive|config>  GINZA CROSS CULTURE MAP（UAE/Singapore/France/US/Italy）FILTER。GINZA WHISKERS適合判定の後段で記事候補ごとに市場相性(0-100)・派生可否・有料候補を決定的に判定。deriveは派生記事プラン生成（既定dry-run、--yesでginza_whiskers角度の別候補をdraft生成・通常記事は上書きしない）。AIなし（deriveの--yesのみ生成時にAI）・ネットワークなし・追加課金なし、結果は.devlogs/crossculture/にキャッシュ"
     echo "  ./p2 refresh-dates [--dry-run] [--limit=N] [--all]  既存DiscoveredContentの個別ページを安全に再確認（--allで全件対象・誤抽出の訂正も反映。新規行は作成せず、discoveryStatus/curationStatusも変更しない）"
     echo "  ./p2 recompute-richness [--dry-run]  既存の採点済みSources/DiscoveredContentへ本文情報量ペナルティを遡及反映（新規AI呼び出しなし・課金なし）"
     echo "  ./p2 recompute-ux-type [--dry-run]  既存DiscoveredContentへ参加／体験型UXタイプを遡及反映（新規AI呼び出しなし・課金なし）"
     echo "  ./p2 jobs       SOURCE LEDGER定期実行（Payload Jobs Queue）の状態確認（次回実行予定・直近の成功/失敗、読み取り専用）"
     echo "  ./p2 preflight  Phase 12本番インフラ構築の準備状況確認（env var名・CLI認証・ビルド）"
-    echo "  ./p2 morning    朝の作業開始準備を1コマンドで完了（起動＋status/doctor/editorial/social/jobs/preflight＋次の推奨工程）"
+    echo "  ./p2 am-preflight  早朝5:50の環境確認（電源/ネットワーク/ディスク/Docker/PostgreSQL/Payload/必要コマンド）。読み取り専用・sudo/OS設定変更/課金なし。5:50復帰が必要な場合の sudo pmset コマンドは表示のみ（Claudeは実行しない）"
+    echo "  ./p2 am-run [--limit=N] [--fetch] [--register-facts] [--write-facts] [--json] [--no-write]  明朝パイプライン単一経路：preflight→6:00収集確認→（--fetch時）公式/詳細/PDF取得〈許可ドメイン・SSRF・robots ガード〉→重複除去〈多シグナル〉→ArticleFacts候補抽出→（--register-facts時）ArticleFacts登録差分→A/B/C判定→画像preflight→7:10候補レポート＋8:00意思決定サポート。レポート/候補プロポーザル/監査ログを .devlogs/morning/<date>/ へ保存。Claude API・課金・note/Chrome/X操作・自動公開なし。--register-facts は差分表示のみ（実書き込みは --write-facts か MORNING_WRITE_FACTS=1 で draft のみ）。緊急停止 MORNING_FETCH=0。ロックで二重起動防止、1件失敗で全体は止めない"
+    echo "  ./p2 am-candidates [--limit=N] [--json]  am-run の読み取り専用ビュー（--no-write 相当、外部取得なし）。A判定のみ優先順位5位まで、B/Cは別表。--json は 'grep -E \"^{\" | tail -1' で取得"
+    echo "  ./p2 morning [--fetch]  朝の作業開始を1コマンドで：起動＋status/doctor/editorial/social/jobs/preflight＋【明朝パイプライン(am-run)】＋draft-today/draft-interestのdry-run＋次の推奨工程。明朝の候補生成はこの am-run が唯一の経路"
     echo "  ./p2 prod-status Railway/Cloudflareの本番リソース状態を読み取り専用で確認（railway_ro/wrangler_ro経由のみ、値は表示しません）"
     echo "  ./p2 pmo        morning + prod-status をまとめて実行（PMOレポート作成用の一括データ収集）"
     echo "  ./p2 open       Site/CMSを開く"

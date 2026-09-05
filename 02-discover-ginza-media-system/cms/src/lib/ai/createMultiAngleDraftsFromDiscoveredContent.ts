@@ -66,6 +66,14 @@ export interface CreateMultiAngleDraftsOptions {
   /** aiGeneratedBy 用に事前正規化したテーマキー（呼び出し元が normalizeThemeKey 済みで渡す） */
   interestThemeKey?: string
   /**
+   * GINZA CROSS CULTURE MAP（2026-09-04）：CROSS CULTURE 派生記事の生成時のみ指定。
+   * generateMultiAngleArticleDrafts へ user メッセージ注入としてそのまま渡す
+   * （断定禁止・仮説明示・事実/仮説の分離を含む文字列。buildCrossCultureDerivativePlan 由来）。
+   */
+  crossCultureContext?: string
+  /** aiGeneratedBy の末尾に `|crossCulture=<market>` を付けてトレーサビリティを確保する */
+  crossCultureMarket?: string
+  /**
    * Project 02-2 収益化② Tier 1（2026-08-30）：この角度が included に無ければ
    * 何も生成しない（補助稿も抑止）。主稿（ginza_whiskers）が品質基準を満たさなかった
    * DC からは interest 補助稿も作らない、という運用のためのガード。
@@ -156,6 +164,7 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
     discoveredContentId,
     angles: options.angles,
     readerInterestTheme: options.readerInterestTheme,
+    crossCultureContext: options.crossCultureContext,
     postGate: options.enableInterestPostGate
       ? {
           restateSim: options.enableInterestPostGate.restateSim,
@@ -206,6 +215,9 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
   // まとめて弾かれる。skipped にその理由が入る。
   const interestSuffix = options.interestThemeKey
     ? `|interestTheme=${options.interestThemeKey}`
+    : ''
+  const crossCultureSuffix = options.crossCultureMarket
+    ? `|crossCulture=${options.crossCultureMarket}`
     : ''
 
   if (included.length === 0) {
@@ -261,7 +273,7 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
         // 収益化②経由の場合は末尾に |interestTheme=<正規化テーマ> を付与する。
         // 収益化② Tier 1：post-gate WARNING があれば |warnings=<csv> も付与する
         // （9月Trial は WARNING 記録のみ・生成はブロックしない）。
-        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume}${interestSuffix}${warnSuffix})`,
+        aiGeneratedBy: `${MULTI_ANGLE_AI_GENERATED_BY_PREFIX}:${angle}:${volume}${interestSuffix}${crossCultureSuffix}${warnSuffix})`,
       },
     })
 

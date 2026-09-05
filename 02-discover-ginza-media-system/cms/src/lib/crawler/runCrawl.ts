@@ -105,6 +105,8 @@ function emptyLinkStats(): ProcessLinksStats {
     eventDatesFound: 0,
     duplicatesRemoved: 0,
     errors: 0,
+    skippedNonArticle: 0,
+    skippedNonArticleDetail: [],
   }
 }
 
@@ -120,6 +122,8 @@ function mergeLinkStats(a: ProcessLinksStats, b: ProcessLinksStats): ProcessLink
     eventDatesFound: a.eventDatesFound + b.eventDatesFound,
     duplicatesRemoved: a.duplicatesRemoved + b.duplicatesRemoved,
     errors: a.errors + b.errors,
+    skippedNonArticle: a.skippedNonArticle + b.skippedNonArticle,
+    skippedNonArticleDetail: [...a.skippedNonArticleDetail, ...b.skippedNonArticleDetail].slice(0, 300),
   }
 }
 

@@ -8,7 +8,7 @@
 #   1. テンプレート（scripts/launchd/*.plist.template）の __REPO__ を実パスへ置換し
 #      ~/Library/LaunchAgents/com.ginzawhiskers.p2-trial-collect.plist を生成
 #   2. launchctl bootstrap で現在のGUIセッションへロード
-#   3. 次回 07:00 から毎朝 `./p2 interest trial-morning` が走る
+#   3. 次回 06:00 から毎朝 `./p2 interest trial-morning` が走る（2026-09-02 P0: 07:00→06:00）
 #
 # 解除は scripts/launchd/unload.sh。
 
@@ -41,7 +41,7 @@ fi
 
 if launchctl bootstrap "gui/$(id -u)" "$DEST"; then
   echo "✅ ロード完了: gui/$(id -u)/${LABEL}"
-  echo "   次回 07:00 から毎朝 './p2 interest trial-morning' が実行されます。"
+  echo "   次回 06:00 から毎朝 './p2 interest trial-morning' が実行されます。"
   echo "   状態確認: launchctl print gui/$(id -u)/${LABEL}"
   echo "   解除:     scripts/launchd/unload.sh"
 else

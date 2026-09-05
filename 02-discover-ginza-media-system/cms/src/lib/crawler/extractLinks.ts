@@ -1,4 +1,5 @@
 import { isNonHtmlResourcePath, isSameOrigin, normalizeArticleUrl } from './normalizeUrl'
+import { classifyUrlGranularity } from './urlGranularity'
 
 // トップページHTMLからの個別記事・イベントリンク抽出（Stage 1、2026-08-17）。
 //
@@ -130,6 +131,10 @@ export function extractGinzaRelevantLinks(html: string, baseUrl: string): Extrac
     if (!isSameOrigin(normalized, baseUrl)) continue
     if (normalized === normalizeArticleUrl(baseUrl, baseUrl)) continue // トップページ自身を除外
     if (isNonHtmlResourcePath(normalized)) continue // PDF/画像等のバイナリは対象外
+
+    // 年度別アーカイブ・一覧ナビ・ページ送り・カテゴリートップ・店舗案内は
+    // 個別記事ではないので候補にしない（2026-09-04、アーカイブ誤取得の修正）
+    if (!classifyUrlGranularity(normalized, anchorText).isIndividual) continue
 
     const score = relevanceScore(normalized, anchorText)
     if (score <= 0) continue

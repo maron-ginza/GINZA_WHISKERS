@@ -235,8 +235,10 @@ Editorial Style Engine 項目10 の読者向け表示形は本節の表記で更
 
 | 時刻 | 主体 | 工程 |
 |---|---|---|
-| 07:00 | 自動（launchd `trial-collect`） | note.com 等から情報収集（API課金なし） |
-| 08:00 頃 | マロン | 掲載候補を選定・`curationStatus=approved` |
+| 06:00 | 自動（launchd `trial-collect`） | note.com 等から情報収集（API課金なし）※2026-09-02 の P0 改善で 07:00→06:00 へ前倒し。実スケジューラー（LaunchAgent `com.ginzawhiskers.p2-trial-collect`）は `Hour=6` 済み。詳細は `RUNBOOKS.md` 付録G.1 |
+| 06:10〜07:10 | 自動＋人手 | 明朝パイプライン（`./p2 morning`）で裏取り・A/B/C 判定・テンプレート事前検査 → 7:10 候補レポート |
+| 07:10〜08:00 | マロン（＋レナ） | 7:10 レポートの「人間確認項目」を admin で確定入力し ArticleFacts を `ready` 化。Primary Category（18カテゴリー）も判断 |
+| 08:00 頃（遅くとも 08:30） | マロン | 掲載候補を選定・`curationStatus=approved` |
 | 選定後〜当日中 | Claude Code | 記事化（`./p2 draft-today` 系、`reviewStatus=draft`） |
 | 続けて | Claude Code / Claude in Chrome | `/note-draft` 化 → note 下書き |
 | 続けて | マロン | Same-day Review → 最終確認 → **当日公開（マロンが手動実行）** |

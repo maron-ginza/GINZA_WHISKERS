@@ -243,4 +243,148 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     lastChangedAt: null,
     notes: '東京地下鉄株式会社（東京メトロ）公式サイト。銀座エリアへのアクセス・運行情報。2026-08-15 WebSearchで確認。',
   },
+  // --- 2026-09-04 追加（非 GINZA SIX の公式情報源を広げる。マロン承認）---
+  // 「トップページを登録しない／継続巡回できる一覧URLを登録／一覧から個別記事を取得できること
+  //  を事前確認する」方針。巡回フェッチャー（fetchSourceContent）で HTTP 200・robots.txt 許可・
+  //  抽出リンクのうち classifyUrlGranularity=individual が複数あることを実地確認したもののみ登録。
+  //
+  // 登録を見送った情報源（403／接続不能／一覧から個別記事を取得できない）：
+  //   ・東急プラザ銀座 … 「GinzaNovo」へ改称。旧ドメイン全パスが改称告知へ302、
+  //                        ginzanovo.tokyu-plaza.com は接続不可。有効な一覧URLなし。
+  //   ・銀座メゾンエルメス フォーラム … maisonhermes.jp／hermes.com とも 403 Forbidden（WAF）。
+  //   ・シャネル・ネクサス・ホール … chanelnexushall.jp 接続不能、nexushall.chanel.com 403。
+  //   ・ギンザ・グラフィック・ギャラリー（ggg/DNP文化振興財団） … dnpfoundation.or.jp 全パス接続不能。
+  //   ・とらや（虎屋） … /news/ は個別記事1件のみ（JS描画のページ送り）。安定した一覧取得不可。
+  //   ・銀座菊廼舎／銀座あけぼの／博品館劇場 … /news/・/theater/ が 200 でも links=0（JS描画）。
+  //   ・銀座千疋屋 … /news/ 404。トップのみ個別ありだが内容は EC 運用通知中心。
+  //   ・銀座木村家 … /news/ から取れる個別リンクは各階レストラン・メニュー紹介（個別催事ではない）。
+  //   ・王子ホール … /concert/・/concert/lineup/・/calendar/・/schedule/ が 403 または 404。
+  //   ・ヤマハ銀座／森岡書店 銀座店 … 全URL fetch failed（接続不能）。
+  {
+    id: 'shiseido-parlour-ginza',
+    name: '資生堂パーラー',
+    url: 'https://parlour.shiseido.co.jp/news/',
+    category: 'food',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '資生堂パーラー（銀座本店・レストラン／洋菓子）の公式ニュースリリース一覧。' +
+      'トップページではなく継続巡回できる /news/ 一覧を登録。2026-09-04、巡回フェッチャーで' +
+      'HTTP 200・robots.txt 許可を確認。ただし当時のリンク抽出は年度ナビ中心だったため、' +
+      '個別記事の取得はサイト側の投稿・抽出器の対応次第（アーカイブ誤取得の修正で年度ページは除外済み）。',
+  },
+  {
+    id: 'aida-mitsuo-museum',
+    name: '相田みつを美術館',
+    url: 'https://www.mitsuo.co.jp/news/',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '相田みつを美術館（東京国際フォーラム地下1階・銀座至近）のニュース＆コラム一覧。' +
+      '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク15件' +
+      '（/news/detail_<日付>.html＝展覧会・コラム・ニュースの個別ページ）を実地確認。',
+  },
+  {
+    id: 'kyobunkwan-ginza',
+    name: '教文館',
+    url: 'https://www.kyobunkwan.co.jp/event-news/',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '教文館（銀座・書店／児童書店「ナルニア国」／催事）の公式「催事情報」一覧。' +
+      '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク10件' +
+      '（/<売場>/event-news/event-event/entry-<id>.html＝日付つき催事）を実地確認。',
+  },
+  {
+    id: 'gekkoso-ginza',
+    name: '月光荘画材店',
+    url: 'https://gekkoso.jp/news',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '月光荘画材店（銀座の老舗画材店・GEKKOSO GALLERY／画室・企画）の投稿一覧。' +
+      '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク4件' +
+      '（/<記事ID>＝レッスン・企画・GEKKOSO Presents 等の個別ページ、日付明記あり）を実地確認。',
+  },
+  {
+    id: 'ginza-motoji',
+    name: '銀座もとじ',
+    url: 'https://www.motoji.co.jp/blogs/events',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀座もとじ（銀座の老舗きもの専門店。染織作家展・工芸催事）の「催事」一覧。' +
+      '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク15件' +
+      '（/blogs/events/<slug>＝◯月催事・作家展。日付／《開催終了》明記あり）を実地確認。',
+  },
+  {
+    id: 'yamano-music-ginza',
+    name: '山野楽器 銀座本店',
+    url: 'https://www.yamano-music.co.jp/information/',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '山野楽器 銀座本店（1892年創業の銀座の楽器・音楽専門店。フェア・イベント・音楽教室）の' +
+      '「インフォメーション」一覧。2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・' +
+      '個別記事リンク15件（/information/<id>＝日付つきフェア・キャンペーン・イベント）を実地確認。',
+  },
+  {
+    id: 'ginza-natsuno',
+    name: '銀座夏野',
+    url: 'https://www.e-ohashi.com/blog/news/',
+    category: 'art_culture',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'daily',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀座夏野（銀座の箸専門店。工芸・暮らし・ワークショップ・季節のギフト）の「お知らせ」一覧。' +
+      '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク15件' +
+      '（/blog/news/<id>＝日付つき記事・ワークショップ案内）を実地確認。',
+  },
 ]
