@@ -64,6 +64,16 @@ export interface ThemeCandidate {
   contentType?: string | null
   /** 表示用の開催期間文字列 */
   eventPeriod?: string
+  /**
+   * 2026-09-06追加：開催・販売期間（eventStartAt/eventEndAt）の抽出信頼度。
+   * DiscoveredContent.dateExtraction（body_label等）由来の 'medium'/'low' は、
+   * 集約ページで別記事の会期を誤って拾っている可能性を否定できないため、
+   * 根本改善（title近接チェック）後も「要確認」として推奨から分離する
+   * （unknownTemporalMaxInRec と同じ0件既定の仕組みを使う）。
+   * json_ld/meta等の構造化データ由来、またはタイトル/URLからの明記抽出は 'high'。
+   * 日付が無い（temporalUnknown）場合は null（対象外）。
+   */
+  eventDateConfidence?: 'high' | 'medium' | 'low' | null
   // --- 2026-09-04 追加：偏り補正＋コアターゲット適合（すべて任意。未設定なら従来どおり） ---
   /** DiscoveredContent.editorial_score_total（0-100）。ランキングの一要素に加える */
   editorialScoreTotal?: number | null
@@ -129,6 +139,8 @@ export interface SelectThemesConfig {
   unknownVenueMaxInRec: number
   /** 推奨10件中、時期不明（開催日なし）の最大件数 */
   unknownTemporalMaxInRec: number
+  /** 推奨10件中、開催・販売期間の抽出信頼度が high でない（要確認）候補の最大件数（2026-09-06追加） */
+  lowConfidenceTemporalMaxInRec: number
   /** 推奨10件中、同一カテゴリーの最大件数（ART/SHOPPING 等） */
   categoryMaxInRec: number
   /** finalized にするために推奨10件が満たすべき最小カテゴリー種類数 */
@@ -162,6 +174,9 @@ export const DEFAULT_SELECT_THEMES_CONFIG: SelectThemesConfig = {
   // 2026-09-06：開催・販売期間が一切確認できない候補は推奨から完全に外す（根本改善・0件許容）。
   // 必要な場合のみ THEMES_UNKNOWN_TEMPORAL_MAX で緩められるよう env 上書きは維持する。
   unknownTemporalMaxInRec: 0,
+  // 2026-09-06：開催・販売期間はあるが抽出信頼度が high でない（body_label等）候補も、
+  // 「要確認」として推奨から外す（0件既定）。THEMES_LOW_CONFIDENCE_TEMPORAL_MAX で緩和可。
+  lowConfidenceTemporalMaxInRec: 0,
   categoryMaxInRec: 3,
   minCategoriesInRec: 6,
 }
@@ -196,6 +211,7 @@ export function loadSelectThemesConfigFromEnv(
     minCategoryResolvedRatio: num('THEMES_MIN_CATEGORY_RESOLVED_RATIO', base.minCategoryResolvedRatio),
     unknownVenueMaxInRec: num('THEMES_UNKNOWN_VENUE_MAX', base.unknownVenueMaxInRec),
     unknownTemporalMaxInRec: num('THEMES_UNKNOWN_TEMPORAL_MAX', base.unknownTemporalMaxInRec),
+    lowConfidenceTemporalMaxInRec: num('THEMES_LOW_CONFIDENCE_TEMPORAL_MAX', base.lowConfidenceTemporalMaxInRec),
     categoryMaxInRec: num('THEMES_CATEGORY_MAX', base.categoryMaxInRec),
     minCategoriesInRec: num('THEMES_MIN_CATEGORIES', base.minCategoriesInRec),
   }
@@ -254,6 +270,8 @@ export interface EvaluatedCandidate {
   temporalTier: TemporalRelevanceTier
   /** 開催日・会期が一切分からない（時期不明） */
   temporalUnknown: boolean
+  /** 開催日・会期はあるが抽出信頼度が high でない（body_label等・要確認。2026-09-06追加） */
+  temporalLowConfidence: boolean
   /** 暫定カテゴリー（明記から確定できたら 18 のいずれか。無ければ '未確定'） */
   categoryKey: string
   /** 暫定カテゴリーの根拠（primaryCategory / title / templateType / null） */
@@ -510,6 +528,8 @@ export function selectRecommendedThemes(
       scores: { freshness: fr.score, categorySpread: 0, sourceFacilitySpread: 0, venueAreaSpread: 0, templateTypeSpread: 0, targetFit: 0, sourceBalance: 0, editorial: 0, biasAdjust: 0, total: 0 },
       temporalTier: fr.tier,
       temporalUnknown: !s(c.eventStartAt) && !s(c.eventEndAt),
+      temporalLowConfidence:
+        (!!s(c.eventStartAt) || !!s(c.eventEndAt)) && !!c.eventDateConfidence && c.eventDateConfidence !== 'high',
       categoryKey: prov.category ?? '未確定',
       categoryBasis: prov.basis,
       facilityKey: fk.key,
@@ -544,6 +564,7 @@ export function selectRecommendedThemes(
   const srcTypeCount = new Map<string, number>() // source_balance（推奨＋予備通算）
   let unkVenueRec = 0
   let unkTemporalRec = 0
+  let lowConfTemporalRec = 0
   let artCultureRec = 0 // 推奨内の ART + CULTURE 合計（ART/CULTURE 過集中の抑制）
   const g = (m: Map<string, number>, k: string) => m.get(k) ?? 0
   // 推奨フェーズで候補 e を採れるか（会場不明・時期不明・同一カテゴリーのハードキャップ）
@@ -552,6 +573,9 @@ export function selectRecommendedThemes(
   const recVenueOk = (e: EvaluatedCandidate) =>
     e.facilityKey != null || unkVenueRec < cfg.unknownVenueMaxInRec
   const recTemporalOk = (e: EvaluatedCandidate) => !e.temporalUnknown || unkTemporalRec < cfg.unknownTemporalMaxInRec
+  // 期間はあるが抽出信頼度が high でない（body_label等・要確認）候補のハードキャップ（2026-09-06追加）
+  const recTemporalConfidenceOk = (e: EvaluatedCandidate) =>
+    !e.temporalLowConfidence || lowConfTemporalRec < cfg.lowConfidenceTemporalMaxInRec
 
   const ART_CULTURE = new Set(['ART', 'CULTURE'])
 
@@ -579,6 +603,7 @@ export function selectRecommendedThemes(
     // 会場不明・時期不明・明記でないカテゴリーは推奨枠が希少なので後回しにする（決定的な減点）。
     if (e.facilityKey == null) parts.total -= 0.25
     if (e.temporalUnknown) parts.total -= 0.25
+    if (e.temporalLowConfidence) parts.total -= 0.25
     if (!isCategoryResolved(e.categoryBasis)) parts.total -= 0.15
     // まだ推奨に無い明記カテゴリーは強く優先（最低カテゴリー種類数の達成のため）。
     if (isCategoryResolved(e.categoryBasis) && g(catRec, e.categoryKey) === 0) parts.total += 0.4
@@ -646,6 +671,7 @@ export function selectRecommendedThemes(
       catRec.set(picked.categoryKey, g(catRec, picked.categoryKey) + 1)
       if (picked.facilityKey == null) unkVenueRec++
       if (picked.temporalUnknown) unkTemporalRec++
+      if (picked.temporalLowConfidence) lowConfTemporalRec++
       if (ART_CULTURE.has(picked.categoryKey)) artCultureRec++
       recommended.push(picked)
     } else {
@@ -663,7 +689,8 @@ export function selectRecommendedThemes(
         g(srcRec, e.sourceName) < cfg.recSourceMax &&
         recCategoryOk(e) &&
         recVenueOk(e) &&
-        recTemporalOk(e),
+        recTemporalOk(e) &&
+        recTemporalConfidenceOk(e),
     )
     if (!b) break
     commit(b.idx, b.parts, 'rec')
@@ -677,7 +704,7 @@ export function selectRecommendedThemes(
       if (g(facAll, e.facilityBucket) >= cfg.allFacilityMax) continue
       if (g(facRec, e.facilityBucket) >= cfg.recFacilityMax) continue
       if (g(srcRec, e.sourceName) >= cfg.recSourceMax) continue
-      if (!recCategoryOk(e) || !recVenueOk(e) || !recTemporalOk(e)) continue
+      if (!recCategoryOk(e) || !recVenueOk(e) || !recTemporalOk(e) || !recTemporalConfidenceOk(e)) continue
       // 同一施設2件目 → 上限は recFacilityMax（2）。編集的な別物であることを理由として記録する。
       // （マロン確定条件は「同一施設は推奨中最大2件」の単純キャップ。3条件は理由生成にのみ使う）
       let reason = `同一施設の2件目ではない`
@@ -787,6 +814,8 @@ export function selectRecommendedThemes(
     flags.push(`会場不明が推奨内で ${unknownVenueRec} 件（上限 ${cfg.unknownVenueMaxInRec}）`)
   if (unkTemporalRec > cfg.unknownTemporalMaxInRec)
     flags.push(`時期不明が推奨内で ${unkTemporalRec} 件（上限 ${cfg.unknownTemporalMaxInRec}）`)
+  if (lowConfTemporalRec > cfg.lowConfidenceTemporalMaxInRec)
+    flags.push(`会期の抽出信頼度が要確認（high未満）の候補が推奨内で ${lowConfTemporalRec} 件（上限 ${cfg.lowConfidenceTemporalMaxInRec}）`)
   const recCatOver = [...catRec.entries()].filter(([k, n]) => k !== '未確定' && n > cfg.categoryMaxInRec)
   for (const [k, n] of recCatOver) flags.push(`カテゴリー偏り: ${k} が推奨 ${n} 件（上限 ${cfg.categoryMaxInRec}）`)
   const recCategoryKinds = new Set(recommended.filter((e) => e.categoryKey !== '未確定').map((e) => e.categoryKey)).size
@@ -829,6 +858,8 @@ export function selectRecommendedThemes(
     notFinalizedReasons.push(`会場不明が推奨 ${unknownVenueRec} 件（上限 ${cfg.unknownVenueMaxInRec}）`)
   if (unkTemporalRec > cfg.unknownTemporalMaxInRec)
     notFinalizedReasons.push(`時期不明が推奨 ${unkTemporalRec} 件（上限 ${cfg.unknownTemporalMaxInRec}）`)
+  if (lowConfTemporalRec > cfg.lowConfidenceTemporalMaxInRec)
+    notFinalizedReasons.push(`会期の抽出信頼度が要確認の候補が推奨 ${lowConfTemporalRec} 件（上限 ${cfg.lowConfidenceTemporalMaxInRec}）`)
   for (const [k, n] of recCatOver) notFinalizedReasons.push(`カテゴリー偏り: ${k} が推奨 ${n} 件（上限 ${cfg.categoryMaxInRec}）`)
   if (recommended.length >= cfg.recommendCount && recCategoryKinds < cfg.minCategoriesInRec)
     notFinalizedReasons.push(`推奨のカテゴリー種類が ${recCategoryKinds} 種（下限 ${cfg.minCategoriesInRec}）`)
@@ -840,6 +871,11 @@ export function selectRecommendedThemes(
   const thinTemporal: string[] = []
   if ((g(tmpCount, 'now')) + (g(tmpCount, 'soon')) < Math.ceil(cfg.recommendCount * 0.5))
     thinTemporal.push('NOW/SOON（開催中・まもなくの候補が半数未満）')
+  const lowConfWaiting = remaining.filter((e) => e.temporalLowConfidence).length
+  if (lowConfWaiting > 0)
+    thinTemporal.push(
+      `会期の抽出信頼度が要確認（body_label等・high未満）のため推奨に入れなかった候補が ${lowConfWaiting} 件（公式ページの再確認で high 化すれば推奨対象）`,
+    )
   // キャップに当たって取りこぼした施設・情報源（＝別ソースを増やすべき軸）
   const cappedFac = new Set<string>()
   const cappedSrc = new Set<string>()

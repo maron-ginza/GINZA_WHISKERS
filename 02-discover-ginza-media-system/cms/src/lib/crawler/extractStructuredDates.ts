@@ -197,33 +197,86 @@ function parseDateToken(token: string, fallbackYear: number | null): { iso: stri
 // 観察範囲に収まる程度の拡大に留めた。
 const LABEL_WINDOW_CHARS = 100
 
-function findLabeledRange(text: string, labels: string[]): { start: string; end: string; rawMatch: string } | null {
+// 2026-09-06、根本改善（マロン指示）：GINZA SIX 等の集約ページ（1ページに複数の
+// 商品・催事が並ぶ「おすすめ記事」「RECENT POSTS」的な構成）では、
+// text.indexOf(label) が拾う最初のラベルが、対象候補自身の記事ではなく
+// 別の商品・催事（サイドバーの別記事）に属する会期であることがあった
+// （実データ：GINZA SIX商品ニュース2件で「開催期間」ラベルの直近の日付が、
+// 同じページに列挙された別の展示会の会期を誤って拾っていた）。
+//
+// 対策：ラベルの「全ての出現位置」を候補にし、各出現位置の直前
+// TITLE_PROXIMITY_WINDOW 文字以内に、この候補自身のタイトル（の中核部分）が
+// 見つかる場合だけ採用する。見つからなければ次の出現位置を試し、どの出現
+// 位置でも確認できなければ抽出を諦める（推測で埋めない＝nullのまま）。
+// titleAnchor が無い（<title> が取れない等）場合のみ、従来どおり最初の
+// 出現位置を使う（判定材料が無い状態で新たに不採用にはしない・後方互換）。
+const TITLE_PROXIMITY_WINDOW = 400
+
+/** <title> 等から、サイト名部分を除いた中核タイトルのみを取り出す（照合用アンカー）。
+ * 短すぎる（4文字未満）場合は誤マッチの元になるため null（アンカーなし扱い）。 */
+export function coreTitleAnchor(rawTitle: string | null | undefined): string | null {
+  if (!rawTitle) return null
+  const core = rawTitle
+    .split(/\s*[|｜]\s*/)[0] // 「タイトル | サイト名 | …」の先頭区画
+    .split(/\s+[–—-]\s+(?=[A-Z0-9])/)[0] // 「タイトル – GINZA SIX」のような末尾の英字サイト名区切り
+    .trim()
+  return core.length >= 4 ? core : null
+}
+
+/** text 内での label の全出現位置（重複なし・出現順）を返す */
+function findAllIndices(text: string, label: string): number[] {
+  const idxs: number[] = []
+  let from = 0
+  for (;;) {
+    const idx = text.indexOf(label, from)
+    if (idx === -1) break
+    idxs.push(idx)
+    from = idx + label.length
+  }
+  return idxs
+}
+
+/** このラベル出現位置が、候補自身のタイトル近傍（直前 TITLE_PROXIMITY_WINDOW 文字以内）か */
+function isNearOwnTitle(text: string, labelIdx: number, titleAnchor: string | null): boolean {
+  if (!titleAnchor) return true // アンカー無しは判定材料が無いため従来どおり許可（後方互換）
+  const back = text.slice(Math.max(0, labelIdx - TITLE_PROXIMITY_WINDOW), labelIdx)
+  return back.includes(titleAnchor)
+}
+
+function findLabeledRange(
+  text: string,
+  labels: string[],
+  titleAnchor: string | null = null,
+): { start: string; end: string; rawMatch: string } | null {
   for (const label of labels) {
-    const idx = text.indexOf(label)
-    if (idx === -1) continue
-    const window = text.slice(idx, idx + label.length + LABEL_WINDOW_CHARS)
-    const tokens = Array.from(window.matchAll(DATE_TOKEN)).map((m) => m[0])
-    if (tokens.length < 2) continue
+    const candidateIdxs = titleAnchor ? findAllIndices(text, label) : [text.indexOf(label)]
+    for (const idx of candidateIdxs) {
+      if (idx === -1) continue
+      if (!isNearOwnTitle(text, idx, titleAnchor)) continue
+      const window = text.slice(idx, idx + label.length + LABEL_WINDOW_CHARS)
+      const tokens = Array.from(window.matchAll(DATE_TOKEN)).map((m) => m[0])
+      if (tokens.length < 2) continue
 
-    const first = parseDateToken(tokens[0], null)
-    if (!first) continue
-    const second = parseDateToken(tokens[1], first.year)
-    if (!second) continue
+      const first = parseDateToken(tokens[0], null)
+      if (!first) continue
+      const second = parseDateToken(tokens[1], first.year)
+      if (!second) continue
 
-    // 2026-08-17、誤判定修正（マロン指示）：以前は終了日が開始日より前に
-    // なる場合（年省略の短縮表記で年をまたぐ可能性）に自動的に+1年して
-    // いたが、これは「年をまたぐことが明示されている場合のみ年跨ぎを
-    // 認める」という原則に反する推測だった（POLA MUSEUM ANNEXで、
-    // 無関係な2つのセッション日時を範囲として誤結合し2027年へ誤補正する
-    // 事故が発生）。年が明示されたトークン同士なら終了日は既に正しい
-    // 年で解決されているため、この時点でend<startになるのは「この2つの
-    // トークンはそもそも同一範囲の開始・終了ではない」ことを意味する
-    // ——自動補正せず、この抽出を諦める（unknownを優先）。
-    if (new Date(second.iso).getTime() < new Date(first.iso).getTime()) {
-      continue
+      // 2026-08-17、誤判定修正（マロン指示）：以前は終了日が開始日より前に
+      // なる場合（年省略の短縮表記で年をまたぐ可能性）に自動的に+1年して
+      // いたが、これは「年をまたぐことが明示されている場合のみ年跨ぎを
+      // 認める」という原則に反する推測だった（POLA MUSEUM ANNEXで、
+      // 無関係な2つのセッション日時を範囲として誤結合し2027年へ誤補正する
+      // 事故が発生）。年が明示されたトークン同士なら終了日は既に正しい
+      // 年で解決されているため、この時点でend<startになるのは「この2つの
+      // トークンはそもそも同一範囲の開始・終了ではない」ことを意味する
+      // ——自動補正せず、この抽出を諦める（unknownを優先）。
+      if (new Date(second.iso).getTime() < new Date(first.iso).getTime()) {
+        continue
+      }
+
+      return { start: first.iso, end: second.iso, rawMatch: window.trim() }
     }
-
-    return { start: first.iso, end: second.iso, rawMatch: window.trim() }
   }
   return null
 }
@@ -248,38 +301,42 @@ function findLabeledRange(text: string, labels: string[]): { start: string; end:
 function findLabeledEventDate(
   text: string,
   labels: string[],
+  titleAnchor: string | null = null,
 ): { start: string; end: string; rawMatch: string } | null {
   for (const label of labels) {
-    const idx = text.indexOf(label)
-    if (idx === -1) continue
-    const window = text.slice(idx, idx + label.length + LABEL_WINDOW_CHARS)
+    const candidateIdxs = titleAnchor ? findAllIndices(text, label) : [text.indexOf(label)]
+    for (const idx of candidateIdxs) {
+      if (idx === -1) continue
+      if (!isNearOwnTitle(text, idx, titleAnchor)) continue
+      const window = text.slice(idx, idx + label.length + LABEL_WINDOW_CHARS)
 
-    if (hasSessionIndicator(window)) continue
+      if (hasSessionIndicator(window)) continue
 
-    const tokens = Array.from(window.matchAll(DATE_TOKEN)).map((m) => m[0])
-    if (tokens.length === 0) continue
+      const tokens = Array.from(window.matchAll(DATE_TOKEN)).map((m) => m[0])
+      if (tokens.length === 0) continue
 
-    const first = parseDateToken(tokens[0], new Date().getUTCFullYear())
-    if (!first) continue
+      const first = parseDateToken(tokens[0], new Date().getUTCFullYear())
+      if (!first) continue
 
-    if (tokens.length === 1) {
-      return { start: first.iso, end: first.iso, rawMatch: window.trim() }
+      if (tokens.length === 1) {
+        return { start: first.iso, end: first.iso, rawMatch: window.trim() }
+      }
+
+      const second = parseDateToken(tokens[1], first.year)
+      if (!second) {
+        // 2つ目が解析できない場合は1つ目だけを単日として採用（推測はしないが、
+        // 確実に読めた1つ目は無駄にしない）
+        return { start: first.iso, end: first.iso, rawMatch: window.trim() }
+      }
+
+      if (new Date(second.iso).getTime() < new Date(first.iso).getTime()) {
+        // 2つのトークンが同一範囲を構成しない可能性が高い——自動補正せず
+        // このラベルからの抽出自体を諦める（推測よりunknownを優先）
+        continue
+      }
+
+      return { start: first.iso, end: second.iso, rawMatch: window.trim() }
     }
-
-    const second = parseDateToken(tokens[1], first.year)
-    if (!second) {
-      // 2つ目が解析できない場合は1つ目だけを単日として採用（推測はしないが、
-      // 確実に読めた1つ目は無駄にしない）
-      return { start: first.iso, end: first.iso, rawMatch: window.trim() }
-    }
-
-    if (new Date(second.iso).getTime() < new Date(first.iso).getTime()) {
-      // 2つのトークンが同一範囲を構成しない可能性が高い——自動補正せず
-      // このラベルからの抽出自体を諦める（推測よりunknownを優先）
-      continue
-    }
-
-    return { start: first.iso, end: second.iso, rawMatch: window.trim() }
   }
   return null
 }
@@ -393,9 +450,13 @@ export function extractStructuredDates(html: string): StructuredDates {
     !result.publishedAt.value || !result.updatedAt.value || !result.eventStartAt.value || !result.eventEndAt.value
   if (needsBodyTier) {
     const bodyText = stripTagsForBodySearch(html)
+    // 2026-09-06：会期ラベルが候補自身のものか（別記事混入でないか）を判定するための
+    // タイトルアンカー。<title> を1回だけ取り出し、以降の Tier 3a/3 で共通して使う。
+    const titleTagMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
+    const titleAnchor = titleTagMatch ? coreTitleAnchor(stripTagsForBodySearch(titleTagMatch[1])) : null
 
     if (!result.eventStartAt.value || !result.eventEndAt.value) {
-      const range = findLabeledRange(bodyText, EVENT_RANGE_LABELS)
+      const range = findLabeledRange(bodyText, EVENT_RANGE_LABELS, titleAnchor)
       if (range) {
         if (!result.eventStartAt.value) {
           result.eventStartAt = { value: range.start, source: 'body_label', confidence: 'medium', rawMatch: range.rawMatch }
@@ -407,7 +468,7 @@ export function extractStructuredDates(html: string): StructuredDates {
     }
     // Tier 3a拡張：「日時」「開催日」等の単日/範囲混在ラベル（2026-08-17追加）
     if (!result.eventStartAt.value || !result.eventEndAt.value) {
-      const single = findLabeledEventDate(bodyText, EVENT_SINGLE_OR_RANGE_LABELS)
+      const single = findLabeledEventDate(bodyText, EVENT_SINGLE_OR_RANGE_LABELS, titleAnchor)
       if (single) {
         if (!result.eventStartAt.value) {
           result.eventStartAt = { value: single.start, source: 'body_label', confidence: 'medium', rawMatch: single.rawMatch }

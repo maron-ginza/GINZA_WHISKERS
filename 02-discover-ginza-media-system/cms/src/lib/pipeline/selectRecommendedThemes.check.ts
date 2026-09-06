@@ -500,5 +500,44 @@ section('S15: enableTargetFitRanking true — 高 targetFit が同条件で優�
   ok(artCultureRec <= 4, `ART+CULTURE 合計が抑制される（実際 ${artCultureRec} 件・非ART/CULTUREを優先採用）`)
 }
 
+// ---------------------------------------------------------------------------
+section('S16: 会期の抽出信頼度が high 未満（body_label等）の候補は推奨から除外（既定0件・2026-09-06根本改善）')
+{
+  uid = 1600
+  // 6件とも eventStartAt/EndAt はあるが、confidence='medium'（body_label由来の想定）
+  const list: ThemeCandidate[] = []
+  for (let i = 0; i < 6; i++) {
+    list.push(safe({
+      primaryCategory: ['ART', 'FOOD', 'MUSIC', 'PHOTO', 'CAFE', 'GIFT'][i],
+      venue: STORE_VENUES[i],
+      sourceName: `srcLC${i}`,
+      title: `要確認会期の候補 ${i}`,
+      eventStartAt: iso(`2026-09-1${i}`),
+      eventEndAt: iso(`2026-09-2${i}`),
+      eventDateConfidence: 'medium',
+    }))
+  }
+  const res = selectRecommendedThemes(list, { now: NOW })
+  const lowConfRec = res.recommended.filter((e) => e.temporalLowConfidence).length
+  ok(lowConfRec === 0, `会期信頼度medium（body_label相当）は推奨に0件（実際: ${lowConfRec}）`)
+  ok(res.finalized === false, '要確認のみ・穴埋めしない → finalized=false')
+  ok(
+    res.broadenAxes.temporal.some((t) => t.includes('要確認')),
+    'broadenAxes.temporal に「会期の抽出信頼度が要確認」の言及がある',
+  )
+
+  // high confidence なら通常どおり推奨に入る（回帰確認）
+  const highList = list.map((c) => ({ ...c, eventDateConfidence: 'high' as const }))
+  const resHigh = selectRecommendedThemes(highList, { now: NOW })
+  ok(resHigh.recommended.length === 6, `confidence=high なら通常どおり推奨に入る（実際: ${resHigh.recommended.length}）`)
+
+  // env で緩められることも確認（既定は0）
+  process.env.THEMES_LOW_CONFIDENCE_TEMPORAL_MAX = '1'
+  const loosened = selectRecommendedThemes(list, { now: NOW, config: loadSelectThemesConfigFromEnv() })
+  const lowConfLoosened = loosened.recommended.filter((e) => e.temporalLowConfidence).length
+  ok(lowConfLoosened <= 1, `THEMES_LOW_CONFIDENCE_TEMPORAL_MAX=1 なら最大1件まで緩められる（実際: ${lowConfLoosened}）`)
+  delete process.env.THEMES_LOW_CONFIDENCE_TEMPORAL_MAX
+}
+
 console.log(`\n=== 結果: ${fail === 0 ? 'PASS ✅（全チェック合格）' : `FAIL ❌（${fail} 件）`} ===`)
 process.exit(fail === 0 ? 0 : 1)
