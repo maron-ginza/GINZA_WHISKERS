@@ -11,6 +11,12 @@
 //   不明なため'unknown'（既に始まっているか分からない）。
 // - 両方判明：区間比較で確定できる。
 // - 両方不明：'unknown'。
+//
+// 【2026-09-06、根本改善】eventEndAt が日付のみ（時刻情報なし）の場合、
+// 日本時間の当日23:59:59までは開催中（'ended'にしない）として扱う
+// （isPastEventEnd参照。終了時刻が明示されている場合はその時刻を優先）。
+
+import { isPastEventEnd } from './eventEndBoundary'
 
 export type EventStatus = 'ongoing' | 'upcoming' | 'ended' | 'unknown'
 
@@ -20,21 +26,20 @@ export function deriveEventStatus(
   now: Date,
 ): EventStatus {
   const start = eventStartAt ? new Date(eventStartAt) : null
-  const end = eventEndAt ? new Date(eventEndAt) : null
   const validStart = start && !Number.isNaN(start.getTime()) ? start : null
-  const validEnd = end && !Number.isNaN(end.getTime()) ? end : null
+  const validEndIso = eventEndAt && !Number.isNaN(new Date(eventEndAt).getTime()) ? eventEndAt : null
   const nowMs = now.getTime()
 
-  if (validStart && validEnd) {
+  if (validStart && validEndIso) {
     if (nowMs < validStart.getTime()) return 'upcoming'
-    if (nowMs > validEnd.getTime()) return 'ended'
+    if (isPastEventEnd(validEndIso, now)) return 'ended'
     return 'ongoing'
   }
-  if (validStart && !validEnd) {
+  if (validStart && !validEndIso) {
     return nowMs < validStart.getTime() ? 'upcoming' : 'unknown'
   }
-  if (!validStart && validEnd) {
-    return nowMs > validEnd.getTime() ? 'ended' : 'unknown'
+  if (!validStart && validEndIso) {
+    return isPastEventEnd(validEndIso, now) ? 'ended' : 'unknown'
   }
   return 'unknown'
 }
