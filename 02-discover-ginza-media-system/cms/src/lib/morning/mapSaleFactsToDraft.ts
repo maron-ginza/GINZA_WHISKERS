@@ -143,6 +143,7 @@ function themeKeywordFrom(text: string): string {
 /** Primary Category（＋ブランド/概要語）→ 記事内で使う名詞（ネイル/香り/コスメ/グルメ 等） */
 function categoryNoun(cat: string, context: string): string {
   if (cat === 'BEAUTY') {
+    if (/チーク/.test(context)) return 'チーク'
     if (/ネイル/.test(context)) return 'ネイル'
     if (/香水|フレグランス|パフューム|香り/.test(context)) return '香り'
     if (/コスメ|化粧品|メイク|リップ|アイシャドウ|ファンデ/.test(context)) return 'コスメ'
@@ -364,21 +365,35 @@ export function mapSaleFactsToDraft(input: SaleFactsMapInput): SaleFactsMapResul
   const kw = kindWord(rawName)
 
   // areaLead：「＜店＞の＜フロア＞で、＜M月D日＞から、＜テーマ＞をモチーフにした＜名詞＞の＜種類語＞が始まります。」
+  //   2026-09-07根本改善：saleAvailability==='ongoing_no_end_stated'（継続販売中と confirmed に
+  //   確認済み）のときは「催し/イベント」表現（kindWord＝フェア/展示/催し）を使わない——商品販売を
+  //   曖昧な「催し」と表現すると公式情報（単なる継続販売）と齟齬が生じるため、確認済みの
+  //   販売場所＋カテゴリー名詞だけで「販売中」の事実を直接述べる。
   if (facts.venues && facts.venues[0]?.place) {
-    const { store, floor } = splitVenue(facts.venues[0].place)
-    const startIso = eef?.eventDateISO.value || base.fields.eventStartAt || ''
-    const md = startIso ? mmdd(startIso) : ''
-    const startMs = startIso ? new Date(startIso).getTime() : NaN
-    const endMs = base.fields.eventEndAt ? new Date(base.fields.eventEndAt).getTime() : NaN
-    const nowMs = now.getTime()
-    const placePart = floor ? `${store}の${floor}` : store
-    const themePart = theme && noun ? `${theme}をモチーフにした${noun}の` : noun ? `${noun}の` : theme ? `${theme}をテーマにした` : ''
-    let tail: string
-    if (md && Number.isFinite(startMs) && nowMs < startMs) tail = `${md}から、${themePart}${kw}が始まります。`
-    else if (Number.isFinite(endMs) && nowMs <= endMs) tail = `${themePart}${kw}が開催中です。`
-    else tail = `${themePart}${kw}が開かれています。`
-    candidates.areaLead = `${placePart}で、${tail}`
-    addCand('areaLead', candidates.areaLead, `会場（店/フロア分割）＋開始日＋テーマ語「${theme || '—'}」＋カテゴリ名詞「${noun || '—'}」から決定的生成`)
+    if (facts.saleAvailability === 'ongoing_no_end_stated') {
+      const productNoun = noun || '商品'
+      candidates.areaLead = `${facts.venues[0].place}で、新作${productNoun}を販売中です。`
+      addCand(
+        'areaLead',
+        candidates.areaLead,
+        `会場（confirmed salesLocation）＋saleAvailability=ongoing_no_end_stated＋カテゴリ名詞「${productNoun}」から決定的生成（催し表現を使わない）`,
+      )
+    } else {
+      const { store, floor } = splitVenue(facts.venues[0].place)
+      const startIso = eef?.eventDateISO.value || base.fields.eventStartAt || ''
+      const md = startIso ? mmdd(startIso) : ''
+      const startMs = startIso ? new Date(startIso).getTime() : NaN
+      const endMs = base.fields.eventEndAt ? new Date(base.fields.eventEndAt).getTime() : NaN
+      const nowMs = now.getTime()
+      const placePart = floor ? `${store}の${floor}` : store
+      const themePart = theme && noun ? `${theme}をモチーフにした${noun}の` : noun ? `${noun}の` : theme ? `${theme}をテーマにした` : ''
+      let tail: string
+      if (md && Number.isFinite(startMs) && nowMs < startMs) tail = `${md}から、${themePart}${kw}が始まります。`
+      else if (Number.isFinite(endMs) && nowMs <= endMs) tail = `${themePart}${kw}が開催中です。`
+      else tail = `${themePart}${kw}が開かれています。`
+      candidates.areaLead = `${placePart}で、${tail}`
+      addCand('areaLead', candidates.areaLead, `会場（店/フロア分割）＋開始日＋テーマ語「${theme || '—'}」＋カテゴリ名詞「${noun || '—'}」から決定的生成`)
+    }
   }
 
   // audienceNote：「＜テーマ＞や＜名詞＞を楽しみながら、季節の変わり目に＜結び＞。」

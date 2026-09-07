@@ -174,7 +174,7 @@ export const ArticleFacts: CollectionConfig = {
       admin: {
         description:
           '「承認（ready）」への変更はログイン済みの人間のみ（AI・自動化は不可）。必須項目が未充足だと承認にできない。' +
-          '下の「候補要約」を確認し、承認／保留／却下のいずれかを選んで保存するだけで完了する。',
+          '通常はこのプルダウンを操作せず、下の「候補要約」直下の承認／保留／却下ボタン（1クリックで保存完了）を使う。',
       },
     },
     {
@@ -192,6 +192,16 @@ export const ArticleFacts: CollectionConfig = {
         afterRead: [
           ({ siblingData }) => buildArticleFactsReviewSummary(siblingData as Record<string, unknown>),
         ],
+      },
+    },
+    {
+      name: 'decisionButtons',
+      label: '',
+      type: 'ui',
+      admin: {
+        components: {
+          Field: '/src/components/ArticleFactsDecisionButtons#ArticleFactsDecisionButtonsField',
+        },
       },
     },
 

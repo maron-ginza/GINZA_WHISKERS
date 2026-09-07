@@ -177,6 +177,17 @@ const cases: CheckCase[] = [
     },
   },
   {
+    name: 'DC#369: areaLead は商品販売を「催し」と表現せず、確認済みの場所＋商品名詞で「販売中」を直接述べる',
+    fn: () => {
+      const { mapped } = runFullPipeline(DC369, DC369_SIGNALS)
+      assert(
+        mapped.candidates.areaLead === '花西子 FLORASIS GINZA フロア: B1Fで、新作チークを販売中です。',
+        `実際: ${mapped.candidates.areaLead}`,
+      )
+      assert(!mapped.candidates.areaLead?.includes('催し'), '「催し」という表現を使わない')
+    },
+  },
+  {
     name: 'DC#369: 出典確認の confirmed 事実が provenanceAdds に追加される（sourceProvenanceFacts≥1 を満たす経路）',
     fn: () => {
       const { mapped } = runFullPipeline(DC369, DC369_SIGNALS)
