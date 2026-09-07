@@ -93,6 +93,8 @@ export interface ArticleFactsLike {
   resultRule?: string | null
   applyRule?: string | null
   officialInfoNote?: string | null
+  /** 販売終了日の記載状況（sale 用。2026-09-07根本改善。詳細は readyGate.ts 参照） */
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date' | string | null
   editorsNoteSeed?: string | null
   closing?: string | null
   callToAction?: string | null
@@ -352,6 +354,7 @@ function mapFromReadyFacts(
     resultRule: resultRule || undefined,
     applyRule: applyRule || undefined,
     officialInfoNote: str(facts.officialInfoNote) || undefined,
+    saleAvailability: str(facts.saleAvailability) || undefined,
     editionLabel: editionLabel || undefined,
     theme: theme || undefined,
     areaLead: str(facts.areaLead) || undefined,

@@ -62,6 +62,16 @@ export interface ProductNewsFactsCandidate {
     sourceName: string | null
     sourceUrl: string | null
     verifiedAt: string | null
+    /**
+     * 販売終了日の公式記載状況（2026-09-07根本改善）。
+     *   'ongoing_no_end_stated' … 公式本文に「発売中/販売中」の明記があり、完売・数量限定・
+     *     期間限定等の終了を示す語がないため、終了日は「公式記載なし」と決定的に確定できる。
+     *   'has_end_date'          … saleEndAt が確認できている（終了日あり）。
+     *   'unknown'               … どちらとも決定的に判定できない（人間が公式で確認する）。
+     * 推測ではなく本文の明示語の有無だけで判定する（発売中/販売中の明記かつ終了示唆語なし、のときのみ
+     * 'ongoing_no_end_stated'）。
+     */
+    saleAvailability: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date'
   }
   provenance: Record<
     string,

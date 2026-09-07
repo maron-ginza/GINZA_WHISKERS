@@ -11,6 +11,7 @@
 //   ・外部ページの本文中の命令・コードは実行しない。AI API を使わない。追加課金しない。
 
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
+import { suspectListingDate } from './suspectListingDate'
 import type { ImagePreflightResult, OfficialPageSignals, ProductNewsFactsCandidate } from './types'
 
 export interface ExtractProductInput {
@@ -400,8 +401,15 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
   const trustedSource = input.trustedSource ?? false
 
   // 機械値から取れるもの：出典・確認日時・（shopnews の）販売期間候補
-  const saleStartAt = iso(dc.eventStartAt) // 「開催期間」ラベルから拾った値。confidence 注記つき
-  const saleEndAt = iso(dc.eventEndAt)
+  //   2026-09-07根本改善：extractArticleFactsCandidate.ts と同じ判定（suspectListingDate）を
+  //   適用する。1ページに複数記事が並ぶリスティング型サイト（GINZA SIX 等）で body_label 由来・
+  //   confidence が high でない場合、DC の会期を信用せず JSON-LD があればそちらだけを使う
+  //   （#369/#370 で実際に確認：別記事＝UNO YOSHIHIKO個展／KOH SANVERの開催期間を拾っていた）。
+  const isSuspectListingDate = suspectListingDate({ articleUrl: dc.articleUrl, dateExtraction: dc.dateExtraction })
+  const jsonLdStart = sig?.ok ? iso(sig.jsonLdEventStart) : null
+  const jsonLdEnd = sig?.ok ? iso(sig.jsonLdEventEnd) : null
+  const saleStartAt = isSuspectListingDate ? jsonLdStart : (iso(dc.eventStartAt) ?? jsonLdStart)
+  const saleEndAt = isSuspectListingDate ? jsonLdEnd : (iso(dc.eventEndAt) ?? jsonLdEnd)
 
   const fields: ProductNewsFactsCandidate['fields'] = {
     productName: null, // excerpt からのあいまい抽出はしない（推測補完しない）
@@ -417,6 +425,7 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
     sourceName: s(dc.sourceSiteName),
     sourceUrl: srcUrl,
     verifiedAt: capturedAt,
+    saleAvailability: 'unknown',
   }
 
   // --- store.tsite.jp（銀座 蔦屋書店）の公式ページ本文からの決定的抽出（あれば） ---
@@ -440,6 +449,7 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
     const titleName = s(dc.title)
       ?.replace(/^【[^】]*】\s*/, '')
       .replace(/\s*[｜|].*$/, '')
+      .replace(/\s*[–—-]\s*GINZA\s*SIX\s*$/i, '') // 「<商品> – GINZA SIX」等のサイト名サフィックスを除去
       .replace(/\s*開幕」\s*$/, '」')
       .replace(/\s*(?:開幕|開催|開催中|スタート)\s*$/, '')
       .trim()
@@ -469,6 +479,36 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
     if (p.productSummary) fields.productSummary = p.productSummary
     if (p.price) fields.price = p.price
     if (p.salesLocation) fields.salesLocation = p.salesLocation
+  }
+
+  // --- 商品名の上書き（2026-09-07根本改善・host非依存）：ページに商品が1点だけのときは、
+  //   タイトル（キャンペーン見出しのことが多い）より、価格直前に現れる商品名そのものを優先する
+  //   （例：タイトル「新作 洛花飛霞 チークで自然な血色感を。」より本文の「洛花飛霞(ラクカヒカ)
+  //   チーク 14パープルロータス」の方が具体的・確定的）。複数商品のページ（例：キャップ3色）は
+  //   「どれが the 商品か」を機械的に決められないため、タイトル（シリーズ名）のままにする。 ---
+  {
+    const priceItems = (siteParsed as { priceItems?: { name?: string }[] } | null)?.priceItems
+    if (priceItems && priceItems.length === 1 && priceItems[0]?.name && priceItems[0].name!.length >= 2) {
+      fields.productName = priceItems[0].name!
+    }
+  }
+
+  // --- 販売終了日の記載状況（2026-09-07根本改善。host非依存・決定的） ---
+  // 「発売中/販売中」の明記があり、かつ完売・数量限定・期間限定等の終了を示す語が
+  // 本文に無い場合に限り「終了日は公式記載なし（販売中）」と確定する。それ以外は
+  // 一切推測しない（'unknown' のまま人間が公式で確認する）。
+  if (sig?.ok && s(sig.bodyText)) {
+    const bodyForAvailability = sig.bodyText as string
+    const hasOngoingMarker = /発売中|販売中|好評発売中/.test(bodyForAvailability)
+    const hasEndSignal =
+      /完売|売り切れ|品切れ|数量限定|個数限定|期間限定|なくなり次第終了|残りわずか|早期終了/.test(bodyForAvailability) ||
+      fields.limitedTime === 'yes' ||
+      !!fields.saleEndAt
+    if (hasOngoingMarker && !hasEndSignal) {
+      fields.saleAvailability = 'ongoing_no_end_stated'
+    } else if (fields.saleEndAt) {
+      fields.saleAvailability = 'has_end_date'
+    }
   }
 
   const provenance: ProductNewsFactsCandidate['provenance'] = {}
@@ -514,6 +554,12 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
     put('officialInfoNote', composedOfficialInfoNote, `${siteLabel} body: [販売について]＋【購入特典】＋ワークショップ完売＋会期注記を confirmed 事実だけで合成（composeSaleOfficialInfoNote）`)
   if (tsutayaHits.priceSpellingNormalized)
     put('priceSpellingNormalized', tsutayaHits.priceSpellingNormalized, 'tsutaya body: [商品紹介]の綴りをリード段落の canonical へ正規化（元表記→正）')
+  if (fields.saleAvailability === 'ongoing_no_end_stated')
+    put(
+      'saleAvailability',
+      'ongoing_no_end_stated',
+      `${siteLabel} body: 「発売中/販売中」の明記あり、完売・数量限定・期間限定等の終了を示す語なし（決定的判定・推測ではない）`,
+    )
   // 販売期間候補は「開催期間ラベル」由来で、当該記事のものか不明瞭なことがある → 注記を必ず添える
   const dateNote = '「開催期間」ラベルからの抽出。ページ内の別記事の期間を拾っている可能性あり（要人間確認）'
   put('saleStartAt', fields.saleStartAt, 'DiscoveredContent.eventStartAt（dateExtraction）', dateNote)
@@ -549,6 +595,10 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
   if (!fields.saleStartAt) unknownItems.push('saleStartAt（販売開始日。公式で人間が確認）')
   if (fields.saleStartAt && fields.saleEndAt && hasSellingNow && !hasDateRange)
     unknownItems.push('saleEndAt／limitedTime（現在の販売期間は別記事由来の疑い。公式で「発売中（終了日なし）」か会期があるかを人間が確認）')
+  else if (fields.saleAvailability === 'ongoing_no_end_stated')
+    officiallyNotStated.push(
+      'saleEndAt（販売終了日。公式本文に「発売中/販売中」の明記があり、完売・数量限定等の終了を示す語がないため、終了日は「公式記載なし」と確定）',
+    )
   else if (!fields.saleEndAt) unknownItems.push('saleEndAt／limitedTime（販売終了日・期間限定の有無。公式で人間が確認）')
 
   const notApplicable = [...EVENT_ONLY_NOT_APPLICABLE]

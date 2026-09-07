@@ -52,7 +52,7 @@ import type {
   DiscoveredContentLike,
 } from '../lib/template/mapDiscoveredContentToEventFields'
 import { resolveFacilityKey } from '../lib/curation/facilityKey'
-import { deriveProvisionalCategory } from '../lib/pipeline/provisionalCategory'
+import { deriveProvisionalCategory, isCategoryResolved } from '../lib/pipeline/provisionalCategory'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
 
@@ -708,19 +708,21 @@ async function main(): Promise<void> {
         // unknown は event 用/商品用の要約抽出は行わない（推測分類しない）
 
         // --- digestMeta（記事生成レディ最終候補ダイジェスト用。2026-09-05。読み取り専用・DB非依存） ---
+        //   provisionalCategory はこのブロックの外（下の ArticleFacts 自動登録）でも使う
+        //   （2026-09-07 根本改善：basis==='title' の決定的キーワード一致のときだけ auto-fill する）。
+        const provisionalCategory = deriveProvisionalCategory({
+          primaryCategory: (factsDoc?.primaryCategory as string | null) ?? null,
+          title: dcLike.title,
+          venue: dcLike.venue,
+          templateType: a.templateType,
+          contentType: dcLike.contentType,
+        })
         {
           const facility = resolveFacilityKey({
             venue: dcLike.venue,
             sourceName: dcLike.sourceSiteName,
             sourceUrl: dcLike.articleUrl,
             title: dcLike.title,
-          })
-          const provisionalCategory = deriveProvisionalCategory({
-            primaryCategory: (factsDoc?.primaryCategory as string | null) ?? null,
-            title: dcLike.title,
-            venue: dcLike.venue,
-            templateType: a.templateType,
-            contentType: dcLike.contentType,
           })
           a.digestMeta = {
             venue: dcLike.venue ?? null,
@@ -751,7 +753,10 @@ async function main(): Promise<void> {
         //                     confirmed な販売事実だけを共通フィールドへ（priceText 等は人間確認）。
         //   ・unknown       → base のみ。confirmed 事実だけ draft へ。templateType=unknown で保持し、
         //                     ready 化・記事生成はできない（evaluateReadyGate が停止させる）。
-        //   ・primaryCategory は機械推測しない（マロンが admin で確定）。
+        //   ・primaryCategory は原則機械推測しない。ただし 2026-09-07 根本改善：
+        //     deriveProvisionalCategory の basis==='title'（タイトル/会場に明記された語からの
+        //     決定的一致。isCategoryResolved が true を返す唯一の自動判定）のときだけ auto-fill する
+        //     （basis==='templateType' の弱い推定は書かない＝マロンが admin で確定）。
         if (args.registerFacts) {
           try {
             const registerBase =
@@ -773,6 +778,7 @@ async function main(): Promise<void> {
                 duplicate: a.dedup.duplicate,
                 factKind,
                 templateType: templateTypeCls.templateType,
+                primaryCategory: isCategoryResolved(provisionalCategory.basis) ? provisionalCategory.category : null,
                 productExtraction: factKind === 'product_news' ? a.productExtraction ?? null : null,
               },
               { dryRun: !args.writeFacts, now },

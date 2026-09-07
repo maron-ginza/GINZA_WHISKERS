@@ -39,6 +39,14 @@ export interface CommonArticleFacts {
   eventTime?: string | null
   venues?: ({ name?: string | null; place?: string | null } | null)[] | null
   priceText?: string | null // 価格の表示文字列（sale 用。paid 列とは別）
+  /**
+   * 販売終了日の記載状況（sale 用。2026-09-07根本改善）。
+   *   'ongoing_no_end_stated' … 公式本文に「発売中/販売中」の明記があり、完売・数量限定・
+   *     期間限定等の終了を示す語がないことを confirmed に確認できた（開始日が過去でも
+   *     ready 化を妨げない。詳細は evaluateReadyGate 内のコメント参照）。
+   *   'has_end_date' / 'unknown' / 未設定 … 従来どおり eventDateISO の過去/未来判定を適用する。
+   */
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date' | string | null
   paid?: 'paid' | 'free' | 'unknown' | string | null
   applyRequired?: 'yes' | 'no' | string | null
   applyDeadline?: string | null
@@ -210,13 +218,22 @@ export function evaluateReadyGate(
   }
 
   // --- 過去/未来ゲート（機械日付が必要。過去は eligible にしない） ---
-  const iso = s(facts.eventDateISO)
-  if (!iso) {
-    missing.push('eventDateISO（過去/未来を機械判定できないため必須）')
-  } else if (Number.isNaN(new Date(iso).getTime())) {
-    missing.push('eventDateISO（日付として解釈できない）')
-  } else if (isPastEventEnd(iso, now)) {
-    missing.push('eventDateISO / availablePeriod（会期・有効期間が過去）')
+  //   【2026-09-07根本改善】sale かつ saleAvailability==='ongoing_no_end_stated'（公式本文に
+  //   「発売中/販売中」の明記があり、完売・数量限定・期間限定等の終了を示す語がないことを
+  //   confirmed に確認できた場合のみ）は、この過去/未来ゲート自体を適用しない——販売開始日が
+  //   過去なのは「継続して販売中」という事実の当然の帰結であり、終了日が無い以上「過去」を
+  //   判定する機械日付が存在しないため。他の templateType・他の sale（saleAvailability が
+  //   'has_end_date'／'unknown'／未設定）には一切影響しない（既定 'unknown' で従来どおり）。
+  const salesOngoingNoEnd = t === 'sale' && facts.saleAvailability === 'ongoing_no_end_stated'
+  if (!salesOngoingNoEnd) {
+    const iso = s(facts.eventDateISO)
+    if (!iso) {
+      missing.push('eventDateISO（過去/未来を機械判定できないため必須）')
+    } else if (Number.isNaN(new Date(iso).getTime())) {
+      missing.push('eventDateISO（日付として解釈できない）')
+    } else if (isPastEventEnd(iso, now)) {
+      missing.push('eventDateISO / availablePeriod（会期・有効期間が過去）')
+    }
   }
 
   return {

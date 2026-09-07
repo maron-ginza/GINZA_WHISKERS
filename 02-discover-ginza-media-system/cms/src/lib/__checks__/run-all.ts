@@ -25,6 +25,7 @@ import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
 import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
+import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 
 const results: SuiteResult[] = [
@@ -48,6 +49,7 @@ const results: SuiteResult[] = [
   extractStructuredDates(),
   eventEndBoundary(),
   extractProductNewsFacts(),
+  ginzaSixAutoResolve(),
   p0Morning(),
 ]
 
