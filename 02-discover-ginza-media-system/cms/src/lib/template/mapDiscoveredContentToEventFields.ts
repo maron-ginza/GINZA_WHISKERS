@@ -423,6 +423,7 @@ function mapFromReadyFacts(
     resultRule,
     applyRule,
     officialInfoNote: str(facts.officialInfoNote),
+    saleAvailability: str(facts.saleAvailability) || undefined,
     editorsNoteSeed: (str(facts.editorsNoteSeed) || str(options.editorsNoteSeed)) || undefined,
     closing: str(facts.closing) || '気になる方は、公式情報を確認のうえお出かけください。',
     // CTA：人間が入力した値があればそれを使う。無ければ「購入 / 申込がある記事」だけ

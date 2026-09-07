@@ -20,6 +20,8 @@ import { extractProductNewsFactsCandidate } from '../morning/extractProductNewsF
 import { mapSaleFactsToDraft } from '../morning/mapSaleFactsToDraft'
 import { evaluateReadyGate, type CommonArticleFacts } from '../template/readyGate'
 import { deriveProvisionalCategory, isCategoryResolved } from '../pipeline/provisionalCategory'
+import { buildSaleArticle, buildTitleCandidatesSale } from '../template/saleTemplate'
+import type { EventArticleFields } from '../template/templates'
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
 import type { ImagePreflightResult, OfficialPageSignals } from '../morning/types'
 
@@ -229,6 +231,44 @@ const cases: CheckCase[] = [
     fn: () => {
       const { gate } = runFullPipeline(DC370, DC370_SIGNALS)
       assert(Array.isArray(gate.missing) && gate.missing.length > 0, '不足項目が配列で提示される')
+    },
+  },
+  {
+    name: 'DC#369記事本文: saleTemplate（saleAvailability=ongoing_no_end_stated）は「催し」を一切使わない',
+    fn: () => {
+      const f: EventArticleFields = {
+        primaryCategory: 'BEAUTY',
+        season: '秋',
+        eventName: '洛花飛霞チーク 14 パープルロータス',
+        editionLabel: '',
+        theme: '',
+        whatHappens: '肌なじみの良い繊細なカラーで、内側からにじむような自然な血色感を演出する新作チークを販売中。',
+        eventDate: '2026年9月2日（水）〜販売中',
+        eventTime: '',
+        venues: [{ name: '花西子 FLORASIS GINZA', place: 'GINZA SIX B1F' }],
+        areaLead: '花西子 FLORASIS GINZA フロア: B1Fで、新作チークを販売中です。',
+        audienceNote: '花や美容を楽しみながら、季節の変わり目に自分を整えたい方へ。',
+        paid: false,
+        priceText: '3,190円（税込）',
+        applyDeadline: '',
+        resultDate: '',
+        resultRule: '',
+        applyRule: '',
+        officialInfoNote: '販売終了日の記載なし。商品の詳細は店舗へ問い合わせ。',
+        saleAvailability: 'ongoing_no_end_stated',
+        closing: '',
+        callToAction: '',
+      }
+      const titles = buildTitleCandidatesSale(f)
+      const rendered = buildSaleArticle(f, { sourceName: 'GINZA SIX', sourceUrl: 'https://ginza6.tokyo/news/detail/shopnews/224270' })
+      const fullText = [...titles, ...rendered.blocks.map((b) => b.text)].join('\n')
+      assert(!fullText.includes('催し'), `「催し」を含まない（実際: ${fullText.includes('催し')}）`)
+      assert(!titles[0].includes('洛花飛霞チーク「洛花飛霞チーク'), 'タイトルにブランド名の重複がない')
+      assert(
+        rendered.blocks.some((b) => b.text.includes('会場：花西子 FLORASIS GINZA（GINZA SIX B1F）')),
+        `会場に店舗名＋フロアが併記される（実際: ${JSON.stringify(rendered.blocks.map((b) => b.text))}）`,
+      )
+      assert(rendered.blocks.some((b) => b.text.includes('チーク')), 'カテゴリー名詞に「チーク」が使われる（「美容」で薄めない）')
     },
   },
 ]
