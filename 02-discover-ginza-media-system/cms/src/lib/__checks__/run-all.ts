@@ -24,6 +24,7 @@ import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
+import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 
 const results: SuiteResult[] = [
@@ -46,6 +47,7 @@ const results: SuiteResult[] = [
   buildFinalCandidateDigest(),
   extractStructuredDates(),
   eventEndBoundary(),
+  extractProductNewsFacts(),
   p0Morning(),
 ]
 
