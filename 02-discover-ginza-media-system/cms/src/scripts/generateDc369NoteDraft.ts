@@ -61,7 +61,7 @@ async function main() {
 
   // --- note本文の組み立て（テンプレート出力＋冒頭挿絵の注釈文。新しい事実は加えない） ---
   const ILLUSTRATION_CAPTION =
-    '※画像は記事内容をもとに生成したイメージです。実際の商品・店舗内装とは異なります。'
+    '※画像は記事内容をもとに生成したイメージです。実際の商品・店舗とは異なる場合があります。'
   const lines: string[] = []
   lines.push(preview.title)
   lines.push('')
