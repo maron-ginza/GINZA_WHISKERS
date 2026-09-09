@@ -33,6 +33,8 @@ import {
   dedupeAdjacentPhrases,
   stripLeakedFragments,
   ensureFourHashtags,
+  isShopnewsUrl,
+  officialPageLabel,
 } from '../template/polishArticleDraft'
 import { renderArticleFromTemplate, type TemplateArticleInput } from '../template/renderArticleFromTemplate'
 import type { EventArticleFields } from '../template/templates'
@@ -572,6 +574,103 @@ const cases: CheckCase[] = [
       assert(r.charCount > 200, `本文が生成される（${r.charCount}字）`)
       assert(r.hashtags.length === 4 && r.hashtags.includes('#銀座') && r.hashtags.includes('#個展'), `4タグ・既存保持（${r.hashtags.join(' ')}）`)
       assert(!/undefined|\[object Object\]/i.test(r.noteBody), '断片混入なし')
+    },
+  },
+  // ---------- 公開前テンプレート整合性（販売期間／出典種別／購入案内の統合・2026-09-09） ----------
+  {
+    name: 'isShopnewsUrl / officialPageLabel: shopnews は「公式ショップニュース」、それ以外は「公式ページ」',
+    fn: () => {
+      assert(isShopnewsUrl('https://ginza6.tokyo/news/detail/shopnews/224269'), 'GINZA SIX shopnews')
+      assert(isShopnewsUrl('https://www.ginza.jp/shopnews/shopnews-ginza-yanagi-gallery/35821'), 'ginza.jp shopnews')
+      assert(!isShopnewsUrl('https://store.tsite.jp/ginza/event/art/1.html'), '蔦屋の event ページは shopnews ではない')
+      assert(officialPageLabel('https://ginza6.tokyo/news/detail/shopnews/1', 'GINZA SIX') === 'GINZA SIX 公式ショップニュース', officialPageLabel('https://ginza6.tokyo/news/detail/shopnews/1', 'GINZA SIX'))
+      assert(officialPageLabel('https://store.tsite.jp/ginza/event/1.html', '銀座 蔦屋書店') === '銀座 蔦屋書店 公式ページ', officialPageLabel('https://store.tsite.jp/ginza/event/1.html', '銀座 蔦屋書店'))
+    },
+  },
+  {
+    name: 'render(sale・no_period_stated・shopnews): 基本情報＝「販売期間：公式に記載なし」、購入について＝1文・「公式ショップニュース」・重複なし',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: '', season: '秋',
+        eventName: 'AMBUSH® x New Era®', editionLabel: '', theme: '',
+        whatHappens: 'New Era のクラシックなフォルムに AMBUSH の素材を融合したコレクション。',
+        eventDate: '販売期間の記載なし（店頭にて取扱）', eventTime: '',
+        venues: [{ name: 'AMBUSH® x New Era®', place: 'AMBUSH® WORKSHOP GINZA フロア: 3F' }],
+        areaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、催しが開かれています。',
+        audienceNote: '装いのアクセントを探している方へ。', paid: false,
+        priceText: 'NEW ERA A-PATCH CAP：16,500円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '販売期間の記載なし（店頭にて取扱）。詳細は店舗でご確認ください。',
+        saleAvailability: 'no_period_stated', closing: '',
+        callToAction: '店頭販売の最新情報は、公式イベントページでご確認ください。',
+      }
+      const r = renderArticleFromTemplate({
+        discoveredContentId: 370, fields,
+        sourceName: 'GINZA SIX', sourceUrl: 'https://ginza6.tokyo/news/detail/shopnews/224269',
+        verifiedAt: '2026-09-08T21:01:40.055Z',
+        sourceProvenance: [{ fact: '価格', sourceType: 'official', factType: 'price', verificationStatus: 'confirmed' }],
+        hashtags: ['#銀座'], appliedTemplate: 'sale',
+      })
+      assert(!/会期[：:]/.test(r.noteBody), `sale 本文に「会期：」を使わない（実際: ${r.noteBody.match(/.{0,6}会期.{0,6}/)?.[0] ?? ''}）`)
+      assert(/販売期間：公式に記載なし/.test(r.noteBody), `基本情報＝「販売期間：公式に記載なし」（実際: ${r.noteBody.match(/基本情報[\s\S]{0,40}/)?.[0] ?? ''}）`)
+      assert(!/販売期間の記載なし（店頭にて取扱）/.test(r.noteBody), '「販売期間の記載なし（店頭にて取扱）」を本文で繰り返さない')
+      assert(!/店頭にて取扱/.test(r.noteBody), '「店頭にて取扱」を繰り返さない')
+      assert(!/公式イベントページ/.test(r.noteBody), 'shopnews 出典なので「公式イベントページ」は出ない')
+      assert(/公式ショップニュース/.test(r.noteBody), '「公式ショップニュース」を使う')
+      const kakunin = (r.noteBody.match(/でご確認ください/g) ?? []).length
+      assert(kakunin === 1, `「でご確認ください」の重複なし（実際 ${kakunin} 回）`)
+      // 購入について＝見出し＋1段落
+      const purchaseIdx = r.blocks.findIndex((b) => b.type === 'heading' && b.text === '購入について')
+      assert(purchaseIdx >= 0 && r.blocks[purchaseIdx + 1]?.type === 'paragraph' && r.blocks[purchaseIdx + 2]?.type === 'heading', '購入について は1段落に統合')
+      assert(!/催し/.test(r.noteBody), 'sale 本文に「催し」を使わない（回帰）')
+    },
+  },
+  {
+    name: 'render(sale・会期あり・非商品): ラベルは「販売期間：」／shopnews 出典は CTA も「公式ショップニュース」',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: 'BEAUTY', season: '秋',
+        eventName: 'テストブランド『スターシリーズ』', editionLabel: '', theme: '',
+        whatHappens: '限定色を集めたフェアです。',
+        eventDate: '2026年10月1日（水）〜10月20日（火）', eventTime: '',
+        venues: [{ name: 'テストブランド', place: '銀座 蔦屋書店 文具売り場（GINZA SIX 6F）' }],
+        areaLead: '文具売り場で開催中。', audienceNote: '指先を整えたい方へ。', paid: false,
+        priceText: 'libra：2,580円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '店頭で販売します。',
+        closing: '', callToAction: '店頭販売の最新情報は、公式イベントページでご確認ください。',
+      }
+      const r = renderArticleFromTemplate({
+        discoveredContentId: 331, fields,
+        sourceName: 'GINZA SIX', sourceUrl: 'https://ginza6.tokyo/news/detail/shopnews/900',
+        verifiedAt: '2026-09-09T00:00:00.000Z',
+        sourceProvenance: [{ fact: '会期', sourceType: 'official', factType: 'date', verificationStatus: 'confirmed' }],
+        hashtags: ['#銀座'], appliedTemplate: 'sale',
+      })
+      assert(/販売期間：2026年10月1日/.test(r.noteBody), `会期あり sale も「販売期間：」ラベル（実際: ${r.noteBody.match(/販売期間[：:][^\n]{0,20}/)?.[0] ?? '—'}）`)
+      assert(!/会期[：:]/.test(r.noteBody), '「会期：」を使わない')
+      assert(!/公式イベントページ/.test(r.noteBody) && /公式ショップニュース/.test(r.noteBody), 'shopnews 出典は CTA も「公式ショップニュース」へ')
+    },
+  },
+  {
+    name: 'render(sale・非 shopnews 出典): 「公式イベントページ」はそのまま（過剰置換しない・回帰）',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: 'BEAUTY', season: '秋',
+        eventName: 'テスト『フェア』', editionLabel: '', theme: '',
+        whatHappens: '限定色のフェアです。', eventDate: '2026年10月1日〜10月20日', eventTime: '',
+        venues: [{ name: 'テスト', place: '銀座 蔦屋書店 文具売り場（GINZA SIX 6F）' }],
+        areaLead: '開催中。', audienceNote: '指先を整えたい方へ。', paid: false,
+        priceText: 'A：2,580円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '店頭で販売します。', closing: '',
+        callToAction: '店頭販売の最新情報は、公式イベントページでご確認ください。',
+      }
+      const r = renderArticleFromTemplate({
+        discoveredContentId: 999, fields,
+        sourceName: '銀座 蔦屋書店', sourceUrl: 'https://store.tsite.jp/ginza/event/stationery/1.html',
+        verifiedAt: '2026-09-09T00:00:00.000Z',
+        sourceProvenance: [{ fact: '会期', sourceType: 'official', factType: 'date', verificationStatus: 'confirmed' }],
+        hashtags: ['#銀座'], appliedTemplate: 'sale',
+      })
+      assert(/公式イベントページ/.test(r.noteBody), '非 shopnews 出典は「公式イベントページ」を維持')
     },
   },
 ]

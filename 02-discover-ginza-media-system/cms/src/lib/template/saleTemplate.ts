@@ -1,5 +1,6 @@
 import type { TextBlock } from '../ai/lexical'
 import { formatVerifiedAtForDisplay } from '../ai/generateArticleDraft'
+import { isShopnewsUrl, officialPageLabel } from './polishArticleDraft'
 import type { EventArticleFields } from './templates'
 
 // GINZA WHISKERS / Project 02（2026-09-03、共通 sale renderer）
@@ -382,13 +383,21 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
     }
   }
 
-  // === 6. 基本情報（会期・時間・会場はここに 1 回だけ） ===
+  // 出典種別の表示語（shopnews → 公式ショップニュース。req 2・全 sale 共通）
+  const pageWord = isShopnewsUrl(source.sourceUrl) ? '公式ショップニュース' : '公式イベントページ'
+
+  // === 6. 基本情報（販売期間・時間・会場はここに 1 回だけ） ===
   push({ type: 'heading', level: 2, text: '基本情報' })
-  const endDateChanges = /(?:終了日|会期|会期終了).*変更|変更.*(?:終了日|会期)/.test(f.officialInfoNote)
-  if (s(f.eventDate)) {
+  const endDateChanges = /(?:終了日|会期|販売期間|会期終了).*変更|変更.*(?:終了日|会期|販売期間)/.test(f.officialInfoNote)
+  // req 1：product_news・sale は「会期」でなく「販売期間」。
+  // req 3：no_period_stated 等で eventDate が「販売期間の記載なし（…）」の場合は
+  //        「販売期間：公式に記載なし」に統合し、店頭取扱の案内は「購入について」へ一本化する。
+  if (isProductSale(f) && /記載なし|未定|未発表|不明/.test(s(f.eventDate))) {
+    push({ type: 'paragraph', text: '販売期間：公式に記載なし' })
+  } else if (s(f.eventDate)) {
     push({
       type: 'paragraph',
-      text: `会期：${s(f.eventDate)}${endDateChanges ? '（終了日は変更される場合があります）' : ''}`,
+      text: `販売期間：${s(f.eventDate)}${endDateChanges ? '（終了日は変更される場合があります）' : ''}`,
     })
   }
   if (s(f.eventTime)) {
@@ -396,7 +405,7 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
     // フェア固有の開催時刻ではない。公式ページの「時間」欄由来である点も併記する。
     push({
       type: 'paragraph',
-      text: `店舗営業時間：${normalizeTimeRange(f.eventTime)}（公式イベントページの「時間」欄より）`,
+      text: `店舗営業時間：${normalizeTimeRange(f.eventTime)}（${pageWord}の「時間」欄より）`,
     })
   }
   if (f.venues[0]?.place) {
@@ -409,13 +418,27 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
     push({ type: 'paragraph', text: `会場：${venueText}` })
   }
 
-  // === 7. 購入について（officialInfoNote を句点で分解・役割別に再配置） ===
+  // === 7. 購入について ===
+  // req 3：販売期間の公式記載がない商品（no_period_stated / ongoing）は、
+  //   「販売期間の記載なし」「店頭にて取扱」「詳細は店舗で確認」を各所で繰り返さず、
+  //   基本情報＝「販売期間：公式に記載なし」／購入について＝1文 に統合する。
+  if (isProductSale(f)) {
+    push({ type: 'heading', level: 2, text: '購入について' })
+    push({
+      type: 'paragraph',
+      text: `店頭での取り扱いです。販売期間や在庫の詳細は、${officialPageLabel(source.sourceUrl, source.sourceName)}でご確認ください。`,
+    })
+  } else {
+    renderNonProductPurchaseInfo()
+  }
+  // 上記の非商品 sale 用ロジックを関数化（挙動不変）
+  function renderNonProductPurchaseInfo(): void {
   const infoSents = splitSentences(f.officialInfoNote)
   const wsSoldOut = infoSents.filter((t) => /ワークショップ/.test(t) && /完売|終了/.test(t))
   const purchaseSents = infoSents.filter(
     (t) =>
       !(/ワークショップ/.test(t) && /完売|終了/.test(t)) && // 完売 WS は別段落・原文のまま
-      !(/(?:終了日|会期).*変更|変更.*(?:終了日|会期)/.test(t)), // 終了日変更は基本情報へ
+      !(/(?:終了日|会期|販売期間).*変更|変更.*(?:終了日|会期|販売期間)/.test(t)), // 終了日変更は基本情報へ
   )
   if (purchaseSents.length > 0 || wsSoldOut.length > 0) {
     push({ type: 'heading', level: 2, text: '購入について' })
@@ -440,12 +463,15 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
       push({ type: 'paragraph', text: endPunct(w) })
     }
   }
+  } // end renderNonProductPurchaseInfo
 
   // === 本文末尾の CTA（1 ブロック）===
   //   f.callToAction は mapDiscoveredContentToEventFields が「購入 / 申込がある記事」だけ
   //   confirmed 事実（公式 URL）に裏づけて埋める。空なら CTA ブロックを出さない（推測しない）。
+  //   req 3：商品（isProductSale）は購入案内を「購入について」1文に統合済みのため CTA は出さない
+  //   （「公式ページで確認」の重複を避ける）。
   const cta = s(f.callToAction)
-  if (cta) {
+  if (cta && !isProductSale(f)) {
     push({ type: 'paragraph', text: endPunct(cta) })
   }
 

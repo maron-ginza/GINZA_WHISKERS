@@ -77,6 +77,18 @@ export function stripLeakedFragments(input: string): string {
   return s.trim()
 }
 
+// ── 出典種別の表示語（shopnews → 公式ショップニュース） ────────────────
+/** 出典 URL が「ショップニュース」系か（GINZA SIX: /news/detail/shopnews/、ginza.jp: /shopnews/ ・ /shopnews-） */
+export function isShopnewsUrl(u?: string): boolean {
+  return /\/shopnews\/|\/shopnews-|\/news\/detail\/shopnews\//.test(String(u ?? ''))
+}
+/** 出典 URL の種別から「（出典名 ）公式◯◯」の表示語を決める。 */
+export function officialPageLabel(sourceUrl?: string, sourceName?: string): string {
+  const kind = isShopnewsUrl(sourceUrl) ? '公式ショップニュース' : '公式ページ'
+  const nm = String(sourceName ?? '').trim()
+  return nm ? `${nm} ${kind}` : kind
+}
+
 // ── 1. ハッシュタグを必ず4個へ ──────────────────────────────────────────
 export interface PolishContext {
   appliedTemplate?: string
@@ -85,6 +97,8 @@ export interface PolishContext {
   category?: string
   venueNames?: string[]
   venuePlaces?: string[]
+  /** 出典 URL。shopnews のとき本文中の「公式イベントページ」を「公式ショップニュース」へ置換する */
+  sourceUrl?: string
 }
 
 const CATEGORY_TAG: Record<string, string> = {
@@ -201,8 +215,12 @@ export function polishArticleDraft<B extends PolishableBlock>(
   input: PolishArticleInput<B>,
   ctx: PolishContext,
 ): PolishArticleResult<B> {
+  // 出典が shopnews のときは「公式イベントページ」→「公式ショップニュース」（req 2）
+  const srcWord = (s: string): string =>
+    isShopnewsUrl(ctx.sourceUrl) ? s.replace(/公式イベントページ/g, '公式ショップニュース') : s
+  const clean = (s: string): string => srcWord(polishTextFragment(s))
   const titleCandidates = input.titleCandidates
-    .map(polishTextFragment)
+    .map(clean)
     .map((t) =>
       t
         .replace(/[「『][」』]/g, '')
@@ -212,7 +230,7 @@ export function polishArticleDraft<B extends PolishableBlock>(
     )
     .filter(Boolean)
   const blocks = input.blocks
-    .map((b) => (typeof b.text === 'string' ? ({ ...b, text: polishTextFragment(b.text) } as B) : b))
+    .map((b) => (typeof b.text === 'string' ? ({ ...b, text: clean(b.text) } as B) : b))
     .filter((b) => !(b.type === 'paragraph' && typeof b.text === 'string' && b.text.trim() === ''))
   const hashtags = ensureFourHashtags(input.hashtags, ctx)
   return { titleCandidates, blocks, hashtags }

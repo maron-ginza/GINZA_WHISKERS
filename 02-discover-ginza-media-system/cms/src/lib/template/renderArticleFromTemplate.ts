@@ -134,6 +134,7 @@ export function renderArticleFromTemplate(input: TemplateArticleInput): Template
     category: fields.primaryCategory,
     venueNames: (fields.venues ?? []).map((v) => v?.name ?? '').filter(Boolean),
     venuePlaces: (fields.venues ?? []).map((v) => v?.place ?? '').filter(Boolean),
+    sourceUrl: input.sourceUrl,
   }
 
   // --- sale：専用の 8 セクション renderer（buildAngleArticleBlocks を経由しない） ---
