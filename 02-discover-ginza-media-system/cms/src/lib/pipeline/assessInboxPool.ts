@@ -29,6 +29,7 @@ import type {
   DiscoveredContentLike,
 } from '../template/mapDiscoveredContentToEventFields'
 import type { ThemeCandidate } from './selectRecommendedThemes'
+import { toFactsLike } from '../morning/toFactsLike'
 
 function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
   const ss = dc.sourceSite
@@ -76,34 +77,6 @@ function deriveEventDateConfidence(
   )
   if (vals.length === 0) return 'high'
   return vals.reduce((worst, v) => (rank[v] < rank[worst] ? v : worst))
-}
-
-function toFactsLike(f: Record<string, unknown> | undefined): ArticleFactsLike | undefined {
-  if (!f) return undefined
-  const g = <T = unknown>(k: string): T => f[k] as T
-  return {
-    enrichmentStatus: g<string | null>('enrichmentStatus') ?? null,
-    templateType: g<string | null>('templateType') ?? null,
-    primaryCategory: g<string | null>('primaryCategory') ?? null,
-    season: g<string | null>('season') ?? null,
-    eventName: g<string | null>('eventName') ?? null,
-    editionLabel: g<string | null>('editionLabel') ?? null,
-    theme: g<string | null>('theme') ?? null,
-    whatHappens: g<string | null>('whatHappens') ?? null,
-    eventDate: g<string | null>('eventDate') ?? null,
-    eventDateISO: g<string | null>('eventDateISO') ?? null,
-    eventTime: g<string | null>('eventTime') ?? null,
-    venues: g<ArticleFactsLike['venues']>('venues') ?? null,
-    areaLead: g<string | null>('areaLead') ?? null,
-    audienceNote: g<string | null>('audienceNote') ?? null,
-    paid: g<string | null>('paid') ?? null,
-    applyRequired: g<string | null>('applyRequired') ?? null,
-    applyDeadline: g<string | null>('applyDeadline') ?? null,
-    officialInfoNote: g<string | null>('officialInfoNote') ?? null,
-    priceText: g<string | null>('priceText') ?? null,
-    hashtags: g<ArticleFactsLike['hashtags']>('hashtags') ?? null,
-    sourceProvenanceFacts: g<ArticleFactsLike['sourceProvenanceFacts']>('sourceProvenanceFacts') ?? null,
-  }
 }
 
 export interface AssessInboxPoolOptions {

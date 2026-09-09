@@ -17,6 +17,7 @@ import {
 } from './mapDiscoveredContentToEventFields'
 import type { AppliedTemplate } from './readyGate'
 import { renderArticleFromTemplate } from './renderArticleFromTemplate'
+import { toFactsLike } from '../morning/toFactsLike'
 
 // GINZA WHISKERS / Project 02 改善 Stage 4（2026-09-02）。
 //
@@ -191,41 +192,6 @@ function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
     lastCheckedAt: (dc.lastCheckedAt as string | null) ?? null,
     detectedAt: (dc.detectedAt as string | null) ?? null,
     dateExtraction: (dc.dateExtraction as DiscoveredContentLike['dateExtraction']) ?? null,
-  }
-}
-
-function toFactsLike(f: Record<string, unknown> | undefined): ArticleFactsLike | undefined {
-  if (!f) return undefined
-  const g = <T = unknown>(k: string): T => f[k] as T
-  return {
-    enrichmentStatus: g<string | null>('enrichmentStatus') ?? null,
-    templateType: g<string | null>('templateType') ?? null,
-    primaryCategory: g<string | null>('primaryCategory') ?? null,
-    season: g<string | null>('season') ?? null,
-    eventName: g<string | null>('eventName') ?? null,
-    editionLabel: g<string | null>('editionLabel') ?? null,
-    theme: g<string | null>('theme') ?? null,
-    whatHappens: g<string | null>('whatHappens') ?? null,
-    eventDate: g<string | null>('eventDate') ?? null,
-    eventDateISO: g<string | null>('eventDateISO') ?? null,
-    eventTime: g<string | null>('eventTime') ?? null,
-    venues: g<ArticleFactsLike['venues']>('venues') ?? null,
-    areaLead: g<string | null>('areaLead') ?? null,
-    audienceNote: g<string | null>('audienceNote') ?? null,
-    paid: g<string | null>('paid') ?? null,
-    applyRequired: g<string | null>('applyRequired') ?? null,
-    applyDeadline: g<string | null>('applyDeadline') ?? null,
-    resultDate: g<string | null>('resultDate') ?? null,
-    resultRule: g<string | null>('resultRule') ?? null,
-    applyRule: g<string | null>('applyRule') ?? null,
-    priceText: g<string | null>('priceText') ?? null,
-    saleAvailability: g<string | null>('saleAvailability') ?? null,
-    officialInfoNote: g<string | null>('officialInfoNote') ?? null,
-    editorsNoteSeed: g<string | null>('editorsNoteSeed') ?? null,
-    closing: g<string | null>('closing') ?? null,
-    callToAction: g<string | null>('callToAction') ?? null,
-    hashtags: g<ArticleFactsLike['hashtags']>('hashtags') ?? null,
-    sourceProvenanceFacts: g<ArticleFactsLike['sourceProvenanceFacts']>('sourceProvenanceFacts') ?? null,
   }
 }
 

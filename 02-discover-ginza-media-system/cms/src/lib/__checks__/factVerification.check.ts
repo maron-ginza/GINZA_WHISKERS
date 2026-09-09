@@ -23,6 +23,7 @@ import {
   extractVenueAddressFromSignals,
 } from '../morning/extractArticleFactsCandidate'
 import { extractProductNewsFactsCandidate } from '../morning/extractProductNewsFacts'
+import { toFactsLike } from '../morning/toFactsLike'
 import { assessCandidate, type AssessCandidateInput } from '../morning/assessCandidate'
 import { evaluateReadyGate, type CommonArticleFacts } from '../template/readyGate'
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
@@ -344,6 +345,80 @@ const cases: CheckCase[] = [
     fn: () => {
       const a = assessCandidate(mk({ factKind: 'event', officialFetchOutcome: 'timeout', dedup: { duplicate: true, existingArticleId: 5 } }))
       assert(a.verdict === 'C', `実際: ${a.verdict}`)
+    },
+  },
+  // ---------- toFactsLike: 共有化＋6項目の取りこぼし根本修正（2026-09-09） ----------
+  {
+    name: 'toFactsLike: undefined → undefined',
+    fn: () => {
+      assert(toFactsLike(undefined) === undefined, 'undefined を返す')
+    },
+  },
+  {
+    name: 'toFactsLike: 以前取りこぼしていた6項目（templateType/priceText/saleAvailability/admissionApplicable/humanReviewedAt/primaryCategory）を写す',
+    fn: () => {
+      const doc = {
+        enrichmentStatus: 'ready',
+        templateType: 'sale',
+        primaryCategory: 'SHOPPING',
+        priceText: '16,500円（税込）',
+        saleAvailability: 'no_period_stated',
+        admissionApplicable: 'no',
+        humanReviewedAt: '2026-09-09T12:00:00.000Z',
+        eventName: 'X',
+      }
+      const r = toFactsLike(doc)!
+      assert(r.templateType === 'sale', `templateType（実際 ${r.templateType}）`)
+      assert(r.primaryCategory === 'SHOPPING', `primaryCategory（実際 ${r.primaryCategory}）`)
+      assert(r.priceText === '16,500円（税込）', `priceText（実際 ${r.priceText}）`)
+      assert(r.saleAvailability === 'no_period_stated', `saleAvailability（実際 ${r.saleAvailability}）`)
+      assert((r as { admissionApplicable?: string }).admissionApplicable === 'no', `admissionApplicable（実際 ${(r as { admissionApplicable?: string }).admissionApplicable}）`)
+      assert(r.humanReviewedAt === '2026-09-09T12:00:00.000Z', `humanReviewedAt（実際 ${r.humanReviewedAt}）`)
+    },
+  },
+  {
+    name: 'toFactsLike: 欠けているキーは null（既存フィールドの回帰）',
+    fn: () => {
+      const r = toFactsLike({ enrichmentStatus: 'draft' })!
+      assert(r.eventName === null && r.whatHappens === null && r.priceText === null && r.saleAvailability === null, '未設定は null')
+      assert(r.templateType === null && r.humanReviewedAt === null, '6項目も未設定なら null')
+    },
+  },
+  {
+    name: 'toFactsLike ラウンドトリップ: ready な sale の article-facts doc → toFactsLike → assessCandidate → A（DC #370 クラスの回帰）',
+    fn: () => {
+      const doc = {
+        enrichmentStatus: 'ready',
+        humanReviewedAt: '2026-09-09T12:00:00.000Z',
+        templateType: 'sale',
+        primaryCategory: 'SHOPPING',
+        eventName: 'AMBUSH® x New Era®',
+        whatHappens: 'New Era のクラシックなフォルムに AMBUSH の素材とグラフィックを融合したキャップのコレクション。',
+        eventDate: '販売期間の記載なし（店頭にて取扱）',
+        eventDateISO: null,
+        priceText: 'NEW ERA A-PATCH CAP：16,500円（税込）',
+        saleAvailability: 'no_period_stated',
+        admissionApplicable: 'not_stated',
+        officialInfoNote: '販売期間の記載なし（店頭にて取扱）。詳細は店舗でご確認ください。',
+        areaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、新作商品を販売中です。',
+        audienceNote: 'ストリートからデイリーまで、装いのアクセントを探している方へ。',
+        venues: [{ name: 'AMBUSH® x New Era®', place: 'AMBUSH® WORKSHOP GINZA フロア: 3F' }],
+        hashtags: [{ tag: '#銀座' }],
+        sourceProvenanceFacts: [{ fact: '出典確認 ginza6.tokyo', sourceType: 'official', factType: 'other', verificationStatus: 'confirmed' }],
+      }
+      const facts = toFactsLike(doc) as unknown as AssessCandidateInput['facts']
+      const dcLike: DiscoveredContentLike = dc({ id: 370, title: 'AMBUSH® x New Era® – GINZA SIX', sourceSiteName: 'GINZA SIX', contentType: 'news', venue: null, articleUrl: 'https://ginza6.tokyo/news/detail/shopnews/224269' })
+      const a = assessCandidate({ dc: dcLike, facts, factKind: 'product_news', dedup: { duplicate: false }, imageInventory: [], now: NOW })
+      assert(a.verdict === 'A', `verdict A（実際 ${a.verdict}／理由 ${a.reasons.join(' / ')}）`)
+      assert(a.factsSource === 'ready' && a.templateEligible === true, 'ready sale として正しく評価')
+    },
+  },
+  {
+    name: 'toFactsLike ラウンドトリップ: 同じ doc を draft にすると B（自動A昇格しない・回帰）',
+    fn: () => {
+      const facts = toFactsLike({ enrichmentStatus: 'draft', templateType: 'sale', priceText: '16,500円（税込）', saleAvailability: 'no_period_stated' }) as unknown as AssessCandidateInput['facts']
+      const a = assessCandidate({ dc: dc({ id: 370, contentType: 'news', venue: null }), facts, factKind: 'product_news', dedup: { duplicate: false }, imageInventory: [], now: NOW })
+      assert(a.verdict === 'B', `draft は B（実際 ${a.verdict}）`)
     },
   },
 ]
