@@ -714,3 +714,22 @@ a.content-card:hover {
   max-width: 560px;
   margin: 2.2em 0 0;
 }
+
+/* ==========================================================
+   #feel / #your-ginza：デスクトップ2列（4枚は2×2）、モバイル1列
+   2026-09-09 追加。既存 .content-grid（デスクトップ3列）の列数だけを
+   上書きするモディファイア。既存ルールは変更していない。
+   .content-grid.content-grid--two（詳細度 0-2-0）とし、記述順に
+   依存せず .content-grid 系の各ブレークポイント指定（いずれも 0-1-0）に
+   確実に勝つようにする。
+   ========================================================== */
+
+.content-grid.content-grid--two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (max-width: 720px) {
+  .content-grid.content-grid--two {
+    grid-template-columns: 1fr;
+  }
+}
