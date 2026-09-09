@@ -595,6 +595,7 @@ async function main(): Promise<void> {
                   allowedHosts,
                   connectTimeoutMs: args.connectTimeoutMs,
                   overallTimeoutMs: args.overallTimeoutMs,
+                  fetchVenueDetail: true,
                 })
               } catch (e) {
                 signals = {
@@ -651,6 +652,7 @@ async function main(): Promise<void> {
           imageInventory,
           now,
           factKind,
+          officialFetchOutcome: signals?.fetchOutcome ?? (signals ? (signals.ok ? 'ok' : 'unknown') : undefined),
         })
         a.factKind = factKind
         a.factKindClassification = classification
@@ -952,6 +954,7 @@ async function main(): Promise<void> {
                       allowedHosts,
                       connectTimeoutMs: args.connectTimeoutMs,
                       overallTimeoutMs: args.overallTimeoutMs,
+                      fetchVenueDetail: true,
                     })
                   } catch (e) {
                     signals = {
@@ -990,7 +993,15 @@ async function main(): Promise<void> {
             })
             const factKind = classification.factKind
 
-            const a = assessCandidate({ dc: dcLike, facts: toFactsLike(factsDoc), dedup, imageInventory, now, factKind })
+            const a = assessCandidate({
+              dc: dcLike,
+              facts: toFactsLike(factsDoc),
+              dedup,
+              imageInventory,
+              now,
+              factKind,
+              officialFetchOutcome: signals?.fetchOutcome ?? (signals ? (signals.ok ? 'ok' : 'unknown') : undefined),
+            })
             a.factKind = factKind
             a.factKindClassification = classification
 

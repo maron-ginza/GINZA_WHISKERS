@@ -50,8 +50,8 @@ export interface SaleFactsMapResult {
     priceText?: string
     whatHappens?: string
     officialInfoNote?: string
-    /** 販売終了日の記載状況（2026-09-07根本改善。confirmed のときだけ入る） */
-    saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date'
+    /** 販売終了日の記載状況（2026-09-07根本改善／2026-09-09。confirmed のときだけ入る） */
+    saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date'
   }
   candidates: {
     areaLead?: string
@@ -235,6 +235,13 @@ export function mapSaleFactsToDraft(input: SaleFactsMapInput): SaleFactsMapResul
       facts.eventDate,
       `productExtraction.fields.saleAvailability（${product.provenance.saleAvailability?.method ?? 'confirmed'}）`,
     )
+  } else if (product?.fields.saleAvailability === 'no_period_stated' && productConfirmed(product, 'saleAvailability')) {
+    facts.eventDate = '販売期間の記載なし（店頭にて取扱）'
+    addFact(
+      'eventDate（販売期間）',
+      facts.eventDate,
+      `productExtraction.fields.saleAvailability=no_period_stated（${product.provenance.saleAvailability?.method ?? 'confirmed'}）`,
+    )
   } else {
     excluded.push({ field: 'eventDate（販売期間）', reason: `未確認（${eef?.eventDate.method ?? '抽出なし'}）` })
   }
@@ -339,6 +346,13 @@ export function mapSaleFactsToDraft(input: SaleFactsMapInput): SaleFactsMapResul
         facts.officialInfoNote,
         `productExtraction.fields.saleAvailability（${product.provenance.saleAvailability?.method ?? 'confirmed'}）`,
       )
+    } else if (product?.fields.saleAvailability === 'no_period_stated' && productConfirmed(product, 'saleAvailability')) {
+      facts.officialInfoNote = '販売期間の記載なし（店頭にて取扱）。詳細は店舗でご確認ください。'
+      addFact(
+        'officialInfoNote',
+        facts.officialInfoNote,
+        `productExtraction.fields.saleAvailability=no_period_stated（${product.provenance.saleAvailability?.method ?? 'confirmed'}）`,
+      )
     } else {
       excluded.push({ field: 'officialInfoNote', reason: `未確認（${eef?.officialInfoNote.method ?? '公式本文に注意事項なし'}）` })
     }
@@ -370,13 +384,13 @@ export function mapSaleFactsToDraft(input: SaleFactsMapInput): SaleFactsMapResul
   //   曖昧な「催し」と表現すると公式情報（単なる継続販売）と齟齬が生じるため、確認済みの
   //   販売場所＋カテゴリー名詞だけで「販売中」の事実を直接述べる。
   if (facts.venues && facts.venues[0]?.place) {
-    if (facts.saleAvailability === 'ongoing_no_end_stated') {
+    if (facts.saleAvailability === 'ongoing_no_end_stated' || facts.saleAvailability === 'no_period_stated') {
       const productNoun = noun || '商品'
       candidates.areaLead = `${facts.venues[0].place}で、新作${productNoun}を販売中です。`
       addCand(
         'areaLead',
         candidates.areaLead,
-        `会場（confirmed salesLocation）＋saleAvailability=ongoing_no_end_stated＋カテゴリ名詞「${productNoun}」から決定的生成（催し表現を使わない）`,
+        `会場（confirmed salesLocation）＋saleAvailability=${facts.saleAvailability}＋カテゴリ名詞「${productNoun}」から決定的生成（催し表現を使わない）`,
       )
     } else {
       const { store, floor } = splitVenue(facts.venues[0].place)

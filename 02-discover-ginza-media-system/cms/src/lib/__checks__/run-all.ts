@@ -26,6 +26,7 @@ import { suite as extractStructuredDates } from '../crawler/extractStructuredDat
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
 import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
 import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
+import { suite as factVerification, runFetchOutcomeTests } from './factVerification.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 
 const results: SuiteResult[] = [
@@ -50,7 +51,13 @@ const results: SuiteResult[] = [
   eventEndBoundary(),
   extractProductNewsFacts(),
   ginzaSixAutoResolve(),
+  factVerification(),
   p0Morning(),
 ]
 
-reportAndExit(results)
+void (async () => {
+  // 実ネットワークに触れず弾く経路のみ（fetchOfficialSignals の fetchOutcome）。
+  const f = await runFetchOutcomeTests()
+  results.push({ suite: 'factVerification fetchOutcome(async, no-network)', pass: f.pass, fail: f.fail, failures: f.failures })
+  reportAndExit(results)
+})()

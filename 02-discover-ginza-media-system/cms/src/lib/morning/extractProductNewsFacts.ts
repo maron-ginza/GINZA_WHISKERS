@@ -499,15 +499,41 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
   // 一切推測しない（'unknown' のまま人間が公式で確認する）。
   if (sig?.ok && s(sig.bodyText)) {
     const bodyForAvailability = sig.bodyText as string
+    // 既存の ongoing_no_end_stated 判定は従来どおり本文全体で（挙動不変）。
     const hasOngoingMarker = /発売中|販売中|好評発売中/.test(bodyForAvailability)
     const hasEndSignal =
       /完売|売り切れ|品切れ|数量限定|個数限定|期間限定|なくなり次第終了|残りわずか|早期終了/.test(bodyForAvailability) ||
       fields.limitedTime === 'yes' ||
       !!fields.saleEndAt
+    // 2026-09-09 no_period_stated 判定は「記事本文だけ」を見る：末尾のナビ（RECENT POSTS /
+    // 関連記事 / カテゴリー一覧 / RELATED / 一覧に戻る）以降は別記事の会期ラベル・日付が並ぶため
+    // 切り落とす（ginza6.tokyo のリスティングノイズ対策。dateExtraction の suspectListingDate と同じ発想）。
+    const mainBodyForAvailability = (() => {
+      let idx = bodyForAvailability.length
+      for (const mk of ['RECENT POSTS', 'RECENT POST', '関連記事', 'RELATED EVENT', 'RELATED ITEMS', '一覧に戻る', 'カテゴリー\n', 'All News', 'メルマガ登録はこちら']) {
+        const i = bodyForAvailability.indexOf(mk)
+        if (i >= 0 && i < idx) idx = i
+      }
+      return bodyForAvailability.slice(0, idx)
+    })()
+    // 末尾の「YYYY.MM.DD UP」は掲載日なので日付レンジ検出から除外する（前処理で削る）。
+    const bodyNoUp = mainBodyForAvailability.replace(/\d{4}\.\d{1,2}\.\d{1,2}\s*UP/g, ' ')
+    const hasPeriodLabel = /会期|開催期間|販売期間|発売日|販売開始|販売終了|募集期間|受付期間/.test(bodyNoUp)
+    const hasDateRange = /\d{4}[年./]\s?\d{1,2}[月./]\s?\d{1,2}\s?日?\s*[-–—~〜～]\s*(?:\d{4}[年./]\s?)?\d{1,2}[月./]\s?\d{1,2}/.test(bodyNoUp)
+    const hasStoreOnlyMarker = /店頭にて|店頭で|各店舗|店舗にて|お取り扱い|お取扱い|取り扱い中|販売しております|お求めいただけます|ご覧くださ/.test(mainBodyForAvailability)
     if (hasOngoingMarker && !hasEndSignal) {
       fields.saleAvailability = 'ongoing_no_end_stated'
     } else if (fields.saleEndAt) {
       fields.saleAvailability = 'has_end_date'
+    } else if (
+      !fields.saleStartAt &&
+      !fields.saleEndAt &&
+      !hasPeriodLabel &&
+      !hasDateRange &&
+      hasStoreOnlyMarker &&
+      !hasEndSignal
+    ) {
+      fields.saleAvailability = 'no_period_stated'
     }
   }
 
@@ -560,6 +586,12 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
       'ongoing_no_end_stated',
       `${siteLabel} body: 「発売中/販売中」の明記あり、完売・数量限定・期間限定等の終了を示す語なし（決定的判定・推測ではない）`,
     )
+  else if (fields.saleAvailability === 'no_period_stated')
+    put(
+      'saleAvailability',
+      'no_period_stated',
+      `${siteLabel} body: 販売期間ラベル・日付レンジが本文に一切なく、店頭取扱等の販売明示のみ＝「販売期間の公式記載なし」を確認（決定的判定・推測ではない。掲載日「YYYY.MM.DD UP」は除外）`,
+    )
   // 販売期間候補は「開催期間ラベル」由来で、当該記事のものか不明瞭なことがある → 注記を必ず添える
   const dateNote = '「開催期間」ラベルからの抽出。ページ内の別記事の期間を拾っている可能性あり（要人間確認）'
   put('saleStartAt', fields.saleStartAt, 'DiscoveredContent.eventStartAt（dateExtraction）', dateNote)
@@ -582,9 +614,14 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
   if (fields.saleStartAt && fields.saleEndAt && hasSellingNow && !hasDateRange)
     conflicts.push('本文に「発売中」表記があり、本文には明確な会期の日付範囲が無いのに販売期間が設定されている（dateExtraction が別記事の期間を拾った疑い・要人間確認）')
 
-  // 未確認（product_news 必須で機械値から確定できない） vs 公式記載なし
+  // 未確認（人間が admin で入力） vs 公式記載なし（確認済み） vs 取得失敗（再取得で解消しうる）
   const unknownItems: string[] = []
   const officiallyNotStated: string[] = []
+  const missingBecauseFetchFailed: string[] = []
+  const fetchTriedButFailed = !!sig && sig.requested === true && sig.ok !== true
+  const noteFetchFailed = fetchTriedButFailed
+    ? `（公式ページ取得失敗 fetchOutcome=${sig?.fetchOutcome ?? 'unknown'}。再取得で解消しうる）`
+    : ''
   if (!fields.productName) unknownItems.push('productName（商品名。excerpt にあるが推測抽出しない・公式で人間が確定）')
   if (!fields.brandOrSeller) unknownItems.push('brandOrSeller（ブランド名／販売主体。公式で人間が確定）')
   if (!fields.salesLocation) unknownItems.push('salesLocation（販売場所・フロア。excerpt に「フロア: ◯F」があるが人間が確定）')
@@ -592,14 +629,24 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
   if (!fields.productSummary) unknownItems.push('productSummary（商品概要。公式本文から人間がまとめる）')
   if (!fields.purchaseConditions) unknownItems.push('purchaseConditions（購入・販売条件。公式で人間が確認）')
   if (!fields.stockNotes) unknownItems.push('stockNotes（在庫・売切れの注意。公式で人間が確認）')
-  if (!fields.saleStartAt) unknownItems.push('saleStartAt（販売開始日。公式で人間が確認）')
-  if (fields.saleStartAt && fields.saleEndAt && hasSellingNow && !hasDateRange)
-    unknownItems.push('saleEndAt／limitedTime（現在の販売期間は別記事由来の疑い。公式で「発売中（終了日なし）」か会期があるかを人間が確認）')
-  else if (fields.saleAvailability === 'ongoing_no_end_stated')
+  // 販売期間の扱い：no_period_stated（取得成功＋期間記載なしを確認）と、取得失敗を明確に分ける。
+  if (fields.saleAvailability === 'no_period_stated') {
     officiallyNotStated.push(
-      'saleEndAt（販売終了日。公式本文に「発売中/販売中」の明記があり、完売・数量限定等の終了を示す語がないため、終了日は「公式記載なし」と確定）',
+      'saleStartAt / saleEndAt（販売期間）：公式ページに販売期間ラベル・日付レンジの記載なし（店頭取扱商品）。この記事タイプでは A 判定の必須にしない',
     )
-  else if (!fields.saleEndAt) unknownItems.push('saleEndAt／limitedTime（販売終了日・期間限定の有無。公式で人間が確認）')
+  } else if (fetchTriedButFailed) {
+    if (!fields.saleStartAt) missingBecauseFetchFailed.push(`saleStartAt（販売開始日）${noteFetchFailed}`)
+    if (!fields.saleEndAt) missingBecauseFetchFailed.push(`saleEndAt／limitedTime（販売終了日・期間限定）${noteFetchFailed}`)
+  } else {
+    if (!fields.saleStartAt) unknownItems.push('saleStartAt（販売開始日。公式で人間が確認）')
+    if (fields.saleStartAt && fields.saleEndAt && hasSellingNow && !hasDateRange)
+      unknownItems.push('saleEndAt／limitedTime（現在の販売期間は別記事由来の疑い。公式で「発売中（終了日なし）」か会期があるかを人間が確認）')
+    else if (fields.saleAvailability === 'ongoing_no_end_stated')
+      officiallyNotStated.push(
+        'saleEndAt（販売終了日。公式本文に「発売中/販売中」の明記があり、完売・数量限定等の終了を示す語がないため、終了日は「公式記載なし」と確定）',
+      )
+    else if (!fields.saleEndAt) unknownItems.push('saleEndAt／limitedTime（販売終了日・期間限定の有無。公式で人間が確認）')
+  }
 
   const notApplicable = [...EVENT_ONLY_NOT_APPLICABLE]
 
@@ -635,6 +682,7 @@ export function extractProductNewsFactsCandidate(input: ExtractProductInput): Pr
     imagePolicy: image.policy,
     unknownItems,
     officiallyNotStated,
+    missingBecauseFetchFailed,
     notApplicable,
     conflicts,
     readyCheck: {

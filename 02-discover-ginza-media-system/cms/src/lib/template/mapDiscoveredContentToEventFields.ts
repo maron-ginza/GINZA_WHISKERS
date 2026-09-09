@@ -93,8 +93,10 @@ export interface ArticleFactsLike {
   resultRule?: string | null
   applyRule?: string | null
   officialInfoNote?: string | null
-  /** 販売終了日の記載状況（sale 用。2026-09-07根本改善。詳細は readyGate.ts 参照） */
-  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date' | string | null
+  /** 販売終了日の記載状況（sale 用。2026-09-07根本改善／2026-09-09。詳細は readyGate.ts 参照） */
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date' | string | null
+  /** 入場料の該当性（2026-09-09。'no' でイベント系の paid 必須を免除。詳細は readyGate.ts 参照） */
+  admissionApplicable?: 'yes' | 'no' | 'not_stated' | string | null
   editorsNoteSeed?: string | null
   closing?: string | null
   callToAction?: string | null
@@ -355,6 +357,7 @@ function mapFromReadyFacts(
     applyRule: applyRule || undefined,
     officialInfoNote: str(facts.officialInfoNote) || undefined,
     saleAvailability: str(facts.saleAvailability) || undefined,
+    admissionApplicable: str(facts.admissionApplicable) || undefined,
     editionLabel: editionLabel || undefined,
     theme: theme || undefined,
     areaLead: str(facts.areaLead) || undefined,

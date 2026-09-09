@@ -47,6 +47,77 @@ export interface ExtractInput {
   now?: Date
 }
 
+/** 料金/入場料/観覧料の「ラベル」表記が本文にあるか（値の有無は問わない・決定的） */
+const FEE_LABEL_RE = /入場料|入館料|観覧料|鑑賞料|参加費|受講料|料金[：:]|チケット|前売|当日券|木戸銭/
+/** 会場種別が「観覧料の概念がない」＝ admissionApplicable='no' の候補になりうるか（既知パターンのみ・推測しない） */
+function venueTypeAdmissionExempt(dc: DiscoveredContentLike): { exempt: boolean; basis: string } {
+  const hay = `${dc.title ?? ''} ${dc.venue ?? ''} ${dc.sourceSiteName ?? ''}`
+  const ct = (dc.contentType ?? '').toLowerCase()
+  if (/画廊|ギャラリー|\bgallery\b/i.test(hay) && /(exhibition|展|個展|名品展|企画展|作品展)/.test(`${hay} ${ct}`))
+    return { exempt: true, basis: '商業画廊・ギャラリー（観覧料の設定がない前提の会場種別）' }
+  if (/蔦屋書店|書店|ブックストア|book\s?store/i.test(hay) && /(フェア|展|刊行記念|サイン会|トーク|ブックフェア)/.test(hay))
+    return { exempt: true, basis: '書店フェア・刊行記念（入場料の概念がない）' }
+  if (/(百貨店|デパート|GINZA SIX|三越|松屋|和光|阪急|東急)/.test(hay) && /(フェア|催事|ポップアップ|POP\s?UP|物販|販売会)/i.test(hay))
+    return { exempt: true, basis: '百貨店・商業施設の物販フェア／催事（入場無料が常態・観覧料なし）' }
+  return { exempt: false, basis: '会場種別を「観覧料非該当」と機械分類できない' }
+}
+
+/** 施設ページ本文 / JSON-LD から会場住所を決定的に取る（推測しない。無ければ null） */
+export function extractVenueAddressFromSignals(
+  sig: OfficialPageSignals | null | undefined,
+): { value: string; sourceUrl: string | null; method: string } | null {
+  const tryOne = (
+    s: OfficialPageSignals | null | undefined,
+    origin: 'venueDetail' | 'eventPage',
+  ): { value: string; sourceUrl: string | null; method: string } | null => {
+    if (!s || !s.ok) return null
+    // 1) JSON-LD の address（PostalAddress or 文字列）
+    const fromJsonLd = ((): string | null => {
+      const visit = (node: unknown): string | null => {
+        if (Array.isArray(node)) {
+          for (const n of node) {
+            const r = visit(n)
+            if (r) return r
+          }
+          return null
+        }
+        if (node && typeof node === 'object') {
+          const o = node as Record<string, unknown>
+          const a = o.address
+          if (typeof a === 'string' && /[都道府県区市]/.test(a)) return a.trim()
+          if (a && typeof a === 'object') {
+            const ao = a as Record<string, unknown>
+            const parts = [ao.postalCode, ao.addressRegion, ao.addressLocality, ao.streetAddress]
+              .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+              .join(' ')
+            if (parts && /[都道府県区市]/.test(parts)) return parts.trim()
+          }
+          if (Array.isArray(o['@graph'])) {
+            const r = visit(o['@graph'])
+            if (r) return r
+          }
+          for (const v of Object.values(o)) {
+            if (v && typeof v === 'object') {
+              const r = visit(v)
+              if (r) return r
+            }
+          }
+        }
+        return null
+      }
+      return visit(Array.isArray(s.jsonLd) ? s.jsonLd : [])
+    })()
+    if (fromJsonLd)
+      return { value: fromJsonLd, sourceUrl: s.finalUrl ?? null, method: `${origin}: JSON-LD address（PostalAddress）` }
+    // 2) 本文の「住所 / 所在地」ラベル（東京都中央区銀座… 形式のみ・推測しない）
+    const body = typeof s.bodyText === 'string' ? s.bodyText : ''
+    const m = body.match(/(?:住所|所在地)[\s：:　]{0,3}((?:〒?\s*\d{3}-?\d{4}\s*)?東京都[^\n。]{4,60})/)
+    if (m && m[1]) return { value: m[1].replace(/\s{2,}/g, ' ').trim(), sourceUrl: s.finalUrl ?? null, method: `${origin}: 本文「住所/所在地」ラベル` }
+    return null
+  }
+  return tryOne(sig?.venueDetail, 'venueDetail') ?? tryOne(sig, 'eventPage')
+}
+
 function s(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
@@ -182,18 +253,55 @@ export function extractArticleFactsCandidate(input: ExtractInput): ArticleFactsC
       conflicts.push(`DC の開始日と公式ページ JSON-LD の startDate が 2 日超乖離（${iso(dc.eventStartAt)} vs ${jsonLdStart}）`)
   }
 
+  // --- 「公式記載なし」 / 「取得失敗」 / 「記事タイプ上該当なし」 の区別（2026-09-09） ---
+  //   fetchOutcome を見て、下流が3状態を混同しないよう分類する。
+  const fetchOutcome: string = sig?.fetchOutcome ?? (fetchOk ? 'ok' : sig ? 'unknown' : 'not_requested')
+  const fetchFailed = !!sig && sig.requested === true && sig.ok !== true // 取得を試みたが失敗
+  const body = fetchOk && typeof sig?.bodyText === 'string' ? (sig!.bodyText as string) : ''
+
+  // 会場種別による入場料の該当性（既知パターンのみ・推測しない）
+  const admissionExemptInfo = venueTypeAdmissionExempt(dc)
+  let admissionApplicable: 'yes' | 'no' | 'not_stated' = 'not_stated'
+  if (fetchOk) {
+    if (FEE_LABEL_RE.test(body)) admissionApplicable = 'yes'
+    else if (admissionExemptInfo.exempt) admissionApplicable = 'no' // 種別が観覧料非該当 かつ 料金ラベル皆無
+  }
+
+  // 会場住所（同一登録可能ドメインの施設ページ or イベントページの JSON-LD/ラベルからのみ）
+  const venueAddress = extractVenueAddressFromSignals(sig)
+
+  // 営業時間（開廊/開館/営業時間）の confirmed 抽出（extractOfficialEventFacts の eventTime を後段で使う）
+
   // 必須（推測で埋めない）— DiscoveredContent だけでは埋まらないものを列挙
   const missingRequired: string[] = []
+  const officiallyNotStated: string[] = []
+  const missingBecauseFetchFailed: string[] = []
+  const notApplicable: string[] = []
   if (!fields.sourceName) missingRequired.push('sourceName（公式情報源名）')
   if (!fields.sourceUrl) missingRequired.push('sourceUrl（追跡可能な公式 URL）')
   if (!fields.verifiedAt) missingRequired.push('verifiedAt（情報の確認日時）')
   if (!fields.eventStartAt && !fields.eventEndAt) missingRequired.push('開催日／終了日（機械日付が取れない）')
-  if (!fields.venue) missingRequired.push('会場（venue）')
+  if (!fields.venue && !venueAddress) missingRequired.push('会場（venue）')
   missingRequired.push('申込期限（applyDeadline：DiscoveredContent に構造化フィールドなし。公式で要確認・推測しない）')
   missingRequired.push('料金の有料/無料（ArticleFacts.paid：人間が確定。PDF内の可能性があっても推測補完しない）')
   missingRequired.push('定員・所要時間（構造化フィールドなし。PDF内の可能性があっても推測補完しない）')
   missingRequired.push('対象者（audienceNote：人間が確定）')
   missingRequired.push('本文テキスト系（whatHappens / eventTime / areaLead / theme / editionLabel / officialInfoNote：ArticleFacts で入力）')
+
+  // 3分類（missingRequired は後方互換で全件保持。新しい下流はこちらを使う）
+  if (admissionApplicable === 'no') {
+    notApplicable.push(
+      `入場料（有料/無料）：${admissionExemptInfo.basis}。公式本文に料金ラベルなし＝この会場種別では A 判定の必須にしない`,
+    )
+  } else if (fetchOk) {
+    officiallyNotStated.push('料金（有料/無料）：公式ページに料金ラベルの記載なし（人間が最終確認）')
+    officiallyNotStated.push('申込期限・定員・所要時間：公式ページ本文に該当ラベルの記載なし')
+  } else if (fetchFailed) {
+    missingBecauseFetchFailed.push(
+      `料金・申込期限・定員・所要時間・会場住所：公式ページ取得失敗（fetchOutcome=${fetchOutcome}）のため未取得。再取得で解消しうる`,
+    )
+  }
+  if (!venueAddress && fetchOk) officiallyNotStated.push('会場住所：イベントページ・施設ページとも公式に住所の記載なし')
 
   // ready 判定の内訳（人間が admin で ready 化するときの残作業）
   const REQUIRED_FOR_READY = ['sourceName', 'sourceUrl', 'verifiedAt', 'venue', 'eventStartAt']
@@ -273,19 +381,31 @@ export function extractArticleFactsCandidate(input: ExtractInput): ArticleFactsC
       confirmationStatus: bodyFacts.eventTime.confidence,
       method: bodyFacts.eventTime.method,
     },
-    venuePlace: bodyFacts.venuePlace.value
-      ? {
+    venuePlace: (() => {
+      // 2026-09-09：同一登録可能ドメインの施設ページ等から会場住所が取れていれば、
+      // 会場名（本文抽出 or DC.venue）＋住所 を confirmed 会場として返す（住所の出典は別 URL）。
+      const nameLike = bodyFacts.venuePlace.value || fields.venue || null
+      if (venueAddress && !/[都道府県].{2,}[区市]/.test(nameLike ?? '')) {
+        return {
+          value: nameLike ? `${nameLike}（${venueAddress.value}）` : venueAddress.value,
+          confirmationStatus: 'confirmed' as const,
+          method: `${bodyFacts.venuePlace.method || 'DiscoveredContent.venue'} ＋ 住所: ${venueAddress.method}`,
+        }
+      }
+      if (bodyFacts.venuePlace.value)
+        return {
           value: bodyFacts.venuePlace.value,
           confirmationStatus: bodyFacts.venuePlace.confidence,
           method: bodyFacts.venuePlace.method,
         }
-      : fields.venue
-        ? {
-            value: fields.venue,
-            confirmationStatus: 'unconfirmed',
-            method: 'DiscoveredContent.venue（単一テキスト・本文照合なし）',
-          }
-        : { value: null, confirmationStatus: 'unconfirmed', method: '会場の抽出なし' },
+      if (fields.venue)
+        return {
+          value: fields.venue,
+          confirmationStatus: 'unconfirmed' as const,
+          method: 'DiscoveredContent.venue（単一テキスト・本文照合なし）',
+        }
+      return { value: null, confirmationStatus: 'unconfirmed' as const, method: '会場の抽出なし' }
+    })(),
     paid: {
       value: bodyFacts.paid.value,
       confirmationStatus: bodyFacts.paid.confidence,
@@ -322,6 +442,11 @@ export function extractArticleFactsCandidate(input: ExtractInput): ArticleFactsC
     pdf,
     imagePolicy: image.policy,
     missingRequired,
+    officiallyNotStated,
+    missingBecauseFetchFailed,
+    notApplicable,
+    admissionApplicable,
+    venueAddress,
     conflicts,
     readyCheck: {
       allRequiredPresent,

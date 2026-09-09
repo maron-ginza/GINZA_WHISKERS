@@ -49,6 +49,12 @@ export interface AssessCandidateInput {
   now?: Date
   /** 情報鮮度のしきい値（日）。これより古い確認日時は A から B へ落とす（既定 14） */
   freshnessDays?: number
+  /**
+   * 公式ページ取得の結果区分（fetchOfficialSignals().fetchOutcome。2026-09-09）。
+   * 'ok' 以外（http_error / timeout / robots_denied / …）のとき、B の理由に
+   * 「取得失敗（再取得で解消しうる。『公式記載なし』とは別）」を明示する。verdict は動かさない。
+   */
+  officialFetchOutcome?: string
 }
 
 
@@ -221,6 +227,15 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       else if (!map.templateEligible) reasons.push('必須項目に不足あり（下記 missing）')
       if (stale) reasons.push('情報の確認日時が古く再確認が必要')
     }
+  }
+
+  // 公式ページ取得に失敗した場合は、B の理由へ「取得失敗（再取得で解消しうる）」を明示する
+  // ——「公式記載なし（確認済み）」と混同しないため、verdict は動かさず reason/unconfirmed に分けて残す（2026-09-09）。
+  const fo = input.officialFetchOutcome
+  if (fo && fo !== 'ok' && fo !== 'not_requested') {
+    const msg = `公式ページ取得失敗（fetchOutcome=${fo}）。再取得で解消しうる（＝情報が無いのではなく取得できていない）`
+    if (verdict === 'B') reasons.push(msg)
+    unconfirmed.push(msg)
   }
 
   // 重複の弱シグナル・外部未確認は verdict を動かさず「未確認事項」に出す（8:00 の人間ゲート向け）

@@ -91,6 +91,11 @@ function baseCandidate(dcId: number, over: Partial<ArticleFactsCandidate['fields
     pdf: { found: false, url: null, activeFetch: null, note: '' },
     imagePolicy: '画像なし',
     missingRequired: [],
+    officiallyNotStated: [],
+    missingBecauseFetchFailed: [],
+    notApplicable: [],
+    admissionApplicable: 'not_stated',
+    venueAddress: null,
     conflicts: [],
     readyCheck: {
       allRequiredPresent: false,
@@ -250,6 +255,7 @@ async function scenario2() {
     imagePolicy: '画像なし',
     unknownItems: ['price', 'salesLocation', 'purchaseConditions'],
     officiallyNotStated: [],
+    missingBecauseFetchFailed: [],
     notApplicable: ['venue', 'eventTime', 'applyDeadline', 'capacity'],
     conflicts: [],
     readyCheck: {
@@ -628,6 +634,7 @@ async function scenario5() {
     imagePolicy: '画像なし',
     unknownItems: [],
     officiallyNotStated: [],
+    missingBecauseFetchFailed: [],
     notApplicable: [],
     conflicts: [],
     readyCheck: { allRequiredPresent: false, everyRequiredHasSourceUrl: true, datesValidNow: true, noConflicts: true, trustedSource: true, blockers: [] },

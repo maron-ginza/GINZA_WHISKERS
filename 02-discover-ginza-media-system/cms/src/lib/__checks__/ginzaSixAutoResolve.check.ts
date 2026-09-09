@@ -208,29 +208,52 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'DC#370: 公式本文に「発売中/販売中」の明記が無いため saleAvailability は unknown のまま（推測しない）',
+    // 2026-09-09 事実確認改善：公式ページ取得成功かつ 販売期間ラベル・日付レンジが本文に一切なく、
+    // 「店頭にてご覧くださいませ」等の販売明示があるとき、saleAvailability は 'no_period_stated'
+    // （＝「販売期間の公式記載なし」を確認済み。'unknown'（未チェック）・取得失敗とは区別）へ決定的に確定する。
+    name: 'DC#370: 販売期間ラベルも日付レンジも無く店頭取扱明示のみ → saleAvailability は no_period_stated（推測ではなく確認結果）',
     fn: () => {
       const { product } = runFullPipeline(DC370, DC370_SIGNALS)
-      assert(product.fields.saleAvailability === 'unknown', `実際: ${product.fields.saleAvailability}`)
+      assert(product.fields.saleAvailability === 'no_period_stated', `実際: ${product.fields.saleAvailability}`)
+      assert(
+        product.officiallyNotStated.some((x) => x.includes('販売期間') && x.includes('公式') && x.includes('記載なし')),
+        `officiallyNotStated に「販売期間：公式記載なし」が入る（実際: ${JSON.stringify(product.officiallyNotStated)}）`,
+      )
+      assert(
+        !product.unknownItems.some((x) => x.includes('saleStartAt') || x.includes('saleEndAt')),
+        `販売期間は unknownItems（人間が確認）ではなく officiallyNotStated（確認済み）へ（実際: ${JSON.stringify(product.unknownItems)}）`,
+      )
+      assert(product.missingBecauseFetchFailed.length === 0, '取得成功なので missingBecauseFetchFailed は空')
     },
   },
   {
-    name: 'DC#370: eventName/price/venues は自動確定するが、eventDate/officialInfoNoteが無くready不可（要確認・保留）',
+    // no_period_stated の帰結：eventDate / officialInfoNote は「販売期間の記載なし（店頭にて取扱）」を
+    // 決定的に明示（存在しない販売期間を推測しない）。readyGate は sale の availablePeriod 必須と
+    // eventDateISO 過去/未来ゲートを免除する（判定に使える機械日付が公式ページに存在しないため）。
+    name: 'DC#370: no_period_stated により eventDate/officialInfoNote が「記載なし」を明示し、readyGate は eligible=true（ただし draft のまま）',
     fn: () => {
       const { mapped, gate } = runFullPipeline(DC370, DC370_SIGNALS)
       assert(mapped.facts.eventName === 'AMBUSH® x New Era®', `実際: ${mapped.facts.eventName}`)
       assert(!!mapped.facts.priceText, 'priceText は自動確定する')
-      assert(!mapped.facts.eventDate, 'eventDate は自動確定しない（推測しない）')
-      assert(!mapped.facts.officialInfoNote, 'officialInfoNote は自動確定しない（推測しない）')
-      assert(gate.eligible === false, '要確認（保留）のまま')
-      assert(gate.missing.some((m) => m.includes('availablePeriod')), `missingにavailablePeriodを含む（実際: ${JSON.stringify(gate.missing)}）`)
+      assert(mapped.facts.saleAvailability === 'no_period_stated', 'mapper facts へ no_period_stated が伝播する')
+      assert(mapped.facts.eventDate === '販売期間の記載なし（店頭にて取扱）', `実際: ${mapped.facts.eventDate}`)
+      assert(!!mapped.facts.officialInfoNote && mapped.facts.officialInfoNote.includes('記載なし'), `実際: ${mapped.facts.officialInfoNote}`)
+      assert(gate.eligible === true, `no_period_stated で必須が揃う（missing=${JSON.stringify(gate.missing)}）`)
+      assert(!gate.missing.some((m) => m.includes('availablePeriod')), `availablePeriod は免除される（実際: ${JSON.stringify(gate.missing)}）`)
+      assert(
+        !gate.missing.some((m) => m.includes('eventDateISO')),
+        `eventDateISO 過去/未来ゲートは免除される（実際: ${JSON.stringify(gate.missing)}）`,
+      )
     },
   },
   {
-    name: 'DC#370: 不足項目一覧は提示されるが、手入力を強制する仕組みではない（missing は情報表示のみ）',
+    // readyGate.eligible=true でも「draft → ready」は人間の1クリックが要る（ArticleFacts.beforeChange の
+    // req.user ゲートは不変。assessCandidate も product_news の A 昇格に humanReviewedAt を要求する）。
+    name: 'DC#370: readyGate が eligible でも人間承認ゲートは維持（この経路自体は ready 化しない）',
     fn: () => {
-      const { gate } = runFullPipeline(DC370, DC370_SIGNALS)
-      assert(Array.isArray(gate.missing) && gate.missing.length > 0, '不足項目が配列で提示される')
+      const { product, gate } = runFullPipeline(DC370, DC370_SIGNALS)
+      assert(product.readyEligible === false && product.proposedStatus === 'draft', '機械抽出のみでは常に draft（ready にしない）')
+      assert(gate.eligible === true, 'readyGate としては充足（人間が admin で 1 クリック ready 可能な状態）')
     },
   },
   {

@@ -34,11 +34,19 @@ const ENRICHMENT_STATUSES = [
   { label: '却下（取り下げ）', value: 'withdrawn' },
 ]
 
-// 販売終了日の記載状況（sale 用。2026-09-07根本改善）。
+// 販売終了日の記載状況（sale 用。2026-09-07根本改善／2026-09-09）。
 const SALE_AVAILABILITY_VALUES = [
   { label: '未確認', value: 'unknown' },
   { label: '販売中・終了日の公式記載なし（confirmed）', value: 'ongoing_no_end_stated' },
+  { label: '販売期間の公式記載なし・店頭取扱商品（confirmed）', value: 'no_period_stated' },
   { label: '終了日の記載あり', value: 'has_end_date' },
+]
+
+// 入場料の該当性（event 系。2026-09-09）。'no' で paid 必須を免除する。
+const ADMISSION_APPLICABLE_VALUES = [
+  { label: '未記載（人間が paid を確定）', value: 'not_stated' },
+  { label: '該当なし（商業画廊・物販フェア等・観覧料の概念なし／料金ラベルも公式に皆無）', value: 'no' },
+  { label: '料金の記載あり（paid を free/paid で別途確定）', value: 'yes' },
 ]
 
 const PAID_VALUES = [
@@ -304,6 +312,22 @@ export const ArticleFacts: CollectionConfig = {
       },
     },
     {
+      name: 'admissionApplicable',
+      label: '入場料の該当性（イベント系）',
+      type: 'select',
+      defaultValue: 'not_stated',
+      dbName: 'af_admission_applicable',
+      options: ADMISSION_APPLICABLE_VALUES,
+      admin: {
+        description:
+          '「該当なし」を選ぶと、イベント系（exhibition / recurring_event / application / workshop）で ' +
+          'paid（有料/無料）を未確認のままでも ready 化できる（2026-09-09）。商業画廊・物販フェア等で、' +
+          '会場種別に観覧料の概念がなく、かつ公式本文にも料金ラベルが無いことを確認できたときだけ選ぶ' +
+          '（「無料と推測」ではなく「入場料という項目が該当しないことの確認」）。料金の明示がある場合は' +
+          '「料金の記載あり」を選び、paid を free/paid で確定する。',
+      },
+    },
+    {
       name: 'applyRequired',
       label: '事前申込の要否',
       type: 'select',
@@ -438,6 +462,7 @@ export const ArticleFacts: CollectionConfig = {
             venues: (get('venues') as CommonArticleFacts['venues']) ?? null,
             priceText: (get('priceText') as string | null) ?? null,
             saleAvailability: (get('saleAvailability') as string | null) ?? null,
+            admissionApplicable: (get('admissionApplicable') as string | null) ?? null,
             paid: (get('paid') as string | null) ?? null,
             applyRequired: (get('applyRequired') as string | null) ?? null,
             applyDeadline: (get('applyDeadline') as string | null) ?? null,

@@ -63,8 +63,10 @@ export interface ArticleFactsRow {
   primaryCategory?: string | null
   templateType?: TemplateType | string | null
   priceText?: string | null
-  // 2026-09-07（根本改善）：販売終了日の記載状況（sale 用）。confirmed のときだけ入る。
-  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date' | string | null
+  // 2026-09-07（根本改善）／2026-09-09：販売終了日の記載状況（sale 用）。confirmed のときだけ入る。
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date' | string | null
+  // 2026-09-09：入場料の該当性（'no' で event 系の paid 必須を免除）。confirmed のときだけ入る。
+  admissionApplicable?: 'yes' | 'no' | 'not_stated' | string | null
   // 2026-09-03（共通 sale mapper）：areaLead / audienceNote / hashtags は
   // sale 経路で「事実ではない決定的生成の候補」として自動補完しうる（空欄補完の判定に使う）。
   areaLead?: string | null
@@ -97,8 +99,10 @@ export interface ArticleFactsWrite {
   primaryCategory?: string | null // 既存18カテゴリー（BEAUTY / ART / …）
   templateType?: TemplateType | null // exhibition / sale / application / workshop / recurring_event / generic / unknown
   priceText?: string | null // 価格の表示文字列（sale 用。paid 列とは別）
-  // 2026-09-07（根本改善）：販売終了日の記載状況（sale 用。confirmed のときだけ書く）
-  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date'
+  // 2026-09-07（根本改善）／2026-09-09：販売終了日の記載状況（sale 用。confirmed のときだけ書く）
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date'
+  // 2026-09-09：入場料の該当性（event 系。'no' のときだけ書く＝会場種別が観覧料非該当と確認済み）
+  admissionApplicable?: 'no'
   // 共通 sale mapper の候補（事実ではない・決定的生成。ready 化前に人間が確認）
   areaLead?: string | null
   audienceNote?: string | null
@@ -217,10 +221,21 @@ function machineNotes(c: ArticleFactsCandidate, now: string): string {
     `出典: ${f.sourceName ?? '—'} / ${f.sourceUrl ?? '—'}`,
     `確認日時(verifiedAt): ${f.verifiedAt ?? '—'} / capturedAt: ${c.provenance.verifiedAt?.capturedAt ?? '—'}`,
     `未取得（推測補完しない）: 申込期限・料金・定員・所要時間・対象者・本文テキスト系`,
+    // 2026-09-09：公式記載なし（確認済み）／取得失敗（再取得で解消しうる）を分けて機械記録する。
+    (c.officiallyNotStated ?? []).length
+      ? `公式記載なし（取得成功・確認済み）: ${(c.officiallyNotStated ?? []).join(' / ')}`
+      : `公式記載なし（確認済み）: なし`,
+    (c.missingBecauseFetchFailed ?? []).length
+      ? `取得失敗のため未取得（再取得で解消しうる）: ${(c.missingBecauseFetchFailed ?? []).join(' / ')}`
+      : ``,
+    (c.notApplicable ?? []).length ? `記事タイプ上該当なし: ${(c.notApplicable ?? []).join(' / ')}` : ``,
+    c.venueAddress ? `会場住所（${c.venueAddress.method} / ${c.venueAddress.sourceUrl ?? '—'}）: ${c.venueAddress.value}` : ``,
     c.conflicts.length ? `相互矛盾: ${c.conflicts.join(' / ')}` : `相互矛盾: なし`,
     `[auto:lastVerifiedAt=${f.verifiedAt ?? ''}]`,
     `[auto:registeredAt=${now}]`,
-  ].join('\n')
+  ]
+    .filter((l) => l !== '')
+    .join('\n')
 }
 
 function normFacts(list: ArticleFactsProvenanceFact[] | null | undefined): string[] {
@@ -247,7 +262,8 @@ export interface AutoFieldWrites {
   whatHappens?: string
   officialInfoNote?: string
   priceText?: string
-  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date'
+  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date'
+  admissionApplicable?: 'no'
   areaLead?: string
   audienceNote?: string
   hashtags?: { tag: string }[]
@@ -267,6 +283,10 @@ function confirmedEventFieldWrites(c: ArticleFactsCandidate): AutoFieldWrites {
     out.venues = [{ name, place: eef.venuePlace.value }]
   }
   if (eef.paid.value === 'free' && eef.paid.confirmationStatus === 'confirmed') out.paid = 'free'
+  // 2026-09-09：入場料の該当性。extractArticleFactsCandidate が「会場種別が観覧料非該当」かつ
+  // 「取得成功した公式本文に料金ラベル皆無」を確認できたときだけ 'no'。draft に保持し、
+  // 人間が admin で最終確認（推測ではなく「該当しないことの確認結果」）。
+  if (c.admissionApplicable === 'no') out.admissionApplicable = 'no'
   // applyRequired は confirmed 'no' のみ（アダプタは confirmed 'no' を返さない設計＝現状は書かない）
   if (eef.applyRequired.value === 'no' && eef.applyRequired.confirmationStatus === 'confirmed')
     out.applyRequired = 'no'

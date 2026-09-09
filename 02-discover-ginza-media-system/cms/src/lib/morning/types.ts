@@ -63,15 +63,17 @@ export interface ProductNewsFactsCandidate {
     sourceUrl: string | null
     verifiedAt: string | null
     /**
-     * 販売終了日の公式記載状況（2026-09-07根本改善）。
+     * 販売終了日の公式記載状況（2026-09-07根本改善／2026-09-09 no_period_stated 追加）。
      *   'ongoing_no_end_stated' … 公式本文に「発売中/販売中」の明記があり、完売・数量限定・
      *     期間限定等の終了を示す語がないため、終了日は「公式記載なし」と決定的に確定できる。
+     *   'no_period_stated'      … 公式ページ取得成功かつ 販売開始日・終了日・会期ラベルが
+     *     一切なく、店頭取扱・お取り扱い等の「販売している」明示だけがある店頭商品。
+     *     「販売期間の記載が公式に無い」ことを確認済み（＝取得失敗・未チェックとは区別）。
      *   'has_end_date'          … saleEndAt が確認できている（終了日あり）。
-     *   'unknown'               … どちらとも決定的に判定できない（人間が公式で確認する）。
-     * 推測ではなく本文の明示語の有無だけで判定する（発売中/販売中の明記かつ終了示唆語なし、のときのみ
-     * 'ongoing_no_end_stated'）。
+     *   'unknown'               … どちらとも決定的に判定できない（人間が公式で確認する／未チェック）。
+     * 推測ではなく本文の明示語の有無だけで判定する。
      */
-    saleAvailability: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date'
+    saleAvailability: 'unknown' | 'ongoing_no_end_stated' | 'no_period_stated' | 'has_end_date'
   }
   provenance: Record<
     string,
@@ -86,10 +88,15 @@ export interface ProductNewsFactsCandidate {
   >
   detailPage: { url: string | null; lastCrawledAt: string | null; activeFetch: OfficialPageSignals | null }
   imagePolicy: string
-  /** product_news 必須で「未確認」の項目（機械値から確定できない） */
+  /** product_news 必須で「未確認」の項目（機械値から確定できない・人間が admin で入力） */
   unknownItems: string[]
-  /** product_news 必須だが「公式に記載なし」と決定的に言える項目（--fetch 時の決定的チェックのみ） */
+  /** product_news 必須だが「公式に記載なし」と決定的に言える項目（fetch 成功時の決定的チェックのみ） */
   officiallyNotStated: string[]
+  /**
+   * 公式ページの取得に失敗（fetchOutcome!=='ok'）したため未取得のままの項目
+   * （＝再取得で解消しうる。「公式記載なし（確認済み）」とは区別する。2026-09-09）。
+   */
+  missingBecauseFetchFailed: string[]
   /** event 用の概念で product_news には「該当なし（不要）」の項目（未確認とは区別） */
   notApplicable: string[]
   /** 情報間の矛盾 */
@@ -280,6 +287,33 @@ export interface OfficialPageSignals {
   bytes?: number
   /** タイムアウト・接続エラー等（rejectedReason は「意図的に取得しなかった」区別） */
   error?: string
+  /**
+   * 取得結果の機械可読な区分（2026-09-09）。下流が「公式記載なし」と「取得失敗」を
+   * 明確に分けるために使う。'ok' 以外はすべて「取得できなかった＝再取得で解消しうる」。
+   *   ok            … HTTP 200 で本文取得
+   *   bad_url       … URL 形式でない／空
+   *   ssrf_blocked  … SSRF ガードで拒否（内部・非公開ターゲット）
+   *   not_allowed_host … 許可ホストリスト外／リスト空
+   *   robots_denied … robots.txt で Disallow
+   *   redirect_error … リダイレクトの不正・回数超過・ループ
+   *   http_error    … 最終応答が 4xx/5xx
+   *   timeout       … 接続／全体タイムアウト
+   */
+  fetchOutcome?:
+    | 'ok'
+    | 'bad_url'
+    | 'ssrf_blocked'
+    | 'not_allowed_host'
+    | 'robots_denied'
+    | 'redirect_error'
+    | 'http_error'
+    | 'timeout'
+  /**
+   * 同一の登録可能ドメイン（eTLD+1）内の「店舗・施設・アクセスページ」を1ページだけ
+   * 追加取得した結果（2026-09-09、opts.fetchVenueDetail=true のときのみ）。会場住所の補完に使う。
+   * 別ドメインは参照しない。取れなければ null。
+   */
+  venueDetail?: OfficialPageSignals | null
 }
 
 /** ArticleFacts 候補（構造化プロポーザル。DB へは書かない） */
@@ -339,8 +373,37 @@ export interface ArticleFactsCandidate {
   detailPage: { url: string | null; lastCrawledAt: string | null; activeFetch: OfficialPageSignals | null }
   pdf: { found: boolean; url: string | null; activeFetch: OfficialPageSignals | null; note: string }
   imagePolicy: string
-  /** テンプレ必須で取れていない項目（推測補完しない） */
+  /** テンプレ必須で取れていない項目（推測補完しない）。後方互換のため従来どおり全件を列挙する。 */
   missingRequired: string[]
+  /**
+   * 公式ページ取得成功かつ、その項目のラベルが本文に存在しないことを確認できた
+   * ＝「公式記載なし（確認済み）」の項目（2026-09-09。product_news と対称）。
+   */
+  officiallyNotStated: string[]
+  /**
+   * 公式ページ取得に失敗（fetchOutcome!=='ok'）したため未取得のままの項目
+   * （再取得で解消しうる。「公式記載なし」とは区別する。2026-09-09）。
+   */
+  missingBecauseFetchFailed: string[]
+  /**
+   * 記事タイプ（会場種別）上そもそも該当しない項目（2026-09-09）。
+   * 例：商業画廊・書店フェアの「入場料（観覧料の概念がない）」。未確認とは区別する。
+   */
+  notApplicable: string[]
+  /**
+   * 入場料の該当性（2026-09-09）。
+   *   'no'         … 会場種別が観覧料非該当（商業画廊 / 物販フェア / 書店イベント等）と分類でき、
+   *                  かつ取得成功した公式本文に料金/入場料/観覧料/参加費ラベルが皆無だった。
+   *                  → readyGate は event 系の `paid` 必須を免除する。
+   *   'not_stated' … 上記条件を満たさない（従来どおり paid を人間が確定）。
+   *   'yes'        … 本文に料金の明示がある（paid は別途 free/paid で確定）。
+   */
+  admissionApplicable: 'yes' | 'no' | 'not_stated'
+  /**
+   * 会場住所（2026-09-09）。イベントページ本文、または同一登録ドメインの施設ページ
+   * （officialSignals.venueDetail）から決定的に取れたときのみ。取れなければ null。
+   */
+  venueAddress: { value: string; sourceUrl: string | null; method: string } | null
   /** 相互矛盾（開始>終了、JSON-LD と DC の乖離 等） */
   conflicts: string[]
   /** ready 判定の内訳（人間が admin で ready 化するときの残作業チェックリスト） */

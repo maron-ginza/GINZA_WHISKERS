@@ -40,13 +40,30 @@ export interface CommonArticleFacts {
   venues?: ({ name?: string | null; place?: string | null } | null)[] | null
   priceText?: string | null // 価格の表示文字列（sale 用。paid 列とは別）
   /**
-   * 販売終了日の記載状況（sale 用。2026-09-07根本改善）。
+   * 販売終了日の記載状況（sale 用。2026-09-07根本改善／2026-09-09 no_period_stated 追加）。
    *   'ongoing_no_end_stated' … 公式本文に「発売中/販売中」の明記があり、完売・数量限定・
    *     期間限定等の終了を示す語がないことを confirmed に確認できた（開始日が過去でも
    *     ready 化を妨げない。詳細は evaluateReadyGate 内のコメント参照）。
+   *   'no_period_stated'      … 公式ページ取得成功かつ、販売開始日・終了日・会期ラベルが
+   *     一切なく「店頭取扱」等の販売明示だけがある店頭商品。「販売期間の公式記載なし」を
+   *     確認済み（取得失敗・未チェックとは区別）。過去/未来ゲート（eventDateISO 必須）を免除する。
    *   'has_end_date' / 'unknown' / 未設定 … 従来どおり eventDateISO の過去/未来判定を適用する。
    */
-  saleAvailability?: 'unknown' | 'ongoing_no_end_stated' | 'has_end_date' | string | null
+  saleAvailability?:
+    | 'unknown'
+    | 'ongoing_no_end_stated'
+    | 'no_period_stated'
+    | 'has_end_date'
+    | string
+    | null
+  /**
+   * 入場料の該当性（2026-09-09）。イベント系（exhibition / recurring_event / application /
+   * workshop）で、'no' のときだけ `paid`（有料/無料）必須を免除する。
+   *   'no'         … 会場種別が観覧料非該当（商業画廊 / 物販フェア / 書店イベント等）で、
+   *                  公式本文に料金ラベルが皆無だったことを確認済み。
+   *   'not_stated' / 'yes' / 未設定 … 従来どおり `paid` を必須にする（未設定は 'not_stated' と同義）。
+   */
+  admissionApplicable?: 'yes' | 'no' | 'not_stated' | string | null
   paid?: 'paid' | 'free' | 'unknown' | string | null
   applyRequired?: 'yes' | 'no' | string | null
   applyDeadline?: string | null
@@ -151,7 +168,11 @@ export function evaluateReadyGate(
     requiredText = [
       { key: 'contentTitle', label: 'contentTitle（商品名／シリーズ名。= eventName 欄）' },
       { key: 'contentSummary', label: 'contentSummary（商品概要。= whatHappens 欄）' },
-      { key: 'availablePeriod', label: 'availablePeriod（販売期間の表示文字列。= eventDate 欄）' },
+      // 【2026-09-09】saleAvailability==='no_period_stated'（公式に販売期間の記載が無いことを
+      // 確認済みの店頭商品）は availablePeriod を必須にしない——存在しない事実を書かせない。
+      ...(facts.saleAvailability === 'no_period_stated'
+        ? []
+        : [{ key: 'availablePeriod' as const, label: 'availablePeriod（販売期間の表示文字列。= eventDate 欄）' }]),
       { key: 'priceText', label: 'priceText（価格の表示文字列）' },
       { key: 'officialInfoNote', label: 'officialInfoNote（購入条件・在庫注意など公式補足）' },
     ]
@@ -192,7 +213,11 @@ export function evaluateReadyGate(
   }
 
   // --- 有料/無料 or 価格（イベント系は paid 確定、sale は priceText で代替可） ---
-  if (t !== 'sale' && t !== 'generic') {
+  //   【2026-09-09】admissionApplicable==='no'（会場種別が観覧料非該当で、公式本文に料金ラベルが
+  //   皆無だったことを確認済み）のイベント系は `paid` 必須を免除する。'no' 以外・未設定は従来どおり。
+  //   これは「無料と推測」ではなく「入場料という項目がそもそも該当しないことを公式ページで確認」。
+  const admissionNotApplicable = facts.admissionApplicable === 'no'
+  if (t !== 'sale' && t !== 'generic' && !admissionNotApplicable) {
     if (facts.paid !== 'paid' && facts.paid !== 'free') missing.push('paid（有料/無料を確定。unknown 不可）')
   }
 
@@ -224,7 +249,13 @@ export function evaluateReadyGate(
   //   過去なのは「継続して販売中」という事実の当然の帰結であり、終了日が無い以上「過去」を
   //   判定する機械日付が存在しないため。他の templateType・他の sale（saleAvailability が
   //   'has_end_date'／'unknown'／未設定）には一切影響しない（既定 'unknown' で従来どおり）。
-  const salesOngoingNoEnd = t === 'sale' && facts.saleAvailability === 'ongoing_no_end_stated'
+  //   【2026-09-09】さらに saleAvailability==='no_period_stated'（公式ページ取得成功かつ販売開始日・
+  //   終了日・会期ラベルが一切なく「店頭取扱」等の販売明示だけがある店頭商品）も、同様に過去/未来
+  //   ゲートを適用しない——判定に使える機械日付がそもそも公式ページに存在しないため。他の
+  //   templateType・他の saleAvailability 値には一切影響しない。
+  const salesOngoingNoEnd =
+    t === 'sale' &&
+    (facts.saleAvailability === 'ongoing_no_end_stated' || facts.saleAvailability === 'no_period_stated')
   if (!salesOngoingNoEnd) {
     const iso = s(facts.eventDateISO)
     if (!iso) {
