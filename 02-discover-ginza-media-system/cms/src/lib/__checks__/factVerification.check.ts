@@ -28,6 +28,14 @@ import { assessCandidate, type AssessCandidateInput } from '../morning/assessCan
 import { evaluateReadyGate, type CommonArticleFacts } from '../template/readyGate'
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
 import type { ImagePreflightResult, OfficialPageSignals } from '../morning/types'
+import {
+  normalizeBrandCollab,
+  dedupeAdjacentPhrases,
+  stripLeakedFragments,
+  ensureFourHashtags,
+} from '../template/polishArticleDraft'
+import { renderArticleFromTemplate, type TemplateArticleInput } from '../template/renderArticleFromTemplate'
+import type { EventArticleFields } from '../template/templates'
 
 function assert(c: unknown, m: string): void {
   if (!c) throw new Error(m)
@@ -419,6 +427,151 @@ const cases: CheckCase[] = [
       const facts = toFactsLike({ enrichmentStatus: 'draft', templateType: 'sale', priceText: '16,500円（税込）', saleAvailability: 'no_period_stated' }) as unknown as AssessCandidateInput['facts']
       const a = assessCandidate({ dc: dc({ id: 370, contentType: 'news', venue: null }), facts, factKind: 'product_news', dedup: { duplicate: false }, imageInventory: [], now: NOW })
       assert(a.verdict === 'B', `draft は B（実際 ${a.verdict}）`)
+    },
+  },
+  // ---------- 記事下書きの共通・後処理品質調整（polishArticleDraft・2026-09-09） ----------
+  {
+    name: 'normalizeBrandCollab: ブランドコラボ名の × / x と前後空白を正規化',
+    fn: () => {
+      assert(normalizeBrandCollab('AMBUSH® x New Era®') === 'AMBUSH® × New Era®', normalizeBrandCollab('AMBUSH® x New Era®'))
+      assert(normalizeBrandCollab('A×B') === 'A × B', normalizeBrandCollab('A×B'))
+      assert(normalizeBrandCollab('ブランド ✕ 別ブランド') === 'ブランド × 別ブランド', normalizeBrandCollab('ブランド ✕ 別ブランド'))
+      assert(normalizeBrandCollab('boxing club') === 'boxing club', '語中の x は触らない')
+      assert(normalizeBrandCollab('') === '', '空は空')
+    },
+  },
+  {
+    name: 'dedupeAdjacentPhrases: 隣接語句の重複を除去（「秋の秋の」→「秋の」）',
+    fn: () => {
+      assert(dedupeAdjacentPhrases('毎日に、秋の秋の色を。') === '毎日に、秋の色を。', dedupeAdjacentPhrases('毎日に、秋の秋の色を。'))
+      assert(dedupeAdjacentPhrases('個展個展を開催') === '個展を開催', dedupeAdjacentPhrases('個展個展を開催'))
+      assert(dedupeAdjacentPhrases('これは。。おわり') === 'これは。おわり', dedupeAdjacentPhrases('これは。。おわり'))
+      assert(dedupeAdjacentPhrases('ぱんぱんに膨らむ') === 'ぱんぱんに膨らむ', 'ひらがなのみの畳語は壊さない')
+      assert(dedupeAdjacentPhrases('銀座 銀座で') === '銀座で', dedupeAdjacentPhrases('銀座 銀座で'))
+    },
+  },
+  {
+    name: 'stripLeakedFragments: undefined / [object Object] / atRelated / 空括弧 を除去',
+    fn: () => {
+      assert(!/undefined/.test(stripLeakedFragments('会場：undefined です')), stripLeakedFragments('会場：undefined です'))
+      assert(!/\[object Object\]/.test(stripLeakedFragments('値は[object Object]でした')), 'object Object 除去')
+      assert(!/atRelated/i.test(stripLeakedFragments('atRelated の断片が残る')), 'atRelated 除去')
+      assert(!/「」|『』|（）/.test(stripLeakedFragments('新シリーズ「」です')), '空括弧を除去')
+    },
+  },
+  {
+    name: 'ensureFourHashtags: 既存タグを保持し、会場・ブランド・カテゴリー由来で重複なく必ず4個',
+    fn: () => {
+      const r = ensureFourHashtags(['#写真'], {
+        eventName: 'AMBUSH® × New Era®',
+        brand: 'AMBUSH',
+        category: 'BEAUTY',
+        venuePlaces: ['AMBUSH® WORKSHOP GINZA フロア: 3F（GINZA SIX 3F）'],
+        venueNames: ['AMBUSH® WORKSHOP GINZA'],
+      })
+      assert(r.length === 4, `必ず4個（実際 ${r.length}: ${r.join(' ')}）`)
+      assert(r.includes('#写真'), '既存タグを保持')
+      assert(r.includes('#銀座'), '#銀座 を必ず含む')
+      assert(new Set(r.map((x) => x.toLowerCase())).size === 4, '重複なし')
+      assert(r.every((t) => t.startsWith('#') && !/\s|×|®/.test(t)), '各タグは # 始まりで記号・空白なし')
+    },
+  },
+  {
+    name: 'ensureFourHashtags: 既存が空でも4個・既存に重複があっても4個ユニーク',
+    fn: () => {
+      const empty = ensureFourHashtags([], { eventName: 'テスト展', category: 'ART', venueNames: ['銀座 蔦屋書店'] })
+      assert(empty.length === 4 && new Set(empty).size === 4, `空→4個ユニーク（${empty.join(' ')}）`)
+      const dup = ensureFourHashtags(['#銀座', '#銀座', '#アート', '#アート'], { eventName: 'x', venueNames: ['銀座 蔦屋書店'] })
+      assert(dup.length === 4 && new Set(dup).size === 4, `重複入力→4個ユニーク（${dup.join(' ')}）`)
+    },
+  },
+  {
+    name: 'renderArticleFromTemplate（sale・DC #370 クラス）: 4タグ／ブランド×正規化／秋の秋の除去／催し不使用／断片なし',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: '',
+        season: '秋',
+        eventName: 'AMBUSH® x New Era®',
+        editionLabel: '',
+        theme: '',
+        whatHappens:
+          'New Era®を象徴するクラシックなフォルムに、AMBUSH®ならではの大胆な素材使いとグラフィックを融合したコレクション。レオパード柄や異素材を組み合わせたパッチワークモデルなど、クラシックなキャップにAMBUSH®らしい遊び心を加えたラインアップが揃います。',
+        eventDate: '販売期間の記載なし（店頭にて取扱）',
+        eventTime: '',
+        venues: [{ name: 'AMBUSH® x New Era®', place: 'AMBUSH® WORKSHOP GINZA フロア: 3F' }],
+        areaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、催しが開かれています。',
+        audienceNote: 'ストリートからデイリーまで、装いのアクセントを探している方へ。',
+        paid: false,
+        priceText: 'NEW ERA A-PATCH CAP：16,500円（税込）／NEW ERA A-PATCH MIX CAP：17,600円（税込）',
+        applyDeadline: '',
+        resultDate: '',
+        resultRule: '',
+        applyRule: '',
+        officialInfoNote: '販売期間の記載なし（店頭にて取扱）。詳細は店舗でご確認ください。',
+        saleAvailability: 'no_period_stated',
+        closing: '',
+        callToAction: '',
+      }
+      const input: TemplateArticleInput = {
+        discoveredContentId: 370,
+        fields,
+        sourceName: 'GINZA SIX',
+        sourceUrl: 'https://ginza6.tokyo/news/detail/shopnews/224269',
+        verifiedAt: '2026-09-08T21:01:40.055Z',
+        sourceProvenance: [{ fact: '価格 16,500円', sourceType: 'official', factType: 'price', verificationStatus: 'confirmed' }],
+        hashtags: ['#銀座'],
+        appliedTemplate: 'sale',
+      }
+      const r = renderArticleFromTemplate(input)
+      assert(r.hashtags.length === 4, `ハッシュタグ4個（実際 ${r.hashtags.length}: ${r.hashtags.join(' ')}）`)
+      assert(r.hashtags.includes('#銀座'), '#銀座 保持')
+      assert(new Set(r.hashtags).size === 4, 'ハッシュタグ重複なし')
+      assert(!/xNewEra®|「x/.test(r.title), `タイトルに壊れたシリーズ名が出ない（実際 ${r.title}）`)
+      assert(!/秋の秋の/.test(r.noteBody + r.titleCandidates.join(' ')), '「秋の秋の」が出ない')
+      assert(/AMBUSH® × New Era®/.test(r.noteBody), `本文にブランドコラボ名が正規化されて出る（× 記号）`)
+      assert(!/催し/.test(r.noteBody), `sale 本文に「催し」を使わない（実際: ${r.noteBody.match(/.{0,10}催し.{0,10}/)?.[0] ?? ''}）`)
+      assert(!/undefined|\[object Object\]|atRelated/i.test(r.noteBody), '旧フィールド由来の断片が本文に混入しない')
+      assert(r.noteBody.trim().endsWith(r.hashtags.join(' ')), '本文末尾がハッシュタグ4個で終わる')
+    },
+  },
+  {
+    name: 'renderArticleFromTemplate（exhibition・回帰）: polish 適用後も本文が生成され4タグになる',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: 'ART',
+        season: '秋',
+        eventName: 'テスト個展『みほん』',
+        editionLabel: '',
+        theme: '',
+        whatHappens: '作家の新作を展示します。',
+        eventDate: '2026年10月1日（水）〜10月20日（月）',
+        eventTime: '11時から19時まで',
+        venues: [{ name: 'テスト個展『みほん』', place: '銀座 蔦屋書店 ART IN CABINET（GINZA SIX 6F）' }],
+        areaLead: '会場は1か所です。',
+        audienceNote: '手仕事に関心のある方へ。',
+        paid: false,
+        applyDeadline: '',
+        resultDate: '',
+        resultRule: '',
+        applyRule: '',
+        officialInfoNote: '入場無料。',
+        closing: '気になる方は公式情報をご確認ください。',
+        callToAction: '',
+      }
+      const input: TemplateArticleInput = {
+        discoveredContentId: 999,
+        fields,
+        sourceName: '銀座 蔦屋書店',
+        sourceUrl: 'https://store.tsite.jp/ginza/event/art/1.html',
+        verifiedAt: '2026-09-09T00:00:00.000Z',
+        sourceProvenance: [{ fact: '会期 2026年10月1日〜', sourceType: 'official', factType: 'date', verificationStatus: 'confirmed' }],
+        hashtags: ['#銀座', '#個展'],
+        appliedTemplate: 'exhibition',
+      }
+      const r = renderArticleFromTemplate(input)
+      assert(r.charCount > 200, `本文が生成される（${r.charCount}字）`)
+      assert(r.hashtags.length === 4 && r.hashtags.includes('#銀座') && r.hashtags.includes('#個展'), `4タグ・既存保持（${r.hashtags.join(' ')}）`)
+      assert(!/undefined|\[object Object\]/i.test(r.noteBody), '断片混入なし')
     },
   },
 ]

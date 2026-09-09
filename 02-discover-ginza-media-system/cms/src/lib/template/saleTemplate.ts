@@ -100,14 +100,21 @@ function brandFromEventName(name: string): string {
   return t.split(/\s+/)[0] ?? t
 }
 
-/** eventName の『…』/「…」内から末尾の動作語を除いたシリーズ名 */
+/** eventName の『…』/「…」内から末尾の動作語を除いたシリーズ名。
+ *  ブラケットが無い場合は「シリーズ名なし」（''）を返す——名称全体（ブランドコラボ名等）を
+ *  空白除去して潰すと「AMBUSH® × New Era®」→「xNewEra®」のような壊れた表示になるため。 */
 function seriesFromEventName(name: string): string {
   const m = s(name).match(/[「『]([^」』]{2,48})[」』]/)
-  const inner = m ? m[1] : s(name)
-  return inner
+  if (!m) return ''
+  return m[1]
     .replace(/\s*(?:開幕|開催中|開催|スタート|開始|はじまる|始まる|フェア|展)\s*$/u, '')
     .replace(/\s+/g, '')
     .trim()
+}
+
+/** 「〜的な表現を避ける」sale か（継続販売中／販売期間の公式記載なし） */
+function isProductSale(f: EventArticleFields): boolean {
+  return f.saleAvailability === 'ongoing_no_end_stated' || f.saleAvailability === 'no_period_stated'
 }
 
 function themeKeywordFrom(text: string): string {
@@ -208,36 +215,32 @@ export function buildTitleCandidatesSale(f: EventArticleFields): string[] {
   const cat = s(f.primaryCategory).toUpperCase()
   const context = `${f.eventName} ${f.whatHappens} ${f.areaLead}`
   const brand = brandFromEventName(f.eventName)
-  let series = seriesFromEventName(f.eventName) || f.eventName
-  // series がブラケット無しで eventName 全体にフォールバックした場合、brand と重複しないよう
-  // 先頭の brand 部分を除いた残り（型番・カラー名等）だけを series として使う。
-  if (brand && series.startsWith(brand) && series.length > brand.length) {
-    series = series.slice(brand.length).trim() || series
-  }
+  const series = seriesFromEventName(f.eventName) // ブラケットが無ければ '' （名称を潰さない）
+  // series があれば「brand「series」」、無ければ eventName 全体（コラボ名等）を主語にする。
+  const subject = series ? `${brand}「${series}」` : s(f.eventName)
   const theme = themeKeywordFrom(context)
   const noun = categoryNoun(cat, context)
   const lead = categoryLead(cat, noun)
   const image = (theme && THEME_IMAGE[theme]) || theme || `${f.season || 'この季節'}の色`
-  // 2026-09-07根本改善：saleAvailability==='ongoing_no_end_stated'（継続販売中と confirmed）
-  // のときは「始まる／開かれる」という開催・イベント的な動詞を使わない（商品販売を
-  // イベントと混同しない）。
-  const startsVerb =
-    f.saleAvailability === 'ongoing_no_end_stated'
-      ? '見つかる'
-      : /始まり|開幕|スタート|オープン/.test(context)
-        ? '始まる'
-        : '開かれる'
+  // 2026-09-07 / 2026-09-09 根本改善：継続販売中／販売期間の公式記載なし の sale では
+  // 「始まる／開かれる」という開催・イベント的な動詞を使わない（商品販売をイベントと混同しない）。
+  const startsVerb = isProductSale(f)
+    ? '見つかる'
+    : /始まり|開幕|スタート|オープン/.test(context)
+      ? '始まる'
+      : '開かれる'
   const seasonWord = s(f.season)
 
   const t0 = seasonWord
-    ? `${lead}に、${seasonWord}の${image}を。銀座で${startsVerb}${brand}「${series}」`
-    : `${lead}に、${image}を。銀座で${startsVerb}${brand}「${series}」`
+    ? `${lead}に、${seasonWord}の${image}を。銀座で${startsVerb}${subject}`
+    : `${lead}に、${image}を。銀座で${startsVerb}${subject}`
   const t1 = f.eventDate.trim()
-    ? `「${series}」、${f.eventDate.trim()}`
-    : `「${series}」、銀座で${startsVerb}`
-  const t2 = theme && noun
-    ? `${brand}が贈る${theme}の${noun}——「${series}」`
-    : `${brand}「${series}」、銀座 蔦屋書店で`
+    ? `${series ? `「${series}」` : subject}、${f.eventDate.trim()}`
+    : `${series ? `「${series}」` : subject}、銀座で${startsVerb}`
+  const t2 =
+    theme && noun
+      ? `${series ? `${brand}が贈る${theme}の${noun}——「${series}」` : `${subject}——${theme}の${noun}`}`
+      : `${subject}、銀座で`
 
   return [t0, t1, t2]
 }
@@ -249,17 +252,15 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
   const cat = s(f.primaryCategory).toUpperCase()
   const context = `${f.eventName} ${f.whatHappens} ${f.areaLead}`
   const brand = brandFromEventName(f.eventName)
-  let series = seriesFromEventName(f.eventName) || f.eventName
-  if (brand && series.startsWith(brand) && series.length > brand.length) {
-    series = series.slice(brand.length).trim() || series
-  }
+  const series = seriesFromEventName(f.eventName) // ブラケットが無ければ ''
+  const subject = series ? `「${series}」` : s(f.eventName) // 導入の主語
   const theme = themeKeywordFrom(context)
   const noun = categoryNoun(cat, context)
   const lead = categoryLead(cat, noun) // 助詞なしの素の形（「指先」）。用途に応じて に / から を付ける
-  // 2026-09-07根本改善：saleAvailability==='ongoing_no_end_stated' のときは
+  // 2026-09-07 / 2026-09-09 根本改善：継続販売中／販売期間の公式記載なし の sale では
   // 「催し／フェア／展示」等のイベント的な種類語を使わず、商品として自然な語にする
   // （商品の継続販売をイベントと混同しない）。
-  const kind = f.saleAvailability === 'ongoing_no_end_stated' ? '新作' : kindWord(context)
+  const kind = isProductSale(f) ? '新作' : kindWord(context)
   const seasonWord = s(f.season)
   const seasonAdj = seasonWord ? `${seasonWord}の` : ''
   const { store } = splitVenue(f.venues[0]?.place ?? '')
@@ -287,13 +288,17 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
   const introTopic = theme
     ? `${theme}をモチーフにした${noun || 'アイテム'}`
     : noun
-      ? `${noun}の新シリーズ`
-      : '新しいシリーズ'
+      ? `${noun}`
+      : '新シリーズ'
+  // series があれば「brand の 新シリーズ「series」」、無ければ eventName（コラボ名等）そのものを主語に。
+  const introSubject = series
+    ? `${brand ? `${brand}の` : ''}新シリーズ「${series}」`
+    : subject
   push({
     type: 'paragraph',
-    text:
-      `${seasonAdj}銀座に、${introTopic}の${kind}が登場します。` +
-      `${brand ? `${brand}の` : ''}新シリーズ「${series}」です。`,
+    text: isProductSale(f)
+      ? `${seasonAdj}銀座で、${noun || (theme ? `${theme}のアイテム` : '新しいアイテム')}が手に取れます。${introSubject}です。`
+      : `${seasonAdj}銀座に、${introTopic}の${kind}が登場します。${introSubject}です。`,
   })
   push({
     type: 'paragraph',
@@ -337,7 +342,7 @@ export function buildSaleArticle(f: EventArticleFields, source: SaleSourceMeta):
         seasonWord === '秋'
           ? '夏の名残がまだ残るいま、ひと足先に秋の色を迎えられます。'
           : `${seasonWord ? `${seasonWord}の` : 'いまの'}空気に合わせて、手もとの色を変えられます。`
-      }予定を空けなくても、買い物のついでに${f.saleAvailability === 'ongoing_no_end_stated' ? '手に取れる' : '立ち寄れる'}${kind}です。`,
+      }予定を空けなくても、買い物のついでに${isProductSale(f) ? '手に取れる' : '立ち寄れる'}${kind}です。`,
   })
   push({
     type: 'paragraph',
