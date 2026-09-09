@@ -203,6 +203,7 @@ export function buildFinalCandidateDigest(
       venue: resolvedVenue || null,
       eventPeriod: a.eventPeriod,
       templateType: a.templateType ?? null,
+      factKind: a.factKind ?? null,
       category: dm.category,
       contentType: null,
       uxType: null,

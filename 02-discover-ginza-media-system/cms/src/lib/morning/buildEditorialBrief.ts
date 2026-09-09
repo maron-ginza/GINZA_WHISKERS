@@ -14,9 +14,11 @@ import type { EditorialBrief } from './types'
 export interface EditorialBriefInput {
   displayTitle: string
   venue: string | null
-  /** "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明" */
+  /** "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"（sale では販売期間の表示文字列） */
   eventPeriod: string
   templateType?: string | null
+  /** 記事タイプ分類（'event' / 'product_news' / 'unknown'）。sale/product_news の文面切替に使う */
+  factKind?: string | null
   /** 18カテゴリー（暫定でも可） */
   category?: string | null
   contentType?: string | null
@@ -127,8 +129,24 @@ const PAID_LEAN_CATEGORIES = new Set(['WELLNESS', 'BEAUTY'])
 export function buildEditorialBrief(input: EditorialBriefInput): EditorialBrief {
   const category = (input.category ?? '').trim().toUpperCase() || null
   const venueLabel = (input.venue ?? '').trim() || '銀座'
-  const periodLabel = input.eventPeriod && input.eventPeriod !== '不明' ? input.eventPeriod : '会期は公式情報で要確認'
   const templateKey = (input.templateType ?? '').trim().toLowerCase()
+  const factKindKey = (input.factKind ?? '').trim().toLowerCase()
+
+  // 商品ニュース・販売情報（sale / product_news）は「開催」「イベント」「〜で行われている」
+  // 「会期」等の催事表現を使わない。event 系の既存表現はそのまま維持する。
+  const saleKind = templateKey === 'sale' || templateKey === 'product_news' || factKindKey === 'product_news'
+  const hasPeriod = !!input.eventPeriod && input.eventPeriod !== '不明'
+  const periodLabel = hasPeriod
+    ? input.eventPeriod
+    : saleKind
+      ? '販売期間は公式情報で要確認'
+      : '会期は公式情報で要確認'
+  // sale の販売期間を1文にするときの表記（既に「販売期間」等を含む文字列はそのまま使う）
+  const salePeriodSentence = hasPeriod
+    ? /販売期間|記載なし|要確認|店頭/.test(input.eventPeriod)
+      ? input.eventPeriod
+      : `販売期間は${input.eventPeriod}`
+    : '販売期間は公式情報で要確認'
 
   const tf = computeTargetFitScore({
     title: input.displayTitle,
@@ -142,18 +160,27 @@ export function buildEditorialBrief(input: EditorialBriefInput): EditorialBrief 
   const angle = (category && ANGLE_BY_CATEGORY[category]) || DEFAULT_ANGLE
   const hookSentence = (category && HOOK_SENTENCE_BY_CATEGORY[category]) || DEFAULT_HOOK
 
-  const titleCandidates = [
-    `${input.displayTitle}——${venueLabel}で見つける、今週の銀座`,
-    `${venueLabel}発、「${input.displayTitle}」は${periodLabel}まで`,
-    `今週の銀座を彩る一件：${input.displayTitle}`,
-  ]
+  const titleCandidates = saleKind
+    ? [
+        `${input.displayTitle}——${venueLabel}で出会う、今週の銀座`,
+        `${venueLabel}に登場、「${input.displayTitle}」`,
+        `今週の銀座で手に取りたい一品：${input.displayTitle}`,
+      ]
+    : [
+        `${input.displayTitle}——${venueLabel}で見つける、今週の銀座`,
+        `${venueLabel}発、「${input.displayTitle}」は${periodLabel}まで`,
+        `今週の銀座を彩る一件：${input.displayTitle}`,
+      ]
 
-  const introDraft =
-    `${input.displayTitle}が、${venueLabel}で行われている（${periodLabel}）。` +
-    `${hookSentence}。今週の銀座を歩くなら、押さえておきたい一件だ。`
+  const introDraft = saleKind
+    ? `${input.displayTitle}が、${venueLabel}に登場している。` +
+      `${hookSentence}。${salePeriodSentence}。今週の銀座で、手に取ってみたい一品だ。`
+    : `${input.displayTitle}が、${venueLabel}で行われている（${periodLabel}）。` +
+      `${hookSentence}。今週の銀座を歩くなら、押さえておきたい一件だ。`
 
-  const structureOutline = (STRUCTURE_BY_TEMPLATE[templateKey] ?? DEFAULT_STRUCTURE).outline
-  const recommendedLength = LENGTH_BY_TEMPLATE[templateKey] ?? DEFAULT_LENGTH
+  const structKey = saleKind ? 'sale' : templateKey
+  const structureOutline = (STRUCTURE_BY_TEMPLATE[structKey] ?? DEFAULT_STRUCTURE).outline
+  const recommendedLength = LENGTH_BY_TEMPLATE[structKey] ?? DEFAULT_LENGTH
 
   const paidLean =
     (category != null && PAID_LEAN_CATEGORIES.has(category)) ||

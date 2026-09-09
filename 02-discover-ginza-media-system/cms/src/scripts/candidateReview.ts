@@ -464,6 +464,7 @@ async function main(): Promise<void> {
         venue: dcLike.venue ?? null,
         eventPeriod: a.eventPeriod,
         templateType: templateTypeCls.templateType,
+        factKind,
         category: category.category,
         contentType: dcLike.contentType,
         uxType: dcLike.uxType,
