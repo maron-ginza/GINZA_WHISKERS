@@ -181,6 +181,96 @@ const cases: CheckCase[] = [
       assert(d.shortfall === true, 'shortfall=true')
     },
   },
+
+  // ── 2026-09-10: 会場補完（digestMeta.venue が空でも ready ArticleFacts / 抽出から補完）＋
+  //    sale / product_news の会期・会場の一律必須を外す（evaluateReadyGate と一致させる） ──
+  {
+    name: 'DC #370 再現: product_news で digestMeta.venue が空でも ready ArticleFacts の会場で補完され、除外されない',
+    fn: () => {
+      const d = buildFinalCandidateDigest([
+        makeAssessment({
+          discoveredContentId: 370,
+          displayTitle: 'AMBUSH® x New Era® – GINZA SIX',
+          templateType: 'sale',
+          factKind: 'product_news',
+          // sale は eventDateISO を持たず eventPeriod は「販売期間の記載なし（店頭にて取扱）」の
+          // ような文字列になる。'不明' ではないが、sale では会期ゲート自体を適用しない。
+          eventPeriod: '販売期間の記載なし（店頭にて取扱）',
+          digestMeta: makeDigestMeta({
+            venue: null,
+            factsVenuePlace: 'AMBUSH® WORKSHOP GINZA フロア: 3F',
+            factsAreaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、催しが開かれています。',
+            facilityKey: 'ginza-six',
+            category: 'SHOPPING',
+          }),
+        }),
+      ])
+      assert(d.candidates.length === 1, `確定候補件数: ${d.candidates.length}`)
+      assert(
+        !d.excluded.some((e) => e.discoveredContentId === 370),
+        `除外されていないこと: ${JSON.stringify(d.excluded)}`,
+      )
+      assert(
+        d.candidates[0].venue === 'AMBUSH® WORKSHOP GINZA フロア: 3F',
+        `会場が ArticleFacts から補完される: ${d.candidates[0].venue}`,
+      )
+    },
+  },
+  {
+    name: '会場補完の優先順: digestMeta.venue > factsVenuePlace > factsVenueName > factsAreaLead > salesLocation > extraction.venue',
+    fn: () => {
+      const base = { discoveredContentId: 0, templateType: 'exhibition' as const, eventPeriod: '2026-09-10' }
+      // factsVenueName（venues[0].place 無し）で補完
+      const d1 = buildFinalCandidateDigest([
+        makeAssessment({ ...base, discoveredContentId: 401, digestMeta: makeDigestMeta({ venue: null, factsVenueName: '銀座 蔦屋書店' }) }),
+      ])
+      assert(d1.candidates[0]?.venue === '銀座 蔦屋書店', `factsVenueName で補完: ${d1.candidates[0]?.venue}`)
+      // event 抽出の venue で補完（ready ArticleFacts 会場情報なし）
+      const d2 = buildFinalCandidateDigest([
+        makeAssessment({
+          ...base,
+          discoveredContentId: 402,
+          digestMeta: makeDigestMeta({ venue: null }),
+          extraction: { discoveredContentId: 402, fields: { venue: 'ポーラ ミュージアム アネックス' } } as unknown as CandidateAssessment['extraction'],
+        }),
+      ])
+      assert(d2.candidates[0]?.venue === 'ポーラ ミュージアム アネックス', `extraction.venue で補完: ${d2.candidates[0]?.venue}`)
+      // digestMeta.venue があればそれが最優先
+      const d3 = buildFinalCandidateDigest([
+        makeAssessment({ ...base, discoveredContentId: 403, digestMeta: makeDigestMeta({ venue: 'DC会場', factsVenuePlace: 'Facts会場' }) }),
+      ])
+      assert(d3.candidates[0]?.venue === 'DC会場', `digestMeta.venue が最優先: ${d3.candidates[0]?.venue}`)
+    },
+  },
+  {
+    name: 'sale / product_news は会期・会場が空でも会期不明・会場不明で除外しない（evaluateReadyGate と一致）',
+    fn: () => {
+      const d = buildFinalCandidateDigest([
+        makeAssessment({
+          discoveredContentId: 404,
+          templateType: 'sale',
+          factKind: 'product_news',
+          eventPeriod: '不明',
+          digestMeta: makeDigestMeta({ venue: null }),
+        }),
+      ])
+      assert(
+        !d.excluded.some((e) => e.discoveredContentId === 404 && /(開催日が不明|会場）が不明)/.test(e.reason)),
+        `会期・会場では除外しない: ${JSON.stringify(d.excluded)}`,
+      )
+      assert(d.candidates.length === 1, `確定候補件数: ${d.candidates.length}`)
+    },
+  },
+  {
+    name: 'イベント系（exhibition）は従来どおり会場不明で除外される（補完先が無い場合）',
+    fn: () => {
+      const d = buildFinalCandidateDigest([
+        makeAssessment({ discoveredContentId: 405, templateType: 'exhibition', digestMeta: makeDigestMeta({ venue: null }) }),
+      ])
+      assert(d.candidates.length === 0, `件数: ${d.candidates.length}`)
+      assert(d.excluded.some((e) => e.discoveredContentId === 405 && /場所（会場）が不明/.test(e.reason)), '除外理由')
+    },
+  },
 ]
 
 export const suite = () => runSuite('buildFinalCandidateDigest', cases)

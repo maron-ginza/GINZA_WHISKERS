@@ -56,6 +56,25 @@ import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/p
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
+/**
+ * ready な ArticleFacts doc から会場補完のフォールバック値を取り出す（2026-09-10）。
+ * DigestMeta.factsVenue* へ写し、buildFinalCandidateDigest が digestMeta.venue の
+ * 補完（会場解決）に使う。ready 以外は確定情報として扱わずすべて null を返す
+ * （A/B/C 判定は event/product_news で factsSource==='ready' を必須にするため、
+ *  verdict==='A' の候補はここが埋まる）。
+ */
+function readyFactsVenueParts(
+  factsDoc: Record<string, unknown> | undefined,
+): { place: string | null; name: string | null; areaLead: string | null } {
+  if (!factsDoc || String(factsDoc.enrichmentStatus ?? '') !== 'ready') {
+    return { place: null, name: null, areaLead: null }
+  }
+  const f = toFactsLike(factsDoc)
+  const v0 = Array.isArray(f?.venues) ? f?.venues?.[0] : null
+  const clean = (s: unknown): string | null => (typeof s === 'string' && s.trim() ? s.trim() : null)
+  return { place: clean(v0?.place), name: clean(v0?.name), areaLead: clean(f?.areaLead) }
+}
+
 interface Args {
   limit: number
   json: boolean
@@ -693,8 +712,12 @@ async function main(): Promise<void> {
             sourceUrl: dcLike.articleUrl,
             title: dcLike.title,
           })
+          const rfv = readyFactsVenueParts(factsDoc)
           a.digestMeta = {
             venue: dcLike.venue ?? null,
+            factsVenuePlace: rfv.place,
+            factsVenueName: rfv.name,
+            factsAreaLead: rfv.areaLead,
             officialFetch: signals
               ? {
                   requested: signals.requested,
@@ -1000,8 +1023,12 @@ async function main(): Promise<void> {
               templateType: a.templateType,
               contentType: dcLike.contentType,
             })
+            const rfv = readyFactsVenueParts(factsDoc)
             a.digestMeta = {
               venue: dcLike.venue ?? null,
+              factsVenuePlace: rfv.place,
+              factsVenueName: rfv.name,
+              factsAreaLead: rfv.areaLead,
               officialFetch: signals
                 ? {
                     requested: signals.requested,

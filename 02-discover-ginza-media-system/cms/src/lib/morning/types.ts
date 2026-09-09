@@ -465,6 +465,14 @@ export interface OfficialFetchOutcome {
 /** 記事生成レディ判定・多様性判定に必要な追加情報（CandidateAssessment に付与） */
 export interface DigestMeta {
   venue: string | null
+  /**
+   * 会場補完のフォールバック元（2026-09-10）。ready な ArticleFacts の会場情報を写す
+   * （ready 以外・未設定なら null）。buildFinalCandidateDigest が digestMeta.venue が
+   * 空のときにこの順で補完し、A/B/C 判定（evaluateReadyGate 経由）と会場解決を一致させる。
+   */
+  factsVenuePlace?: string | null
+  factsVenueName?: string | null
+  factsAreaLead?: string | null
   officialFetch: OfficialFetchOutcome | null
   /** extractPriceHint の結果（見つからなければ null＝「確認できません」表示） */
   priceHint: string | null

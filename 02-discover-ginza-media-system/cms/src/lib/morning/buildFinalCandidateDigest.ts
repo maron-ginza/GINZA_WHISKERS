@@ -31,11 +31,55 @@ export interface BuildFinalCandidateDigestOptions {
   minCategoriesTarget?: number
 }
 
+/**
+ * 会場（venue）を「既取得データ」から優先順に解決する（2026-09-10）。
+ * A/B/C 判定（assessCandidate → evaluateReadyGate）は ready ArticleFacts の会場情報を
+ * 見て A にするのに、ダイジェストは digestMeta.venue（＝DiscoveredContent.venue 列のみ）
+ * しか見ておらず、GINZA SIX ショップニュース等（scraper が venue 列を埋めない）で
+ * 「会場不明」で落ちていた（DC #370）。判定経路と同じソースを同じ順で参照する。
+ *   1. digestMeta.venue（DiscoveredContent.venue）
+ *   2. ready ArticleFacts の venues[0].place
+ *   3. ready ArticleFacts の venues[0].name
+ *   4. ready ArticleFacts の areaLead
+ *   5. productExtraction.fields.salesLocation（product_news）
+ *   6. extraction.fields.venue（event）
+ */
+export function resolveDigestVenue(a: CandidateAssessment): string {
+  const dm = a.digestMeta
+  const candidates: (string | null | undefined)[] = [
+    dm?.venue,
+    dm?.factsVenuePlace,
+    dm?.factsVenueName,
+    dm?.factsAreaLead,
+    a.productExtraction?.fields.salesLocation,
+    a.extraction?.fields.venue,
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim()
+  }
+  return ''
+}
+
+/**
+ * sale / product_news は evaluateReadyGate が会期・会場を必須にしない
+ * （店頭取扱商品には「会期」「会場」の概念が無い）。ダイジェストの除外ゲートも
+ * これに合わせ、開催日・会場の一律必須を外す。generic は会場のみ免除（会期は必須）。
+ */
+function isSaleLike(a: CandidateAssessment): boolean {
+  return a.templateType === 'sale' || a.factKind === 'product_news'
+}
+function venueGateApplies(a: CandidateAssessment): boolean {
+  return !isSaleLike(a) && a.templateType !== 'generic'
+}
+function periodGateApplies(a: CandidateAssessment): boolean {
+  return !isSaleLike(a)
+}
+
 function facilityBucketOf(a: CandidateAssessment): string {
   const dm = a.digestMeta
   if (dm?.facilityKey) return dm.facilityKey
   // 施設キーが解決できない場合も「不明」1件として扱う（同一「不明」同士も上限の対象にする）
-  return `unresolved:${(dm?.venue ?? a.sourceName ?? '').trim() || 'unknown'}`
+  return `unresolved:${(resolveDigestVenue(a) || a.sourceName || '').trim() || 'unknown'}`
 }
 
 export function buildFinalCandidateDigest(
@@ -84,11 +128,11 @@ export function buildFinalCandidateDigest(
       excluded.push({ discoveredContentId: a.discoveredContentId, title: a.displayTitle, reason: '開催終了済みのため除外' })
       continue
     }
-    if (!a.eventPeriod || a.eventPeriod === '不明') {
+    if (periodGateApplies(a) && (!a.eventPeriod || a.eventPeriod === '不明')) {
       excluded.push({ discoveredContentId: a.discoveredContentId, title: a.displayTitle, reason: '開催日が不明なため除外' })
       continue
     }
-    if (!dm.venue || !dm.venue.trim()) {
+    if (venueGateApplies(a) && !resolveDigestVenue(a)) {
       excluded.push({ discoveredContentId: a.discoveredContentId, title: a.displayTitle, reason: '場所（会場）が不明なため除外' })
       continue
     }
@@ -153,9 +197,10 @@ export function buildFinalCandidateDigest(
 
   const candidates: FinalCandidateEntry[] = picked.map((a) => {
     const dm = a.digestMeta!
+    const resolvedVenue = resolveDigestVenue(a)
     const brief = buildEditorialBrief({
       displayTitle: a.displayTitle,
-      venue: dm.venue,
+      venue: resolvedVenue || null,
       eventPeriod: a.eventPeriod,
       templateType: a.templateType ?? null,
       category: dm.category,
@@ -168,7 +213,7 @@ export function buildFinalCandidateDigest(
       verifiedAt: a.verifiedAt ?? null,
       publishedAt: dm.publishedAt,
       eventPeriod: a.eventPeriod,
-      venue: dm.venue ?? '不明',
+      venue: resolvedVenue || '不明',
       price: dm.priceHint ?? '確認できません（公式に価格表記なし／要確認）',
       sourceUrl: a.sourceUrl,
       sourceName: a.sourceName,
