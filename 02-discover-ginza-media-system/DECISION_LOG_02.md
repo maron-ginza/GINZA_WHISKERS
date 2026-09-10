@@ -14,6 +14,60 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-10（🗓 2026年10月 初期トライアルの運用決定を反映＋候補選定画面に
+    支援表示を追加。**Project 02 コミット・push あり／新規 migration なし／
+    DB 更新なし（読み取り専用の表示追加）**）:
+
+    **運用決定（マロン指示）**：
+    - 2026年10月の初期トライアル：通常記事 1日3本／100円記事 1日2〜3本／
+      初期合計 1日5〜6本。**投稿時間の短縮と安定化を確認後、段階的に合計
+      1日10本へ拡大**する（本数を先に増やさない。§8.2・§8.6 の「10本/日」は
+      到達点）。
+    - 通常記事3本の基本構成＝**ビューティー1／グルメ・スイーツ1／文化・アート1**。
+      曜日固定せず、18カテゴリーは週単位・月単位で循環（コア3カテゴリー内でも
+      サブカテゴリーを週次で回す）。コア3が揃わない日は不足カテゴリーを追加収集。
+    - 選定条件：コアターゲット＝20代後半〜30代女性／18カテゴリーを週・月で循環／
+      GINZA SIX 等の特定施設へ偏らせない／同一施設の連続採用を避ける／季節性・
+      今日行く理由・体験への広がりを重視／**AUTUMN GINZA 2026 のような季節横断型
+      （街全体の季節企画）を候補として重視**／100円記事は通常記事の単なる長文化
+      ではなく AI活用・具体的手順・時間別プラン・予算別調整の**再利用できる
+      How-to 価値を必須**とする。
+
+    **実装（すべて決定的・AI 呼び出しなし・DB 書き込みなし・追加課金なし）**：
+    - 新規 `cms/src/lib/pipeline/dailySelectionSupport.ts`（純粋）：
+      `CORE_DAILY_BUCKETS`（ビューティー／グルメ・スイーツ／文化・アート の 18カテゴリー
+      対応）＋`assessCoreDailyFulfillment`（推奨集合の3カテゴリー充足）／
+      `detectConsecutiveFacilityWarnings`（直近履歴の連続採用・推奨が直前と同一施設・
+      推奨内の重複）／`seasonalSignal`（現在季節との一致＋`CITY_WIDE_SEASON_RE` で
+      AUTUMN GINZA 型を `cityWide=重視` 判定）／`paidLanePotential`（会場・会期・
+      体験 uxType／How-to タイトル語から high/medium/low、必須 How-to 価値4項目を常に付与）。
+    - `assessInboxPool.ts`：戻り値に `history`（過去7日間 approved の 18カテゴリー別件数・
+      施設別件数・直近施設列 most-recent-first 12件）を追加。既存の直近20件ペナルティ
+      集計は無変更。候補に `targetFitReason`（`targetFitScore.ts` の reason）を追加。
+    - `selectRecommendedThemes.ts`：`ThemeCandidate.targetFitReason` を追加（任意）。
+      ランキングロジック・重み・fixture 挙動は不変。
+    - `themesRecommend.ts`：出力に「■ 候補選定サポート（2026-10 初期トライアル）」節を
+      追加＝本日の3カテゴリー充足状況／過去7日間の18カテゴリー別 採用件数／過去7日間の
+      施設別 採用件数（2件以上を警告）／同一施設の連続採用警告／推奨候補ごとの
+      コアターゲット適合理由・季節性・100円展開可能性。JSON に `selectionSupport` を追加。
+    - 回帰テスト 新規 `cms/src/lib/__checks__/dailySelectionSupport.check.ts`（5件）＋
+      `run-all.ts` 登録。
+
+    **既存機能との重複回避**：`selectRecommendedThemes` の既存5軸（旬・カテゴリ分散・
+    情報源施設分散・会場エリア分散・種別分散）＋2026-09-04 追加の target_fit／
+    category_diversity／venue_diversity／ART+CULTURE 抑制／source_balance／
+    editorial_score、`selectionBalance.ts` のバランス表、偏りハードキャップは
+    **いずれも再実装せず流用**。今回の追加は「コア3カテゴリー充足」「7日間履歴の
+    可視化」「連続採用の明示警告」「季節横断型の重視フラグ」「100円展開可能性」の
+    表示レイヤーのみ。
+
+    **検証**：`tsc --noEmit`（cms）0エラー／`run-all.ts` **389 passed 0 failed**／
+    `./p2 themes recommend --limit=40`（実データ）で新節がエラーなく描画（過去7日
+    approved 11件＝ART×5・BEAUTY×2、施設は 蔦屋書店×4・GINZA SIX×3 で「2件以上」警告、
+    3カテゴリー充足＝未充足〈inbox プールが薄い〉）。`--json` に `selectionSupport`
+    出力を確認。**DB 変更なし・`curationStatus` 変更なし・note 未操作。**
+    正本 `GINZA_JOHOKYOKU_SPEC.md` §8.7。
+
   - 2026-09-10（🧹 100円 note 公開トライアル（Article #60）で判明した課題を
     恒久反映。**Project 02 コミット・push あり／新規 migration
     `20260910_150000_articles_paywall_anchor`（ローカル適用済み・本番未実行）／

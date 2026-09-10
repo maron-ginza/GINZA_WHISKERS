@@ -92,6 +92,18 @@ export interface AssessInboxPoolResult {
   assessed: number // 実際に評価した件数（limit 内）
   candidates: ThemeCandidate[]
   abcCounts: { A: number; B: number; C: number }
+  /** 過去 N 日間（既定7日）の採用（curationStatus=approved）履歴。候補選定画面の表示用 */
+  history: {
+    windowDays: number
+    since: string
+    approvedCount: number
+    /** 18カテゴリー別の採用件数 */
+    categoryCounts: Record<string, number>
+    /** 施設別の採用件数 */
+    facilityCounts: Record<string, number>
+    /** 直近の採用施設（most-recent-first・最大12件。連続採用検知用） */
+    recentFacilitySequence: string[]
+  }
 }
 
 export async function assessInboxPool(
@@ -229,6 +241,67 @@ export async function assessInboxPool(
     cat ? Math.min(0.2, 0.07 * Math.max(0, (catHist.get(cat) ?? 0) - 1)) : 0
   const facHistPenalty = (fk: string | null | undefined): number =>
     fk ? Math.min(0.2, 0.08 * Math.max(0, (facHist.get(fk) ?? 0) - 1)) : 0
+
+  // 過去7日間の採用（approved）履歴：18カテゴリー別件数・施設別件数・直近施設列（連続採用検知）。
+  const HISTORY_WINDOW_DAYS = 7
+  const historySince = new Date(now.getTime() - HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const history: AssessInboxPoolResult['history'] = {
+    windowDays: HISTORY_WINDOW_DAYS,
+    since: historySince.toISOString(),
+    approvedCount: 0,
+    categoryCounts: {},
+    facilityCounts: {},
+    recentFacilitySequence: [],
+  }
+  try {
+    const win = await payload.find({
+      collection: 'discovered-content',
+      where: {
+        and: [{ curationStatus: { equals: 'approved' } }, { updatedAt: { greater_than_equal: historySince.toISOString() } }],
+      },
+      sort: '-updatedAt',
+      limit: 80,
+      depth: 1,
+      overrideAccess: true,
+    })
+    const wDocs = win.docs as unknown as Record<string, unknown>[]
+    const wIds = wDocs.map((d) => Number(d.id))
+    const wafByDc = new Map<number, string>()
+    if (wIds.length) {
+      const waf = await payload.find({
+        collection: 'article-facts',
+        where: { discoveredContent: { in: wIds } },
+        limit: 200,
+        depth: 0,
+        overrideAccess: true,
+      })
+      for (const f of waf.docs as unknown as Record<string, unknown>[]) {
+        const ref = f.discoveredContent
+        const dcId = typeof ref === 'object' && ref !== null ? Number((ref as { id?: number }).id) : Number(ref)
+        if (Number.isFinite(dcId) && typeof f.primaryCategory === 'string') wafByDc.set(dcId, f.primaryCategory)
+      }
+    }
+    history.approvedCount = wDocs.length
+    for (const d of wDocs) {
+      const dl = toDcLike(d)
+      const cat =
+        wafByDc.get(Number(d.id)) ??
+        deriveProvisionalCategory({
+          primaryCategory: null,
+          title: dl.title ?? '',
+          venue: dl.venue ?? '',
+          templateType: null,
+          contentType: dl.contentType ?? undefined,
+        }).category
+      if (cat) history.categoryCounts[cat] = (history.categoryCounts[cat] ?? 0) + 1
+      const fk = resolveFacilityKey({ venue: dl.venue, sourceName: dl.sourceSiteName, sourceUrl: dl.articleUrl, title: dl.title })
+      const label = fk.store || dl.venue || '(会場不明)'
+      history.facilityCounts[label] = (history.facilityCounts[label] ?? 0) + 1
+      if (history.recentFacilitySequence.length < 12) history.recentFacilitySequence.push(label)
+    }
+  } catch {
+    /* 履歴が取れなくても継続（空のまま返す） */
+  }
 
   const candidates: ThemeCandidate[] = []
   const abc = { A: 0, B: 0, C: 0 }
@@ -435,6 +508,7 @@ export async function assessInboxPool(
         c.targetFit = tf.score
         c.targetFitCompass = tf.compass
         c.targetFitSignals = tf.matchedSignals
+        c.targetFitReason = tf.reason
         c.sourceTypeKey = sourceTypeOf(c.sourceName)
         const fk = resolveFacilityKey({
           venue: c.venue,
@@ -486,5 +560,6 @@ export async function assessInboxPool(
     assessed: candidates.length,
     candidates,
     abcCounts: abc,
+    history,
   }
 }

@@ -83,6 +83,8 @@ export interface ThemeCandidate {
   targetFitCompass?: { kawaii: number; joshitsu: number; totonoeru: number; hakken: number; senobi: number }
   /** targetFit の反応語（監査用） */
   targetFitSignals?: string[]
+  /** targetFit の理由（コアターゲット適合理由。候補選定画面の表示用。targetFitScore.ts の reason） */
+  targetFitReason?: string | null
   /** 直近の採用でこのカテゴリーが過多なら 0〜0.2 の減点 */
   categoryHistoryPenalty?: number
   /** 直近の採用でこの施設が過多なら 0〜0.2 の減点 */

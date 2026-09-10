@@ -19,6 +19,7 @@ import { suite as ginzaRelevance } from './ginzaRelevance.check'
 import { suite as crossCultureFilter } from './crossCultureFilter.check'
 import { suite as crossCultureDerivative } from './crossCultureDerivative.check'
 import { suite as targetFitScore } from './targetFitScore.check'
+import { suite as dailySelectionSupport } from './dailySelectionSupport.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
@@ -48,6 +49,7 @@ const results: SuiteResult[] = [
   crossCultureFilter(),
   crossCultureDerivative(),
   targetFitScore(),
+  dailySelectionSupport(),
   extractPriceHint(),
   buildEditorialBrief(),
   buildFinalCandidateDigest(),

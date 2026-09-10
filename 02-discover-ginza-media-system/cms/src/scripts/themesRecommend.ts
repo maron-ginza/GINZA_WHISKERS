@@ -24,9 +24,25 @@ import {
   type ThemeCandidate,
 } from '../lib/pipeline/selectRecommendedThemes'
 import { buildSelectionBalance, renderSelectionBalanceText } from '../lib/pipeline/selectionBalance'
-import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
+import { assessInboxPool, type AssessInboxPoolResult } from '../lib/pipeline/assessInboxPool'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { crossCultureSummaryLine } from '../lib/crossCulture'
+import {
+  assessCoreDailyFulfillment,
+  detectConsecutiveFacilityWarnings,
+  seasonalSignal,
+  paidLanePotential,
+  CORE_DAILY_BUCKETS,
+} from '../lib/pipeline/dailySelectionSupport'
+
+const EMPTY_HISTORY: AssessInboxPoolResult['history'] = {
+  windowDays: 7,
+  since: '',
+  approvedCount: 0,
+  categoryCounts: {},
+  facilityCounts: {},
+  recentFacilitySequence: [],
+}
 
 interface Args {
   date: string
@@ -126,6 +142,7 @@ async function main(): Promise<void> {
   let collectedTotal = 0
   let assessed = 0
   let abcCounts = { A: 0, B: 0, C: 0 }
+  let history: AssessInboxPoolResult['history'] = EMPTY_HISTORY
   let inputMode = 'inbox'
 
   if (args.fixture) {
@@ -149,6 +166,7 @@ async function main(): Promise<void> {
       collectedTotal = res.collectedTotal
       assessed = res.assessed
       abcCounts = res.abcCounts
+      history = res.history
     }
   }
 
@@ -257,6 +275,82 @@ async function main(): Promise<void> {
   )
   console.log(`  ※ no_path_to_green は「承諾前の記事化準備」であり安全性ではないため gate から除外。安全性${SAFETY_GATE_CHECKS.length}条件は不変。`)
 
+  // ── 候補選定サポート（2026-10 初期トライアル：通常3本＋100円2〜3本） ──
+  const recForSupport = res.recommended.map((e) => ({
+    dcId: e.candidate.discoveredContentId,
+    title: e.candidate.displayTitle ?? e.candidate.title,
+    categoryKey: e.categoryKey === '未確定' ? null : e.categoryKey,
+    facilityKey: e.facilityKey ?? null,
+    facilityLabel: e.facilityLabel,
+  }))
+  const coreDaily = assessCoreDailyFulfillment(
+    recForSupport.map((r) => ({ dcId: r.dcId, title: r.title, categoryKey: r.categoryKey })),
+  )
+  const consecWarnings = detectConsecutiveFacilityWarnings({
+    recentFacilitySequence: history.recentFacilitySequence,
+    recommended: recForSupport.map((r) => ({ dcId: r.dcId, facilityKey: r.facilityKey, facilityLabel: r.facilityLabel })),
+  })
+  const perCandidateSupport = res.recommended.map((e) => {
+    const c = e.candidate
+    const season = seasonalSignal(c.displayTitle ?? c.title, now)
+    const paid = paidLanePotential({
+      title: c.displayTitle ?? c.title,
+      venue: c.venue ?? null,
+      categoryKey: e.categoryKey === '未確定' ? null : e.categoryKey,
+      uxType: c.uxType ?? null,
+      contentType: c.contentType ?? null,
+      eventPeriod: c.eventPeriod ?? null,
+      templateType: c.templateType ?? null,
+    })
+    return { dcId: c.discoveredContentId, title: c.displayTitle ?? c.title, targetFitReason: c.targetFitReason ?? null, season, paid }
+  })
+
+  console.log('')
+  console.log('■ 候補選定サポート（2026-10 初期トライアル：通常記事3本＋100円記事2〜3本＝1日5〜6本 → 段階的に10本）')
+  console.log('  ── 本日の3カテゴリー充足状況（通常記事3本の基本構成）──')
+  for (const b of coreDaily.buckets) {
+    console.log(
+      `   ${b.filled ? '✅' : '❌'} ${b.label}: ${b.have}/${b.need}` +
+        (b.matched.length ? `  → ${b.matched.map((m) => `#${m.dcId}(${m.categoryKey})`).join(' , ')}` : '  → 候補なし（追加収集）'),
+    )
+  }
+  if (coreDaily.uncategorized.length)
+    console.log(`   ・3カテゴリー外の推奨: ${coreDaily.uncategorized.map((m) => `#${m.dcId}`).join(' , ')}（週次で18カテゴリーを循環）`)
+  console.log(`   → 3カテゴリー充足: ${coreDaily.allFilled ? 'OK' : '未充足（不足カテゴリーを追加収集）'}`)
+
+  console.log(`  ── 過去${history.windowDays}日間の18カテゴリー別 採用件数（approved ${history.approvedCount}件）──`)
+  {
+    const ent = Object.entries(history.categoryCounts).sort((a, b) => b[1] - a[1])
+    console.log(`   ${ent.length ? ent.map(([k, v]) => `${k}×${v}`).join(' / ') : '（履歴なし）'}`)
+    const zero = CORE_DAILY_BUCKETS.flatMap((b) => b.cats).filter((c) => !history.categoryCounts[c])
+    if (zero.length) console.log(`   コア3系統で直近ゼロ: ${[...new Set(zero)].join(' / ')}（週次・月次で循環）`)
+  }
+  console.log(`  ── 過去${history.windowDays}日間の施設別 採用件数 ──`)
+  {
+    const ent = Object.entries(history.facilityCounts).sort((a, b) => b[1] - a[1])
+    console.log(`   ${ent.length ? ent.map(([k, v]) => `${k}×${v}`).join(' / ') : '（履歴なし）'}`)
+    const over = ent.filter(([, v]) => v >= 2)
+    if (over.length) console.log(`   ⚠ 2件以上: ${over.map(([k, v]) => `${k}(${v})`).join(' / ')}（GINZA SIX 等の特定施設へ偏らせない）`)
+  }
+  console.log('  ── 同一施設の連続採用警告 ──')
+  if (consecWarnings.length === 0) console.log('   なし')
+  else for (const w of consecWarnings) console.log(`   ⚠ [${w.code}] ${w.message}`)
+
+  console.log('  ── 推奨候補ごと：コアターゲット適合理由 / 季節性 / 100円展開可能性 ──')
+  for (const s of perCandidateSupport) {
+    console.log(`   DC #${s.dcId}「${s.title}」`)
+    console.log(`      コアターゲット適合: ${s.targetFitReason ?? '（理由未算出）'}`)
+    console.log(
+      `      季節性: ${s.season.note}` +
+        (s.season.keywords.length ? `（語: ${s.season.keywords.join('・')}）` : '') +
+        (s.season.cityWide ? '  ★季節横断型（重視）' : ''),
+    )
+    console.log(
+      `      100円展開可能性: ${s.paid.level.toUpperCase()} — ${s.paid.reasons.join(' ／ ')}` +
+        `\n         必須How-to価値: ${s.paid.requiredValue.join(' / ')}`,
+    )
+  }
+
   console.log('')
   process.stdout.write(renderSelectionBalanceText(balance))
 
@@ -350,6 +444,25 @@ async function main(): Promise<void> {
       })),
       readiness: res.recommended.map((e) => ({ dcId: e.candidate.discoveredContentId, state: e.readiness, missing: e.missingForGeneration })),
       sameFacilityExceptions: balance.sameFacilityExceptions,
+      selectionSupport: {
+        initialTrial: { normalPerDay: 3, paidPerDay: '2〜3', totalPerDay: '5〜6', scaleUpTo: 10 },
+        coreDailyCategories: coreDaily.buckets.map((b) => ({ key: b.key, label: b.label, have: b.have, filled: b.filled, dcIds: b.matched.map((m) => m.dcId) })),
+        coreDailyAllFilled: coreDaily.allFilled,
+        history7d: {
+          windowDays: history.windowDays,
+          approvedCount: history.approvedCount,
+          categoryCounts: history.categoryCounts,
+          facilityCounts: history.facilityCounts,
+          recentFacilitySequence: history.recentFacilitySequence,
+        },
+        consecutiveFacilityWarnings: consecWarnings,
+        perCandidate: perCandidateSupport.map((s) => ({
+          dcId: s.dcId,
+          targetFitReason: s.targetFitReason,
+          seasonal: { season: s.season.season, inSeason: s.season.inSeason, cityWide: s.season.cityWide, keywords: s.season.keywords, note: s.season.note },
+          paidLane: { level: s.paid.level, reasons: s.paid.reasons, requiredValue: s.paid.requiredValue },
+        })),
+      },
     }),
   )
   process.exit(0)
