@@ -131,22 +131,31 @@ const cases: CheckCase[] = [
       assert(/45分／90分／150分/.test(paidHeads), `3コース見出し: ${paidHeads}`)
       assert(/予算別/.test(paidHeads), `予算別: ${paidHeads}`)
       assert(/雨天時/.test(paidHeads), `雨天時: ${paidHeads}`)
-      assert(/AIへそのまま渡せる指示文/.test(paidHeads), `AI指示文: ${paidHeads}`)
+      assert(/指示文/.test(paidHeads) && /生成AI（ChatGPTなど）/.test(paidHeads), `AI指示文（生成AI表記）: ${paidHeads}`)
       assert(/再利用できる記入式テンプレート/.test(paidHeads), `再利用テンプレ: ${paidHeads}`)
       assert(/公式情報の確認方法/.test(paidHeads), `確認方法: ${paidHeads}`)
       // 3コース節に 45/90/150 分すべてが登場する
       const courses = d.paidSections.find((s) => /時間別の3コース/.test(s.heading))!
       const cjoin = courses.lines.join('\n')
       assert(/45分コース/.test(cjoin) && /90分コース/.test(cjoin) && /150分コース/.test(cjoin), `3コース本文: ${cjoin.slice(0, 120)}`)
-      // AI指示文にコピペ用の --- 区切りが2つ以上
-      const aiPrompt = d.paidSections.find((s) => /AIへそのまま渡せる指示文/.test(s.heading))!
+      // AI指示文にコピペ用の --- 区切りが2つ以上＋標準制約（項目6）
+      const aiPrompt = d.paidSections.find((s) => /指示文/.test(s.heading))!
       assert(aiPrompt.lines.filter((l) => l === '---').length >= 2, 'コピペ用の区切り')
+      const aiJoin = aiPrompt.lines.join('\n')
+      assert(/確認済み情報だけを使う/.test(aiJoin), `制約: 確認済みのみ`)
+      assert(/推測しない/.test(aiJoin), `制約: 推測しない`)
+      assert(/公式サイトで確認/.test(aiJoin), `制約: 公式で確認`)
+      assert(/実在が確認できない/.test(aiJoin), `制約: 実在しない施設NG`)
+      assert(/条件に合わない点/.test(aiJoin) && /公式で確認すべき事項/.test(aiJoin), `制約: 最後にまとめ`)
       // 再利用テンプレートに記入欄（＿）がある
       const tmpl = d.paidSections.find((s) => /再利用できる記入式テンプレート/.test(s.heading))!
       assert(tmpl.lines.some((l) => l.includes('＿')), '記入欄')
       assert(d.sources.some((s) => s.sourceUrl.includes('motoji.co.jp')), '出典を再利用')
       assert(d.hashtags.length === 4, `ハッシュタグ数: ${d.hashtags.length}`)
-      assert(d.hashtags.includes('#銀座') && d.hashtags.includes('#AIで叶えるわたしだけの銀座'), `タグ: ${d.hashtags.join(' ')}`)
+      assert(d.hashtags.includes('#銀座') && d.hashtags.includes('#AIで叶える私だけの銀座時間'), `タグ（私で統一）: ${d.hashtags.join(' ')}`)
+      assert(!d.hashtags.some((t) => /わたし/.test(t)), `タグに「わたし」表記が無い: ${d.hashtags.join(' ')}`)
+      // 有料ラインは有料エリア最初の見出し（本文には仮表示を入れない）
+      assert(d.paywallAnchorHeading === d.paidSections[0].heading && !!d.paywallAnchorHeading, `paywallAnchor: ${d.paywallAnchorHeading}`)
       assert(d.notes.some((n) => /自動公開しない/.test(n)), `注意: ${d.notes.join(' / ')}`)
       assert(d.notes.some((n) => /施設の羅列にしない/.test(n)), `施設羅列禁止: ${d.notes.join(' / ')}`)
     },

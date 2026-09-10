@@ -389,6 +389,17 @@ export const Articles: CollectionConfig = {
       },
     },
     {
+      name: 'paywallAnchorHeading',
+      label: '有料ライン直前の見出し（paid_100 のみ）',
+      type: 'text',
+      admin: {
+        description:
+          '2026-09-10 追加。note の有料エリア開始位置の「直前に置く見出し」テキスト（本文中の見出しと完全一致）。' +
+          'note 本文には「ここから有料エリア」等の仮表示を入れず、この値を転記パッケージで明示する。' +
+          '転記前チェックで、この見出しが本文にちょうど1件あることを検証する（0件・複数件は BLOCKER）。',
+      },
+    },
+    {
       name: 'reviewedBy',
       type: 'relationship',
       relationTo: 'users',

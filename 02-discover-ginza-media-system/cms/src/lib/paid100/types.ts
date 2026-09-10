@@ -70,6 +70,12 @@ export interface Paid100Draft {
   seriesLabel: string
   lane: 'paid_100'
   priceYen: number
+  /**
+   * note の有料エリア開始位置の「直前に置く見出し」テキスト（本文中の見出しと完全一致）。
+   * 本文には「ここから有料エリア」等の仮表示を入れない。Articles.paywallAnchorHeading に保存し、
+   * 転記前チェックで本文にちょうど1件あることを検証する（2026-09-10 項目3）。
+   */
+  paywallAnchorHeading: string
   /** 無料エリア（課題・変化・結果 概要） */
   freeSections: Paid100DraftSection[]
   /** 有料エリア（具体的手順・AI指示文・候補比較・確認方法・再利用テンプレート） */

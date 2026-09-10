@@ -198,17 +198,13 @@ async function cmdDraft(argN: string, rest: string[]): Promise<number> {
     return 2
   }
 
-  // 本文 Lexical（無料エリア → 区切り → 有料エリア → 出典 → 注意事項 → ハッシュタグ）
+  // 本文 Lexical（無料エリア → 有料エリア → 出典 → 注意事項 → ハッシュタグ）。
+  // 有料ライン位置は本文に仮表示を入れず Articles.paywallAnchorHeading（＝有料エリア最初の見出し）に持たせる。
   const blocks: TextBlock[] = []
   for (const s of draft.freeSections) {
     blocks.push({ type: 'heading', level: 2, text: s.heading })
     for (const l of s.lines) blocks.push({ type: 'paragraph', text: l })
   }
-  blocks.push({ type: 'heading', level: 2, text: `―――ここから有料エリア（${draft.priceYen}円）―――` })
-  blocks.push({
-    type: 'paragraph',
-    text: '（note 上でこの位置に有料ラインを設定する。有料設定・価格はマロンが手動。自動公開しない）',
-  })
   for (const s of draft.paidSections) {
     blocks.push({ type: 'heading', level: 2, text: s.heading })
     for (const l of s.lines) blocks.push({ type: 'paragraph', text: l })
@@ -262,6 +258,7 @@ async function cmdDraft(argN: string, rest: string[]): Promise<number> {
       reviewStatus: 'draft',
       lane: 'paid_100',
       priceYen: draft.priceYen,
+      paywallAnchorHeading: draft.paywallAnchorHeading || undefined,
       title: draft.title,
       slug,
       body: blocksToLexicalState(blocks) as never,

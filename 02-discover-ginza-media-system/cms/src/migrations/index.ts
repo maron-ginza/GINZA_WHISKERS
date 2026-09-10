@@ -3,6 +3,7 @@ import * as migration_20260903_120000_article_facts_common_fields from './202609
 import * as migration_20260903_180000_official_snapshots from './20260903_180000_official_snapshots';
 import * as migration_20260909_120000_article_facts_admission_applicable from './20260909_120000_article_facts_admission_applicable';
 import * as migration_20260910_120000_articles_paid_lane from './20260910_120000_articles_paid_lane';
+import * as migration_20260910_150000_articles_paywall_anchor from './20260910_150000_articles_paywall_anchor';
 
 export const migrations = [
   {
@@ -29,5 +30,10 @@ export const migrations = [
     up: migration_20260910_120000_articles_paid_lane.up,
     down: migration_20260910_120000_articles_paid_lane.down,
     name: '20260910_120000_articles_paid_lane'
+  },
+  {
+    up: migration_20260910_150000_articles_paywall_anchor.up,
+    down: migration_20260910_150000_articles_paywall_anchor.down,
+    name: '20260910_150000_articles_paywall_anchor'
   },
 ];

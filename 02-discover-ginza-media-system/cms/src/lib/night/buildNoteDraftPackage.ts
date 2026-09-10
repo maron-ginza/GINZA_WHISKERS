@@ -7,109 +7,60 @@ import type {
   NoteDraftPackage,
   NightArticleStatus,
   NoteMasthead,
+  NoteMeta,
 } from './types'
 import {
   NOTE_MASTHEAD_TEXT,
   composeNoteBodyWithMasthead,
   resolveCategoryIcon,
 } from '../note/noteMasthead'
+import {
+  DEFAULT_ILLUSTRATION_CAPTION,
+  bodySourceUrls,
+  checkAiPromptConstraints,
+  checkPaidContent,
+  checkPaywallAnchor,
+  checkWording,
+  confirmedSourceUrls,
+  extractHashtags,
+  extractIllustrationCaption,
+  paywallLine,
+  sanitizeNoteBodyUnits,
+  type BodyBlock,
+} from './noteTransferChecks'
 
-// 1 件の Article(reviewStatus: draft) を「note へそのまま転記できる /note-draft
-// パッケージ」へ変換する（読み取り専用・AI 呼び出しなし）。
+// 1 件の Article を「note へそのまま転記できる /note-draft パッケージ」へ変換する
+//（読み取り専用・AI 呼び出しなし）。
 //
-// tnsBuildNoteReady36.ts のマーカー規約を通常記事向けに一般化したもの。
-// ただし画像は body に [IMAGE: ...] マーカーを挿入せず、配置情報を images[]
+// 画像は body に [IMAGE: ...] マーカーを挿入せず、配置情報を images[]
 // （marker / role / placement）にのみ持たせる。
 //
 // 【2026-09-10 共通不具合の根本修正】
-//  1. ハッシュタグ重複：body 本文にはハッシュタグ行を入れない。4個は hashtags.note
-//     （note-draft.json）だけに保持し、本文の既存ハッシュタグ行・見出しは除去する。
-//  2. 挿絵注釈：category_icon / hero の caption は「記事本文の正式な挿絵注釈」を使う。
-//     記事固有の注釈があればそれを優先。無ければ DEFAULT_ILLUSTRATION_CAPTION。
-//     旧・汎用 caption（HERO_IMAGE_CAPTION）へは巻き戻さない。
-//  3. 出典 URL：links.sourceUrls と読者向けには confirmed の公式出典だけを入れる。
-//     unconfirmed / 除外・削除理由の記録は editorialProvenance（CMS 内部）にのみ保持。
+//  1. ハッシュタグ重複：body にハッシュタグ行を入れない。4個は hashtags.note のみ。
+//  2. 挿絵注釈：category_icon / hero の caption は記事本文の正式な挿絵注釈。
+//  3. 出典 URL：links.sourceUrls は公開本文の「出典」欄に載っている URL と一致。
+//
+// 【2026-09-10 100円 note 公開トライアル（Article #60）の恒久反映】
+//  1. note-body には note 本文へ貼る文章だけを出力（sanitizeNoteBodyUnits）。
+//  2. note-draft.json に noteMeta（title/価格/有料ライン/ハッシュタグ/hero/出典/公開後値）を分離。
+//  3. 有料ライン：paywallAnchorHeading の見出しが本文にちょうど1件あることを検証（0/複数は BLOCKER）。
+//  4〜6. 表記統一・有料記事の内容検査・AI 指示文の制約チェックを WARNING で自動検出。
 //
 // **公開・approve・スキーマ変更・DB 書き込みは一切しない。**
 
+// 後方互換：以前 buildNoteDraftPackage から import していたヘルパーは再エクスポートする。
+export {
+  DEFAULT_ILLUSTRATION_CAPTION,
+  HERO_IMAGE_CAPTION,
+  bodySourceUrls,
+  confirmedSourceUrls,
+  extractHashtags,
+  extractIllustrationCaption,
+  isHashtagHeading,
+  isHashtagOnlyText,
+} from './noteTransferChecks'
+
 const INTERNAL_ANGLE_LABEL_RE = /^【[^】]+】$/
-const HASHTAG_RE = /#[^\s#、。，．,.]+/g
-// テキスト全体がハッシュタグ（＋空白）だけで構成される行
-const HASHTAG_ONLY_RE = /^\s*#[^\s#、。，．,.]+(?:\s+#[^\s#、。，．,.]+)*\s*$/
-
-// Editorial Trust Layer（独自生成画像の読者向け注釈）。
-// 旧・汎用文（商品・店舗）。後方互換のため残すが、caption には使わない。
-export const HERO_IMAGE_CAPTION =
-  '※画像は記事内容をもとに生成したイメージです。実際の商品・店舗とは異なる場合があります。'
-
-// 記事本文に挿絵注釈が無い場合の既定（2026-09-10。汎用文へ巻き戻さない）。
-export const DEFAULT_ILLUSTRATION_CAPTION =
-  '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。'
-
-/** テキストがハッシュタグだけの行か（本文から除去する対象） */
-export function isHashtagOnlyText(t: string | null | undefined): boolean {
-  const s = (t ?? '').trim()
-  return s.length > 1 && HASHTAG_ONLY_RE.test(s)
-}
-
-/** 「ハッシュタグ」だけの見出しか（本文から除去する対象） */
-export function isHashtagHeading(tag: string, t: string | null | undefined): boolean {
-  return (tag === 'h2' || tag === 'h3') && (t ?? '').trim() === 'ハッシュタグ'
-}
-
-/**
- * 記事本文（見出し・段落テキストの配列）から「挿絵注釈」を取り出す。
- * ・「挿絵注釈」見出しの直後の段落、または
- * ・「※画像は記事内容をもとに生成したイメージ…」で始まる行
- * を記事固有 caption として優先。無ければ null。
- */
-export function extractIllustrationCaption(units: string[]): string | null {
-  for (let i = 0; i < units.length; i++) {
-    const u = (units[i] ?? '').trim()
-    if (u === '挿絵注釈' || u === '挿絵注釈について') {
-      const next = (units[i + 1] ?? '').trim()
-      if (next) return next
-    }
-    if (/^※\s*画像は記事内容をもとに生成した/.test(u)) return u
-  }
-  return null
-}
-
-/** editorialProvenance から confirmed の出典 URL だけを重複排除して返す */
-export function confirmedSourceUrls(
-  prov: { sourceUrl?: string | null; verificationStatus?: string | null }[],
-): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const p of prov) {
-    const url = String(p?.sourceUrl ?? '').trim()
-    if (!url) continue
-    if ((p?.verificationStatus ?? '') !== 'confirmed') continue
-    if (seen.has(url)) continue
-    seen.add(url)
-    out.push(url)
-  }
-  return out
-}
-
-/**
- * 読者向け本文に実際に載っている出典 URL を、出現順で重複排除して返す。
- * links.sourceUrls は「読者に見える出典」と一致させる（本文の「出典」欄＝2本なら
- * links.sourceUrls も2本）。confirmed だが本文に載せていない社内確認用 URL
- * （営業時間ページ等）はここに含めない。本文に URL が1本も無い記事のみ、
- * 呼び出し側が confirmedSourceUrls(prov) にフォールバックする。
- */
-export function bodySourceUrls(bodyText: string): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const m of bodyText.matchAll(/https?:\/\/[^\s、。「」（）()<>"']+/g)) {
-    const url = m[0].replace(/[.,)）」】]+$/, '').trim()
-    if (!url || seen.has(url)) continue
-    seen.add(url)
-    out.push(url)
-  }
-  return out
-}
 
 function nodeText(n: unknown): string {
   if (!n || typeof n !== 'object') return ''
@@ -119,28 +70,15 @@ function nodeText(n: unknown): string {
   return ''
 }
 
-function extractHashtags(text: string | null | undefined): string[] {
-  if (!text) return []
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const m of text.matchAll(HASHTAG_RE)) {
-    const tag = m[0].trim()
-    if (tag.length > 1 && !seen.has(tag)) {
-      seen.add(tag)
-      out.push(tag)
-    }
-  }
-  return out
-}
-
 export interface BuildNoteDraftPackageOptions {
-  /**
-   * 見出し（h2/h3）ごとに images[] へ section 画像スロットを記録する（既定 true）。
-   * 本文テキスト（body）には画像マーカーを一切挿入しない。画像の配置情報は
-   * すべて images[]（marker / role / placement）に持たせ、note 転記時は images[]
-   * を見て配置する。
-   */
+  /** 見出しごとに images[] へ section 画像スロットを記録する（既定 true）。 */
   sectionImageMarkers?: boolean
+  /**
+   * draft 以外（approved / published）でもパッケージ化する（読み取り専用）。
+   * 既定 false＝draft のみ（従来どおり。夜間フローの安全ガード）。
+   * 転記前チェック（./p2 night check）だけ true で呼ぶ。
+   */
+  allowNonDraft?: boolean
 }
 
 export async function buildNoteDraftPackage(
@@ -149,6 +87,7 @@ export async function buildNoteDraftPackage(
   options: BuildNoteDraftPackageOptions = {},
 ): Promise<NoteDraftPackage> {
   const sectionImageMarkers = options.sectionImageMarkers ?? true
+  const allowNonDraft = options.allowNonDraft ?? false
 
   const article = (await payload.findByID({
     collection: 'articles',
@@ -161,17 +100,13 @@ export async function buildNoteDraftPackage(
   if (!article) {
     throw new Error(`articles id=${articleId} が見つかりません`)
   }
-  // 安全ガード：draft 以外は Night Layer の対象にしない
-  //（承認済み・公開済みへ後戻りで手を入れない）。
-  if (article.reviewStatus !== 'draft') {
+  if (!allowNonDraft && article.reviewStatus !== 'draft') {
     throw new Error(
       `articles id=${articleId} は reviewStatus="${article.reviewStatus}"（draft のみパッケージ化します）`,
     )
   }
 
-  // --- note 冒頭マストヘッド（2026-09-10 恒久ルール）：カテゴリーアイコン → 固定文 → 本文 ---
-  // カテゴリーアイコンは記事分類から決定的に解決する。確定できないときは BLOCKER で停止し、
-  // マロンが指定する（推測で埋めない）。
+  // --- note 冒頭マストヘッド：カテゴリーアイコン → 固定文 → 本文 ---
   const venueFacts = (Array.isArray(article.editorialProvenance) ? article.editorialProvenance : [])
     .filter((p: any) => (p?.factType ?? '') === 'venue')
     .map((p: any) => String(p?.fact ?? ''))
@@ -199,20 +134,42 @@ export async function buildNoteDraftPackage(
     order: ['1. カテゴリーアイコン（1点）', '2. 固定文（GINZA TIME EDIT …）', '3. 本文'],
   }
 
-  // --- 本文 Lexical → プレーンテキスト ---
-  // 画像マーカーは body に入れない。配置情報は images[] にのみ持たせる。
+  // --- 本文 Lexical → ブロック列 → sanitize（項目1） ---
   const kids: any[] = article.body?.root?.children ?? []
-  const units: string[] = []
+  const rawBlocks: BodyBlock[] = []
+  let firstBlock = true
+  for (const c of kids) {
+    const tag = String(c.tag ?? c.type ?? '')
+    const t = nodeText(c).trim()
+    if (!t) continue
+    // 先頭の内部角度ラベル（【CORE（核記事）】等）は落とす
+    if (firstBlock && INTERNAL_ANGLE_LABEL_RE.test(t)) {
+      firstBlock = false
+      continue
+    }
+    firstBlock = false
+    rawBlocks.push({ tag, text: t })
+  }
+
+  const rawUnits = rawBlocks.map((b) => b.text)
+  const { kept, removed } = sanitizeNoteBodyUnits(rawBlocks, {
+    articleTitle: String(article.title ?? ''),
+  })
+  const units = kept.map((b) => b.text)
+  const bodyHeadings = kept.filter((b) => b.tag === 'h2' || b.tag === 'h3').map((b) => b.text)
+
+  // section 画像スロット（sanitize 後の見出しに対して）
   const images: NoteDraftImageSlot[] = []
 
-  // 事前スキャン：挿絵注釈（記事固有 caption）と本文中のハッシュタグを先に拾う。
-  const rawUnits = kids.map((c) => nodeText(c).trim()).filter(Boolean)
-  const bodyHashtags = extractHashtags(rawUnits.filter(isHashtagOnlyText).join(' '))
-  // 修正1：4個は socialCopy 由来を優先し、無ければ本文のハッシュタグ行から拾う。
-  const noteHashtags = extractHashtags((article.socialCopy ?? {}).note)
+  // ハッシュタグ（socialCopy 優先・無ければ本文のハッシュタグ行）
+  const bodyHashtags = extractHashtags(
+    rawUnits.filter((u) => /^\s*#[^\s#、。，．,.]/.test(u)).join(' '),
+  )
+  const sc = article.socialCopy ?? {}
+  const noteHashtags = extractHashtags(sc.note)
   const finalNoteHashtags = noteHashtags.length > 0 ? noteHashtags : bodyHashtags
-  // 修正2：category_icon / hero の caption は記事本文の正式な挿絵注釈を使う。
-  //        記事固有があればそれを優先、無ければ DEFAULT_ILLUSTRATION_CAPTION（汎用文へ巻き戻さない）。
+
+  // 挿絵注釈（記事固有 → 無ければ既定。汎用文へは巻き戻さない）
   const illustrationCaption = extractIllustrationCaption(rawUnits) ?? DEFAULT_ILLUSTRATION_CAPTION
 
   // images[0]：マストヘッド先頭のカテゴリーアイコン（必須・1点）
@@ -228,72 +185,40 @@ export async function buildNoteDraftPackage(
     status: 'not_prepared',
     caption: illustrationCaption,
   })
-
-  const heroMarker = '[IMAGE: アイキャッチ]'
   images.push({
-    marker: heroMarker,
+    marker: '[IMAGE: アイキャッチ]',
     role: 'hero',
     placement: '記事冒頭',
     note:
       'Editorial Trust Layer 準拠：外部サイト画像・OGP画像・イベント公式画像は転載しない。' +
       '独自撮影／独自アイキャッチ／権利上問題のない独自生成画像のいずれかを配置する。',
     status: 'not_prepared',
-    // 独自生成画像を使う場合、note 転記時に画像直下へこの注釈を併記する
-    // （記事本文の正式な挿絵注釈と同一。独自撮影等で不要なら削除してよい）。
     caption: illustrationCaption,
   })
-
-  let firstBlock = true
-  for (const c of kids) {
-    const tag = c.tag ?? c.type
-    const t = nodeText(c).trim()
-    if (!t) continue
-
-    // 内部の角度ラベル（【CORE（核記事）】等）は読者向けに出さない
-    if (firstBlock && INTERNAL_ANGLE_LABEL_RE.test(t)) {
-      firstBlock = false
-      continue
-    }
-    firstBlock = false
-
-    // 修正1：ハッシュタグ行・「ハッシュタグ」見出しは body に入れない（note のタグ欄へ）
-    if (isHashtagOnlyText(t) || isHashtagHeading(tag, t)) continue
-
-    if (sectionImageMarkers && (tag === 'h2' || tag === 'h3')) {
-      const label = t.length > 20 ? `${t.slice(0, 20)}…` : t
-      const marker = `[IMAGE: 見出し「${label}」]`
+  if (sectionImageMarkers) {
+    for (const h of bodyHeadings) {
+      const label = h.length > 20 ? `${h.slice(0, 20)}…` : h
       images.push({
-        marker,
+        marker: `[IMAGE: 見出し「${label}」]`,
         role: 'section',
-        placement: `見出し「${t}」の直前`,
+        placement: `見出し「${h}」の直前`,
         note: '任意。文字の壁を避けるための区切り画像。不要なら削除してよい。',
         status: 'not_prepared',
       })
     }
-
-    units.push(t)
   }
 
-  // --- ハッシュタグ（socialCopy 優先・無ければ本文のハッシュタグ行から。修正1） ---
-  const sc = article.socialCopy ?? {}
   const hashtags: NoteDraftHashtags = {
     note: finalNoteHashtags,
     x: extractHashtags(sc.x),
     instagram: extractHashtags(sc.instagram),
   }
 
-  // --- 冒頭にマストヘッド固定文を付与（note 転記用）。修正1：本文にハッシュタグ行は入れない ---
-  // マストヘッド固定文は body 先頭へ（既に含まれていれば二重付与しない）。
-  // カテゴリーアイコンは images[0] の配置指示に従い、この固定文の直前に置く。
-  // ハッシュタグ4個は hashtags.note にのみ保持し、転記時に note のタグ欄へ設定する。
+  // マストヘッド固定文を冒頭に付与（二重付与しない）。本文にハッシュタグ行は入れない。
   const bodyText = composeNoteBodyWithMasthead(units)
 
   // --- editorialProvenance の集計 ---
   const prov: any[] = Array.isArray(article.editorialProvenance) ? article.editorialProvenance : []
-  // 修正3：読者向け／links.sourceUrls は本文の「出典」欄に実際に載っている URL と一致させる。
-  //        confirmed でも本文に載せていない社内確認用 URL（営業時間ページ等）は含めない。
-  //        本文に URL が無い記事だけ、confirmed の provenance URL にフォールバックする。
-  //        unconfirmed・除外記録は editorialProvenance（CMS 内部）にのみ残す。
   const bodyUrls = bodySourceUrls(bodyText)
   const sourceUrls: string[] = bodyUrls.length > 0 ? bodyUrls : confirmedSourceUrls(prov)
   let confirmed = 0
@@ -318,7 +243,6 @@ export async function buildNoteDraftPackage(
   const blockers: NightValidationFinding[] = []
   const warnings: NightValidationFinding[] = []
 
-  // マストヘッドのカテゴリーアイコンが確定できないときだけ、人間確認のため停止する。
   if (iconResolved.status === 'needs_human') {
     blockers.push({
       level: 'blocker',
@@ -326,13 +250,8 @@ export async function buildNoteDraftPackage(
       message: `マストヘッドの 18 カテゴリーアイコンを確定できません（${iconResolved.reason}）。マロンがアイコンを 1 点指定してください。`,
     })
   }
-
   if (prov.length === 0) {
-    blockers.push({
-      level: 'blocker',
-      code: 'noProvenance',
-      message: 'editorialProvenance が空（重要 Fact の出典が追跡できない）',
-    })
+    blockers.push({ level: 'blocker', code: 'noProvenance', message: 'editorialProvenance が空（重要 Fact の出典が追跡できない）' })
   }
   const missingUrl = prov.filter((p) => !String(p.sourceUrl ?? '').trim())
   if (missingUrl.length > 0) {
@@ -350,26 +269,14 @@ export async function buildNoteDraftPackage(
     })
   }
   if (prov.length > 0 && confirmed === 0) {
-    warnings.push({
-      level: 'warning',
-      code: 'noConfirmedFact',
-      message: 'confirmed な Fact が 0 件（会期・会場等が未確認の可能性）',
-    })
+    warnings.push({ level: 'warning', code: 'noConfirmedFact', message: 'confirmed な Fact が 0 件（会期・会場等が未確認の可能性）' })
   }
   if (!article.callToAction || !String(article.callToAction).trim()) {
-    warnings.push({
-      level: 'warning',
-      code: 'missingCallToAction',
-      message: 'callToAction が未設定（記事末尾の単一 CTA）',
-    })
+    warnings.push({ level: 'warning', code: 'missingCallToAction', message: 'callToAction が未設定（記事末尾の単一 CTA）' })
   }
   for (const ch of ['note', 'x', 'instagram'] as const) {
     if (!sc[ch] || !String(sc[ch]).trim()) {
-      warnings.push({
-        level: 'warning',
-        code: `missingSocialCopy_${ch}`,
-        message: `socialCopy.${ch} が空`,
-      })
+      warnings.push({ level: 'warning', code: `missingSocialCopy_${ch}`, message: `socialCopy.${ch} が空` })
     }
   }
   const aiWarn = String(article.aiGeneratedBy ?? '').match(/\|warnings=([^)]*)/)
@@ -380,14 +287,21 @@ export async function buildNoteDraftPackage(
   }
   const bodyLen = [...bodyText].length
   if (bodyLen < 400) {
-    warnings.push({
-      level: 'warning',
-      code: 'thinBody',
-      message: `本文が ${bodyLen} 字と短い（内容の薄さを要確認）`,
-    })
+    warnings.push({ level: 'warning', code: 'thinBody', message: `本文が ${bodyLen} 字と短い（内容の薄さを要確認）` })
   }
 
-  const status: NightArticleStatus = blockers.length > 0 ? 'blocked' : warnings.length > 0 ? 'warning' : 'ok'
+  // --- 2026-09-10 恒久改善 3〜6 ---
+  const isPaid = String(article.lane ?? 'free') === 'paid_100'
+  const anchor: string | null = article.paywallAnchorHeading
+    ? String(article.paywallAnchorHeading)
+    : null
+  blockers.push(...checkPaywallAnchor(bodyHeadings, anchor, isPaid))
+  warnings.push(...checkWording({ title: String(article.title ?? ''), hashtags: hashtags.note, body: bodyText }))
+  warnings.push(...checkPaidContent({ body: bodyText, provenance: prov, sourceUrls }))
+  warnings.push(...checkAiPromptConstraints(bodyText, isPaid))
+
+  const status: NightArticleStatus =
+    blockers.length > 0 ? 'blocked' : warnings.length > 0 ? 'warning' : 'ok'
 
   // --- pillar ---
   const pillars = Array.isArray(article.pillars) ? article.pillars : []
@@ -407,6 +321,46 @@ export async function buildNoteDraftPackage(
     }
   }
 
+  // --- hero / OG / 公開後の値 ---
+  const imgArr: any[] = Array.isArray(article.images) ? article.images : []
+  const heroImg = imgArr.find((i) => i && i.role === 'hero')
+  const assetId = (v: unknown): number | null =>
+    typeof v === 'number' ? v : v && typeof v === 'object' && typeof (v as any).id === 'number' ? (v as any).id : null
+  const heroAsset = heroImg ? assetId(heroImg.asset) : null
+  const ogImage = assetId(article.seo?.ogImage) ?? null
+
+  const history: any[] = Array.isArray(article.publishHistory) ? article.publishHistory : []
+  const noteHist = history.find((h) => h && h.channel === 'note')
+  const publicNoteUrl = noteHist ? String(noteHist.reference ?? '') || null : null
+  const publishedAt = noteHist && noteHist.publishedAt ? String(noteHist.publishedAt) : null
+  const rs = String(article.reviewStatus ?? '')
+  const transferStatus = publicNoteUrl
+    ? 'published'
+    : rs === 'approved'
+      ? 'ready_for_transfer'
+      : rs || 'draft'
+
+  const noteMeta: NoteMeta = {
+    title: String(article.title ?? ''),
+    articleType: isPaid ? 'paid' : 'free',
+    priceYen: isPaid ? (typeof article.priceYen === 'number' ? article.priceYen : null) : null,
+    paywallAnchorHeading: anchor,
+    paywallLine: paywallLine(anchor, isPaid),
+    hashtags: hashtags.note,
+    heroAsset,
+    ogImage,
+    categoryIcon: {
+      slug: iconResolved.iconSlug,
+      file: iconResolved.iconFile,
+      labelJa: iconResolved.labelJa,
+    },
+    illustrationCaption,
+    sourceUrls,
+    publicNoteUrl,
+    publishedAt,
+    transferStatus,
+  }
+
   return {
     schemaVersion: 1,
     articleId,
@@ -417,6 +371,7 @@ export async function buildNoteDraftPackage(
     masthead,
     titleCandidates: [String(article.title ?? '')],
     needsMoreTitleCandidates: true,
+    noteMeta,
     body: bodyText,
     images,
     hashtags,
@@ -434,25 +389,26 @@ export async function buildNoteDraftPackage(
       guardrails: [
         '下書き保存のみ。公開（「公開する」ボタン）は絶対に押さない',
         '既存記事の削除・編集をしない',
-        '有料/無料設定・販売設定を変更しない',
+        '有料/無料設定・販売設定・価格を変更しない（有料ライン・価格はマロンが手動）',
         'アカウント設定・プロフィールを変更しない',
         '不明な項目は空のままにし Same-day Review へ回す（推測で入力しない）',
       ],
       steps: [
-        'note.com にログイン済みの状態で「新規投稿 → テキスト」を開く',
-        'title を本文タイトルに入力する',
-        'body を貼り付ける（body の先頭にマストヘッド固定文が入っている。一字一句変更しない）',
-        `記事冒頭・マストヘッド固定文の直前に、masthead.categoryIcon のカテゴリーアイコンを 1 点配置する（media/discover-ginza-category-icons/${
+        'note.com にログイン済みの状態で、マロンが手動で開いた下書きを使う（/notes/new へ自動遷移しない）',
+        'noteMeta.title をタイトルに入力する',
+        'body を貼り付ける（先頭にマストヘッド固定文が入っている。一字一句変更しない）',
+        `マストヘッド固定文の直前に noteMeta.categoryIcon（media/discover-ginza-category-icons/${
           masthead.categoryIcon.iconFile ?? '（マロンが指定）'
-        }）`,
-        'images[] の placement に従って画像を配置する（画像は別途 Same-day Review で用意。body には画像マーカーを入れない。未用意なら画像なしで下書き保存する）',
-        'images[] の各スロットに caption があれば、その画像の直下に注釈として併記する（独自生成画像であることの読者向け明示。独自撮影・独自アイキャッチ等で不要なら削除してよい）',
-        'links.sourceUrls を本文末尾の「Source」欄に反映する',
-        'hashtags.note をハッシュタグ欄に設定する',
+        }）を 1 点、その次に hero 画像を配置する`,
+        'images[] の各スロットに caption があれば画像直下に併記する（独自撮影等で不要なら削除してよい）',
+        `${noteMeta.paywallLine}（本文には仮表示を入れない。note の有料ラインはマロンが手動設定）`,
+        'noteMeta.hashtags（4個）を note のタグ欄へ設定する（本文には書かない）',
+        'noteMeta.sourceUrls を本文末尾の「出典」欄に反映する',
         '「下書き保存」する（公開しない）',
       ],
     },
     validation: { blockers, warnings },
+    cleanup: { removed },
     status,
     generatedAt: new Date().toISOString(),
   }

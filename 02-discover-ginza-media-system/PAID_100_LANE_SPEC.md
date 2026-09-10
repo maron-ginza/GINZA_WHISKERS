@@ -108,17 +108,55 @@
 - `lane='paid_100'` の記事一覧（id・reviewStatus・タイトル）と今週の提案数。
   読み取り専用。
 
+### 4.4 note 転記前チェック（2026-09-10 追加）
+
+```
+./p2 night check <articleId> [--copy-body]
+```
+
+- draft / approved / published いずれも対象。**読み取り専用・DB も本文も変更しない・
+  二重実行しても同一**（キュー index は触らず `note-body.txt` / `note-draft.json` を
+  同一内容で上書き）。
+- 1画面表示：note タイトル／無料・有料・価格／**有料ライン位置**
+  （`Articles.paywallAnchorHeading` の見出しの直前）／本文字数／hero・OG（Media ID）／
+  カテゴリーアイコン／画像注釈／ハッシュタグ4個／本文掲載の出典／未確認事項／
+  BLOCKER・WARNING／貼り付けファイル／公開後に記録する項目。
+- `--copy-body`：`note-body.txt`（貼り付け本文だけ）を macOS のクリップボードへ。
+- `note-body.txt` は **note 本文へ貼る文章だけ**（仮の有料マーカー・注意事項・
+  ハッシュタグ行・`[IMAGE:]` マーカー・画像パス・内部メモ・重複マストヘッドを除去。
+  除去内容は `note-draft.json` の `cleanup.removed` に理由つきで記録）。
+- `note-draft.json` の `noteMeta` に設定値を本文と分離して保持：title / articleType /
+  priceYen / paywallAnchorHeading / paywallLine / hashtags(4) / heroAsset / ogImage /
+  categoryIcon / illustrationCaption / sourceUrls / publicNoteUrl / publishedAt /
+  transferStatus。
+
+### 4.5 自動検出される内容課題（WARNING / BLOCKER）
+
+- **BLOCKER**：有料ライン対象の見出し（`paywallAnchorHeading`）が本文に 0 件・複数件・
+  未設定。カテゴリーアイコン未確定。出典URL欠落 Fact。一次・公式情報の矛盾。
+- **WARNING（表記統一）**：「ChatGPTへそのまま渡せる」→「生成AI（ChatGPTなど）へ
+  そのまま渡せる」。タイトルとタグの「私・わたし」不一致。本文内の私/わたし混在。
+  ブランド名は GINZA TIME EDIT。
+- **WARNING（内容）**：観覧料が未確認なのに確認留保なく「0円／無料」と断定。移動時間の
+  分数断定（「徒歩◯分」→「徒歩圏」「銀座エリア内」）。営業時間の断定。料金・予約・
+  営業時間に触れつつ「公式で確認」導線が本文にない。作品価格と一般予算を同じ行で並べる。
+  公開本文の出典URLと `links.sourceUrls` の不一致。AI 指示文に必須5制約が欠落。
+
 ---
 
 ## 5. DB
 
-- **新規フィールド**（`Articles`。migration `20260910_120000_articles_paid_lane.ts`）：
+- **新規フィールド**（`Articles`）：
   - `lane`：`enum('free','paid_100')`、既定 `free`（NOT NULL）。`_articles_v` にも
-    `version_lane` を追加。
-  - `priceYen`：`numeric`（paid_100 の想定価格）。`_articles_v` に
-    `version_price_yen`。
-  - **加算のみ・冪等**（`IF NOT EXISTS` / `DO` ガード）。既存 Article（#1〜#58）は
-    全て `lane='free'` になるだけで挙動不変。
+    `version_lane`。migration `20260910_120000_articles_paid_lane.ts`。
+  - `priceYen`：`numeric`（paid_100 の想定価格）。`_articles_v` に `version_price_yen`。
+  - `paywallAnchorHeading`：`varchar`（NULL 許容）。note の有料エリア開始位置の
+    「直前に置く見出しテキスト（本文中の見出しと完全一致）」。本文には仮表示を
+    入れず、転記前チェックがこの見出しが本文にちょうど1件あることを検証する。
+    migration `20260910_150000_articles_paywall_anchor.ts`。`_articles_v` に
+    `version_paywall_anchor_heading`。
+  - **加算のみ・冪等**（`IF NOT EXISTS` / `DO` ガード）。既存 Article は全て
+    `lane='free'` / `paywall_anchor_heading=NULL` になるだけで挙動不変。
 - 既存の `series`（label / editionNumber）を併用（シリーズ名の保持）。
 
 ---
@@ -129,12 +167,16 @@
 |---|---|
 | `cms/src/lib/paid100/types.ts` | 型・定数（`PAID100_SERIES_LABEL_V1` 等） |
 | `cms/src/lib/paid100/proposePaid100Candidates.ts` | 候補提案（決定的・AI なし・再現性ゲート・最大3） |
-| `cms/src/lib/paid100/buildPaid100Draft.ts` | 選定後の下書きスキャフォールド（決定的） |
-| `cms/src/scripts/paid100.ts` | CLI（propose / draft / status） |
-| `cms/src/collections/Articles.ts` | `lane` / `priceYen` フィールド |
-| `cms/src/migrations/20260910_120000_articles_paid_lane.ts` | 本番用 migration |
-| `cms/src/lib/__checks__/paid100.check.ts` | 回帰テスト |
-| `scripts/project02` | `paid100)` dispatch（追記のみ・既存 case 無変更） |
+| `cms/src/lib/paid100/buildPaid100Draft.ts` | 選定後の下書きスキャフォールド（決定的。AI 指示文へ必須5制約・シリーズタグ `#AIで叶える私だけの銀座時間`・`paywallAnchorHeading` を設定） |
+| `cms/src/scripts/paid100.ts` | CLI（propose / draft / status）。本文へ仮の有料マーカーを入れず `paywallAnchorHeading` に保存 |
+| `cms/src/lib/night/noteTransferChecks.ts` | note 転記の共通クリーン化・検査（純粋・AI/DB なし。`sanitizeNoteBodyUnits` / `checkPaywallAnchor` / `checkWording` / `checkPaidContent` / `checkAiPromptConstraints` / `AI_PROMPT_STANDARD_CONSTRAINTS`） |
+| `cms/src/lib/night/buildNoteDraftPackage.ts` | 転記パッケージ（`noteMeta` / `cleanup` / `allowNonDraft` オプション） |
+| `cms/src/scripts/nightBuild.ts` | `--check=<id>`（転記前チェック・読み取り専用） |
+| `scripts/format_night_status.py` | `mode:'note_check'` の1画面整形 |
+| `cms/src/collections/Articles.ts` | `lane` / `priceYen` / `paywallAnchorHeading` フィールド |
+| `cms/src/migrations/20260910_120000_articles_paid_lane.ts` / `20260910_150000_articles_paywall_anchor.ts` | 本番用 migration |
+| `cms/src/lib/__checks__/paid100.check.ts` / `noteTransferChecks.check.ts` | 回帰テスト |
+| `scripts/project02` | `paid100)` / `night check` dispatch（追記のみ・既存 case 無変更） |
 
 ---
 

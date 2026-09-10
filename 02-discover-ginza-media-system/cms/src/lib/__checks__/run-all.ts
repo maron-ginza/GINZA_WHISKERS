@@ -24,6 +24,7 @@ import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as noteMasthead } from './noteMasthead.check'
 import { suite as noteDraftPackage } from './noteDraftPackage.check'
+import { suite as noteTransferChecks } from './noteTransferChecks.check'
 import { suite as paid100 } from './paid100.check'
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
@@ -52,6 +53,7 @@ const results: SuiteResult[] = [
   buildFinalCandidateDigest(),
   noteMasthead(),
   noteDraftPackage(),
+  noteTransferChecks(),
   paid100(),
   extractStructuredDates(),
   eventEndBoundary(),

@@ -100,6 +100,38 @@ export interface NoteMasthead {
   order: string[]
 }
 
+/**
+ * note 用メタデータ（2026-09-10 恒久改善 項目2）。本文（body）と設定値を混ぜず、
+ * 転記時に参照する設定値をここへ独立保存する。
+ */
+export interface NoteMeta {
+  title: string
+  /** 'paid'＝有料（lane=paid_100）／'free'＝無料 */
+  articleType: 'paid' | 'free'
+  /** paid のときの想定価格（円）。無料は null */
+  priceYen: number | null
+  /** 有料ライン（有料エリア開始）の直前に置く見出しテキスト（本文には仮表示を入れない） */
+  paywallAnchorHeading: string | null
+  /** 読者向けの1行表示（例：「有料ライン：見出し『使い方（先に読む）』の直前」） */
+  paywallLine: string
+  /** note のタグ欄へ設定する 4 個 */
+  hashtags: string[]
+  /** hero 画像の image-assets ID（未設定は null） */
+  heroAsset: number | null
+  /** OG 画像の image-assets ID（通常 hero と同一） */
+  ogImage: number | null
+  categoryIcon: { slug: string | null; file: string | null; labelJa: string | null }
+  /** 独自生成画像の読者向け注釈（category icon / hero の直下に併記） */
+  illustrationCaption: string
+  /** 公開本文に載せる出典 URL（links.sourceUrls と一致） */
+  sourceUrls: string[]
+  /** 公開後に判明する値（publishHistory の note チャネルから。未公開は null） */
+  publicNoteUrl: string | null
+  publishedAt: string | null
+  /** 'draft' | 'ready_for_transfer'(approved) | 'published' | その他 reviewStatus */
+  transferStatus: string
+}
+
 /** /note-draft 再利用構造。1 ドラフト記事 = 1 パッケージ */
 export interface NoteDraftPackage {
   schemaVersion: 1
@@ -117,7 +149,9 @@ export interface NoteDraftPackage {
    */
   titleCandidates: string[]
   needsMoreTitleCandidates: boolean
-  /** そのまま note へ貼れるプレーンテキスト（[IMAGE: ...] マーカー入り） */
+  /** note 用メタデータ（本文と設定値を混ぜない。2026-09-10 項目2） */
+  noteMeta: NoteMeta
+  /** そのまま note へ貼れるプレーンテキスト（画像マーカー・仮表示・内部メモを含まない） */
   body: string
   images: NoteDraftImageSlot[]
   hashtags: NoteDraftHashtags
@@ -127,6 +161,8 @@ export interface NoteDraftPackage {
   provenance: NoteDraftProvenanceSummary
   chromeHandoff: NoteDraftChromeHandoff
   validation: { blockers: NightValidationFinding[]; warnings: NightValidationFinding[] }
+  /** note 本文へ貼らないよう除去したブロック（理由つき。項目1・転記前チェックで表示） */
+  cleanup: { removed: { reason: string; text: string }[] }
   status: NightArticleStatus
   generatedAt: string
 }

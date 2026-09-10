@@ -14,6 +14,102 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-10（🧹 100円 note 公開トライアル（Article #60）で判明した課題を
+    恒久反映。**Project 02 コミット・push あり／新規 migration
+    `20260910_150000_articles_paywall_anchor`（ローカル適用済み・本番未実行）／
+    実 DB 更新は Article #60 のみ**）:
+
+    **背景**：2026-09-10、シリーズ第一弾の 100円 note 記事「AIでつくる、私だけの
+    銀座時間｜銀座もとじ「更紗展」45・90・150分プラン」（Article #60）を
+    `https://note.com/ginza_whiskers/n/nd71388d4f608` で公開（価格100円・有料開始
+    位置＝見出し「使い方（先に読む）」の直前・タグ 銀座/銀座もとじ/AIで叶える私
+    だけの銀座時間/更紗展）。転記時に `note-body.txt` へ仮の有料マーカー・注意事項・
+    ハッシュタグ行・`[IMAGE:]` マーカー等の不要文字列が混入していた、有料ライン
+    位置がメタデータになく本文の仮表示に依存していた、等の課題が出た。
+
+    **目的**：次回以降、マロンの作業を「本文貼り付け・画像配置・有料ライン設定・
+    最終公開判断」程度に減らし、誤記・二重貼り付け・不要文字列・設定漏れを自動検出する。
+
+    **恒久改善（コード）**：
+    1. **note 転記本文のクリーン化**（新規 `cms/src/lib/night/noteTransferChecks.ts`
+       の `sanitizeNoteBodyUnits`。純粋・AI/DB なし）。`buildNoteDraftPackage` が
+       CMS 本文ブロックから「note 本文へ貼ってよい文章」だけを残す：タイトル行／
+       `[IMAGE: …]` マーカー／画像ファイルパス／「―――ここから有料エリア（100円）―――」
+       等の仮表示と直後の設定指示文／全角の装飾区切り（ASCII の `---` は AI 指示文・
+       テンプレのコピペ境界なので残す）／`[マロン具体化]`・`lane=paid_100`・`想定価格：`・
+       `再利用元：`・マストヘッド付与メモ・`Same-day Review`／「注意事項」セクション全体／
+       重複マストヘッド行。除去したブロックは理由つきで `cleanup.removed` に記録。
+    2. **note 用メタデータの分離**（`NoteDraftPackage.noteMeta`）。title / articleType
+       (paid|free) / priceYen / paywallAnchorHeading / paywallLine / hashtags(4) /
+       heroAsset / ogImage / categoryIcon / illustrationCaption / sourceUrls /
+       publicNoteUrl / publishedAt / transferStatus を本文と混ぜず独立保存。
+    3. **有料ライン設定支援**。新フィールド `Articles.paywallAnchorHeading`
+       （text・migration `20260910_150000_articles_paywall_anchor`、加算のみ・NULL 許容・
+       冪等。`_articles_v` にも version 列）に「有料エリア開始位置の直前に置く見出し
+       テキスト（完全一致）」を保存。本文には仮表示を入れず、転記パッケージは
+       `noteMeta.paywallLine`（例：「有料ライン：見出し『使い方（先に読む）』の直前」）
+       で明示。`checkPaywallAnchor` が paid_100 記事で対象見出しが本文にちょうど1件
+       あることを検証：0件／複数件／未設定は **BLOCKER**。
+    4. **表記統一**（`checkWording`・WARNING）：「ChatGPTへそのまま渡せる」→一般説明では
+       「生成AI（ChatGPTなど）へそのまま渡せる」／タイトルとハッシュタグの「私・わたし」
+       不一致／本文内の「私だけの銀座」「わたしだけの銀座」混在／ブランド名の表記ゆれ
+       （GINZA TIME EDIT で統一）。
+    5. **有料記事の内容検査**（`checkPaidContent`・WARNING）：観覧料が未確認なのに同じ行に
+       確認留保なく「0円／無料」と断定／移動時間の分数断定（「徒歩8分」等。「徒歩圏」
+       「銀座エリア内」推奨）／営業時間の断定／料金・予約・営業時間に触れているのに
+       「公式で確認」導線が本文にない／作品価格と一般予算を同じ行で並べて誤解を招く／
+       公開本文の出典URL と `links.sourceUrls` の不一致。
+    6. **AI 指示文の標準化**（`AI_PROMPT_STANDARD_CONSTRAINTS` / `checkAiPromptConstraints`）。
+       生成器 `buildPaid100Draft` は AI 指示文へ必ず5制約（確認済み情報だけ／営業時間・
+       料金・予約・移動時間を推測しない／未確認は「公式サイトで確認」／実在確認できない
+       施設・展覧会を提案しない／最後に条件不一致と事前確認事項をまとめる）を入れる。
+       見出しも「生成AI（ChatGPTなど）へそのまま渡せる指示文」に、シリーズタグは
+       `#AIで叶える私だけの銀座時間`（私で統一）に変更。`paid100.ts` は本文へ仮の
+       有料マーカーを入れず、`Articles.paywallAnchorHeading` に有料エリア最初の見出しを保存。
+    7. **note 転記前チェック**（新規 `./p2 night check <articleId> [--copy-body]`。
+       `nightBuild.ts --check=<id>`）。draft/approved/published いずれも対象、**読み取り
+       専用・DB も本文も変更しない・二重実行しても同一**（キュー index は触らず
+       `note-body.txt`／`note-draft.json` を同一内容で上書き）。1画面に note タイトル／
+       無料・有料・価格／有料ライン位置／本文字数／hero・OG／カテゴリーアイコン／
+       画像注釈／ハッシュタグ4個／本文掲載の出典／未確認事項／BLOCKER・WARNING／
+       貼り付けファイル／公開後に記録する項目を表示。`--copy-body` で note 本文だけを
+       `pbcopy`（macOS）へ。`format_night_status.py` に `mode:'note_check'` を追加。
+    8. **`buildNoteDraftPackage` に `allowNonDraft` オプション**（既定 false＝従来どおり
+       draft のみ。夜間フローの安全ガードは不変）。`./p2 night check` だけ true で呼ぶ。
+
+    **Article #60 への反映（DB。本文・画像・priceYen・lane・editorialProvenance は不変）**：
+    事前バックアップ `_backups/db_before_paywall_anchor_20260910_165908.sql`（フル）。
+    - `paywallAnchorHeading` = 「使い方（先に読む）」（新フィールド）。
+    - `title` / `seo.metaTitle` を公開済み note のタイトル
+      「AIでつくる、私だけの銀座時間｜銀座もとじ「更紗展」45・90・150分プラン」へ。
+    - `socialCopy.note` を公開済み note のタグ 4個へ（`#銀座 #銀座もとじ
+      #AIで叶える私だけの銀座時間 #更紗展`。私で統一）。
+    - `publishHistory` に `{ channel:'note', publishedAt:'2026-09-10T16:13:00+09:00'
+      〈note 公開ページ datePublished／JST〉, reference:'https://note.com/ginza_whiskers/n/nd71388d4f608' }`
+      を追加（#58 と同じ正式方式）。
+    - `reviewStatus` / `_status` を **published** へ（#58 前例＝運用仕様。サイトは
+      Phase 12 未デプロイのため外部影響なし。人間承認ゲートは editor user id=1 を
+      渡して通過、`_status` は raw-SQL で version 101・MAIN を published に整合）。
+    - **本文（89 ブロック）は一切変更しない**。転記前チェックの `note-body.txt` は
+      サニタイザで仮マーカー等を除去して出力（`cleanup.removed`＝
+      `fake-paywall-marker` 1件のみ）。#60 に残る WARNING は
+      `missingCallToAction`／`missingSocialCopy_x`／`missingSocialCopy_instagram`／
+      `aiPromptMissingConstraints`（公開済み本文の AI 指示文が「確認済み情報だけ」
+      「最後にまとめ」の2制約を欠く。既存本文は変更しない方針のため WARNING のまま記録）。
+
+    **検証**：`payload generate:types`／`tsc --noEmit`（cms）0エラー／`run-all.ts`
+    **384 passed 0 failed**（新規 `noteTransferChecks.check.ts` 11 件〈#60 回帰ケース含む〉、
+    `paid100.check.ts` を新仕様〈生成AI表記・私タグ・paywallAnchor・AI制約〉に更新）。
+    migration 適用後 `payload_migrations` batch 3 に 1 行追加、`articles` 25 件で
+    `paywall_anchor_heading` は #60 のみ非 NULL、他は NULL のまま挙動不変。
+    Article #1〜#59 は `updated_at` 最終が `2026-09-10 01:31:48`（#58 公開時）のまま
+    ＝本タスクで一切変更なし。`image_assets` 11・`discovered_content` 620 不変。
+    published は #2〈seed〉・#58・#60 の3件。**note 上の記事は一切操作していない
+    （ブラウザ自動化なし・#60 の note ページは読み取り〈datePublished 取得〉のみ）。**
+    一回限りスクリプト（`finalizeArticle60.ts`・`dumpArticle60.ts`）は実行後に削除。
+    ロールバック＝`_backups/db_before_paywall_anchor_20260910_165908.sql` から復元、
+    または migration `down` で `paywall_anchor_heading` 列を落とす。
+
   - 2026-09-10（💴 10月運用へ100円note記事の別レーンを追加。**Project 02
     コミット・push あり／新規 migration（本番未実行）／実 DB 更新なし**）:
 

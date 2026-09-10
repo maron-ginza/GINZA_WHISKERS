@@ -1704,6 +1704,46 @@ night_package() {
   echo
 }
 
+night_check() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 Night — note 転記前チェック ==="
+  ID="$1"
+  COPY_BODY=0
+  shift 2>/dev/null || true
+  for a in "$@"; do
+    [ "$a" = "--copy-body" ] && COPY_BODY=1
+  done
+  if [ -z "$ID" ]; then
+    echo "Usage: ./p2 night check <articleId> [--copy-body]"
+    echo "  draft / approved / published いずれも対象（読み取り専用・DBも本文も変更しない）。"
+    echo "  --copy-body : note 本文だけを macOS のクリップボードへコピー（pbcopy）。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+  _night_require_db || return 1
+  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/nightBuild.ts --check="$ID" 2>"$LOG_DIR/night.log" | grep '^{' | tail -1)
+  if [ -z "$RAW" ]; then
+    fail "night check の実行に失敗しました"
+    tail -20 "$LOG_DIR/night.log" 2>/dev/null
+    echo "================================================"
+    echo
+    return 1
+  fi
+  echo "$RAW" | python3 "$ROOT/scripts/format_night_status.py"
+  if [ "$COPY_BODY" = "1" ]; then
+    BODY_REL=$(echo "$RAW" | python3 -c 'import sys,json;print((json.load(sys.stdin).get("files") or {}).get("body",""))')
+    if [ -n "$BODY_REL" ] && [ -f "$ROOT/$BODY_REL" ] && command -v pbcopy >/dev/null 2>&1; then
+      pbcopy < "$ROOT/$BODY_REL"
+      echo "  📋 note 本文をクリップボードへコピーしました（$BODY_REL）"
+    else
+      echo "  ⚠️  クリップボードへのコピーをスキップ（pbcopy 不在 or 本文ファイル無し）"
+    fi
+  fi
+  echo "================================================"
+  echo
+}
+
 night_dispatch() {
   case "$1" in
     run)
@@ -1721,6 +1761,10 @@ night_dispatch() {
       shift
       night_package "$@"
       ;;
+    check)
+      shift
+      night_check "$@"
+      ;;
     *)
       echo "Usage:"
       echo "  ./p2 night run [--dry-run] [--yes] [--max=N] [--since=YYYY-MM-DD]"
@@ -1732,6 +1776,8 @@ night_dispatch() {
       echo "  ./p2 night review [--date=YYYY-MM-DD]   当日レビュー：Same-day Review Queue を表示（DB不要）"
       echo "  ./p2 night status                       直近の night run の結果を表示（DB不要）"
       echo "  ./p2 night package <articleId>          既存の draft Article を /note-draft 構造へ再変換"
+      echo "  ./p2 night check <articleId> [--copy-body]  note 転記前チェック（1画面・読み取り専用。"
+      echo "                                             --copy-body で本文をクリップボードへ）"
       return 1
       ;;
   esac

@@ -549,6 +549,28 @@ Managerアカウントでの操作が必要なため、私（Claude）が代行�
 - 自動公開は禁止。Article は必ず `reviewStatus:draft`。公開はマロンの明示承認後。
 - 空の無題下書き `n987644e020ee` は操作・削除しない。
 
+#### G.6.1 note 転記前チェック（2026-09-10 追加。100円 note トライアル #60 の恒久反映）
+
+- **`./p2 night check <articleId> [--copy-body]`** を転記の直前に実行する。
+  draft / approved / published いずれも対象。**読み取り専用・DB も本文も変更しない・
+  二重実行しても同一**（`./p2 night package` と違いキュー index を触らない）。
+- 1画面で確認：note タイトル／無料・有料・価格／**有料ライン位置**／本文字数／
+  hero・OG（Media ID）／カテゴリーアイコン／画像注釈／ハッシュタグ4個／本文掲載の
+  出典／未確認事項／BLOCKER・WARNING／貼り付けファイル／公開後に記録する項目。
+- **`note-body.txt` は「note 本文へ貼る文章だけ」**。タイトル行・仮の有料マーカー
+  （「―――ここから有料エリア（100円）―――」等）・「注意事項」セクション・ハッシュタグ行・
+  `[IMAGE:]` マーカー・画像パス・内部メモ（`[マロン具体化]`・`lane=paid_100`・
+  `想定価格：`・`再利用元：`・`Same-day Review` 等）は自動除去（`note-draft.json` の
+  `cleanup.removed` に理由つき記録）。ASCII の `---`（AI 指示文のコピペ境界）は残す。
+- **有料ライン**は本文に仮表示を入れず `Articles.paywallAnchorHeading`（見出しの完全一致）
+  で持つ。`note-draft.json` の `noteMeta.paywallLine`（「有料ライン：見出し『…』の直前」）を
+  マロンが note 上で手動設定する。対象見出しが本文に 0 件・複数件・未設定なら **BLOCKER**。
+- マロンの手動作業は原則 **「本文貼り付け・画像配置・有料ライン設定・最終公開判断」** のみ。
+- `--copy-body` で `note-body.txt` を macOS のクリップボードへ（`pbcopy`）。
+- 公開後は `Articles.publishHistory` に `{ channel:'note', publishedAt:<note公開日時>,
+  reference:<note URL> }` を追加し、`reviewStatus` を運用仕様（#58 前例＝`published`）に
+  沿って更新する（使い捨てスクリプト・要 `user`。詳細は `DECISION_LOG_02.md` 2026-09-10）。
+
 ### G.7 Human-in-the-loop（人間が必ず入る地点）
 
 1. DiscoveredContent の承認（`curationStatus:approved` は `req.user` 必須）

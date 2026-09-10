@@ -17,6 +17,7 @@
 
 import { PAID100_PRICE_YEN } from './types'
 import type { FreeArticleSummary, Paid100Draft, Paid100DraftSection, Paid100Proposal } from './types'
+import { AI_PROMPT_STANDARD_CONSTRAINTS } from '../night/noteTransferChecks'
 
 function factsBy(source: FreeArticleSummary, type: string) {
   return source.provenance.filter((p) => (p.factType ?? '') === type)
@@ -166,9 +167,9 @@ export function buildPaid100Draft(
       ],
     },
     {
-      heading: '4. AIへそのまま渡せる指示文',
+      heading: '4. 生成AI（ChatGPTなど）へそのまま渡せる指示文',
       lines: [
-        '（下の「---」から「---」までをコピーし、空欄を埋めて AI に貼る）',
+        '（下の「---」から「---」までをコピーし、空欄を埋めて 生成AI（ChatGPTなど）へそのまま渡せる）',
         '---',
         'あなたは銀座に詳しい編集者です。次の条件で、指定の展覧会を中心にした銀座の回り方を1案作ってください。',
         `対象の展覧会：${exhibitionName}`,
@@ -183,12 +184,11 @@ export function buildPaid100Draft(
         'その日の気分：（例：静かに過ごしたい / じっくり見たい）',
         '天気：（晴れ / 雨）',
         '出力してほしいもの：',
-        '- 立ち寄り順と各所の所要時間の目安',
-        '- 移動の目安（徒歩何分か）',
-        '- 出かける前に公式で確認しておくこと',
-        '- 天気が変わった場合の差し替え案',
-        '注意：営業時間・観覧料・予約の要否は「公式で確認」とだけ書き、具体的な数値を断定しないでください。',
-        '一般的な銀座観光の紹介や、店の羅列にはしないでください。',
+        '- 立ち寄り順と各所の滞在時間の目安',
+        '- 移動は「徒歩圏」「銀座エリア内」と表現し、分数は断定しない',
+        '- 出かける前に公式で確認しておくこと（開催時間・観覧料・予約）',
+        '- 天気や時間が変わった場合の差し替え案',
+        ...AI_PROMPT_STANDARD_CONSTRAINTS,
         '---',
         '[マロン具体化] 上の「対象の展覧会」欄の下に、無料記事の見どころ（出品作家・作品）を2〜3行足す。',
       ].filter(Boolean),
@@ -231,7 +231,8 @@ export function buildPaid100Draft(
     'マストヘッド固定文（GINZA TIME EDIT …）は note 転記時に冒頭へ付与する（本文には保存しない）。',
   ]
 
-  const baseTags = ['#銀座', '#AIで叶えるわたしだけの銀座']
+  // シリーズタグは「#AIで叶える私だけの銀座時間」に統一（2026-09-10 項目4：私／わたし）。
+  const baseTags = ['#銀座', '#AIで叶える私だけの銀座時間']
   const vt = venueTag(source)
   const extra: string[] = []
   if (vt && !baseTags.includes(vt)) extra.push(vt)
@@ -240,7 +241,7 @@ export function buildPaid100Draft(
     if (r.re.test(`${source.title} ${exhibitionName}`) && !extra.includes(r.tag) && !baseTags.includes(r.tag)) extra.push(r.tag)
   }
   const hashtags = [...baseTags, ...extra].slice(0, 4)
-  while (hashtags.length < 4) hashtags.push('#わたしだけの銀座時間')
+  while (hashtags.length < 4) hashtags.push('#私だけの銀座時間')
 
   return {
     sourceArticleId: source.id,
@@ -248,6 +249,8 @@ export function buildPaid100Draft(
     seriesLabel: proposal.seriesLabel,
     lane: 'paid_100',
     priceYen: PAID100_PRICE_YEN,
+    // 有料ラインは有料エリアの最初の見出しの直前（本文には仮表示を入れない）。
+    paywallAnchorHeading: paidSections[0]?.heading ?? '',
     freeSections,
     paidSections,
     sources,
