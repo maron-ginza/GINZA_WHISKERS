@@ -88,15 +88,16 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '修正2: DEFAULT_ILLUSTRATION_CAPTION は「展示作品・会場」の正式文（汎用文へ巻き戻さない）',
+    name: '修正2: DEFAULT_ILLUSTRATION_CAPTION は「商品・展示作品・会場」の統一文（2026-09-11・汎用文へ巻き戻さない）',
     fn: () => {
       assert(
         DEFAULT_ILLUSTRATION_CAPTION ===
-          '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。',
+          '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。',
         `既定文: ${DEFAULT_ILLUSTRATION_CAPTION}`,
       )
       assert((DEFAULT_ILLUSTRATION_CAPTION as string) !== (HERO_IMAGE_CAPTION as string), '旧・汎用文と別物であること')
-      assert(!DEFAULT_ILLUSTRATION_CAPTION.includes('商品・店舗'), '「商品・店舗」を含まない')
+      assert(!DEFAULT_ILLUSTRATION_CAPTION.includes('商品・店舗'), '旧・汎用文（商品・店舗）へ巻き戻していない')
+      assert(DEFAULT_ILLUSTRATION_CAPTION.includes('商品・展示作品・会場'), '商品記事も含む統一表現')
       assert(HERO_IMAGE_CAPTION.includes('商品・店舗'), '旧・汎用文は「商品・店舗」を含む（後方互換の確認）')
     },
   },
@@ -106,12 +107,12 @@ const cases: CheckCase[] = [
       const withCaption = [
         '本文。',
         '挿絵注釈',
-        '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。',
+        '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。',
         '#銀座',
       ]
       assert(
         extractIllustrationCaption(withCaption) ===
-          '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。',
+          '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。',
         `抽出結果: ${extractIllustrationCaption(withCaption)}`,
       )
       // 「※画像は記事内容をもとに生成した」で始まる行を直接拾う（見出しが無くても）

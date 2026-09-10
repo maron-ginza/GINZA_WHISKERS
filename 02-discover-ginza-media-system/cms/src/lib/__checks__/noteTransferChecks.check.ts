@@ -65,7 +65,7 @@ const ARTICLE_60_BLOCKS: BodyBlock[] = [
   { tag: 'paragraph', text: '・通常記事の投稿数・カテゴリー配分・会場重複判定には加算しない（lane=paid_100）。' },
   { tag: 'paragraph', text: 'マストヘッド固定文（GINZA TIME EDIT …）は note 転記時に冒頭へ付与する（本文には保存しない）。' },
   { tag: 'h2', text: '挿絵注釈' },
-  { tag: 'paragraph', text: '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。' },
+  { tag: 'paragraph', text: '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。' },
   { tag: 'h2', text: 'ハッシュタグ' },
   { tag: 'paragraph', text: '#銀座 #銀座もとじ #AIで叶える私だけの銀座時間 #更紗展' },
 ]
@@ -108,7 +108,7 @@ const cases: CheckCase[] = [
         { tag: 'paragraph', text: '・想定価格：100円。' },
         { tag: 'paragraph', text: '・加算しない（lane=paid_100）。' },
         { tag: 'h2', text: '挿絵注釈' }, // 注意事項の次の見出しでセクション解除
-        { tag: 'paragraph', text: '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。' },
+        { tag: 'paragraph', text: '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。' },
         { tag: 'h2', text: 'ハッシュタグ' },
         { tag: 'paragraph', text: '#銀座 #テスト' },
       ]

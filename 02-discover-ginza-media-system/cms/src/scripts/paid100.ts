@@ -220,7 +220,7 @@ async function cmdDraft(argN: string, rest: string[]): Promise<number> {
   blocks.push({ type: 'heading', level: 2, text: '挿絵注釈' })
   blocks.push({
     type: 'paragraph',
-    text: '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。',
+    text: '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。',
   })
   blocks.push({ type: 'heading', level: 2, text: 'ハッシュタグ' })
   blocks.push({ type: 'paragraph', text: draft.hashtags.join(' ') })

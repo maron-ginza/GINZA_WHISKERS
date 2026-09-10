@@ -14,6 +14,62 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11（📝 本日の候補選定＝**2本採用／ビューティー0本／品質優先で無理な補完なし**。
+    **DB 更新あり（DC#327 承認・ArticleFacts #8/#9・Article #61/#62 作成）／挿絵注釈の統一
+    はコード commit・push あり／AI 課金・記事生成(AI)・note 公開・reviewStatus 承認は未実施**）:
+
+    マロン最終判断を受けて実施。**#365「櫻井万里明 展」は本日の候補から除外**（女性ターゲット
+    適合が弱く＝Compass 0、蔦屋書店の偏重が最強）→ **#373「上端伸也 個展」へ差し替え**。
+    **#604・#631 は保留**（公式ページ由来の裏どり結果：#604 は `ginza6.tokyo` が HTTP 403 で
+    自動取得不可＝ブランド名・価格・販売期間・販売場所を公式確認できず／#631 は GINZA OFFICIAL
+    集約ページに商品名・価格・販売期間・住所/階の記載なし・自社サイト `piecemontee.jp` は DNS
+    解決不可）。**ビューティー枠は本日0本**（候補は #604/#605/#606 のみで全て GINZA SIX＝403 で
+    公式確認不可＋過去7日 approved 3件で偏重。推測補完せず見送り）。
+
+    **公式裏どり（WebFetch・公式サイトのみ・第三者記事不使用・確認日 2026-09-11）**：
+    - #327：GINZA OFFICIAL おすすめニュース `https://www.ginza.jp/shopnews/shopnews-centric-hyat/35800`
+      （2026.08.25掲載）＋ NAMIKI667 公式 `https://namiki667.com/news/2026/07/Korean-AfternoonTea.html`。
+      **confirmed**：会期 2026年9月1日（火）〜10月31日（土）／会場 NAMIKI667（ハイアット セントリック
+      銀座 東京 3階・東京都中央区銀座6-6-7）／料金 平日6,957円・土日祝7,590円・ナイト6,072円（税・サ込）／
+      時間 デイ12:00〜18:30〈最終受付15:30・3時間制〉ナイト18:00〜21:30〈最終受付20:00・90分制〉／
+      予約 Web（TableCheck）／メニュー各種／K-Night Market 9・10月限定。
+      **公式記載なし**：最寄駅・徒歩ルート／K-Night Market の開催日時・料金／アレルギー対応の可否。
+    - #373：GINZA OFFICIAL おすすめニュース `https://www.ginza.jp/shopnews/shopnews-dining-gallery-ginza-no-kanazawa/35842`
+      （2026.08.31掲載）。**confirmed**：会期 2026年9月9日（水）〜9月14日（月・最終日16:00まで）／
+      開廊時間 11:00〜19:00／会場 KOGEI Art Gallery 銀座の金沢／関連 九谷焼上絵付け実演「〜葡萄茶彩描〜」
+      9月12日・13日 11:00〜17:00（作家 上端伸也）。
+      **公式記載なし**：入場料の有無／会場の住所・階／予約要否／実演の参加条件・定員／作品価格。
+
+    **生成物（note 公開なし・reviewStatus=draft のまま・AI 不使用＝公式確認済み事実のみで編集部が起草）**：
+    - **DC#327 を curationStatus=approved**（人間ゲートを user id=1 で通過）。
+    - **ArticleFacts #8（DC#327・CAFE/sale・draft）／#9（DC#373・ART/exhibition・draft）**
+      ＝必須12項目のうち公式確認済みを保存、無い項目は officialInfoNote/notes に「公式記載なし」。
+      ready 化はこの経路で行わない（7:00〜7:10 に人間が admin で）。
+    - **Article #61（DC#327・「銀座で『自分を整える』午後に。NAMIKI667の韓国ウェルネス アフタヌーンティー
+      （10月末まで）」・pillar 文化・lane free・draft）／Article #62（DC#373・「九谷焼を、上絵付けの
+      実演とともに。銀座の金沢で『上端伸也 個展』（9月14日まで）」・pillar アート・lane free・draft）**。
+      各記事 socialCopy.note＝ハッシュタグ4個、socialCopy.x＝X 投稿案、editorialProvenance＝
+      公式 confirmed の provenance（sourceUrl・verifiedAt=2026-09-11）。
+    - **note 転記パッケージ**：`.devlogs/night/queue/2026-09-11/61/`・`62/`（`./p2 night check`。
+      BLOCKER 0。#62 の開廊時間の行に「公式ページ記載で」を足し guessedHours WARNING を解消）。
+    - **Chrome への自動転記は実施していない**（RUNBOOKS 付録G.6：実験的・editor.note.com SPA への
+      注入不可・実操作しない、を維持。かつブラウザ選択の確認が必要。外部公開前に停止）。
+
+    **挿絵注釈の統一（コード・commit 対象）**：`DEFAULT_ILLUSTRATION_CAPTION`
+    （`cms/src/lib/night/noteTransferChecks.ts`）を
+    「※画像は記事内容をもとに生成したイメージです。実際の**商品・**展示作品・会場とは異なります。」
+    へ統一（商品記事も対象になるため「商品・」を追加）。`paid100.ts` の挿絵注釈・
+    回帰テスト（`noteDraftPackage.check.ts`・`noteTransferChecks.check.ts`）を同値へ更新。
+    `HERO_IMAGE_CAPTION`（旧・汎用文）は後方互換のため不変。
+
+    **運用記録**：`.devlogs/morning/brief/2026-09-11-result.md`＝「2本採用／ビューティー0本／
+    品質優先で無理な補完なし」。**AUTUMN GINZA 2026 は参照元未接続・保留**（前回記録どおり・再検索なし）。
+
+    **検証**：`tsc --noEmit`（cms）0エラー／`run-all.ts` **398 passed 0 failed**。
+    Article #1〜#60 は `updated_at` 最終 2026-09-10 07:59 のまま＝不変。published は #2・#58・#60 のまま。
+    `discovered_content` 632 不変。事前バックアップ `_backups/db_before_todaybrief_20260911_084519.sql`。
+    一回限りスクリプト（`todayBrief20260911.ts`・`fixArticle62Hours.ts`）は実行後に削除。
+
   - 2026-09-11（🌅 朝刊ブリーフ `./p2 morning-brief` を新設。**Project 02
     コミット・push あり／新規 migration なし／DB 更新なし＝読み取り専用**）:
 
