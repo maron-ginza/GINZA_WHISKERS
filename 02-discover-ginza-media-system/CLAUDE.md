@@ -473,6 +473,37 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   （既に含む場合は二重付与しない）。カテゴリーアイコンが確定できないときは
   BLOCKER `categoryIconUnresolved` でパッケージ化を止める。既存記事へは
   一括適用しない。詳細は `DECISION_LOG_02.md` 2026-09-10。
+- **100円note記事の別レーン（2026-09-10確定・実装済み。正本 `PAID_100_LANE_SPEC.md`）**：
+  10月運用に、100円 note 記事の**別レーン**を追加する。`GINZA_JOHOKYOKU_SPEC.md`
+  （①②・300円「私だけの銀座時間」）を置き換えるものではなく、その上に
+  **再利用駆動の 100円レーンを1本追加する**もの。
+  1. **無料記事（通常投稿）**：1日3本・月約90本・**18カテゴリー配分の集計対象**・
+     すべて無料。**既存の1日3本実装は一切変更しない**。
+  2. **100円記事（別レーン）**：通常の1日3本とは**完全に別枠**。**週2本・
+     月8〜9本を初期目標**、公開目安は水・土（曜日は強制しない）。**通常記事の
+     投稿数・カテゴリー配分・会場重複判定には加算しない**（無料側の集計・重複
+     判定は `discovered-content` の `curationStatus=approved` を対象にしており、
+     100円レーンは DiscoveredContent を新規作成せず `curationStatus` も変えない
+     ＝構造的に非加算。DB 識別は `Articles.lane`＝`free`／`paid_100`、既定 `free`）。
+     シリーズ第一弾「**AIで叶える、わたしだけの銀座**」、価格100円（`Articles.priceYen`）。
+  3. **記事構成**：無料エリア＝課題・変化・結果の概要／有料エリア＝具体的手順・
+     AIへの指示文（コピペ可）・候補比較・確認方法・再利用可能なテンプレート。
+  4. **有料判定の必須条件＝読者が実際に再現できること**。単なる施設紹介・
+     一般検索で分かるだけの記事は有料候補にしない（決定的判定・AIなし：
+     再現できる行動の語がある／比較候補が2件以上、のいずれかを満たすこと）。
+  5. **自動化**：`./p2 paid100 propose`＝無料記事＋収集済み Facts を再利用して
+     **毎週 最大3案だけ**（タイトル・無料部分・有料価値・再利用素材・制作見込み
+     時間つき）を提示。読み取り専用・AI/note/課金なし。マロンは1案を選ぶだけ。
+     `./p2 paid100 draft <番号>`＝選定後、無料エリア＋有料エリア＋出典＋注意事項＋
+     ハッシュタグ4個の CMS 下書きを自動生成（`lane='paid_100'`・`priceYen=100`・
+     `reviewStatus='draft'`・出典は再利用元から引き継ぎ・確定できない箇所は
+     `[マロン具体化]` マーカー）。`./p2 paid100 status`＝一覧。**note への自動
+     ログイン・自動公開は実装しない**（マロンの最終承認後に note で公開、有料
+     設定・価格もマロンが手動）。
+  6. **DB**：`Articles` に `lane`（enum free/paid_100・既定 free）と `priceYen`
+     を追加（migration `20260910_120000_articles_paid_lane.ts`・加算のみ・冪等・
+     `_articles_v` にも version 列）。既存 Article は全て `free` になるだけで挙動
+     不変。詳細は `PAID_100_LANE_SPEC.md`・`DECISION_LOG_02.md` 2026-09-10。
 - **読者接続の編集ロジック（2026-08-21確定）**：noteコンテストのテーマ
   研究を踏まえ、Editorial Style Engine（項目1〜4：タイトル・冒頭・本文
   構造・Editor's Choice構成）の生成ロジックを拡張する。従来の「旬の
@@ -692,7 +723,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   | 11 | リリース前チェックリストの具体化 | 完了（本節・第11章） |
   | 12 | 本番インフラ確定（ドメイン／Railway／Cloudflare Pages／本番スキーマ移行手順） | **設計完了（2026-07-29）、実際の構築作業が残る** |
   | 13 | Phase 9 HEIC対応の実機エンドツーエンド検証 | **最優先** |
-  | 14 | コンテンツ制作の本格開始（AI編集部パイプライン実運用）。10月本運用フォーム＝日次シリーズ「銀座情報局 by GINZA WHISKERS」（正本 `GINZA_JOHOKYOKU_SPEC.md`）：**10本/日＝10月からの戦略的な最低運用基準**（Revenue Goal follow-up⑤）＝①旬の銀座5本（基本無料）＋②売れるテーマ×銀座5本（原則100円有料が基本商品／売れるテーマ候補プールから選ぶ）、note単品有料記事モデル。①は有料候補「私だけの銀座時間」を9月Trial検証。②は9月Trial 2層価格仮説（A=100円「理解」／B=300円「体験」＝選抜制、価格は10月前に見直し）。300円記事は品質基準（体験設計型・必須5＋原則7/10・地点数3〜5＋意思決定負荷の低減、Trial仮説）＋Primary Persona（20代後半〜30代女性、限定しない）＋Editorial Compass。実地調査は編集提案型ルート（事前実歩は公開必須でない・誤認表現禁止）。10月＝発見／11月＝配分最適化／12月＝再現性検証。10月末 第一KPI＝「テーマ×記事型×価格」の勝ちパターン3〜5型発見。無料7〜8本＋有料候補2〜3本は初期Trial仮説値（ノルマ化しない） | Phase 12・13の後 |
+  | 14 | コンテンツ制作の本格開始（AI編集部パイプライン実運用）。10月本運用フォーム＝日次シリーズ「銀座情報局 by GINZA WHISKERS」（正本 `GINZA_JOHOKYOKU_SPEC.md`）：**10本/日＝10月からの戦略的な最低運用基準**（Revenue Goal follow-up⑤）＝①旬の銀座5本（基本無料）＋②売れるテーマ×銀座5本（原則100円有料が基本商品／売れるテーマ候補プールから選ぶ）、note単品有料記事モデル。①は有料候補「私だけの銀座時間」を9月Trial検証。②は9月Trial 2層価格仮説（A=100円「理解」／B=300円「体験」＝選抜制、価格は10月前に見直し）。300円記事は品質基準（体験設計型・必須5＋原則7/10・地点数3〜5＋意思決定負荷の低減、Trial仮説）＋Primary Persona（20代後半〜30代女性、限定しない）＋Editorial Compass。実地調査は編集提案型ルート（事前実歩は公開必須でない・誤認表現禁止）。10月＝発見／11月＝配分最適化／12月＝再現性検証。10月末 第一KPI＝「テーマ×記事型×価格」の勝ちパターン3〜5型発見。無料7〜8本＋有料候補2〜3本は初期Trial仮説値（ノルマ化しない）。**2026-09-10、100円note記事の別レーンを追加**（正本 `PAID_100_LANE_SPEC.md`）＝無料は1日3本・月約90本・18カテゴリー配分の集計対象、100円は別枠・週2本・月8〜9本目標（水/土）・投稿数/カテゴリー配分/会場重複に非加算・シリーズ「AIで叶える、わたしだけの銀座」。`./p2 paid100 propose`／`draft <番号>`／`status`。既存の1日3本実装は不変 | Phase 12・13の後 |
   | 15 | SNS配信の本実装（Instagram App Review／X OAuth） | 外部認証・実投稿を除く配信キュー基盤（候補生成・Dry Run・人間承認ゲート・二重配信防止）は**2026-08-10完成**。Instagram App Review／X OAuthは引き続き未着手、Instagram側はリードタイムを理由に**申請だけ先行着手**（付録E参照） |
   | 16 | ニュースレター機能 | 後続フェーズ（未着手） |
   | 17 | ギャラリー実装 | **予定どおり後続フェーズとして先送り**。実装タイミングは02の進捗を見て再判断する（スケジュール自体は今回変更しない） |
@@ -802,6 +833,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-10: 💴 **10月運用へ100円note記事の別レーンを追加（Project 02 commit・push あり／新規 migration・DB更新なし〈dev-push のみ〉）**——**無料記事**＝通常投稿1日3本・月約90本・18カテゴリー配分の集計対象・すべて無料（**既存の1日3本実装は一切変更しない**）。**100円記事**＝通常の1日3本とは**完全に別枠**、**週2本・月8〜9本を初期目標**（公開目安 水・土、曜日は強制しない）、**通常記事の投稿数・カテゴリー配分・会場重複判定には加算しない**（無料側の集計・重複判定は `discovered-content` の `curationStatus=approved` を対象にしており、100円レーンは DiscoveredContent を新規作成せず `curationStatus` も変えない＝構造的に非加算。DB 識別は `Articles.lane`＝`free`／`paid_100`、既定 `free`）。シリーズ第一弾「**AIで叶える、わたしだけの銀座**」、価格100円。**記事構成**＝無料エリア（課題・変化・結果）／有料エリア（具体的手順・AIへの指示文〈コピペ可〉・候補比較・確認方法・再利用テンプレート）。**有料判定の必須条件＝読者が実際に再現できること**（施設紹介・一般検索の範囲だけの記事は候補にしない。決定的・AIなし）。**自動化**＝`./p2 paid100 propose`（無料記事＋収集済み Facts を再利用し毎週最大3案だけを 制作見込み時間つきで提示。読み取り専用・AI/note/課金なし。`.devlogs/paid100/<週>/proposals.json`）／`./p2 paid100 draft <番号>`（選定後、無料＋有料エリア＋出典＋注意事項＋ハッシュタグ4個の CMS 下書きを自動生成。`lane=paid_100`・`priceYen=100`・`reviewStatus=draft`・出典は再利用元から引き継ぎ・確定不能箇所は `[マロン具体化]`。既存の人間承認ゲート不変。同一再利用元の二重生成は `aiGeneratedBy` の `paid100 source=#<id>` で防止）／`./p2 paid100 status`。**note 自動ログイン・自動公開は実装しない**。**DB**＝`Articles` に `lane`（enum free/paid_100・既定 free・NOT NULL）と `priceYen`（numeric）を追加（migration `20260910_120000_articles_paid_lane.ts`・加算のみ・冪等・`_articles_v` にも version 列）。ローカルは dev-push 済み・本番は `payload migrate`（未実行）。既存 Article #1〜#58 は全て `free` になるだけで挙動不変。実装＝`cms/src/lib/paid100/{types,proposePaid100Candidates,buildPaid100Draft}.ts`・`cms/src/scripts/paid100.ts`・`scripts/project02`（`paid100)` dispatch 追記）。回帰テスト 新規 `paid100.check.ts`（8件）＋`run-all.ts` 登録。検証：`tsc --noEmit`（cms）0エラー／`run-all.ts` **367 passed 0 failed**／`./p2 paid100 propose`→3案（24無料記事から）・`draft 1`→Article #59 生成（lane=paid_100/price 100/draft/70ブロック/出典6・DC#549 引き継ぎ）→**内容確認後 削除して DB baseline へ復元**（articles=24）／template 系回帰スクリプト全 PASS。正本 `PAID_100_LANE_SPEC.md`。詳細は `DECISION_LOG_02.md` 2026-09-10。
 - 2026-09-10: 📰 **note 記事冒頭マストヘッド（GINZA TIME EDIT）を恒久ルール化＋article 58 を published へ更新（Project 02 commit・push あり／DB更新2件）**——**恒久ルール**：今後すべての note 記事の冒頭へ①記事分類に対応する18カテゴリーアイコン1点 ②固定文「GINZA TIME EDIT／by GINZA WHISKERS／400年の銀座を、今日の私へ。／新しい店、季節の味、アート、舞台、街に残る小さな物語。銀座の過去、現在、未来を紡ぎながら、「今、この銀座に出会う理由」を GINZA WHISKERS の編集視点で届けます。／次の銀ブラに、私だけの銀座時間を。」（一字一句不変）③その後に本文、をこの順で必ず挿入する。マストヘッドは **note 転記レイヤーの要素**で CMS の `Articles.body` には生成・保存しない（重複防止）。**実装**：新規 `cms/src/lib/note/noteMasthead.ts`（`NOTE_MASTHEAD_TEXT`＝唯一の正／18カテゴリー→アイコン `CATEGORY_ICONS`〈slug・ファイル名〉／`resolveCategoryIcon()`＝`deriveProvisionalCategory` の明記語判定を主に、収蔵室〈文化・アート→ART／建築→ARCHITECTURE／イベント→EVENT〉の弱いフォールバック、どれも当たらなければ `needs_human`／`stripMasthead`・`composeNoteBodyWithMasthead`）。転記パッケージ `cms/src/lib/night/buildNoteDraftPackage.ts` に `masthead`（必須）を追加、`images[0]` を `role:'category_icon'`、`body` 冒頭へ固定文前置（二重付与しない）、`needs_human` のときは **BLOCKER `categoryIconUnresolved` で停止**（マロンがアイコンを1点指定するまでパッケージ化しない）。`cms/src/lib/night/types.ts` に `NoteMasthead` 型・`role:'category_icon'`。**note下書き生成テンプレート側** `cms/src/lib/template/polishArticleDraft.ts` の `polishTextFragment` に `stripMasthead` を追加し、生成物へ固定文が混入しても `Articles.body` からは除去（重複生成禁止をコードで担保）。回帰テスト 新規 `noteMasthead.check.ts`（9件）＋`run-all.ts` 登録。検証：`tsc --noEmit`（cms）0エラー／`run-all.ts` **359 passed 0 failed**／template 系回帰スクリプト全 PASS。**既存記事へ一括適用しない・記事本文は変更しない**。**article 58 はマロンが note へ手動転記時にマストヘッド挿入済みのため CMS 本文は不変**（本ルールは今後生成する記事の転記パッケージに効く）。**② article 58「銀座もとじ 更紗展」を published へ更新**（マロン承認済み・DB）：事前バックアップ `_backups/articles_before_publish58_20260910_103121.sql`／`reviewStatus=published`・`_status=published`（新バージョン92・latest）／人間承認ゲートは使い捨てスクリプトで `user`（id 1）を渡して通過／`publishHistory` に `{channel:'note', publishedAt:'2026-09-10T10:17:18+09:00'〈note 公開ページ datePublished／JST〉, reference:'https://note.com/ginza_whiskers/n/n525aa8ac0414'}` を追加／draft 版91の hero 画像（image-assets id 11・`variant:note_header`）と `seo.ogImage=11` を published スナップショットへ引き継ぎ・本文/タイトル/出典は不変・DC#549 紐づけ（6 fact）維持／**Published Articles 1→2**。使い捨てスクリプト（`registerMotojiSarasaImage.ts`・`publishArticle58.ts`）は実行後に削除しリポジトリに残していない。詳細は `DECISION_LOG_02.md` 2026-09-10。
 - 2026-09-04: 🌏 **GINZA CROSS CULTURE MAP v1（5市場文化視点フィルター）を新規実装（ローカル検証まで・commit なし・DB書き込みなし・追加課金なし）**——GINZA WHISKERS 適合判定の後段に CROSS CULTURE FILTER を追加。UAE / Singapore / France / United States / Italy の5市場との相性を決定的に 0-100 採点（AI・ネットワークなし。仮説軸は `cms/src/lib/crossCulture/marketAxes.ts` の1ファイルで追加・修正可、しきい値は env `CROSS_CULTURE_*` で上書き可）。score≥70→派生記事候補／50-69→編集候補保持（自動派生なし）／≤49→本文非使用／5市場<50→通常記事のみ。有料候補は「文化差の解説／比較／具体的な歩き方／マロンによる現地検証」成立時のみ。excerpt はナビノイズのため不使用。結果は `.devlogs/crossculture/` にキャッシュ（同一テーマ再判定なし）。`assessInboxPool.ts`（候補選定の後段パス）＋`runThemeToNoteDraft.ts`（監査カード＋`.devlogs/pipeline/<date>/crossculture/`＋item サマリ）へ read-only 付与、CLI `./p2 crossculture <theme|run|audit|config>`。すべて try/catch 隔離＝FILTER 失敗時は `mode='normal_only'` で通常処理継続。既存199テスト維持＋新規13。実装＝`cms/src/lib/crossCulture/{marketAxes,crossCultureFilter,crossCultureCache,index}.ts`。詳細は `DECISION_LOG_02.md` 2026-09-04。
 - 2026-09-04: 🌏 **CROSS CULTURE FILTER → 記事生成への接続（v2）＋ UAE/France の SOURCE LEDGER 補強（ローカル検証まで・commit なし・DB書き込みなし・実 live 生成なし）**——`buildCrossCultureDerivativePlan`（純粋・決定的）が suggestedAngle を「別記事として生成／通常本文を上書きしない／複数国を混ぜない／文化的仮説は断定禁止（〜と考えられる）／confirmedForBody 以外を事実にしない」を含む注入テキストへ包む。`createCrossCultureDerivativeDrafts`（既定 dry-run）が既存 multi-angle 生成器へ `crossCultureContext` を渡す（`generateMultiAngleArticleDrafts`／`createMultiAngleDraftsFromDiscoveredContent` への追加は `readerInterestTheme` と同型の任意パラメータのみ・未指定なら CORE も収益化②も no-op）。既定 `maxMarkets=1`（複数≥70でも記事価値順で上位のみ・5カ国記事にしない）。CLI `./p2 crossculture derive <ID> [--yes] [--market=] [--max=N]`。**UAE/France 補強**＝SOURCE LEDGER の構造・seedData・enum は一切変更せず、既存の巡回済み情報源12件を市場×軸へ対応づける外付けマッピング `cms/src/lib/crossCulture/sourceAffinity.ts` を追加。affinity は**本文語彙でヒットのある軸にしか加点しない**（過剰派生・誤検出防止。上限 +24/市場）。luxury-hospitality 専用情報源は現行台帳に無いため追加せず `UAE_GAP` コメントに追加条件を記録。実データ audit＝inbox+approved 587件で `has_derivative` 9件（1.5%）＝過剰派生なし。live `--yes` E2E を DC#310 で1回だけ実行し Article #56 を生成→内容確認後**削除して DB baseline へ復元**（Claude API 約¥15の一度きり課金）。既存214テスト維持＋新規15。詳細は `DECISION_LOG_02.md` 2026-09-04。
@@ -1169,7 +1201,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-09-04
+- **最終更新日**：2026-09-10
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

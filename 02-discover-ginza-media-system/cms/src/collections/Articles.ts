@@ -363,6 +363,32 @@ export const Articles: CollectionConfig = {
       ],
     },
     {
+      name: 'lane',
+      label: 'レーン（無料／100円）',
+      type: 'select',
+      // required にはしない（既定 'free'。既存の記事生成コードは lane を渡さず free になる）
+      defaultValue: 'free',
+      options: [
+        { label: '無料（通常投稿・1日3本・18カテゴリー配分の集計対象）', value: 'free' },
+        { label: '100円note記事（別レーン・週2本・AIで叶える、わたしだけの銀座）', value: 'paid_100' },
+      ],
+      admin: {
+        description:
+          '2026-09-10 追加。通常記事（free）と 100円 note 記事（paid_100）を DB 上で区別する。' +
+          'paid_100 は通常記事の投稿数・カテゴリー配分・会場重複判定に加算しない（PAID_100_LANE_SPEC.md）。' +
+          '既存記事・新規の通常記事は既定 free。note 上の有料設定・価格はマロンが手動（自動公開しない）。',
+      },
+    },
+    {
+      name: 'priceYen',
+      label: '想定価格（円・paid_100 のみ）',
+      type: 'number',
+      admin: {
+        description:
+          'paid_100 レーンの想定価格（初期は 100）。note 上の実際の有料設定・価格変更はマロンが手動で行う。',
+      },
+    },
+    {
       name: 'reviewedBy',
       type: 'relationship',
       relationTo: 'users',

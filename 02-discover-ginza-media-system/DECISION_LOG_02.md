@@ -14,6 +14,72 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-10（💴 10月運用へ100円note記事の別レーンを追加。**Project 02
+    コミット・push あり／新規 migration（本番未実行）／実 DB 更新なし**）:
+
+    **要件（マロン指示）**：無料記事（通常投稿）＝1日3本・月約90本・18カテゴリー
+    配分の集計対象・すべて無料。100円記事＝通常の1日3本と**完全に別枠**、週2本・
+    月8〜9本を初期目標（公開目安 水・土）、通常記事の投稿数・カテゴリー配分・
+    会場重複判定には加算しない。シリーズ第一弾「AIで叶える、わたしだけの銀座」。
+    無料記事・収集済み Facts・既存候補を再利用し追加調査と手作業を最小化。
+    無料部分＝課題・変化・結果の概要／有料部分＝具体的手順・AIへの指示文・
+    候補比較・確認方法・再利用テンプレート。単なる施設紹介や一般検索で分かる
+    情報だけでは有料候補にしない。**読者が実際に再現できることを有料判定の
+    必須条件にする**。価格100円。自動公開禁止・マロン最終承認後に note で公開。
+
+    **実装**：
+    - **DB**：`Articles` に `lane`（`enum('free','paid_100')`・既定 `free`・NOT NULL）
+      と `priceYen`（numeric）を追加。migration
+      `cms/src/migrations/20260910_120000_articles_paid_lane.ts`（＋ index.ts 登録）
+      ＝enum 2種の `CREATE TYPE`（`DO`/`duplicate_object` ガード）＋`articles` /
+      `_articles_v` へ各2列 `ADD COLUMN IF NOT EXISTS`。**加算のみ・冪等**。
+      `lane` は Payload フィールドとしては `required` にしない（既定 `free`。
+      既存の記事生成コードは `lane` を渡さず `free` になる＝挙動不変）。
+      ローカルは dev サーバの dev-push で反映済み、本番は `payload migrate` 未実行。
+      既存 Article #1〜#58 は全て `lane='free'`。
+    - **非加算は構造的**：無料側の category_diversity / venue_diversity 履歴・
+      重複判定（`assessInboxPool` ほか）はすべて `discovered-content` の
+      `curationStatus='approved'` を対象にしており、100円レーンは
+      DiscoveredContent を新規作成せず `curationStatus` も変更しない（既存の無料
+      記事を再利用するだけ）。よって無料側のコードには一切手を入れていない
+      （**既存の1日3本実装は不変**）。
+    - **`cms/src/lib/paid100/`（新規・決定的・AI/ネットワークなし）**：
+      `types.ts`（`PAID100_SERIES_LABEL_V1='AIで叶える、わたしだけの銀座'`・
+      `PAID100_PRICE_YEN=100`・`PAID100_TARGET_WEEKDAYS=['水','土']`）／
+      `proposePaid100Candidates.ts`（無料記事＋`editorialProvenance` を再利用し、
+      再現性ゲート〈再現できる行動の語がある／比較候補2件以上のいずれか。告知・
+      施設紹介だけ、または本文<300字かつ出典なし は NG〉→ 最大3案を score 順で
+      提示。各案にタイトル・無料部分〈課題／変化／結果〉・有料価値・再利用素材・
+      制作見込み時間・見送り理由）／`buildPaid100Draft.ts`（選定後、無料エリア
+      3節＋有料エリア5節〈手順／AI指示文〈コピペ用〉／候補比較／確認方法／
+      再利用テンプレート〉＋出典＋注意事項＋ハッシュタグ4個。確定不能箇所は
+      `[マロン具体化]` マーカー。出典は再利用元から引き継ぎ）。
+    - **CLI `cms/src/scripts/paid100.ts` ＋ `scripts/project02` の `paid100)` dispatch
+      （追記のみ・既存 case 無変更）**：`./p2 paid100 propose`（読み取り専用・
+      `.devlogs/paid100/<ISO週>/proposals.json` へ保存）／`./p2 paid100 draft <番号>`
+      （`payload.create({ collection:'articles', draft:true, data:{ lane:'paid_100',
+      priceYen:100, reviewStatus:'draft', series:{label:...}, editorialProvenance:
+      〈再利用元から〉 } })`。人間承認ゲート不変。同一再利用元の二重生成は
+      `aiGeneratedBy` の `paid100 source=#<id>` で防止）／`./p2 paid100 status`。
+      **note への自動ログイン・自動公開は実装しない**。
+    - **回帰テスト**：新規 `cms/src/lib/__checks__/paid100.check.ts`（8件）＋
+      `run-all.ts` 登録。
+
+    **検証**：`payload generate:types` 0エラー／`tsc --noEmit`（cms）0エラー／
+    `run-all.ts` **367 passed 0 failed**（+8）／`regressCommonArticleFacts`・
+    `regressPipeline`・`renderArticleFromTemplate`・`verifyStage2`・`verifyStage4`
+    すべて PASS。実 CLI 検証：`./p2 paid100 propose` → 無料記事24件から3案
+    （案1 src#58 更紗展／案2 src#36 赤地陶房／案3 src#57 チーク）＋見送り11件。
+    `./p2 paid100 draft 1` → **Article #59** を生成（`lane='paid_100'`・
+    `priceYen=100`・`reviewStatus='draft'`・本文70ブロック・`editorialProvenance`
+    6件〈#58 から引き継ぎ＝DC#549〉・series ラベル一致）→ dedup ガード再実行で
+    ABORT を確認 → **内容確認後 Article #59 を削除して DB baseline へ復元**
+    （`articles` 24件・`paid_100` 0件）。
+
+    **未確定・次工程**：有料エリア本文の AI 肉付けの要否（現状は決定的
+    スキャフォールド＋`[マロン具体化]`）。100円・週2本・水/土は初期目標で
+    10〜12月に見直す。正本 `PAID_100_LANE_SPEC.md`。
+
   - 2026-09-10（📰 note 記事冒頭マストヘッド（GINZA TIME EDIT）を恒久ルール化 ＋
     article 58 を published へ更新。**Project 02 コミット・push あり／DB 更新 2 件**）:
 
