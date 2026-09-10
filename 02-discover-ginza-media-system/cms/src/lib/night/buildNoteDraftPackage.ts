@@ -92,6 +92,25 @@ export function confirmedSourceUrls(
   return out
 }
 
+/**
+ * 読者向け本文に実際に載っている出典 URL を、出現順で重複排除して返す。
+ * links.sourceUrls は「読者に見える出典」と一致させる（本文の「出典」欄＝2本なら
+ * links.sourceUrls も2本）。confirmed だが本文に載せていない社内確認用 URL
+ * （営業時間ページ等）はここに含めない。本文に URL が1本も無い記事のみ、
+ * 呼び出し側が confirmedSourceUrls(prov) にフォールバックする。
+ */
+export function bodySourceUrls(bodyText: string): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const m of bodyText.matchAll(/https?:\/\/[^\s、。「」（）()<>"']+/g)) {
+    const url = m[0].replace(/[.,)）」】]+$/, '').trim()
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    out.push(url)
+  }
+  return out
+}
+
 function nodeText(n: unknown): string {
   if (!n || typeof n !== 'object') return ''
   const node = n as { text?: unknown; children?: unknown }
@@ -271,9 +290,12 @@ export async function buildNoteDraftPackage(
 
   // --- editorialProvenance の集計 ---
   const prov: any[] = Array.isArray(article.editorialProvenance) ? article.editorialProvenance : []
-  // 修正3：読者向け／links.sourceUrls は confirmed の公式出典だけ。unconfirmed・除外記録は
-  //        editorialProvenance（CMS 内部）にのみ残し、パッケージの出典一覧には出さない。
-  const sourceUrls: string[] = confirmedSourceUrls(prov)
+  // 修正3：読者向け／links.sourceUrls は本文の「出典」欄に実際に載っている URL と一致させる。
+  //        confirmed でも本文に載せていない社内確認用 URL（営業時間ページ等）は含めない。
+  //        本文に URL が無い記事だけ、confirmed の provenance URL にフォールバックする。
+  //        unconfirmed・除外記録は editorialProvenance（CMS 内部）にのみ残す。
+  const bodyUrls = bodySourceUrls(bodyText)
+  const sourceUrls: string[] = bodyUrls.length > 0 ? bodyUrls : confirmedSourceUrls(prov)
   let confirmed = 0
   let unconfirmed = 0
   let conflicting = 0

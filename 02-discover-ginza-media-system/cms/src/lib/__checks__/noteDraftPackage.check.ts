@@ -12,6 +12,7 @@ import {
   isHashtagHeading,
   extractIllustrationCaption,
   confirmedSourceUrls,
+  bodySourceUrls,
   DEFAULT_ILLUSTRATION_CAPTION,
   HERO_IMAGE_CAPTION,
 } from '../night/buildNoteDraftPackage'
@@ -118,6 +119,29 @@ const cases: CheckCase[] = [
       assert(extractIllustrationCaption(inlineOnly)?.startsWith('※画像は記事内容をもとに生成した'), '行頭一致で抽出')
       // 無ければ null（呼び出し側で DEFAULT にフォールバック）
       assert(extractIllustrationCaption(['本文だけ。', 'もう一段落。']) === null, '注釈なし→null')
+    },
+  },
+  {
+    name: '修正3: bodySourceUrls — 本文に載っている出典 URL だけを出現順・重複排除で返す',
+    fn: () => {
+      const body = [
+        'GINZA TIME EDIT',
+        '本文。詳細は下記。',
+        '出典',
+        'https://www.motoji.co.jp/blogs/events/sarasa202609',
+        'https://www.motoji.co.jp/pages/shops',
+        'https://www.motoji.co.jp/blogs/events/sarasa202609', // 重複
+      ].join('\n\n')
+      const urls = bodySourceUrls(body)
+      assert(urls.length === 2, `件数: ${urls.length} (${urls.join(', ')})`)
+      assert(urls[0] === 'https://www.motoji.co.jp/blogs/events/sarasa202609', `1件目: ${urls[0]}`)
+      assert(urls[1] === 'https://www.motoji.co.jp/pages/shops', `2件目: ${urls[1]}`)
+      // 本文に載っていない confirmed 社内確認用 URL（営業時間ページ）は返さない
+      assert(!urls.some((u) => u.includes('information/openinghours')), '営業時間ページ URL が混入していない')
+      // 末尾の句読点・括弧を URL に含めない
+      assert(bodySourceUrls('参考（https://example.com/a）と、https://example.com/b。')[0] === 'https://example.com/a', 'カッコ除去')
+      // URL の無い本文は空配列（呼び出し側が confirmedSourceUrls にフォールバックする）
+      assert(bodySourceUrls('URLのない本文。段落2。').length === 0, 'URLなし→空配列')
     },
   },
   {
