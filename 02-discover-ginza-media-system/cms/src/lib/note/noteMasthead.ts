@@ -209,12 +209,13 @@ export function stripMasthead(input: string): string {
 }
 
 /**
- * 本文ユニット配列 + 末尾ハッシュタグ行を、マストヘッド固定文を冒頭に付けた
- * note 転記用プレーンテキストへ合成する。既にマストヘッドを含む場合は二重付与しない。
+ * 本文ユニット配列を、マストヘッド固定文を冒頭に付けた note 転記用プレーンテキストへ
+ * 合成する。既にマストヘッドを含む場合は二重付与しない。
+ * ハッシュタグは本文に入れない（2026-09-10。hashtags.note にのみ保持し、転記時に
+ * note のタグ欄へ設定する運用）。
  */
-export function composeNoteBodyWithMasthead(bodyUnits: string[], hashtagLine: string): string {
+export function composeNoteBodyWithMasthead(bodyUnits: string[]): string {
   const joined = bodyUnits.filter((u) => u && u.trim()).join('\n\n')
   const parts = bodyHasMasthead(joined) ? [joined] : [NOTE_MASTHEAD_TEXT, joined]
-  if (hashtagLine && hashtagLine.trim()) parts.push(hashtagLine.trim())
   return parts.filter(Boolean).join('\n\n') + '\n'
 }

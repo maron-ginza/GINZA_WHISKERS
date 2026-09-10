@@ -19,18 +19,78 @@ import {
 //
 // tnsBuildNoteReady36.ts のマーカー規約を通常記事向けに一般化したもの。
 // ただし画像は body に [IMAGE: ...] マーカーを挿入せず、配置情報を images[]
-// （marker / role / placement）にのみ持たせる。末尾ハッシュタグ行のみ body に
-// 付与する。TNS 専用スクリプトはそのまま残す（この関数は TNS を対象にしない）。
+// （marker / role / placement）にのみ持たせる。
+//
+// 【2026-09-10 共通不具合の根本修正】
+//  1. ハッシュタグ重複：body 本文にはハッシュタグ行を入れない。4個は hashtags.note
+//     （note-draft.json）だけに保持し、本文の既存ハッシュタグ行・見出しは除去する。
+//  2. 挿絵注釈：category_icon / hero の caption は「記事本文の正式な挿絵注釈」を使う。
+//     記事固有の注釈があればそれを優先。無ければ DEFAULT_ILLUSTRATION_CAPTION。
+//     旧・汎用 caption（HERO_IMAGE_CAPTION）へは巻き戻さない。
+//  3. 出典 URL：links.sourceUrls と読者向けには confirmed の公式出典だけを入れる。
+//     unconfirmed / 除外・削除理由の記録は editorialProvenance（CMS 内部）にのみ保持。
 //
 // **公開・approve・スキーマ変更・DB 書き込みは一切しない。**
 
 const INTERNAL_ANGLE_LABEL_RE = /^【[^】]+】$/
 const HASHTAG_RE = /#[^\s#、。，．,.]+/g
+// テキスト全体がハッシュタグ（＋空白）だけで構成される行
+const HASHTAG_ONLY_RE = /^\s*#[^\s#、。，．,.]+(?:\s+#[^\s#、。，．,.]+)*\s*$/
 
-// Editorial Trust Layer（独自生成画像の読者向け注釈。2026-09-08追加）。
-// 冒頭挿絵（hero）に独自生成画像を使う場合、note 本文にこの注釈を併記する。
+// Editorial Trust Layer（独自生成画像の読者向け注釈）。
+// 旧・汎用文（商品・店舗）。後方互換のため残すが、caption には使わない。
 export const HERO_IMAGE_CAPTION =
   '※画像は記事内容をもとに生成したイメージです。実際の商品・店舗とは異なる場合があります。'
+
+// 記事本文に挿絵注釈が無い場合の既定（2026-09-10。汎用文へ巻き戻さない）。
+export const DEFAULT_ILLUSTRATION_CAPTION =
+  '※画像は記事内容をもとに生成したイメージです。実際の展示作品・会場とは異なります。'
+
+/** テキストがハッシュタグだけの行か（本文から除去する対象） */
+export function isHashtagOnlyText(t: string | null | undefined): boolean {
+  const s = (t ?? '').trim()
+  return s.length > 1 && HASHTAG_ONLY_RE.test(s)
+}
+
+/** 「ハッシュタグ」だけの見出しか（本文から除去する対象） */
+export function isHashtagHeading(tag: string, t: string | null | undefined): boolean {
+  return (tag === 'h2' || tag === 'h3') && (t ?? '').trim() === 'ハッシュタグ'
+}
+
+/**
+ * 記事本文（見出し・段落テキストの配列）から「挿絵注釈」を取り出す。
+ * ・「挿絵注釈」見出しの直後の段落、または
+ * ・「※画像は記事内容をもとに生成したイメージ…」で始まる行
+ * を記事固有 caption として優先。無ければ null。
+ */
+export function extractIllustrationCaption(units: string[]): string | null {
+  for (let i = 0; i < units.length; i++) {
+    const u = (units[i] ?? '').trim()
+    if (u === '挿絵注釈' || u === '挿絵注釈について') {
+      const next = (units[i + 1] ?? '').trim()
+      if (next) return next
+    }
+    if (/^※\s*画像は記事内容をもとに生成した/.test(u)) return u
+  }
+  return null
+}
+
+/** editorialProvenance から confirmed の出典 URL だけを重複排除して返す */
+export function confirmedSourceUrls(
+  prov: { sourceUrl?: string | null; verificationStatus?: string | null }[],
+): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of prov) {
+    const url = String(p?.sourceUrl ?? '').trim()
+    if (!url) continue
+    if ((p?.verificationStatus ?? '') !== 'confirmed') continue
+    if (seen.has(url)) continue
+    seen.add(url)
+    out.push(url)
+  }
+  return out
+}
 
 function nodeText(n: unknown): string {
   if (!n || typeof n !== 'object') return ''
@@ -126,6 +186,16 @@ export async function buildNoteDraftPackage(
   const units: string[] = []
   const images: NoteDraftImageSlot[] = []
 
+  // 事前スキャン：挿絵注釈（記事固有 caption）と本文中のハッシュタグを先に拾う。
+  const rawUnits = kids.map((c) => nodeText(c).trim()).filter(Boolean)
+  const bodyHashtags = extractHashtags(rawUnits.filter(isHashtagOnlyText).join(' '))
+  // 修正1：4個は socialCopy 由来を優先し、無ければ本文のハッシュタグ行から拾う。
+  const noteHashtags = extractHashtags((article.socialCopy ?? {}).note)
+  const finalNoteHashtags = noteHashtags.length > 0 ? noteHashtags : bodyHashtags
+  // 修正2：category_icon / hero の caption は記事本文の正式な挿絵注釈を使う。
+  //        記事固有があればそれを優先、無ければ DEFAULT_ILLUSTRATION_CAPTION（汎用文へ巻き戻さない）。
+  const illustrationCaption = extractIllustrationCaption(rawUnits) ?? DEFAULT_ILLUSTRATION_CAPTION
+
   // images[0]：マストヘッド先頭のカテゴリーアイコン（必須・1点）
   images.push({
     marker: `[IMAGE: カテゴリーアイコン ${iconResolved.iconSlug ?? '（未確定）'}]`,
@@ -137,6 +207,7 @@ export async function buildNoteDraftPackage(
           `media/discover-ginza-category-icons/${iconResolved.iconFile}）。${iconResolved.reason}`
         : `カテゴリー未確定：${iconResolved.reason}`,
     status: 'not_prepared',
+    caption: illustrationCaption,
   })
 
   const heroMarker = '[IMAGE: アイキャッチ]'
@@ -149,8 +220,8 @@ export async function buildNoteDraftPackage(
       '独自撮影／独自アイキャッチ／権利上問題のない独自生成画像のいずれかを配置する。',
     status: 'not_prepared',
     // 独自生成画像を使う場合、note 転記時に画像直下へこの注釈を併記する
-    // （独自撮影・独自アイキャッチ等、生成画像でない場合は削除してよい）。
-    caption: HERO_IMAGE_CAPTION,
+    // （記事本文の正式な挿絵注釈と同一。独自撮影等で不要なら削除してよい）。
+    caption: illustrationCaption,
   })
 
   let firstBlock = true
@@ -165,6 +236,9 @@ export async function buildNoteDraftPackage(
       continue
     }
     firstBlock = false
+
+    // 修正1：ハッシュタグ行・「ハッシュタグ」見出しは body に入れない（note のタグ欄へ）
+    if (isHashtagOnlyText(t) || isHashtagHeading(tag, t)) continue
 
     if (sectionImageMarkers && (tag === 'h2' || tag === 'h3')) {
       const label = t.length > 20 ? `${t.slice(0, 20)}…` : t
@@ -181,33 +255,30 @@ export async function buildNoteDraftPackage(
     units.push(t)
   }
 
-  // --- ハッシュタグ（socialCopy テキストから抽出） ---
+  // --- ハッシュタグ（socialCopy 優先・無ければ本文のハッシュタグ行から。修正1） ---
   const sc = article.socialCopy ?? {}
   const hashtags: NoteDraftHashtags = {
-    note: extractHashtags(sc.note),
+    note: finalNoteHashtags,
     x: extractHashtags(sc.x),
     instagram: extractHashtags(sc.instagram),
   }
-  const noteTags = hashtags.note.length > 0 ? hashtags.note : ['#銀座', '#GINZAWHISKERS']
 
-  // --- 冒頭にマストヘッド固定文、末尾にハッシュタグ行を付与（note 転記用） ---
+  // --- 冒頭にマストヘッド固定文を付与（note 転記用）。修正1：本文にハッシュタグ行は入れない ---
   // マストヘッド固定文は body 先頭へ（既に含まれていれば二重付与しない）。
   // カテゴリーアイコンは images[0] の配置指示に従い、この固定文の直前に置く。
-  const bodyText = composeNoteBodyWithMasthead(units, noteTags.join(' '))
+  // ハッシュタグ4個は hashtags.note にのみ保持し、転記時に note のタグ欄へ設定する。
+  const bodyText = composeNoteBodyWithMasthead(units)
 
   // --- editorialProvenance の集計 ---
   const prov: any[] = Array.isArray(article.editorialProvenance) ? article.editorialProvenance : []
-  const sourceUrls: string[] = []
-  const seenUrl = new Set<string>()
+  // 修正3：読者向け／links.sourceUrls は confirmed の公式出典だけ。unconfirmed・除外記録は
+  //        editorialProvenance（CMS 内部）にのみ残し、パッケージの出典一覧には出さない。
+  const sourceUrls: string[] = confirmedSourceUrls(prov)
   let confirmed = 0
   let unconfirmed = 0
   let conflicting = 0
   const facts = prov.map((p) => {
     const url = String(p.sourceUrl ?? '').trim()
-    if (url && !seenUrl.has(url)) {
-      seenUrl.add(url)
-      sourceUrls.push(url)
-    }
     const vs = p.verificationStatus ?? null
     if (vs === 'confirmed') confirmed++
     else if (vs === 'conflicting') conflicting++

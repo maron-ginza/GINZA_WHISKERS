@@ -120,7 +120,7 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'buildPaid100Draft: 無料エリア＋有料5節＋出典再利用＋注意事項＋ハッシュタグ4個',
+    name: 'buildPaid100Draft: 無料3節＋有料6節（3コース45/90/150・予算別・雨天・AI指示文・再利用テンプレ・確認方法）＋出典再利用＋タグ4',
     fn: () => {
       const r = proposePaid100Candidates([reproducibleArticle], { weekLabel: '2026-W37' })
       const d = buildPaid100Draft(r.proposals[0], reproducibleArticle)
@@ -128,18 +128,43 @@ const cases: CheckCase[] = [
       assert(d.seriesLabel === PAID100_SERIES_LABEL_V1, `series: ${d.seriesLabel}`)
       assert(d.freeSections.length === 3, `無料節: ${d.freeSections.length}`)
       const paidHeads = d.paidSections.map((s) => s.heading).join(' / ')
-      assert(/具体的な手順/.test(paidHeads) && /AIへの指示文/.test(paidHeads) && /候補の比較/.test(paidHeads) && /確認方法/.test(paidHeads) && /再利用できるテンプレート/.test(paidHeads), `有料節: ${paidHeads}`)
+      assert(/45分／90分／150分/.test(paidHeads), `3コース見出し: ${paidHeads}`)
+      assert(/予算別/.test(paidHeads), `予算別: ${paidHeads}`)
+      assert(/雨天時/.test(paidHeads), `雨天時: ${paidHeads}`)
+      assert(/AIへそのまま渡せる指示文/.test(paidHeads), `AI指示文: ${paidHeads}`)
+      assert(/再利用できる記入式テンプレート/.test(paidHeads), `再利用テンプレ: ${paidHeads}`)
+      assert(/公式情報の確認方法/.test(paidHeads), `確認方法: ${paidHeads}`)
+      // 3コース節に 45/90/150 分すべてが登場する
+      const courses = d.paidSections.find((s) => /時間別の3コース/.test(s.heading))!
+      const cjoin = courses.lines.join('\n')
+      assert(/45分コース/.test(cjoin) && /90分コース/.test(cjoin) && /150分コース/.test(cjoin), `3コース本文: ${cjoin.slice(0, 120)}`)
+      // AI指示文にコピペ用の --- 区切りが2つ以上
+      const aiPrompt = d.paidSections.find((s) => /AIへそのまま渡せる指示文/.test(s.heading))!
+      assert(aiPrompt.lines.filter((l) => l === '---').length >= 2, 'コピペ用の区切り')
+      // 再利用テンプレートに記入欄（＿）がある
+      const tmpl = d.paidSections.find((s) => /再利用できる記入式テンプレート/.test(s.heading))!
+      assert(tmpl.lines.some((l) => l.includes('＿')), '記入欄')
       assert(d.sources.some((s) => s.sourceUrl.includes('motoji.co.jp')), '出典を再利用')
       assert(d.hashtags.length === 4, `ハッシュタグ数: ${d.hashtags.length}`)
       assert(d.hashtags.includes('#銀座') && d.hashtags.includes('#AIで叶えるわたしだけの銀座'), `タグ: ${d.hashtags.join(' ')}`)
-      assert(d.notes.some((n) => /自動公開しない/.test(n)) && d.notes.some((n) => /lane=paid_100|加算しない/.test(n)), `注意事項: ${d.notes.join(' / ')}`)
-      // AIへの指示文にコピペ用のブロック（---）が含まれる
-      const aiPrompt = d.paidSections.find((s) => /AIへの指示文/.test(s.heading))!
-      assert(aiPrompt.lines.filter((l) => l === '---').length >= 2, 'コピペ用の区切り')
+      assert(d.notes.some((n) => /自動公開しない/.test(n)), `注意: ${d.notes.join(' / ')}`)
+      assert(d.notes.some((n) => /施設の羅列にしない/.test(n)), `施設羅列禁止: ${d.notes.join(' / ')}`)
     },
   },
   {
-    name: 'buildPaid100Draft: 出典が無い記事（本文は十分）は [マロン具体化] マーカーで穴埋めを促す',
+    name: 'buildPaid100Draft: --title 相当の titleOverride が第一タイトルになる',
+    fn: () => {
+      const r = proposePaid100Candidates([reproducibleArticle], { weekLabel: '2026-W37' })
+      const custom = '90分でも楽しめる。銀座もとじ『更紗展』から始める、私だけの銀座時間'
+      const d = buildPaid100Draft(r.proposals[0], reproducibleArticle, { titleOverride: custom })
+      assert(d.title === custom, `title: ${d.title}`)
+      // override 無しなら proposal.title
+      const d2 = buildPaid100Draft(r.proposals[0], reproducibleArticle)
+      assert(d2.title === r.proposals[0].title, `default title: ${d2.title}`)
+    },
+  },
+  {
+    name: 'buildPaid100Draft: 出典が無い記事（本文は十分）は各所に [マロン具体化] マーカーで穴埋めを促す',
     fn: () => {
       const src = art({
         id: 301,
@@ -155,8 +180,8 @@ const cases: CheckCase[] = [
       const r = proposePaid100Candidates([src], { weekLabel: '2026-W37' })
       assert(r.proposals.length === 1, `件数: ${r.proposals.length}`)
       const d = buildPaid100Draft(r.proposals[0], src)
-      const cmp = d.paidSections.find((s) => /候補の比較/.test(s.heading))!
-      assert(cmp.lines.some((l) => l.includes('[マロン具体化]')), `比較節: ${cmp.lines.join(' / ')}`)
+      const allLines = [...d.freeSections, ...d.paidSections].flatMap((s) => s.lines).join('\n')
+      assert(/\[マロン具体化\]/.test(allLines), 'マロン具体化マーカーあり')
       assert(d.sources.length === 0, '出典なし')
     },
   },

@@ -119,16 +119,16 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'composeNoteBodyWithMasthead: 冒頭へ前置し、末尾にハッシュタグ行、二重付与しない',
+    name: 'composeNoteBodyWithMasthead: 冒頭へ前置し、本文にハッシュタグ行は入れない、二重付与しない',
     fn: () => {
-      const out = composeNoteBodyWithMasthead(['見出し', '本文段落。'], '#銀座 #銀座もとじ #更紗 #きもの')
+      const out = composeNoteBodyWithMasthead(['見出し', '本文段落。'])
       assert(out.startsWith('GINZA TIME EDIT\nby GINZA WHISKERS'), `冒頭: ${out.slice(0, 30)}`)
       assert(out.includes('次の銀ブラに、私だけの銀座時間を。'), '固定文末尾')
       assert(out.includes('本文段落。'), '本文')
-      assert(out.trimEnd().endsWith('#銀座 #銀座もとじ #更紗 #きもの'), 'ハッシュタグ行が末尾')
+      assert(!/#[^\s#]/.test(out), `本文にハッシュタグを含まない: ${out}`)
       const mhCount = out.split('GINZA TIME EDIT').length - 1
       // 既にマストヘッドを含む入力なら二重付与しない
-      const out2 = composeNoteBodyWithMasthead([NOTE_MASTHEAD_TEXT, '本文。'], '#銀座')
+      const out2 = composeNoteBodyWithMasthead([NOTE_MASTHEAD_TEXT, '本文。'])
       assert(out2.split('GINZA TIME EDIT').length - 1 === 1, `二重付与: ${out2.split('GINZA TIME EDIT').length - 1}`)
       assert(mhCount === 1, `1回だけ: ${mhCount}`)
     },

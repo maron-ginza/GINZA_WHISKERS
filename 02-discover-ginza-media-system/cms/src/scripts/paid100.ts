@@ -129,13 +129,15 @@ async function cmdPropose(): Promise<number> {
   return 0
 }
 
-// ── draft <n> ───────────────────────────────────────────────────────────
-async function cmdDraft(argN: string): Promise<number> {
+// ── draft <n> [--title=...] ─────────────────────────────────────────────
+async function cmdDraft(argN: string, rest: string[]): Promise<number> {
   const n = Number(argN)
   if (!Number.isInteger(n) || n < 1) {
-    console.error('Usage: ./p2 paid100 draft <1-3>（先に ./p2 paid100 propose を実行）')
+    console.error('Usage: ./p2 paid100 draft <1-3> [--title="第一タイトル"]（先に ./p2 paid100 propose を実行）')
     return 1
   }
+  const titleFlag = rest.find((a) => a.startsWith('--title='))
+  const titleOverride = titleFlag ? titleFlag.slice('--title='.length).replace(/^["']|["']$/g, '') : undefined
   if (!existsSync(OUT_DIR)) {
     console.error('提案がありません。先に ./p2 paid100 propose を実行してください。')
     return 1
@@ -181,7 +183,7 @@ async function cmdDraft(argN: string): Promise<number> {
     provenance: provOf(srcDoc),
   }
 
-  const draft = buildPaid100Draft(proposal, source)
+  const draft = buildPaid100Draft(proposal, source, { titleOverride })
 
   // 重複ガード：同じ再利用元から生成した paid_100 記事が既にあれば中止
   const existing = await payload.find({
@@ -331,7 +333,7 @@ async function main() {
   const sub = process.argv[2]
   let code = 0
   if (sub === 'propose') code = await cmdPropose()
-  else if (sub === 'draft') code = await cmdDraft(process.argv[3])
+  else if (sub === 'draft') code = await cmdDraft(process.argv[3], process.argv.slice(4))
   else if (sub === 'status') code = await cmdStatus()
   else {
     console.log('Usage: ./p2 paid100 <propose|draft <番号>|status>')

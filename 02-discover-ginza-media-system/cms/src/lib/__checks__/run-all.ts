@@ -23,6 +23,7 @@ import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as noteMasthead } from './noteMasthead.check'
+import { suite as noteDraftPackage } from './noteDraftPackage.check'
 import { suite as paid100 } from './paid100.check'
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
@@ -50,6 +51,7 @@ const results: SuiteResult[] = [
   buildEditorialBrief(),
   buildFinalCandidateDigest(),
   noteMasthead(),
+  noteDraftPackage(),
   paid100(),
   extractStructuredDates(),
   eventEndBoundary(),
