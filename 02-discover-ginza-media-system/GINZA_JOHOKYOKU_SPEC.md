@@ -365,6 +365,44 @@ Editorial Style Engine 項目10 の読者向け表示形は本節の表記で更
 判定はすべて決定的（AI 呼び出しなし・追加課金なし）。承諾は従来どおりログイン中の
 マロンが admin で行う（このコマンドは `curationStatus` を変更しない）。
 
+#### 8.7.4 朝刊ブリーフ `./p2 morning-brief`（2026-09-11 追加・1画面・1操作）
+
+`./p2 themes recommend` が「候補プール全体の可視化」なのに対し、`./p2 morning-brief` は
+**本日の公開候補を3領域 各1本に絞り、承認判断に必要な情報を1画面へまとめる**。
+
+```
+./p2 morning-brief [--limit=N] [--json]
+```
+
+- **選定**：`assessInboxPool`（inbox＋approved）→ `selectRecommendedThemes`
+  （`enableTargetFitRanking`。§8.7.2 の偏り補正・7日間履歴込み）でスコア済みの
+  推奨+予備プールから、3領域（ビューティー／グルメ・スイーツ／文化・アート）各1本。
+  - **除外**：既に Article／note下書き 化済み（重複）／同一イベント・商品・URL の重複／
+    カテゴリー未確定（推測で付けない）。
+  - **施設集中の自動回避**：同一施設を2枠に跨がせない／直近採用施設と同一なら次点／
+    GINZA SIX・銀座三越・松屋銀座 系が既に1枠なら2枠目は別施設を優先。
+  - 該当候補が無い領域は **「該当なし」＋理由**（推測でカテゴリーや項目を埋めない）。
+- **1画面の内容**：候補ごとに 施設・情報源・スコア・ArticleFacts 状態 ＋
+  **必須 ArticleFacts 12項目**（正式名称／概要／価格／開催・販売期間／購入・参加条件／
+  場所／公式URL／出典名／出典確認日／18カテゴリー／Editorial Compass／選定理由）。
+  値は既存の `article-facts` ＋ DiscoveredContent の構造化フィールドのみから採る。
+  **無い項目は「公式記載なし」（検証状態は「未確認」）**。概要は `whatHappens` のみ
+  （`excerpt` はサイトナビ由来のノイズが多く事実に使わない）。Editorial Compass は
+  §8.7.2 の配分（かわいい20／上質30／自分を整える25／新しい発見15／少し背伸び10）で加重表示。
+- **マロンの操作は1回だけ**：
+  - **[承認]** 出力末尾の admin URL（picked DC を inbox のまま絞り込み）→ 全選択 →
+    一括編集 → `curationStatus = approved`。
+  - **[保留]** 何もしない（翌日の `morning-brief` で再評価）。
+  - **[却下]** 該当 DC を `curationStatus = rejected`。
+- **承認後の note 下書き自動転記**：`./p2 draft-today --yes`（承認済み DC → Article
+  draft を CORE 角度で生成。AI 課金あり・人間が明示実行）→ `./p2 night check <articleId>`
+  （§4.4 の転記前チェック）→ `./p2 night package <articleId>`（`note-body.txt` /
+  `note-draft.json` 生成 → マロンが note へ手動転記）。
+- **読み取り専用**：DB 書き込み・AI 呼び出し・課金・approve・note/Chrome 操作は一切なし。
+  出力は `.devlogs/morning/brief/<date>.{txt,json}` に保存。
+- 実装：`cms/src/lib/pipeline/morningBriefSelect.ts`（純粋）＋`cms/src/scripts/morningBrief.ts`。
+  回帰テスト `cms/src/lib/__checks__/morningBriefSelect.check.ts`。
+
 ---
 
 # 無料／有料コンテンツ設計

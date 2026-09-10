@@ -2687,6 +2687,18 @@ case "${1:-status}" in
     shift
     morning "$@"
     ;;
+  morning-brief)
+    shift
+    # 朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ（スイーツ含む）③文化・アート
+    # 各1本で選定 → 候補要約＋必須ArticleFacts(12項目)＋公式出典 を1画面 → 承認/保留/却下の1操作。
+    # 読み取り専用（DB書き込み・AI・課金・approve・note操作なし）。推測補完なし＝無い項目は「公式記載なし」。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningBrief.ts "$@" )
+    ;;
   prod-status)
     prod_status
     ;;
@@ -2744,6 +2756,7 @@ case "${1:-status}" in
     echo "  ./p2 am-candidates [--limit=N] [--json]  am-run の読み取り専用ビュー（--no-write 相当、外部取得なし）。A判定のみ優先順位5位まで、B/Cは別表。--json は 'grep -E \"^{\" | tail -1' で取得"
     echo "  ./p2 candidate-review <dcId...> [--no-fetch] [--json]  指定候補（複数可）の人間レビュー資料を1コマンドで生成：詳細・ArticleFacts/hashtags・既存Articles＋night queueとの重複・直近記事の施設/情報源偏り・（既定）当日の公式ページ再取得〈403等は「確認できません」と明記〉・適合理由/切り口・採用見送りの推奨。DB書き込み・AI呼び出し・ready化・記事作成・公開・push・note/Chrome/X操作なし。.devlogs/morning/candidate-review/ へ保存"
     echo "  ./p2 morning [--fetch]  朝の作業開始を1コマンドで：起動＋status/doctor/editorial/social/jobs/preflight＋【明朝パイプライン(am-run)】＋draft-today/draft-interestのdry-run＋次の推奨工程。明朝の候補生成はこの am-run が唯一の経路"
+    echo "  ./p2 morning-brief [--limit=N] [--json]  朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ(スイーツ含む) ③文化・アート 各1本で選定（施設集中の自動回避・重複/既記事化の除外・偏り補正）→ 候補要約＋必須ArticleFacts12項目(無い項目は「公式記載なし」)＋公式出典を1画面 → 承認/保留/却下の1操作(admin URL)＋承認後のnote下書き自動転記手順。読み取り専用・推測補完なし。.devlogs/morning/brief/ へ保存"
     echo "  ./p2 prod-status Railway/Cloudflareの本番リソース状態を読み取り専用で確認（railway_ro/wrangler_ro経由のみ、値は表示しません）"
     echo "  ./p2 pmo        morning + prod-status をまとめて実行（PMOレポート作成用の一括データ収集）"
     echo "  ./p2 open       Site/CMSを開く"

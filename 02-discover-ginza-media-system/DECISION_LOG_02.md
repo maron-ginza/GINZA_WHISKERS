@@ -14,6 +14,77 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11（🌅 朝刊ブリーフ `./p2 morning-brief` を新設。**Project 02
+    コミット・push あり／新規 migration なし／DB 更新なし＝読み取り専用**）:
+
+    **背景・目的**：本日の公開候補を「①ビューティー ②グルメ（スイーツ含む）
+    ③文化・アート」各1本で選び、候補要約＋必須 ArticleFacts（12項目）＋公式出典を
+    **1画面**にまとめ、マロンの操作を「承認／保留／却下」の**1回だけ**に減らす。
+    承認後は既存の `draft-today` → `night check` → `night package` で note 下書きへ
+    自動転記できる状態にする（根本改善・2026-09-14 目標の一部）。
+
+    **AUTUM/AUTUMN GINZA 2026 冊子の確認（最初に指示された確認事項）**：
+    `discovered_content`（632件）・`article_facts`・`source_ledger`／`sources`・
+    `interest_themes`・`.devlogs`（2026-09-09 分の作業記録＝DC #370/#603/#610 の
+    SKIP 記録のみ）・`content/`・`media/`・`_media_pipeline/`・リポジトリ内テキスト
+    を横断検索した結果、**AUTUMN GINZA 2026 の冊子・元資料・抽出データ・保存済み
+    データは一切存在しない**（3セッション連続で確認）。冊子画像もローカルの
+    どこにも無い（`~/Downloads`・`~/Desktop`・`~/Documents` 4階層＋プロジェクト
+    `media/` を確認）。冊子内容はこのセッションのコンテキストにも無い（前セッションで
+    共有されたが保存されていない）。**推測・空欄登録は行わず「確認できない」と報告**。
+    「現在画面に表示された空の登録テンプレート」は**どのファイルにも保存されていない**
+    ——前ターンのチャット返信内にのみ出力したもの（ファイル書き出しはしていない）。
+
+    **実装（決定的・AI 呼び出しなし・DB 書き込みなし・課金なし・approve/note 操作なし）**：
+    - 新規 `cms/src/lib/pipeline/morningBriefSelect.ts`（純粋）：
+      `buildMorningBrief`＝`assessInboxPool`＋`selectRecommendedThemes`（既存の
+      `enableTargetFitRanking`）でスコア済みの推奨+予備プールから、3領域
+      （`dailySelectionSupport.CORE_DAILY_BUCKETS`）各1本を選定。**除外**＝
+      alreadyDrafted（既に Article/note下書き 化）／duplicate（同一イベント・商品・URL）／
+      未確定カテゴリー（推測で付けない）。**施設集中回避**＝同一施設を2枠に跨がせない／
+      直近採用施設（`history.recentFacilitySequence`）と同一なら次点／GINZA SIX・
+      三越・松屋 系が既に1枠なら次点。`assembleBriefFacts`＝必須 ArticleFacts 12項目
+      （正式名称／概要／価格／開催・販売期間／購入・参加条件／場所／公式URL／出典名／
+      出典確認日／18カテゴリー／Editorial Compass／選定理由）を既存 `article-facts`＋
+      DiscoveredContent 構造化フィールドのみから組み立て、**無い項目は「公式記載なし」
+      （検証状態は「未確認」）**。概要は `whatHappens` のみ採用（`excerpt` はナビ
+      ノイズが多く事実に使わない）。`formatEditorialCompass`＝`targetFitCompass` を
+      かわいい20／上質30／自分を整える25／新しい発見15／少し背伸び10 で加重整形・主軸表示。
+      `buildSelectionReason`＝カテゴリー・target_fit・偏り補正・情報源の観点を機械生成。
+      該当なしのバケットは `pick=null`＋理由（推測補完しない）。
+    - 新規 `cms/src/scripts/morningBrief.ts`：上記を DB へ接続（`article-facts`／
+      `articles.editorialProvenance` の読み取りのみ）。1画面出力＋
+      `.devlogs/morning/brief/<date>.{txt,json}` 保存。**承認用の1操作**＝picked DC
+      （inbox）を絞り込んだ admin URL（`buildAdminCandidateReviewUrl`）。保留＝何もしない／
+      却下＝`curationStatus=rejected`。承認後の手順（`draft-today --yes` → `night check`
+      → `night package`）を明示。
+    - `scripts/project02`：`morning-brief)` dispatch＋usage（追記のみ・既存 case 無変更）。
+    - 回帰テスト 新規 `cms/src/lib/__checks__/morningBriefSelect.check.ts`（9件）＋
+      `run-all.ts` 登録。
+
+    **本日（node 現在時刻 2026-09-10）の実行結果**：inbox+approved 評価 200件
+    （A0/B116/C84）→ gate 通過 34 → 推奨+予備 9。**確定 2／3 領域**：
+    ①ビューティー＝DC #604「BI-SU初のフレグランスコレクション誕生 – GINZA SIX」
+    （BEAUTY・target_fit 38・Compass 主軸=自分を整える・ArticleFacts needs-facts・
+    概要/価格/期間/条件/場所は「公式記載なし」）／②グルメ・スイーツ＝**該当なし**
+    （分類できる公式確認可能な候補が承諾前プールに無い。#631 マドレーヌ等は
+    `unknown_type` で安全性 gate 落ち。推測でカテゴリーを付けない）／③文化・アート＝
+    DC #365「【展示】櫻井万里明 “Hustle!!” 刊行記念…」（PHOTO・会期 2026-09-11〜13・
+    ArticleFacts needs-facts・概要/価格/条件は「公式記載なし」）。GINZA SIX/三越/松屋 系は
+    1枠のみ（2枠集中なし）。
+
+    **既存機能との重複回避**：`assessInboxPool`／`selectRecommendedThemes`（5軸＋
+    2026-09-04 の各軸）／`dailySelectionSupport`／`buildAdminCandidateReviewUrl` を
+    **再実装せず流用**。`candidateReview.ts` は無変更。追加は「3領域各1本の選定」
+    「12項目の公式記載なし整形」「1操作の承認導線」「承認後 note 転記手順の明示」の
+    オーケストレーション層のみ。
+
+    **検証**：`tsc --noEmit`（cms）0エラー／`run-all.ts` **398 passed 0 failed**
+    （新規 morningBriefSelect 9件）／`./p2 morning-brief`（実データ）でエラーなく
+    1画面描画・`.json` 出力を確認。**DB 変更なし・`curationStatus` 変更なし・
+    approve なし・AI 呼び出しなし・note/Chrome 操作なし・課金なし。**
+    正本 `GINZA_JOHOKYOKU_SPEC.md` §8.7.4。
+
   - 2026-09-10（🗓 2026年10月 初期トライアルの運用決定を反映＋候補選定画面に
     支援表示を追加。**Project 02 コミット・push あり／新規 migration なし／
     DB 更新なし（読み取り専用の表示追加）**）:
