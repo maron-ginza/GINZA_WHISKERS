@@ -14,6 +14,65 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-10（📰 note 記事冒頭マストヘッド（GINZA TIME EDIT）を恒久ルール化 ＋
+    article 58 を published へ更新。**Project 02 コミット・push あり／DB 更新 2 件**）:
+
+    **① マストヘッドの恒久ルール（実装）**：今後すべての note 記事の冒頭に、次の順で
+    必ず挿入する運用に確定した。
+      1. 記事分類に対応する 18 カテゴリーアイコンを 1 点
+      2. 固定文章「GINZA TIME EDIT / by GINZA WHISKERS ／ 400年の銀座を、今日の私へ。
+         ／ 新しい店、季節の味、アート、舞台、街に残る小さな物語。銀座の過去、現在、
+         未来を紡ぎながら、「今、この銀座に出会う理由」を GINZA WHISKERS の編集視点で
+         届けます。／ 次の銀ブラに、私だけの銀座時間を。」（一字一句不変）
+      3. その後に各記事の本文
+
+    **設計**：マストヘッドは **note 転記レイヤーの要素**であり、CMS の記事本文
+    （`Articles.body`）には生成・保存しない（重複防止）。
+      - 新規 `cms/src/lib/note/noteMasthead.ts`：`NOTE_MASTHEAD_TEXT`（唯一の正）、
+        18 カテゴリー → アイコン（slug／ファイル名）の `CATEGORY_ICONS`、
+        `resolveCategoryIcon()`（`deriveProvisionalCategory` を主に、明記語→18カテゴリー。
+        当たらなければ収蔵室〈文化・アート→ART／建築→ARCHITECTURE／イベント→EVENT〉の
+        弱いフォールバック。どれも当たらなければ `status:'needs_human'`）、
+        `stripMasthead()` / `bodyHasMasthead()` / `composeNoteBodyWithMasthead()`。
+      - 転記パッケージ `cms/src/lib/night/buildNoteDraftPackage.ts`：`NoteDraftPackage`
+        に `masthead`（必須）を追加。`images[0]` を `role:'category_icon'` として
+        マストヘッド先頭へ。`body` 冒頭へ固定文を前置（既に含む場合は二重付与しない）。
+        `resolveCategoryIcon` が `needs_human` のときは **BLOCKER
+        `categoryIconUnresolved` で停止**（＝マロンがアイコンを 1 点指定するまで
+        パッケージ化しない）。`chromeHandoff.steps` にアイコン配置・固定文不変更の
+        手順を追記。
+      - `cms/src/lib/night/types.ts`：`NoteMasthead` 型、`NoteDraftImageSlot.role` に
+        `'category_icon'` を追加。
+      - note 下書き生成テンプレート側 `cms/src/lib/template/polishArticleDraft.ts`：
+        `polishTextFragment` に `stripMasthead` を追加し、生成物に固定文が混入しても
+        `Articles.body` からは除去する（重複生成の禁止をコードで担保）。空になった
+        ブロックは段落・見出しとも落とす。
+      - 回帰テスト 新規 `cms/src/lib/__checks__/noteMasthead.check.ts`（9件）＋
+        `run-all.ts` へ登録。検証：`tsc --noEmit`（cms）0エラー／`run-all.ts`
+        **359 passed 0 failed**（+9）／`regressCommonArticleFacts`・`regressPipeline`・
+        `verifyStage2`・`verifyStage4`・`renderArticleFromTemplate`・`verifyPhase2b`・
+        `ginzaSixAutoResolve` すべて PASS。
+      - **既存記事へは一括適用しない**（記事本文は変更しない）。**article 58 は
+        マロンが note へ手動転記する際にマストヘッドを挿入済みのため、CMS 本文は
+        変更しない**（このルールは今後生成する記事の転記パッケージに効く）。
+
+    **② article 58「銀座もとじ 更紗展」を published へ更新**（DB 更新・マロン承認済み）：
+      - 事前バックアップ `_backups/articles_before_publish58_20260910_103121.sql`
+        （`articles*`／`_articles_v*`／`article_editorial_provenance` の data-only）。
+      - `reviewStatus=published` / `_status=published`（新バージョン 92・latest）。
+        人間承認ゲート（`Articles.beforeChange`：published は `req.user` 必須）は
+        使い捨てスクリプトで `user`（id 1）を渡して通過。
+      - `publishHistory` に `{ channel:'note', publishedAt:'2026-09-10T10:17:18+09:00'
+        （note 公開ページ datePublished / JST）, reference:
+        'https://note.com/ginza_whiskers/n/n525aa8ac0414' }` を追加。
+      - draft 版 91 の hero 画像（image-assets id 11・`variant:note_header`）と
+        `seo.ogImage=11` を published スナップショットへ引き継ぎ。本文・タイトル・
+        出典は不変。`editorialProvenance` の DC#549 紐づけ（6 fact）維持。
+      - **Published Articles 件数 1 → 2**。
+      - 実行に使った使い捨てスクリプト（`cms/src/scripts/registerMotojiSarasaDraft.ts`
+        は前セッション、`registerMotojiSarasaImage.ts`・`publishArticle58.ts` は
+        本セッション）はいずれも実行後に削除。リポジトリに残していない。
+
   - 2026-09-04（🌏 GINZA CROSS CULTURE MAP v1 — 5市場文化視点フィルターの新規実装。
     **ローカル検証まで・commit なし・DB 書き込みなし・追加課金なし**）:
 

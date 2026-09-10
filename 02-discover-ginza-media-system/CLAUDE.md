@@ -451,6 +451,28 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
      ファイル命名・配置ルールの確定までであり、画像生成の自動実行・
      実コード実装はいずれも行っていない**——実装要否・範囲は別途
      Human Editor確認事項として残っている。
+- **note 記事冒頭マストヘッド「GINZA TIME EDIT」（2026-09-10確定・実装済み）**：
+  今後**すべての note 記事の冒頭**に、次の順で必ず挿入する。
+  1. 記事内容に対応する**18カテゴリーのカテゴリーアイコンを1点**（Visual
+     Asset Library §3.3 の18種。`resolveCategoryIcon()` が記事分類から決定的に
+     選ぶ——明記語→18カテゴリー〈`deriveProvisionalCategory`〉が主、当たらなければ
+     収蔵室〈文化・アート→ART／建築→ARCHITECTURE／イベント→EVENT〉の弱い
+     フォールバック、どれも当たらなければ**人間確認で停止**〈推測で埋めない〉）。
+  2. **固定文章（一字一句変更しない）**：
+     「GINZA TIME EDIT／by GINZA WHISKERS／400年の銀座を、今日の私へ。／新しい店、
+     季節の味、アート、舞台、街に残る小さな物語。銀座の過去、現在、未来を紡ぎながら、
+     「今、この銀座に出会う理由」を GINZA WHISKERS の編集視点で届けます。／次の銀ブラに、
+     私だけの銀座時間を。」
+  3. その後に各記事の本文。
+  **設計原則**：マストヘッドは **note 転記レイヤーの要素**であり、CMS の記事本文
+  （`Articles.body`）には生成・保存しない（`polishArticleDraft` の `stripMasthead`
+  で混入を除去＝重複生成の禁止をコードで担保）。固定文の正本は
+  `cms/src/lib/note/noteMasthead.ts` の `NOTE_MASTHEAD_TEXT`。転記パッケージ
+  （`buildNoteDraftPackage`）が `masthead`（必須）を持ち、`images[0]` を
+  `role:'category_icon'` として先頭へ、`body` 冒頭へ固定文を前置する
+  （既に含む場合は二重付与しない）。カテゴリーアイコンが確定できないときは
+  BLOCKER `categoryIconUnresolved` でパッケージ化を止める。既存記事へは
+  一括適用しない。詳細は `DECISION_LOG_02.md` 2026-09-10。
 - **読者接続の編集ロジック（2026-08-21確定）**：noteコンテストのテーマ
   研究を踏まえ、Editorial Style Engine（項目1〜4：タイトル・冒頭・本文
   構造・Editor's Choice構成）の生成ロジックを拡張する。従来の「旬の
@@ -780,6 +802,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-10: 📰 **note 記事冒頭マストヘッド（GINZA TIME EDIT）を恒久ルール化＋article 58 を published へ更新（Project 02 commit・push あり／DB更新2件）**——**恒久ルール**：今後すべての note 記事の冒頭へ①記事分類に対応する18カテゴリーアイコン1点 ②固定文「GINZA TIME EDIT／by GINZA WHISKERS／400年の銀座を、今日の私へ。／新しい店、季節の味、アート、舞台、街に残る小さな物語。銀座の過去、現在、未来を紡ぎながら、「今、この銀座に出会う理由」を GINZA WHISKERS の編集視点で届けます。／次の銀ブラに、私だけの銀座時間を。」（一字一句不変）③その後に本文、をこの順で必ず挿入する。マストヘッドは **note 転記レイヤーの要素**で CMS の `Articles.body` には生成・保存しない（重複防止）。**実装**：新規 `cms/src/lib/note/noteMasthead.ts`（`NOTE_MASTHEAD_TEXT`＝唯一の正／18カテゴリー→アイコン `CATEGORY_ICONS`〈slug・ファイル名〉／`resolveCategoryIcon()`＝`deriveProvisionalCategory` の明記語判定を主に、収蔵室〈文化・アート→ART／建築→ARCHITECTURE／イベント→EVENT〉の弱いフォールバック、どれも当たらなければ `needs_human`／`stripMasthead`・`composeNoteBodyWithMasthead`）。転記パッケージ `cms/src/lib/night/buildNoteDraftPackage.ts` に `masthead`（必須）を追加、`images[0]` を `role:'category_icon'`、`body` 冒頭へ固定文前置（二重付与しない）、`needs_human` のときは **BLOCKER `categoryIconUnresolved` で停止**（マロンがアイコンを1点指定するまでパッケージ化しない）。`cms/src/lib/night/types.ts` に `NoteMasthead` 型・`role:'category_icon'`。**note下書き生成テンプレート側** `cms/src/lib/template/polishArticleDraft.ts` の `polishTextFragment` に `stripMasthead` を追加し、生成物へ固定文が混入しても `Articles.body` からは除去（重複生成禁止をコードで担保）。回帰テスト 新規 `noteMasthead.check.ts`（9件）＋`run-all.ts` 登録。検証：`tsc --noEmit`（cms）0エラー／`run-all.ts` **359 passed 0 failed**／template 系回帰スクリプト全 PASS。**既存記事へ一括適用しない・記事本文は変更しない**。**article 58 はマロンが note へ手動転記時にマストヘッド挿入済みのため CMS 本文は不変**（本ルールは今後生成する記事の転記パッケージに効く）。**② article 58「銀座もとじ 更紗展」を published へ更新**（マロン承認済み・DB）：事前バックアップ `_backups/articles_before_publish58_20260910_103121.sql`／`reviewStatus=published`・`_status=published`（新バージョン92・latest）／人間承認ゲートは使い捨てスクリプトで `user`（id 1）を渡して通過／`publishHistory` に `{channel:'note', publishedAt:'2026-09-10T10:17:18+09:00'〈note 公開ページ datePublished／JST〉, reference:'https://note.com/ginza_whiskers/n/n525aa8ac0414'}` を追加／draft 版91の hero 画像（image-assets id 11・`variant:note_header`）と `seo.ogImage=11` を published スナップショットへ引き継ぎ・本文/タイトル/出典は不変・DC#549 紐づけ（6 fact）維持／**Published Articles 1→2**。使い捨てスクリプト（`registerMotojiSarasaImage.ts`・`publishArticle58.ts`）は実行後に削除しリポジトリに残していない。詳細は `DECISION_LOG_02.md` 2026-09-10。
 - 2026-09-04: 🌏 **GINZA CROSS CULTURE MAP v1（5市場文化視点フィルター）を新規実装（ローカル検証まで・commit なし・DB書き込みなし・追加課金なし）**——GINZA WHISKERS 適合判定の後段に CROSS CULTURE FILTER を追加。UAE / Singapore / France / United States / Italy の5市場との相性を決定的に 0-100 採点（AI・ネットワークなし。仮説軸は `cms/src/lib/crossCulture/marketAxes.ts` の1ファイルで追加・修正可、しきい値は env `CROSS_CULTURE_*` で上書き可）。score≥70→派生記事候補／50-69→編集候補保持（自動派生なし）／≤49→本文非使用／5市場<50→通常記事のみ。有料候補は「文化差の解説／比較／具体的な歩き方／マロンによる現地検証」成立時のみ。excerpt はナビノイズのため不使用。結果は `.devlogs/crossculture/` にキャッシュ（同一テーマ再判定なし）。`assessInboxPool.ts`（候補選定の後段パス）＋`runThemeToNoteDraft.ts`（監査カード＋`.devlogs/pipeline/<date>/crossculture/`＋item サマリ）へ read-only 付与、CLI `./p2 crossculture <theme|run|audit|config>`。すべて try/catch 隔離＝FILTER 失敗時は `mode='normal_only'` で通常処理継続。既存199テスト維持＋新規13。実装＝`cms/src/lib/crossCulture/{marketAxes,crossCultureFilter,crossCultureCache,index}.ts`。詳細は `DECISION_LOG_02.md` 2026-09-04。
 - 2026-09-04: 🌏 **CROSS CULTURE FILTER → 記事生成への接続（v2）＋ UAE/France の SOURCE LEDGER 補強（ローカル検証まで・commit なし・DB書き込みなし・実 live 生成なし）**——`buildCrossCultureDerivativePlan`（純粋・決定的）が suggestedAngle を「別記事として生成／通常本文を上書きしない／複数国を混ぜない／文化的仮説は断定禁止（〜と考えられる）／confirmedForBody 以外を事実にしない」を含む注入テキストへ包む。`createCrossCultureDerivativeDrafts`（既定 dry-run）が既存 multi-angle 生成器へ `crossCultureContext` を渡す（`generateMultiAngleArticleDrafts`／`createMultiAngleDraftsFromDiscoveredContent` への追加は `readerInterestTheme` と同型の任意パラメータのみ・未指定なら CORE も収益化②も no-op）。既定 `maxMarkets=1`（複数≥70でも記事価値順で上位のみ・5カ国記事にしない）。CLI `./p2 crossculture derive <ID> [--yes] [--market=] [--max=N]`。**UAE/France 補強**＝SOURCE LEDGER の構造・seedData・enum は一切変更せず、既存の巡回済み情報源12件を市場×軸へ対応づける外付けマッピング `cms/src/lib/crossCulture/sourceAffinity.ts` を追加。affinity は**本文語彙でヒットのある軸にしか加点しない**（過剰派生・誤検出防止。上限 +24/市場）。luxury-hospitality 専用情報源は現行台帳に無いため追加せず `UAE_GAP` コメントに追加条件を記録。実データ audit＝inbox+approved 587件で `has_derivative` 9件（1.5%）＝過剰派生なし。live `--yes` E2E を DC#310 で1回だけ実行し Article #56 を生成→内容確認後**削除して DB baseline へ復元**（Claude API 約¥15の一度きり課金）。既存214テスト維持＋新規15。詳細は `DECISION_LOG_02.md` 2026-09-04。
 - 2026-09-04: 🎯 **通常候補抽出（`./p2 themes recommend`）に偏り補正＋コアターゲット適合を追加（ローカル検証まで・commit なし・DB書き込みなし）**——`selectRecommendedThemes` の実データ経路（新オプション `enableTargetFitRanking:true`、**既定 false＝fixture／既存回帰テストは非設定で挙動不変**）に、既存5軸へ加算：①target_fit＝20代後半〜30代女性のコアターゲット適合度（新規 `cms/src/lib/pipeline/targetFitScore.ts`、Editorial Compass 配分〈かわいい20／上質30／自分を整える25／新しい発見15／少し背伸び10〉を重みにタイトル＋会場＋暫定カテゴリー＋contentType/uxType の明記語のみで 0-100 採点・excerpt 不使用・実分布中央値35を中立に±0.35）／②category_diversity（直近approved 20件の履歴が過多なら決定的減点）／③venue_diversity（履歴過多＋推奨内2件目を減点、上位5件はより強く、ハードキャップ `recFacilityMax:2` は維持）／④ART+CULTURE **合計**の逓増減点（原則3件・旬度が高ければ相殺可）／⑤source_balance（ソース種別の未出を軽く優先）／⑥editorial_score（0-1正規化・未採点は中立）。**完全均等にはしない**——旬度・安全性gate（必須・不変）・銀座関連性は削らず、不足時は `finalized=false`／`shortfall=true`（GINZA SIX等で穴埋めしない）。18カテゴリーは日次で埋めず週単位で不足補正。実データ再抽出＝ART一辺倒（九谷焼#390）と弱いPR（#346）が推奨から外れ、WELLNESS/季節スイーツ/ギフト性のある候補が上位化（ただし gate 通過30件と薄く GINZA SIX/蔦屋は各2件どまり＝情報源の追加が必要）。既存224テスト維持＋新規10、`selectRecommendedThemes.check` に S14/S15 追加。変更＝`targetFitScore.ts`（新規）／`selectRecommendedThemes.ts`（任意フィールド・重み・flag）／`assessInboxPool.ts`（履歴集計＋素性付与）／`themesRecommend.ts`（出力拡張）。詳細は `DECISION_LOG_02.md` 2026-09-04。

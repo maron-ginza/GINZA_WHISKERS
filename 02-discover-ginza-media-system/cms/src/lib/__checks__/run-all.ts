@@ -22,6 +22,7 @@ import { suite as targetFitScore } from './targetFitScore.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
+import { suite as noteMasthead } from './noteMasthead.check'
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
 import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
@@ -47,6 +48,7 @@ const results: SuiteResult[] = [
   extractPriceHint(),
   buildEditorialBrief(),
   buildFinalCandidateDigest(),
+  noteMasthead(),
   extractStructuredDates(),
   eventEndBoundary(),
   extractProductNewsFacts(),

@@ -26,7 +26,8 @@ export interface NightValidationFinding {
 export interface NoteDraftImageSlot {
   /** 本文テキストに現れるマーカー文字列（例: "[IMAGE: アイキャッチ]"） */
   marker: string
-  role: 'hero' | 'section'
+  /** 'category_icon'＝マストヘッド先頭の 18 カテゴリーアイコン（必須・1点）。'hero'＝冒頭挿絵。'section'＝任意の区切り */
+  role: 'category_icon' | 'hero' | 'section'
   /** 本文中の挿入位置の目安（先頭 / 直後に来る見出しテキスト） */
   placement: string
   /** Editorial Trust Layer 準拠：外部画像転載不可。独自素材の作成方針メモ */
@@ -79,6 +80,26 @@ export interface NoteDraftChromeHandoff {
   executed: boolean
 }
 
+/**
+ * note 記事冒頭マストヘッド（2026-09-10 恒久ルール）。すべての note 記事の冒頭に
+ * 「カテゴリーアイコン 1 点 → 固定文 → 本文」の順で必ず入れる。fixedText は
+ * noteMasthead.NOTE_MASTHEAD_TEXT（一字一句不変）。categoryIcon が resolveStatus
+ * ='needs_human' のときはパッケージ化を BLOCKER で止める。
+ */
+export interface NoteMasthead {
+  categoryIcon: {
+    resolveStatus: 'resolved' | 'needs_human'
+    category: string | null
+    labelJa: string | null
+    iconSlug: string | null
+    iconFile: string | null
+    basis: string | null
+    reason: string
+  }
+  fixedText: string
+  order: string[]
+}
+
 /** /note-draft 再利用構造。1 ドラフト記事 = 1 パッケージ */
 export interface NoteDraftPackage {
   schemaVersion: 1
@@ -87,6 +108,8 @@ export interface NoteDraftPackage {
   title: string
   slug: string
   pillar: string | null
+  /** note 冒頭マストヘッド（必須）。categoryIcon.resolveStatus='needs_human' のとき status='blocked' */
+  masthead: NoteMasthead
   /**
    * note 編集部ノウハウ（Editorial Style Engine 項目1）ではタイトルは 3〜5 案。
    * multi-angle 生成は 1 案しか返さないため、ここは 1 案 + Same-day Review での

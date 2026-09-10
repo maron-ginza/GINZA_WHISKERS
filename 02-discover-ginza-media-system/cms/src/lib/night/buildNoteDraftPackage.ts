@@ -6,7 +6,13 @@ import type {
   NoteDraftImageSlot,
   NoteDraftPackage,
   NightArticleStatus,
+  NoteMasthead,
 } from './types'
+import {
+  NOTE_MASTHEAD_TEXT,
+  composeNoteBodyWithMasthead,
+  resolveCategoryIcon,
+} from '../note/noteMasthead'
 
 // 1 件の Article(reviewStatus: draft) を「note へそのまま転記できる /note-draft
 // パッケージ」へ変換する（読み取り専用・AI 呼び出しなし）。
@@ -84,11 +90,54 @@ export async function buildNoteDraftPackage(
     )
   }
 
+  // --- note 冒頭マストヘッド（2026-09-10 恒久ルール）：カテゴリーアイコン → 固定文 → 本文 ---
+  // カテゴリーアイコンは記事分類から決定的に解決する。確定できないときは BLOCKER で停止し、
+  // マロンが指定する（推測で埋めない）。
+  const venueFacts = (Array.isArray(article.editorialProvenance) ? article.editorialProvenance : [])
+    .filter((p: any) => (p?.factType ?? '') === 'venue')
+    .map((p: any) => String(p?.fact ?? ''))
+    .join(' ')
+  const pillarJa =
+    Array.isArray(article.pillars) && article.pillars[0] && typeof article.pillars[0] === 'object'
+      ? String((article.pillars[0] as { name?: string }).name ?? '')
+      : null
+  const iconResolved = resolveCategoryIcon({
+    title: String(article.title ?? ''),
+    venue: venueFacts,
+    pillarJa,
+  })
+  const masthead: NoteMasthead = {
+    categoryIcon: {
+      resolveStatus: iconResolved.status,
+      category: iconResolved.category,
+      labelJa: iconResolved.labelJa,
+      iconSlug: iconResolved.iconSlug,
+      iconFile: iconResolved.iconFile,
+      basis: iconResolved.basis,
+      reason: iconResolved.reason,
+    },
+    fixedText: NOTE_MASTHEAD_TEXT,
+    order: ['1. カテゴリーアイコン（1点）', '2. 固定文（GINZA TIME EDIT …）', '3. 本文'],
+  }
+
   // --- 本文 Lexical → プレーンテキスト ---
   // 画像マーカーは body に入れない。配置情報は images[] にのみ持たせる。
   const kids: any[] = article.body?.root?.children ?? []
   const units: string[] = []
   const images: NoteDraftImageSlot[] = []
+
+  // images[0]：マストヘッド先頭のカテゴリーアイコン（必須・1点）
+  images.push({
+    marker: `[IMAGE: カテゴリーアイコン ${iconResolved.iconSlug ?? '（未確定）'}]`,
+    role: 'category_icon',
+    placement: '記事冒頭（マストヘッドの先頭・固定文の直前）',
+    note:
+      iconResolved.status === 'resolved'
+        ? `18カテゴリーアイコンから 1 点：${iconResolved.labelJa}（${iconResolved.iconSlug} / ` +
+          `media/discover-ginza-category-icons/${iconResolved.iconFile}）。${iconResolved.reason}`
+        : `カテゴリー未確定：${iconResolved.reason}`,
+    status: 'not_prepared',
+  })
 
   const heroMarker = '[IMAGE: アイキャッチ]'
   images.push({
@@ -141,8 +190,10 @@ export async function buildNoteDraftPackage(
   }
   const noteTags = hashtags.note.length > 0 ? hashtags.note : ['#銀座', '#GINZAWHISKERS']
 
-  // --- 末尾にハッシュタグ行を付与（note 転記用） ---
-  const bodyText = units.join('\n\n') + '\n\n' + noteTags.join(' ') + '\n'
+  // --- 冒頭にマストヘッド固定文、末尾にハッシュタグ行を付与（note 転記用） ---
+  // マストヘッド固定文は body 先頭へ（既に含まれていれば二重付与しない）。
+  // カテゴリーアイコンは images[0] の配置指示に従い、この固定文の直前に置く。
+  const bodyText = composeNoteBodyWithMasthead(units, noteTags.join(' '))
 
   // --- editorialProvenance の集計 ---
   const prov: any[] = Array.isArray(article.editorialProvenance) ? article.editorialProvenance : []
@@ -173,6 +224,15 @@ export async function buildNoteDraftPackage(
   // --- fact/source 検証（読み取り専用） ---
   const blockers: NightValidationFinding[] = []
   const warnings: NightValidationFinding[] = []
+
+  // マストヘッドのカテゴリーアイコンが確定できないときだけ、人間確認のため停止する。
+  if (iconResolved.status === 'needs_human') {
+    blockers.push({
+      level: 'blocker',
+      code: 'categoryIconUnresolved',
+      message: `マストヘッドの 18 カテゴリーアイコンを確定できません（${iconResolved.reason}）。マロンがアイコンを 1 点指定してください。`,
+    })
+  }
 
   if (prov.length === 0) {
     blockers.push({
@@ -261,6 +321,7 @@ export async function buildNoteDraftPackage(
     title: String(article.title ?? ''),
     slug: String(article.slug ?? ''),
     pillar,
+    masthead,
     titleCandidates: [String(article.title ?? '')],
     needsMoreTitleCandidates: true,
     body: bodyText,
@@ -287,7 +348,10 @@ export async function buildNoteDraftPackage(
       steps: [
         'note.com にログイン済みの状態で「新規投稿 → テキスト」を開く',
         'title を本文タイトルに入力する',
-        'body を貼り付ける',
+        'body を貼り付ける（body の先頭にマストヘッド固定文が入っている。一字一句変更しない）',
+        `記事冒頭・マストヘッド固定文の直前に、masthead.categoryIcon のカテゴリーアイコンを 1 点配置する（media/discover-ginza-category-icons/${
+          masthead.categoryIcon.iconFile ?? '（マロンが指定）'
+        }）`,
         'images[] の placement に従って画像を配置する（画像は別途 Same-day Review で用意。body には画像マーカーを入れない。未用意なら画像なしで下書き保存する）',
         'images[] の各スロットに caption があれば、その画像の直下に注釈として併記する（独自生成画像であることの読者向け明示。独自撮影・独自アイキャッチ等で不要なら削除してよい）',
         'links.sourceUrls を本文末尾の「Source」欄に反映する',

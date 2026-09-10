@@ -10,6 +10,12 @@
 //   4. undefined / null / [object Object] / atRelated 等の旧フィールド由来の断片・空括弧を除去
 //
 // すべて純粋関数（同じ入力→同じ出力）。ネットワーク・DB・AI に触れない。
+//
+// 5.（2026-09-10）note 冒頭マストヘッド固定文（「GINZA TIME EDIT / by GINZA WHISKERS …」）は
+//    note 転記レイヤー（buildNoteDraftPackage）で冒頭へ前置する要素であり、CMS の記事本文
+//    （Articles.body）には保存しない。生成物に万一混入した場合は stripMasthead で除去する。
+
+import { stripMasthead } from '../note/noteMasthead'
 
 const CROSS = '×' // ×
 
@@ -191,7 +197,7 @@ export function ensureFourHashtags(existing: string[] | undefined, ctx: PolishCo
 
 // ── まとめて適用 ────────────────────────────────────────────────────────
 export function polishTextFragment(s: string): string {
-  return stripLeakedFragments(dedupeAdjacentPhrases(normalizeBrandCollab(s)))
+  return stripMasthead(stripLeakedFragments(dedupeAdjacentPhrases(normalizeBrandCollab(s))))
 }
 
 export type PolishableBlock = { type: string; text?: string }
@@ -231,7 +237,8 @@ export function polishArticleDraft<B extends PolishableBlock>(
     .filter(Boolean)
   const blocks = input.blocks
     .map((b) => (typeof b.text === 'string' ? ({ ...b, text: clean(b.text) } as B) : b))
-    .filter((b) => !(b.type === 'paragraph' && typeof b.text === 'string' && b.text.trim() === ''))
+    // 後処理（マストヘッド除去等）で本文が空になったブロックは落とす（段落・見出しとも）
+    .filter((b) => !(typeof b.text === 'string' && b.text.trim() === ''))
   const hashtags = ensureFourHashtags(input.hashtags, ctx)
   return { titleCandidates, blocks, hashtags }
 }
