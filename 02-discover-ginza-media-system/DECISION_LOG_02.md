@@ -14,6 +14,39 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き4（📰 **Article #63「弦楽器フェア2026」note公開を全公開履歴台帳へ登録**。
+    **Project 02 コミット・push なし（コード変更なし）／DB更新あり
+    （`articles_publish_history` 追加・`reviewStatus`→published）**）:
+
+    **経緯**：マロンより note.com へログイン・空の新規記事編集画面を開いた旨の連絡を受け、
+    Claude in Chrome での自動入力を試行したが、新規タブでも note.com の SPA への
+    スクリプト注入がタイムアウトし続け操作不能（2026-09-02 の既知の構造的制約が再現）。
+    2〜3回の失敗で自動化を停止し、AskUserQuestion で方針確認 →「マロンが手動でコピペ」を
+    選択。タイトル・本文（マストヘッド込み）を `pbcopy` でクリップボードへ渡した。マロンが
+    貼り付け・保存した結果できたURLを WebFetch で確認したところ、**下書きではなく
+    「公開済み」状態になっていることが判明**（公開日時表示「2026年9月11日 11:07」・
+    下書き/プレビューのラベルなし）。この公開操作は Claude 側の操作では発生していない
+    （note.com への Claude 側アクセスはスクリプト注入失敗で一度も成功していない）ことを
+    確認したうえでマロンへ事実のみ報告 → マロンより正式に「公開した」旨の確定連絡を受けて
+    本項目の DB 反映を実施した。
+
+    **DB反映**（事前バックアップ `_backups/project02-article63-publish-20260911_111059.sql`）：
+    - Article #63：`articles_publish_history` に
+      `{channel:'note', publishedAt:'2026-09-11T11:07:00+09:00'（DB上はUTC変換 02:07Z）,
+      published_by_id:1, reference:'https://note.com/ginza_whiskers/n/nf7132e88d0e0'}` を
+      重複なく追加（登録前に同一URLの既存行が無いことを確認）。`reviewStatus`
+      draft→**published**（`Articles.beforeChange` の人間承認ゲートを `user:1` で通過）。
+    - DC#527：curationStatus は既に approved のまま変更不要（editorialProvenance 経由で
+      Article #63 と紐づいており、`loadPublishedThemes` が publishHistory から自動的に
+      dcId=527 を既公開として拾う設計のため、追加のフィールド変更は不要）。
+    - **検証**（スクリプト内で自動確認）：①publishHistory.reference が指定URLと一致
+      ②editorialProvenance.discoveredContentSource=527 と一致
+      ③`loadPublishedThemes` 再ロードで新エントリが即座に反映（`source=db:publishHistory#63`）
+      ④`matchPublishedTheme({dcId:527,...})` が `match=true` を返す＝以後 DC#527・この
+      テーマは朝刊候補・記事生成・レビュー画面から自動的に除外される。
+    - **記事の再生成・再転記・再公開はしていない**。コード変更なし（前エントリのコードを
+      そのまま利用）。運用記録 `.devlogs/morning/brief/2026-09-11-result.md` に追記。
+
   - 2026-09-11 続き3（✅ **本日の最終判断＝1本採用／グルメ保留／ビューティー0本／品質・施設分散優先**。
     DC#527「弦楽器フェア2026」を記事化。**Project 02 コミット・push なし（コード変更なし）／
     DB 更新あり（ArticleFacts #10・Article #63 作成、DC#527 承認）／note転記・外部公開は未実施**）:
