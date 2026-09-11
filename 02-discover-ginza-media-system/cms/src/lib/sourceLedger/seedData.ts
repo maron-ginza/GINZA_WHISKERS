@@ -5,7 +5,8 @@ import type { SourceLedgerEntry } from './types'
 // 初期Core Source候補（14件）＋2026-09-04追加のprimary専門店/美術館7件＋2026-09-11追加の
 // 収集カバレッジ補完6件（うち木村家・あけぼのの2件は同日中にWebSearchで実在確認しenabled化）
 // ＋2026-09-11「スウィーツ候補の安定収集」追加分5件（千疋屋・HIGASHIYA・とらや・銀座ウエスト・
-// 帝国ホテル、いずれもWebSearchで実在確認しenabled:true）。合計32件。urlは初期14件についてはWebSearchで
+// 帝国ホテル）＋同日続き追加分3件（CAFE PAULISTA・銀座菊廼舎・空也、WebFetchでお知らせ一覧の
+// 稼働実績まで確認しenabled:true）。合計35件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -64,7 +65,14 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     lastChangedAt: null,
     notes:
       '三越伊勢丹「銀座三越」店舗ページ。旧mitsukoshi.co.jpドメインの店舗ページも見つかったが、' +
-      '三越伊勢丹公式の店舗情報ドメイン(mistore.jp)を正とした。2026-08-15 WebSearchで確認。',
+      '三越伊勢丹公式の店舗情報ドメイン(mistore.jp)を正とした。2026-08-15 WebSearchで確認。' +
+      '【source health・2026-09-11再確認】スイーツ催事の詳細ページ' +
+      '（/shopping/event/ginza_e/sweets_collection_51、/shopping/feature/foods_f2/' +
+      'event_ginza_f_test.html）を含め WebFetch で3URLとも接続タイムアウト（ETIMEDOUT）。' +
+      '2026-08-16記載の「ブラウザ限定の接続レベルの選別」と同一原因が2026-09-11時点でも' +
+      '継続していることを確認。mistore.jp ドメイン全体が単純HTTP取得に対し構造的に' +
+      '取得不能——URLパスを変えても解消しないため、実ブラウザへのなりすましをしない方針の' +
+      '範囲では解決不可（2026-08-16判断を再確認・変更なし）。',
   },
   {
     id: 'matsuya-ginza',
@@ -81,7 +89,14 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     lastChangedAt: null,
     notes:
       '松屋銀座公式サイト。企業サイト側の店舗ページ(matsuya.com/ginza/)候補もあったが、検索結果に' +
-      '直接リンクとして現れタイトルが一致したmatsuyaginza.comを採用。2026-08-15 WebSearchで確認。',
+      '直接リンクとして現れタイトルが一致したmatsuyaginza.comを採用。2026-08-15 WebSearchで確認。' +
+      '【source health・2026-09-11再確認】matsuyaginza.com/jp/ 自体は WebFetch で接続でき' +
+      '「公式オンラインストア」のヘッダーは取得できたが、具体的な催事・商品情報は確認できず' +
+      '（JS描画に依存している可能性）。100周年記念キャンペーンサイト' +
+      '（ginza100th-matsuya.com、スイーツ催事情報を掲載）を代替候補として検討したが、' +
+      'WebFetch で ENOTFOUND（名前解決不可）——期間限定キャンペーンサイトが既に閉鎖・' +
+      '移転した可能性が高く、恒久的な情報源として source registry へ追加するのは見送った。' +
+      '百貨店の食品・催事公式ページの安定収集は引き続き未解決の課題として残る。',
   },
   {
     id: 'wako-ginza',
@@ -596,5 +611,64 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       'SWEETS（ホテル公式スイーツ・ペストリー）母数の補完。帝国ホテル東京本館1階のペストリー・' +
       '洋菓子ショップ。公式コラムページ https://www.imperialhotel.co.jp/j/tokyo/news/hotelshop/' +
       'column_index.html を WebSearch で実在確認（2026-09-11、2024年8月のリニューアル情報等を確認）。',
+  },
+  // ───────────────────────────────────────────────────────────────
+  // 2026-09-11 続き（マロン指示により次回優先種別への実接続）。WebSearch で実在確認した
+  // うえで WebFetch により「お知らせ／ニュース一覧が実際に稼働しているか」まで確認できた
+  // ものだけを enabled:true で追加（一覧ページの存在だけでなく更新実績を確認）。
+  // ───────────────────────────────────────────────────────────────
+  {
+    id: 'cafe-paulista-ginza',
+    name: 'CAFE PAULISTA（銀座カフェーパウリスタ）',
+    url: 'https://www.paulista.co.jp/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS／喫茶店・カフェの公式季節メニュー母数の補完。1911年創業、日本最古級の喫茶店。' +
+      '公式サイト https://www.paulista.co.jp/ を WebFetch で実地確認（2026-09-11、お知らせ' +
+      'セクションが実際に稼働・季節メニュー「和栗のキャラメルチーズケーキ」等を掲載していることを確認）。',
+  },
+  {
+    id: 'ginza-kikunoya',
+    name: '銀座菊廼舎',
+    url: 'https://www.ginza-kikunoya.co.jp/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（老舗和菓子・登録商標「冨貴寄」）母数の補完。江戸和菓子の老舗。公式サイト' +
+      'https://www.ginza-kikunoya.co.jp/ を WebFetch で実地確認（2026-09-11、ニュース一覧' +
+      'が実際に稼働していることを確認）。',
+  },
+  {
+    id: 'ginza-kuya-sorairo',
+    name: '空也（ぎんざ空也／空いろ）',
+    url: 'https://www.sorairo-kuya.jp/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（老舗和菓子・空也最中）母数の補完。1884年創業、1949年〜銀座並木通り。公式' +
+      '通販サイト「空いろ」https://www.sorairo-kuya.jp/ を WebFetch で実地確認（2026-09-11、' +
+      '「9月　催事出店のご案内」「8-10月　季節限定商品のご案内」等の日付つき告知を掲載していることを確認）。',
   },
 ]
