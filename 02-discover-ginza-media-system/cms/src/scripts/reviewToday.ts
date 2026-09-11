@@ -27,6 +27,8 @@ import {
   type ReviewDecision,
 } from '../lib/pipeline/reviewTodayData'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
+import { loadPublishedThemes } from '../lib/publish/loadPublishedThemes'
+import { matchPublishedTheme } from '../lib/publish/publishedThemes'
 
 const ROOT = resolve(process.cwd(), '..')
 const argv = process.argv.slice(2)
@@ -54,8 +56,16 @@ function readDecision(): ReviewDecisionFile | null {
   }
 }
 
+interface ExcludedItem {
+  articleId: number
+  title: string
+  reason: string
+  matchedUrl: string | null
+  matchedTitle: string | null
+}
+
 // ─────────────────────────── レビューデータ組み立て ───────────────────────────
-async function buildItems(): Promise<ReviewItem[]> {
+async function buildItems(): Promise<{ items: ReviewItem[]; excluded: ExcludedItem[] }> {
   const payload = await getPayload({ config })
 
   let ids: number[]
@@ -75,10 +85,37 @@ async function buildItems(): Promise<ReviewItem[]> {
   }
   if (ids.length === 0) throw new Error(`対象の記事下書きがありません（--ids= で指定するか、${DATE} 生成の draft を用意してください）`)
 
+  // 既公開テーマ（全公開履歴）を読み込み、重複する記事は本日のレビュー対象から除外する。
+  const published = await loadPublishedThemes(payload, ROOT)
+
   const items: ReviewItem[] = []
+  const excluded: ExcludedItem[] = []
   for (const id of ids) {
     const article = (await payload.findByID({ collection: 'articles', id, locale: 'ja', depth: 1, overrideAccess: true })) as Record<string, any>
     const pkg = await buildNoteDraftPackage(payload, id, { allowNonDraft: true })
+
+    // 既公開テーマとの重複チェック（同一URL・DC だけでなく イベント名・店舗名・期間・テーマの意味的重複も）
+    {
+      const prov0: any[] = Array.isArray(article.editorialProvenance) ? article.editorialProvenance : []
+      const venueFact = prov0.find((p) => (p.factType ?? '') === 'venue')?.fact ?? null
+      const dateFact = prov0.find((p) => (p.factType ?? '') === 'date')?.fact ?? null
+      const noteHist = (Array.isArray(article.publishHistory) ? article.publishHistory : []).find((h: any) => h?.channel === 'note')
+      const dm = matchPublishedTheme(
+        {
+          dcId: pkg.discoveredContentId,
+          title: pkg.title,
+          eventName: pkg.title,
+          venue: venueFact,
+          period: dateFact,
+          noteUrl: noteHist ? String(noteHist.reference ?? '') : null,
+        },
+        published,
+      )
+      if (dm.match) {
+        excluded.push({ articleId: id, title: pkg.title, reason: dm.reason, matchedUrl: dm.matchedUrl, matchedTitle: dm.matchedTitle })
+        continue
+      }
+    }
 
     // Instagram 短文の自動補完（本文から決定的に生成。空のときだけ）
     const sc = article.socialCopy ?? {}
@@ -173,12 +210,31 @@ async function buildItems(): Promise<ReviewItem[]> {
       packageFiles: { body: `.devlogs/night/queue/${DATE}/${id}/note-body.txt`, json: `.devlogs/night/queue/${DATE}/${id}/note-draft.json` },
     })
   }
-  return items
+  return { items, excluded }
 }
 
 // ─────────────────────────── HTML ───────────────────────────
-function renderHtml(items: ReviewItem[]): string {
+function renderHtml(items: ReviewItem[], excluded: ExcludedItem[] = []): string {
   const decision = readDecision()
+  const excludedHtml = excluded.length
+    ? `<section class="card excluded"><div class="cardhead"><span class="badge blocked">除外</span>
+       <h2>既公開テーマとの重複で本日のレビュー対象から除外（${excluded.length}件）</h2></div>
+       <ul>${excluded
+         .map(
+           (e) =>
+             `<li>Article #${e.articleId}「${esc(e.title)}」 — ${esc(e.reason)}${
+               e.matchedUrl ? `（既公開: <a href="${esc(e.matchedUrl)}" target="_blank" rel="noopener">${esc(e.matchedUrl)}</a>）` : '（既公開・URL未記録）'
+             }</li>`,
+         )
+         .join('')}</ul>
+       <p class="files">重複判定は全公開履歴（DB publishHistory ＋ .devlogs/night/queue ＋ manual-drafts ＋ 手動シード）を対象。同一URL・同一DCに加え、イベント名／店舗名／期間／テーマの意味的重複も判定。</p></section>`
+    : ''
+  const emptyHtml =
+    items.length === 0
+      ? `<section class="card"><div class="cardhead"><span class="badge warning">0件</span>
+         <h2>本日レビュー対象の記事はありません</h2></div>
+         <p>${excluded.length ? '生成した下書きはすべて既公開テーマとの重複でした。' : '本日生成の記事下書きがありません。'}未公開で公式確認できる代替候補が揃うまで、本日の公開は見送りです（推測で補完しない）。</p></section>`
+      : ''
   const cards = items
     .map((it) => {
       const cur = decision?.decisions?.[String(it.articleId)]?.decision ?? ''
@@ -265,10 +321,10 @@ button.mini{font-size:11px;padding:3px 10px;border:1px solid #bbb;border-radius:
 code{background:#241f18;color:#f8f3e8;padding:2px 6px;border-radius:4px}
 .note{max-width:920px;margin:8px auto;padding:0 20px;font-size:12px;color:#786c58}
 </style></head><body>
-<header><h1>本日記事レビュー — ${DATE}（${items.length}本）</h1>
+<header><h1>本日記事レビュー — ${DATE}（対象 ${items.length}本${excluded.length ? ` ／ 既公開重複で除外 ${excluded.length}本` : ''}）</h1>
 <p>各記事に 承認／修正／保留 を選び、最後に「選択内容を確定」。<b>承認した記事だけ</b> note 下書きへ転記できます。外部公開ボタンはありません（公開はマロンの最終操作）。</p></header>
-<main>${cards}</main>
-<div id="confirmbar"><button id="confirm">選択内容を確定</button></div>
+<main>${excludedHtml}${emptyHtml}${cards}</main>
+<div id="confirmbar"><button id="confirm"${items.length === 0 ? ' disabled' : ''}>選択内容を確定</button></div>
 <div id="result"></div>
 <p class="note">この画面は localhost:${PORT} で表示中。確定内容は <code>.devlogs/morning/review/${DATE}-decision.json</code> に保存されます。転記は別コマンド <code>./p2 review-today transfer &lt;articleId&gt;</code>。</p>
 <script>
@@ -297,8 +353,8 @@ cbtn.onclick=async()=>{
 // ─────────────────────────── serve ───────────────────────────
 async function runServe(): Promise<void> {
   mkdirSync(REVIEW_DIR, { recursive: true })
-  const items = await buildItems()
-  writeFileSync(HTML_PATH, renderHtml(items), 'utf8')
+  const { items, excluded } = await buildItems()
+  writeFileSync(HTML_PATH, renderHtml(items, excluded), 'utf8')
 
   const server = createServer((req, res) => {
     if (req.method === 'POST' && req.url === '/confirm') {
@@ -320,13 +376,14 @@ async function runServe(): Promise<void> {
     }
     // それ以外はレビュー HTML（毎回最新の decision を反映して再レンダ）
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    res.end(renderHtml(items))
+    res.end(renderHtml(items, excluded))
   })
   server.listen(PORT, () => {
     const url = `http://localhost:${PORT}/`
     console.log(`\n本日記事レビュー画面：${url}`)
     console.log(`  HTML: ${HTML_PATH}`)
-    console.log(`  対象: ${items.map((i) => `#${i.articleId}(${i.status})`).join(' , ')}`)
+    console.log(`  対象: ${items.length ? items.map((i) => `#${i.articleId}(${i.status})`).join(' , ') : '（0本）'}`)
+    if (excluded.length) console.log(`  既公開重複で除外: ${excluded.map((e) => `#${e.articleId}（${e.reason}）`).join(' , ')}`)
     console.log(`  Ctrl+C で終了。確定 → .devlogs/morning/review/${DATE}-decision.json → ./p2 review-today transfer <id>\n`)
     if (!NO_OPEN) execFile('open', [url], () => {})
   })
@@ -341,11 +398,32 @@ async function runTransfer(articleId: number): Promise<void> {
     console.error(`   先に ./p2 review-today で「選択内容を確定」（該当記事を「承認」）してください。`)
     process.exit(3)
   }
-  console.log(`✅ ${gate.reason} — note 転記パッケージを生成します（下書きまで。公開はマロンが手動）。`)
   const { getPayload: gp } = await import('payload')
   const { default: cfg } = await import('../payload.config')
   const payload = await gp({ config: cfg })
   const pkg = await buildNoteDraftPackage(payload, articleId, { allowNonDraft: true })
+
+  // 既公開テーマの再転記を防ぐ（承認済みでも重複なら止める）
+  {
+    const art = (await payload.findByID({ collection: 'articles', id: articleId, locale: 'ja', depth: 1, overrideAccess: true })) as Record<string, any>
+    const prov: any[] = Array.isArray(art.editorialProvenance) ? art.editorialProvenance : []
+    const dm = matchPublishedTheme(
+      {
+        dcId: pkg.discoveredContentId,
+        title: pkg.title,
+        eventName: pkg.title,
+        venue: prov.find((p) => (p.factType ?? '') === 'venue')?.fact ?? null,
+        period: prov.find((p) => (p.factType ?? '') === 'date')?.fact ?? null,
+        noteUrl: (Array.isArray(art.publishHistory) ? art.publishHistory : []).find((h: any) => h?.channel === 'note')?.reference ?? null,
+      },
+      await loadPublishedThemes(payload, ROOT),
+    )
+    if (dm.match) {
+      console.error(`⛔ 転記できません：既公開テーマとの重複（${dm.reason}${dm.matchedUrl ? ` / ${dm.matchedUrl}` : ''}）`)
+      process.exit(3)
+    }
+  }
+  console.log(`✅ ${gate.reason} — note 転記パッケージを生成します（下書きまで。公開はマロンが手動）。`)
   const dir = resolve(ROOT, '.devlogs', 'night', 'queue', DATE, String(articleId))
   mkdirSync(dir, { recursive: true })
   writeFileSync(resolve(dir, 'note-body.txt'), pkg.body, 'utf8')

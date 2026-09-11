@@ -30,6 +30,9 @@ import type {
 } from '../template/mapDiscoveredContentToEventFields'
 import type { ThemeCandidate } from './selectRecommendedThemes'
 import { toFactsLike } from '../morning/toFactsLike'
+import { resolve } from 'node:path'
+import { loadPublishedThemes } from '../publish/loadPublishedThemes'
+import { matchPublishedTheme, type PublishedTheme } from '../publish/publishedThemes'
 
 function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
   const ss = dc.sourceSite
@@ -165,6 +168,16 @@ export async function assessInboxPool(
         if (Number.isFinite(src)) draftedDcIds.add(src)
       }
     }
+  }
+
+  // 既公開テーマ台帳（全公開履歴：DB publishHistory＋.devlogs＋手動seed）。
+  // 過去7日ではなく全期間を対象に、URL・DC id だけでなくイベント名・会場・期間・
+  // テーマの意味的重複も見て、記事生成候補から外す（推測補完はしない）。
+  let publishedThemes: PublishedTheme[] = []
+  try {
+    publishedThemes = await loadPublishedThemes(payload, resolve(process.cwd(), '..'))
+  } catch {
+    /* 台帳が読めなくても選定は継続（除外が効かないだけ） */
   }
 
   // 画像在庫（assessCandidate の imagePreflight 用）
@@ -333,11 +346,26 @@ export async function assessInboxPool(
         }
       }
       const factsDoc = afByDc.get(dcId)
+      const facts = toFactsLike(factsDoc)
+      // 既公開テーマとの意味的重複（全公開履歴が対象）
+      const pub = matchPublishedTheme(
+        {
+          dcId,
+          title: dcLike.title ?? null,
+          eventName: (facts?.eventName as string | null) ?? dcLike.title ?? null,
+          venue: dcLike.venue ?? (facts?.areaLead as string | null) ?? null,
+          period: (facts?.eventDate as string | null) ?? dcLike.eventStartAt ?? null,
+        },
+        publishedThemes,
+      )
       const dedup = {
-        duplicate: draftedDcIds.has(dcId),
-        possibleDuplicate: false,
+        duplicate: draftedDcIds.has(dcId) || pub.match,
+        possibleDuplicate: pub.match,
         externalUnverified: true,
-        signalSummary: draftedDcIds.has(dcId) ? ['既に Article(editorialProvenance) 化済み'] : [],
+        signalSummary: [
+          ...(draftedDcIds.has(dcId) ? ['既に Article(editorialProvenance) 化済み'] : []),
+          ...(pub.match ? [`既公開テーマとの重複（${pub.reason}）`] : []),
+        ],
       }
 
       const classification = classifyFactKind({

@@ -18,6 +18,8 @@ import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
+import { loadPublishedThemes } from '../lib/publish/loadPublishedThemes'
+import { matchPublishedTheme } from '../lib/publish/publishedThemes'
 import {
   buildMorningBrief,
   type BriefCandidateInput,
@@ -61,6 +63,9 @@ async function main() {
     }
   }
 
+  // 2b. 既公開テーマ（全公開履歴：DB publishHistory ＋ .devlogs ＋ 手動シード）
+  const publishedThemes = await loadPublishedThemes(payload, resolve(process.cwd(), '..'))
+
   // 3. 既存 ArticleFacts（DB）
   const factsByDc = new Map<number, Record<string, unknown>>()
   if (dcIds.length) {
@@ -82,6 +87,16 @@ async function main() {
   const briefInputs: BriefCandidateInput[] = pool.map((e) => {
     const c = e.candidate
     const f = factsByDc.get(c.discoveredContentId)
+    const pub = matchPublishedTheme(
+      {
+        dcId: c.discoveredContentId,
+        title: c.displayTitle ?? c.title,
+        eventName: (f?.eventName as string) ?? (c.displayTitle ?? c.title),
+        venue: c.venue ?? (f?.areaLead as string) ?? null,
+        period: (f?.eventDate as string) ?? c.eventPeriod ?? null,
+      },
+      publishedThemes,
+    )
     return {
       dcId: c.discoveredContentId,
       title: c.title,
@@ -104,6 +119,8 @@ async function main() {
       targetFitCompass: c.targetFitCompass ?? null,
       alreadyDrafted: alreadyDrafted.has(c.discoveredContentId),
       duplicate: !!c.duplicate,
+      alreadyPublished: pub.match,
+      publishedReason: pub.match ? pub.reason : null,
       facts: f
         ? {
             enrichmentStatus: (f.enrichmentStatus as string) ?? null,

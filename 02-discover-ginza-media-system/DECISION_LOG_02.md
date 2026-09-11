@@ -14,6 +14,64 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き（🔁 **既公開テーマの重複除外**（同一URL/DC id だけでなくイベント名・
+    店舗名・期間・テーマの意味的重複を、過去7日ではなく全公開履歴に対して判定）。
+    **Project 02 コミット・push あり／DB 更新2件（Article #62 に note 公開履歴を遡及登録・
+    Article #61 に既公開マーカー）／note 転記・外部公開・承認は未実施**）:
+
+    **発端**：本日レビュー中の Article #61（DC#327「NAMIKI667 の韓国ウェルネス
+    アフタヌーンティー」）は先日すでに note へ投稿済みとマロンから指摘。調査で
+    Article #62（DC#373「上端伸也 個展」）も `.devlogs/night/queue/2026-09-01/dc-373/
+    note-draft.json`（`state:"公開完了"`／`https://note.com/ginza_whiskers/n/n694a116715bc`／
+    2026-09-01 16:59 JST）に公開記録があり **両方とも既公開テーマの焼き直し** と判明。
+    DB の `articles_publish_history` には #58・#60（ともに更紗展）しか無く、既公開判定が
+    DC id と直近7日の類似タイトルに限られていたため取りこぼしていた。
+
+    **恒久対応（コード）**：
+    - 新規 `cms/src/lib/publish/publishedThemes.ts`（純粋・AI/DB/網なし）＝既公開テーマ
+      台帳との重複判定。ルール：①同一 DiscoveredContent id ②同一 note URL
+      ③イベント名の bigram 類似度 ≥0.62 ④会場一致 かつ（開催期間が重なる ／
+      イベント名 or タイトルの弱一致 ／候補名が既公開タイトルに bigram 被覆 ≥0.6）
+      ⑤タイトルの bigram 類似度 ≥0.70。`periodDates` は「2026年9月9日〜9月14日」の
+      年省略も直前の年で補完して範囲の両端を取る。しきい値は引数で上書き可。
+    - 新規 `cms/src/lib/publish/loadPublishedThemes.ts`（不純ローダ）＝**全公開履歴**を
+      3ソースからマージ：(a) DB `articles.publishHistory.channel = note`（`editorialProvenance`
+      から会場・日付、`discoveredContentSource` から DC id）(b) `.devlogs/night/queue/**` と
+      `.devlogs/manual-drafts/**` の `note-draft.json`（note URL / `"published":true` / 
+      `state` に「公開」を含む）(c) 手動 seed `MANUAL_PUBLISHED_SEED`（現状 DC#327 の
+      韓国ウェルネス＝マロン確認・URL 未記録の1件のみ）。
+    - 接続先：`assessInboxPool.ts`（`./p2 themes recommend` の候補評価＝記事生成候補）／
+      `morningBriefSelect.ts`＋`morningBrief.ts`（朝刊候補・手動補完）／`reviewToday.ts`
+      （レビュー画面の表示対象から除外＋除外リスト表示、`transfer` は既公開一致なら
+      `exit 3` で note 転記を拒否）。いずれも try/catch で台帳が読めなくても選定は継続。
+    - 回帰テスト `cms/src/lib/__checks__/publishedThemes.check.ts`（13件）＝正規化・期間の
+      重なり・重複①〜⑤・非重複（別展示／別テーマ）・全期間対象（数か月前の公開でも除外）・
+      本日の #61/#62 実ケース・`filterUnpublishedThemes`。`run-all.ts` に登録。
+      **全 424 テスト PASS・`tsc --noEmit` 0エラー**。
+
+    **DB 更新（事前バックアップ `_backups/project02-pubhistory-dedup-20260911_093649.sql`
+    ＝articles / articles_publish_history / _articles_v / _articles_v_version_publish_history の
+    data-only ダンプ）**：
+    - **Article #62**：`articles_publish_history`（本体、`_order=1`）と
+      `_articles_v_version_publish_history`（最新 version `_parent_id=106`）に
+      `{channel:'note', published_at:'2026-09-01T16:59:00+09:00', published_by_id:1,
+      reference:'https://note.com/ginza_whiskers/n/n694a116715bc'}` を遡及登録。
+      本文・`reviewStatus=draft`・`lane`・`priceYen`・`editorialProvenance` は不変。
+    - **Article #61**：note URL・投稿日が記録に無いため **捏造せず**、
+      `articles.ai_generated_by`（本体＋最新 version）末尾に
+      `| published-dup: DC#327 既公開（note投稿済み・URL/日付未記録・マロン確認 2026-09-11）`
+      を追記したのみ。本文・`reviewStatus` は不変。既公開台帳としては
+      `MANUAL_PUBLISHED_SEED` で拾う。
+
+    **本日のレビュー記事 = 0本**：#61・#62 を除外すると、既公開でなく公式確認可能な
+    代替候補が無い（ビューティー＝GINZA SIX のみで `ginza6.tokyo` 403、グルメ＝
+    piecemontee.jp DNS 解決不可、文化＝#365 は 09-11 朝に除外済み）。品質優先で
+    既公開の焼き直し・公式未確認候補の無理な採用はしない。運用記録
+    `.devlogs/morning/brief/2026-09-11-result.md` に追記。
+
+    **未実施**：承認（`reviewStatus` 変更）・AI 記事生成・note 転記・外部公開。
+    レビュー画面は #61/#62 を除外して再生成しブラウザで開いた（`./p2 review-today`）。
+
   - 2026-09-11（🕘 日次処理の業務日付を **Asia/Tokyo 基準へ統一**（重大な日付不整合の修正）。
     **Project 02 コミット・push あり／DB 更新なし／`.devlogs` の当セッション誤名ファイル3件のみ削除**）:
 

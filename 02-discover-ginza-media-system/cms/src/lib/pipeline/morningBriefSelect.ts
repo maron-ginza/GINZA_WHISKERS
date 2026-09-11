@@ -49,6 +49,10 @@ export interface BriefCandidateInput {
   alreadyDrafted?: boolean
   /** dedup：同一URL・同一イベント重複の検出結果 */
   duplicate?: boolean
+  /** 既公開テーマ（全公開履歴）と重複＝候補から除外（同一URL/DC＋意味的重複） */
+  alreadyPublished?: boolean
+  /** 既公開重複の理由（表示用） */
+  publishedReason?: string | null
 }
 
 export interface BriefFactsInput {
@@ -249,6 +253,14 @@ export function buildMorningBrief(
 
     let picked: BriefCandidateInput | null = null
     for (const c of pool) {
+      if (c.alreadyPublished) {
+        bucket.considered.push({
+          dcId: c.dcId,
+          title: c.displayTitle ?? c.title,
+          skipped: `既公開テーマとの重複（${c.publishedReason ?? '全公開履歴と一致'}）`,
+        })
+        continue
+      }
       if (c.alreadyDrafted) {
         bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: '既に Article／note下書き 化済み（重複）' })
         continue
