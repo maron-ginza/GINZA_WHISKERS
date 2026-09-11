@@ -106,24 +106,47 @@
         <!-- GINZA TIME EDIT（Project 02 の公開入口）：母艦における主要入口。既存6本柱はこのコンテンツ配下のテーマとして扱う。
              暫定の公開リンク先は note マガジン「旬の銀座」。Project 02 の独自サイト
              （/ja/latest.json フィードの疎通確認後）へ切り替える際は、href を data-href の値へ差し替える
-             （CLAUDE.md 第10章 2026-08-28 参照）。 -->
-        <a class="content-card content-card--lead"
+             （CLAUDE.md 第10章 2026-08-28 参照）。ビジュアルは2026-09-11追加のインラインSVG
+             （明るい現在の銀座・季節・街歩き）。 -->
+        <a class="content-card content-card--lead content-card--visual"
            href="https://note.com/ginza_whiskers/m/m03614564526b" target="_blank" rel="noopener"
            data-href="https://discover.ginzawhiskers.com/ja/">
-          <h3>GINZA TIME EDIT</h3>
-          <p>
-            AI編集部が銀座の「旬」を集めて編集し、日々発信する情報メディア。
-            旬の銀座、興味関心テーマ、そして6つの視点から銀座を読み解きます。
-          </p>
-          <ul class="pillar-themes">
-            <li>歴史</li>
-            <li>文化</li>
-            <li>アート</li>
-            <li>建築</li>
-            <li>人物</li>
-            <li>イベント</li>
-          </ul>
-          <span class="card-cta">旬の銀座を読む</span>
+          <div class="entry-visual entry-visual--time-edit" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="te-sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#f8efd9"/>
+                  <stop offset="100%" stop-color="#e7c98a"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#te-sky)"/>
+              <circle cx="330" cy="55" r="46" fill="#eb8a5c" opacity="0.18"/>
+              <circle cx="330" cy="55" r="26" fill="#e8845b"/>
+              <path d="M20 200 C 110 160, 170 210, 240 150 S 360 120, 390 140" fill="none" stroke="#5b4636" stroke-width="3" stroke-linecap="round"/>
+              <ellipse cx="90" cy="182" rx="10" ry="6" fill="#7c9473"/>
+              <ellipse cx="205" cy="168" rx="9" ry="5" fill="#8fa87e"/>
+              <ellipse cx="300" cy="132" rx="10" ry="6" fill="#7c9473"/>
+              <circle cx="130" cy="196" r="3" fill="#c9a45c"/>
+              <circle cx="170" cy="188" r="3" fill="#c9a45c"/>
+              <circle cx="255" cy="156" r="3" fill="#c9a45c"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>GINZA TIME EDIT</h3>
+            <p>
+              AI編集部が銀座の「旬」を集めて編集し、日々発信する情報メディア。
+              旬の銀座、興味関心テーマ、そして6つの視点から銀座を読み解きます。
+            </p>
+            <ul class="pillar-themes">
+              <li>歴史</li>
+              <li>文化</li>
+              <li>アート</li>
+              <li>建築</li>
+              <li>人物</li>
+              <li>イベント</li>
+            </ul>
+            <span class="card-cta">旬の銀座を読む</span>
+          </div>
         </a>
       </div>
     </div>
@@ -134,27 +157,142 @@
       <p class="eyebrow">B ／ 銀座の時間を感じる</p>
       <h2>銀座の時間を感じる</h2>
       <div class="content-grid content-grid--two">
-        <a class="content-card" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener">
-          <h3>🌈 Tokyo Nostalgic Soundtrack</h3>
-          <p>天気と気分から、その週の銀座に重ねる一曲を選ぶ週次シリーズ。</p>
-          <span class="card-cta">noteで読む</span>
+        <a class="content-card content-card--visual" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener">
+          <div class="entry-visual entry-visual--soundtrack" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="tns-sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#eaf4fb"/>
+                  <stop offset="100%" stop-color="#aed2e8"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#tns-sky)"/>
+              <circle cx="70" cy="55" r="28" fill="#f5d98a"/>
+              <ellipse cx="150" cy="60" rx="34" ry="14" fill="#ffffff" opacity="0.85"/>
+              <ellipse cx="180" cy="50" rx="26" ry="12" fill="#ffffff" opacity="0.7"/>
+              <circle cx="300" cy="150" r="46" fill="#2c3e50"/>
+              <circle cx="300" cy="150" r="30" fill="none" stroke="#587085" stroke-width="2"/>
+              <circle cx="300" cy="150" r="16" fill="none" stroke="#587085" stroke-width="2"/>
+              <circle cx="300" cy="150" r="5" fill="#c9a45c"/>
+              <g fill="#3f6280">
+                <circle cx="70" cy="200" r="4"/>
+                <circle cx="95" cy="200" r="4"/>
+                <circle cx="120" cy="200" r="4"/>
+                <circle cx="145" cy="200" r="4"/>
+                <circle cx="170" cy="200" r="4"/>
+                <circle cx="195" cy="200" r="4"/>
+              </g>
+              <circle cx="220" cy="200" r="5" fill="#e8845b"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>🌈 Tokyo Nostalgic Soundtrack</h3>
+            <p>天気と気分から、その週の銀座に重ねる一曲を選ぶ週次シリーズ。</p>
+            <span class="card-cta">noteで読む</span>
+          </div>
         </a>
-        <!-- 銀座昭和浪漫日記：コンテンツ準備中。公開時に href を付与し is-pending を削除する。 -->
-        <a class="content-card is-pending" aria-disabled="true">
-          <h3>📔 銀座昭和浪漫日記</h3>
-          <p>銀座に流れる日々の記憶を書き留める日記。</p>
-          <span class="card-cta">準備中</span>
+        <!-- 銀座昭和浪漫日記：コンテンツ準備中。公開時に href を付与し is-pending を削除する。
+             ビジュアルは2026-09-11追加のインラインSVG（ランプの灯りの下で綴る日記）。 -->
+        <a class="content-card content-card--visual is-pending" aria-disabled="true">
+          <div class="entry-visual entry-visual--diary" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <radialGradient id="diary-lamp" cx="75%" cy="15%" r="55%">
+                  <stop offset="0%" stop-color="#f0c987" stop-opacity="0.55"/>
+                  <stop offset="100%" stop-color="#1b1f2b" stop-opacity="0"/>
+                </radialGradient>
+                <linearGradient id="diary-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#1b1f2b"/>
+                  <stop offset="100%" stop-color="#0f1119"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#diary-bg)"/>
+              <rect width="400" height="240" fill="url(#diary-lamp)"/>
+              <path d="M140 90 L200 82 L200 178 L140 186 Z" fill="#ece6d8" opacity="0.92"/>
+              <path d="M260 90 L200 82 L200 178 L260 186 Z" fill="#e2dac8" opacity="0.92"/>
+              <line x1="152" y1="112" x2="188" y2="108" stroke="#8a7f68" stroke-width="2"/>
+              <line x1="152" y1="128" x2="184" y2="124" stroke="#8a7f68" stroke-width="2"/>
+              <line x1="152" y1="144" x2="180" y2="141" stroke="#8a7f68" stroke-width="2"/>
+              <line x1="212" y1="108" x2="248" y2="112" stroke="#8a7f68" stroke-width="2"/>
+              <line x1="216" y1="124" x2="248" y2="128" stroke="#8a7f68" stroke-width="2"/>
+              <path d="M250 70 L300 40" stroke="#c9a45c" stroke-width="3" stroke-linecap="round"/>
+              <path d="M300 40 l6 -10 6 6 -10 6z" fill="#c9a45c"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>📔 銀座昭和浪漫日記</h3>
+            <p>銀座に流れる日々の記憶を書き留める日記。</p>
+            <span class="card-cta">準備中</span>
+          </div>
         </a>
-        <a class="content-card" href="https://note.com/ginza_whiskers/m/m2393751d146e" target="_blank" rel="noopener">
-          <h3>🌏 GINZA CROSS CULTURE MAP</h3>
-          <p>世界から見た銀座の魅力を、各国の視点で読み解くシリーズ。</p>
-          <span class="card-cta">noteで読む</span>
+        <a class="content-card content-card--visual" href="https://note.com/ginza_whiskers/m/m2393751d146e" target="_blank" rel="noopener">
+          <div class="entry-visual entry-visual--cross-culture" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="ccm-bg" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#1b2440"/>
+                  <stop offset="100%" stop-color="#0b0f1c"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#ccm-bg)"/>
+              <g stroke="#3c4a6b" stroke-width="1" opacity="0.6" fill="none">
+                <path d="M0 60 Q200 20 400 60"/>
+                <path d="M0 120 Q200 90 400 120"/>
+                <path d="M0 180 Q200 150 400 180"/>
+                <path d="M80 0 Q60 120 80 240"/>
+                <path d="M200 0 Q200 120 200 240"/>
+                <path d="M320 0 Q340 120 320 240"/>
+              </g>
+              <circle cx="200" cy="120" r="6" fill="#c9a45c"/>
+              <g stroke="#8a97b8" stroke-width="1.2" opacity="0.8">
+                <line x1="200" y1="120" x2="70" y2="55"/>
+                <line x1="200" y1="120" x2="330" y2="45"/>
+                <line x1="200" y1="120" x2="60" y2="190"/>
+                <line x1="200" y1="120" x2="340" y2="195"/>
+              </g>
+              <circle cx="70" cy="55" r="4" fill="#e8c98a"/>
+              <circle cx="330" cy="45" r="4" fill="#e8c98a"/>
+              <circle cx="60" cy="190" r="4" fill="#e8c98a"/>
+              <circle cx="340" cy="195" r="4" fill="#e8c98a"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>🌏 GINZA CROSS CULTURE MAP</h3>
+            <p>世界から見た銀座の魅力を、各国の視点で読み解くシリーズ。</p>
+            <span class="card-cta">noteで読む</span>
+          </div>
         </a>
         <!-- GINZA 400 YEARS：独立した公開URLが未確定。確定時に href を付与し is-pending を削除する。 -->
-        <a class="content-card is-pending" aria-disabled="true">
-          <h3>GINZA 400 YEARS</h3>
-          <p>銀座の400年を、歴史・復元・デジタルアートでたどる構想。</p>
-          <span class="card-cta">準備中</span>
+        <a class="content-card content-card--visual is-pending" aria-disabled="true">
+          <div class="entry-visual entry-visual--400years" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="y400-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#2b2016"/>
+                  <stop offset="100%" stop-color="#180f09"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#y400-bg)"/>
+              <g stroke="#6b5233" stroke-width="1" opacity="0.5">
+                <line x1="0" y1="60" x2="400" y2="70"/>
+                <line x1="0" y1="120" x2="400" y2="115"/>
+                <line x1="0" y1="180" x2="400" y2="190"/>
+                <line x1="90" y1="0" x2="80" y2="240"/>
+                <line x1="220" y1="0" x2="230" y2="240"/>
+              </g>
+              <circle cx="290" cy="130" r="42" fill="none" stroke="#c9a45c" stroke-width="3"/>
+              <line x1="290" y1="130" x2="290" y2="102" stroke="#c9a45c" stroke-width="3" stroke-linecap="round"/>
+              <line x1="290" y1="130" x2="312" y2="140" stroke="#c9a45c" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="290" cy="130" r="3" fill="#c9a45c"/>
+              <path d="M20 20 L60 15 L58 55 L18 60 Z" fill="#e9dcc0" opacity="0.15"/>
+              <path d="M30 190 L80 185 L84 232 L34 236 Z" fill="#e9dcc0" opacity="0.12"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>GINZA 400 YEARS</h3>
+            <p>銀座の400年を、歴史・復元・デジタルアートでたどる構想。</p>
+            <span class="card-cta">準備中</span>
+          </div>
         </a>
       </div>
     </div>
@@ -165,16 +303,72 @@
       <p class="eyebrow">C ／ 銀座を体験する</p>
       <h2>銀座を体験する</h2>
       <div class="content-grid">
-        <a class="content-card" href="https://note.com/ginza_whiskers/m/m0f03ad5fe973" target="_blank" rel="noopener">
-          <h3>🎤 銀座昭和浪漫倶楽部LIVE</h3>
-          <p>月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。</p>
-          <span class="card-cta">noteで読む</span>
+        <a class="content-card content-card--visual" href="https://note.com/ginza_whiskers/m/m0f03ad5fe973" target="_blank" rel="noopener">
+          <div class="entry-visual entry-visual--live" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <radialGradient id="live-spot" cx="50%" cy="30%" r="65%">
+                  <stop offset="0%" stop-color="#5a2f22" stop-opacity="0.9"/>
+                  <stop offset="100%" stop-color="#1c0e10" stop-opacity="0"/>
+                </radialGradient>
+                <linearGradient id="live-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#2a1014"/>
+                  <stop offset="100%" stop-color="#140a0c"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#live-bg)"/>
+              <rect width="400" height="240" fill="url(#live-spot)"/>
+              <line x1="30" y1="0" x2="18" y2="240" stroke="#3a1a1e" stroke-width="10" opacity="0.5"/>
+              <line x1="370" y1="0" x2="382" y2="240" stroke="#3a1a1e" stroke-width="10" opacity="0.5"/>
+              <rect x="192" y="70" width="16" height="24" rx="8" fill="#e6cd94"/>
+              <line x1="200" y1="94" x2="200" y2="150" stroke="#e6cd94" stroke-width="3"/>
+              <line x1="182" y1="150" x2="218" y2="150" stroke="#e6cd94" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="126" cy="66" r="5" fill="#c9a45c"/>
+              <line x1="131" y1="66" x2="131" y2="38" stroke="#c9a45c" stroke-width="2"/>
+              <circle cx="284" cy="100" r="5" fill="#c9a45c"/>
+              <line x1="289" y1="100" x2="289" y2="72" stroke="#c9a45c" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>🎤 銀座昭和浪漫倶楽部LIVE</h3>
+            <p>月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。</p>
+            <span class="card-cta">noteで読む</span>
+          </div>
         </a>
-        <!-- Club Charmant：銀座一丁目のプライベートサロン。母艦内 charmant.html へ内部遷移（Phase 1, 2026-08-28）。 -->
-        <a class="content-card" href="charmant.html">
-          <h3>Club Charmant</h3>
-          <p>銀座昭和浪漫を体現する、大人の社交とサロンの場。</p>
-          <span class="card-cta">詳しく見る</span>
+        <!-- Club Charmant：銀座一丁目のプライベートサロン。母艦内 charmant.html へ内部遷移（Phase 1, 2026-08-28）。
+             ビジュアルは2026-09-11追加のインラインSVG（小さな灯り・グラス・夜の社交）。 -->
+        <a class="content-card content-card--visual" href="charmant.html">
+          <div class="entry-visual entry-visual--charmant" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <radialGradient id="chm-glow" cx="50%" cy="20%" r="45%">
+                  <stop offset="0%" stop-color="#e8b46a" stop-opacity="0.5"/>
+                  <stop offset="100%" stop-color="#12080b" stop-opacity="0"/>
+                </radialGradient>
+                <linearGradient id="chm-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#241016"/>
+                  <stop offset="100%" stop-color="#12080b"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#chm-bg)"/>
+              <rect width="400" height="240" fill="url(#chm-glow)"/>
+              <line x1="200" y1="20" x2="200" y2="46" stroke="#8a5a3a" stroke-width="2"/>
+              <circle cx="200" cy="52" r="10" fill="#e8b46a"/>
+              <path d="M150 190 q0 -34 20 -34 q20 0 20 34 z" fill="none" stroke="#c9a45c" stroke-width="2.5"/>
+              <line x1="170" y1="190" x2="170" y2="212" stroke="#c9a45c" stroke-width="2.5"/>
+              <line x1="156" y1="212" x2="184" y2="212" stroke="#c9a45c" stroke-width="2.5" stroke-linecap="round"/>
+              <path d="M240 190 q0 -34 20 -34 q20 0 20 34 z" fill="none" stroke="#c9a45c" stroke-width="2.5"/>
+              <line x1="260" y1="190" x2="260" y2="212" stroke="#c9a45c" stroke-width="2.5"/>
+              <line x1="246" y1="212" x2="274" y2="212" stroke="#c9a45c" stroke-width="2.5" stroke-linecap="round"/>
+              <path d="M100 90 q20 -14 36 0" fill="none" stroke="#5a3a2c" stroke-width="2" opacity="0.7"/>
+              <path d="M264 90 q20 -14 36 0" fill="none" stroke="#5a3a2c" stroke-width="2" opacity="0.7"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>Club Charmant</h3>
+            <p>銀座昭和浪漫を体現する、大人の社交とサロンの場。</p>
+            <span class="card-cta">詳しく見る</span>
+          </div>
         </a>
       </div>
     </div>
@@ -185,22 +379,66 @@
       <p class="eyebrow">D ／ 自分の銀座へ</p>
       <h2>自分の銀座へ</h2>
       <div class="content-grid content-grid--two">
-        <a class="content-card" href="https://note.com/ginza_whiskers/m/m89442b4f8ae2" target="_blank" rel="noopener">
-          <h3>🌸 銀座、ひと匙の贅沢</h3>
-          <p>五感を澄ませて歩く、私だけの銀座時間を綴るエッセイ。</p>
-          <span class="card-cta">noteで読む</span>
+        <a class="content-card content-card--visual" href="https://note.com/ginza_whiskers/m/m89442b4f8ae2" target="_blank" rel="noopener">
+          <div class="entry-visual entry-visual--hitosaji" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="hts-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#f7ece4"/>
+                  <stop offset="100%" stop-color="#ecd4c6"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#hts-bg)"/>
+              <ellipse cx="200" cy="176" rx="70" ry="14" fill="#d9b79f"/>
+              <path d="M140 130 h120 a4 4 0 0 1 4 4 c0 30 -30 46 -64 46 s-64 -16 -64 -46 a4 4 0 0 1 4 -4z" fill="#c98b73"/>
+              <path d="M264 140 q22 4 18 24 q-4 16 -22 14" fill="none" stroke="#c98b73" stroke-width="5" stroke-linecap="round"/>
+              <line x1="150" y1="90" x2="146" y2="118" stroke="#cfc6bc" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+              <line x1="170" y1="84" x2="168" y2="118" stroke="#cfc6bc" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+              <ellipse cx="200" cy="150" rx="6" ry="14" fill="#f3e3d8"/>
+              <line x1="200" y1="164" x2="200" y2="196" stroke="#a9744f" stroke-width="3" stroke-linecap="round"/>
+              <circle cx="90" cy="196" r="4" fill="#c98b73"/>
+              <circle cx="108" cy="204" r="3" fill="#c9a45c"/>
+              <circle cx="300" cy="200" r="4" fill="#c9a45c"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>🌸 銀座、ひと匙の贅沢</h3>
+            <p>五感を澄ませて歩く、私だけの銀座時間を綴るエッセイ。</p>
+            <span class="card-cta">noteで読む</span>
+          </div>
         </a>
         <!-- GINZA Concierge：各サービス公開時に sub-services を個別リンクへ差し替え、
-             href を付与して is-pending / aria-disabled を削除する。 -->
-        <a class="content-card is-pending" aria-disabled="true">
-          <h3>GINZA Concierge</h3>
-          <p>関心に合わせて、銀座の楽しみ方を案内するサービス群。</p>
-          <ul class="sub-services">
-            <li>Phrase Concierge</li>
-            <li>Culture Concierge</li>
-            <li>私だけの銀座時間</li>
-          </ul>
-          <span class="card-cta">準備中</span>
+             href を付与して is-pending / aria-disabled を削除する。
+             ビジュアルは2026-09-11追加のインラインSVG（一人の訪問者に合わせた道案内）。 -->
+        <a class="content-card content-card--visual is-pending" aria-disabled="true">
+          <div class="entry-visual entry-visual--concierge" aria-hidden="true">
+            <svg viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice">
+              <defs>
+                <linearGradient id="conc-bg" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#241d14"/>
+                  <stop offset="100%" stop-color="#150f0a"/>
+                </linearGradient>
+              </defs>
+              <rect width="400" height="240" fill="url(#conc-bg)"/>
+              <circle cx="150" cy="120" r="52" fill="none" stroke="#c9a45c" stroke-width="3"/>
+              <circle cx="150" cy="120" r="3" fill="#c9a45c"/>
+              <path d="M150 120 L128 88 L150 100 L172 88 Z" fill="#e6cd94"/>
+              <path d="M150 120 L172 152 L150 140 L128 152 Z" fill="#8a6d3a"/>
+              <path d="M215 130 C 250 118, 280 140, 310 118" fill="none" stroke="#8a6d3a" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round"/>
+              <circle cx="310" cy="118" r="6" fill="#c9a45c"/>
+              <path d="M310 100 q10 8 0 18 q-10 -10 0 -18z" fill="#c9a45c"/>
+            </svg>
+          </div>
+          <div class="content-card-body">
+            <h3>GINZA Concierge</h3>
+            <p>関心に合わせて、銀座の楽しみ方を案内するサービス群。</p>
+            <ul class="sub-services">
+              <li>Phrase Concierge</li>
+              <li>Culture Concierge</li>
+              <li>私だけの銀座時間</li>
+            </ul>
+            <span class="card-cta">準備中</span>
+          </div>
         </a>
       </div>
     </div>

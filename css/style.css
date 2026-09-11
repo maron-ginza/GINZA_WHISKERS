@@ -733,3 +733,43 @@ a.content-card:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================
+   入口カードのビジュアル（9枚・コンテンツ別イラスト）
+   2026-09-11 追加。カードごとに固有のインラインSVGイラストを
+   先頭に配置し、一目でコンテンツの体験が区別できるようにする。
+   既存 .content-card は無変更（charmant.html の Three Experiences
+   カード等、画像を持たないカードに影響させないため）。画像付き
+   カードにのみ .content-card--visual を付与し、本文側のパディングを
+   新設の .content-card-body へ移す。hover 前提ではなく常時表示。
+   ========================================================== */
+
+.content-card--visual {
+  padding: 0;
+}
+
+.entry-visual {
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.entry-visual svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.content-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  padding: 26px 28px 30px;
+}
+
+.content-card-body > p {
+  color: var(--color-ink-muted);
+  font-size: 0.92rem;
+  margin: 0 0 1.4em;
+}

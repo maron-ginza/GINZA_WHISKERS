@@ -549,6 +549,64 @@ CLAUDE.md第5.3節参照）。
     ふるい落とし）19アサーション全 PASS。**本番URL・DNS・GitHub Pages・
     Cloudflare Pages 設定・git push は今回行っていない。第9章チェック
     リストの状態は変更なし。**
+  - 2026-09-09: 母艦HOMEの入口構成を9枚のカードへ再編した（commit
+    `c891437`「reorganize project entry points」）。「今の銀座を知る」は
+    `GINZA TIME EDIT`（旧 Discover GINZA）1枚に統合し「旬の銀座」を
+    その一部として吸収、暫定リンクを noteマガジン
+    `https://note.com/ginza_whiskers/m/m03614564526b` とした
+    （Project 02独自サイトへの切替は `data-href` を使う既定方針を維持）。
+    「銀座の時間を感じる」は Tokyo Nostalgic Soundtrack／銀座昭和浪漫日記／
+    GINZA CROSS CULTURE MAP（表記「CVLTURE」を修正）／GINZA 400 YEARS の
+    4枚（デスクトップ2×2、`.content-grid--two`）、「銀座を体験する」は
+    銀座昭和浪漫倶楽部LIVE／Club Charmant の2枚、「自分の銀座へ」は
+    銀座、ひと匙の贅沢／GINZA Concierge（「（仮）」表記を削除）の2枚
+    （デスクトップ2列）とした。既存hrefは全て維持、リンク先の推測変更は
+    行っていない。
+  - 2026-09-11: 上記9枚の入口カードへ、コンテンツ別の確定ビジュアル方針を
+    反映した。**共通ブランド**：黒基調の品格を維持しつつ、カードごとに
+    構図・色調・アクセントカラーを変え、明朝系書体・十分な余白・小さな
+    GINZA WHISKERS表記は共通要素として保持。hover前提にせず、スマート
+    フォンでも常時ビジュアルが見える設計とした。母艦は「世界観を見せ、
+    記事を選び、noteへ送る入口」という位置づけを維持。**アセット調達**：
+    Project 01 `images/` には汎用OGPカード（`og-card.jpg`）以外に使える
+    保存済み写真素材が無いことを確認した。`02-discover-ginza-media-system/
+    media/` 配下には写真素材があるが、特定の記事・店舗に紐づく Project 02
+    固有の資産であり、無関係な流用を避けるため**今回は使用しなかった**
+    （Root CLAUDE.md 第1章のプロジェクト非混同方針に整合）。よって9枚とも
+    実写真ではなく、カードごとに手描き設計したオリジナルのインラインSVG
+    イラストを新規実装した（外部画像ファイル・新規依存追加なし、
+    `index.html` に直接埋め込み）。プレースホルダー画像（無関係画像の
+    流用）は使用していない。**実装**：`.content-card--visual` /
+    `.entry-visual` / `.content-card-body` を追加し、カード先頭に
+    `aspect-ratio: 16/10` のビジュアル枠、本文側はパディングごと
+    `.content-card-body` に移設。既存 `.content-card` 自体は無変更のため
+    `charmant.html` の Three Experiences カード等には影響しない。
+    イラストは装飾要素として `aria-hidden="true"` を付与し、見出し階層
+    （h1→h2→h3）・本文コントラストは既存のまま変更していない。
+    **ブリーフとの不一致**：依頼にあった9項目のうち8項目
+    （旬の銀座｜GINZA TIME EDIT／銀座昭和浪漫倶楽部LIVE／Tokyo Nostalgic
+    Soundtrack／GINZA CROSS CULTURE MAP／銀座、ひと匙の贅沢／
+    GINZA 400 YEARS／Concierge／Club Charmant）は現行カードと1:1で対応した
+    が、「GINZA DIGITAL ART LAB」は現在の入口構造に対応するカードが存在
+    しない（05-2 GINZA DIGITAL ART LAB / GINZA 400 YEARS はワークスペース
+    外の別プロジェクトで、Root CLAUDE.md 2026-08-19 PMO決定により
+    Project 01からリンク先を推測実装しない方針）。「現在の入口構造と
+    リンク先は保持」「リンク先を推測で変更しない」の指示を優先し、
+    既存の「銀座昭和浪漫日記」カード（ブリーフに対応項目なし）は
+    差し替えずそのまま残し、自身の説明文に沿った独自イラスト
+    （ランプの灯り・日記帳）を充てた。GINZA DIGITAL ART LAB を独立の
+    入口カードとして追加するかは**未決**——05-2側の公開URLが確定した
+    段階で改めて判断する。**確認**：9枚のインラインSVGは全てXMLとして
+    整形式であることを検証、note.comへの6リンクは全てHTTP 200、
+    内部アンカー（`#concept`〜`#contact`）・内部ファイル
+    （`charmant.html`等）は全て解決を確認。ブラウザ拡張
+    （claude-in-chrome）が本セッションでスクリプト注入タイムアウトを
+    起こし続けたため、実ブラウザでのスクリーンショットによる目視確認は
+    未実施のまま——ローカルプレビュー（`python3 -m http.server`）でのHTTP
+    到達確認とHTML/SVG構文検証で代替し、Safari起動は別途行った。
+    **対象外**：ヒーロー画像（第9章、実素材未着のため引き続き未実装）、
+    `is-pending` カードの公開化（今回はビジュアル追加のみでリンク状態は
+    不変）、GA4・ドメイン取得等インフラ項目。
 - **未決事項**：記事アーカイブ方針、英語版の要否、ドメイン取得・DNS設定・
   GitHub Pages有効化の実施（決定済み、付録D参照）、GA4タグの実際の実装
   （10月公開直前、Root CLAUDE.md第9章参照。実装後はprivacy.htmlの
@@ -562,10 +620,11 @@ CLAUDE.md第5.3節参照）。
   Contact窓口のメールアドレス（現状は`ginzashowaromanticclub@gmail.com`を
   index等と共用の仮アドレスとして流用中。Charmant専用Contactまたは
   GINZA WHISKERS共通Contactへの移行を将来検討——2026-08-28 Phase 2で
-  TODO化）
+  TODO化）、GINZA DIGITAL ART LAB（05-2）を母艦の入口カードとして
+  独立追加するか（2026-09-11、05-2の公開URL確定待ち）
 - **次のマイルストーン**：ドメイン`ginzawhiskers.com`の実際の取得と、
   付録Dの手順に沿ったGitHub Pages設定。またはヒーロー画像素材の取材・取得
-- **最終更新日**：2026-08-28
+- **最終更新日**：2026-09-11
 
 ---
 
