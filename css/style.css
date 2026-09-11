@@ -543,6 +543,9 @@ a.content-card:hover {
 
 .latest-fallback {
   margin-top: 24px;
+  padding: 20px 24px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
   color: var(--color-ink-muted);
   font-size: 0.95rem;
 }
@@ -772,4 +775,118 @@ a.content-card:hover {
   color: var(--color-ink-muted);
   font-size: 0.92rem;
   margin: 0 0 1.4em;
+}
+
+/* ==========================================================
+   入口カードの編集型レイアウト（2026-09-13 追加）
+   均一な2列グリッドから、コンテンツごとに比率・配置・ビジュアルの
+   アスペクト比を変えた編集型レイアウトへ再構成。対象は #feel /
+   #experience / #your-ginza のグリッド列数と個別カードの
+   grid-column、#know のリードカードの内部構成、各カードの
+   entry-visual のアスペクト比のみ。テキスト・リンク先・公開状態
+   （is-pending）・9点の既存SVG（仮素材）はそのまま維持し、新規SVGは
+   追加していない。黒基調の配色（:root のカスタムプロパティ）も
+   無変更。
+   ========================================================== */
+
+/* カードごとのビジュアル比率（既存 entry-visual--* に上書き指定） */
+.entry-visual.entry-visual--time-edit     { aspect-ratio: 16 / 8; }
+.entry-visual.entry-visual--soundtrack    { aspect-ratio: 4 / 3; }
+.entry-visual.entry-visual--diary         { aspect-ratio: 4 / 5; }
+.entry-visual.entry-visual--cross-culture { aspect-ratio: 21 / 6; }
+.entry-visual.entry-visual--400years      { aspect-ratio: 16 / 6; }
+.entry-visual.entry-visual--live          { aspect-ratio: 4 / 3; }
+.entry-visual.entry-visual--charmant      { aspect-ratio: 5 / 4; }
+.entry-visual.entry-visual--hitosaji      { aspect-ratio: 4 / 5; }
+.entry-visual.entry-visual--concierge     { aspect-ratio: 3 / 4; }
+
+/* セクション別のグリッド列数（デスクトップ） */
+.content-grid--feel       { grid-template-columns: repeat(5, 1fr); }
+.content-grid--experience { grid-template-columns: repeat(3, 1fr); }
+.content-grid--your-ginza { grid-template-columns: repeat(4, 1fr); }
+
+/* カード幅の比率ユーティリティ（列数はセクション側の grid-template-columns で決まる） */
+.cc-span-1    { grid-column: span 1; }
+.cc-span-2    { grid-column: span 2; }
+.cc-span-3    { grid-column: span 3; }
+.cc-span-full { grid-column: 1 / -1; }
+
+/* GINZA Concierge：案内状のような上罫線アクセント（既存のゴールド変数を流用） */
+.content-card--invitation .content-card-body {
+  border-top: 1px solid var(--color-gold);
+}
+
+/* GINZA TIME EDIT：desktopで横長の主役カードへ（ビジュアル=左44%／本文=右56%） */
+@media (min-width: 720px) {
+  .content-card--hero {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .content-card--hero .entry-visual {
+    width: 44%;
+    aspect-ratio: auto;
+    border-bottom: none;
+    border-right: 1px solid var(--color-border);
+    flex-shrink: 0;
+  }
+
+  .content-card--hero .content-card-body {
+    width: 56%;
+  }
+}
+
+/* 準備中バッジ（3件共通。既存 .card-cta の文言をビジュアル上にも可視化するのみで
+   新規の文言は追加していない。装飾要素のため aria-hidden の entry-visual 内に
+   ::after で描画し、スクリーンリーダーには既存の .card-cta 側のみを読ませる） */
+.entry-visual {
+  position: relative;
+}
+
+.is-pending .entry-visual::after {
+  content: "準備中";
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: var(--color-ink);
+  background: rgba(11, 11, 12, 0.6);
+  border: 1px solid var(--color-border);
+}
+
+/* タブレット以下：編集型グリッドは1列に戻し、カードはフル幅で積む */
+@media (max-width: 860px) {
+  .content-grid--feel,
+  .content-grid--experience,
+  .content-grid--your-ginza {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-span-1,
+  .cc-span-2,
+  .cc-span-3,
+  .cc-span-full {
+    grid-column: 1 / -1;
+  }
+}
+
+/* スマートフォン：極端な比率（帯状ビジュアル等）を読みやすい比率に統一 */
+@media (max-width: 720px) {
+  .entry-visual.entry-visual--soundtrack,
+  .entry-visual.entry-visual--diary,
+  .entry-visual.entry-visual--live,
+  .entry-visual.entry-visual--charmant,
+  .entry-visual.entry-visual--hitosaji,
+  .entry-visual.entry-visual--concierge {
+    aspect-ratio: 16 / 10;
+  }
+
+  .entry-visual.entry-visual--cross-culture,
+  .entry-visual.entry-visual--400years {
+    aspect-ratio: 16 / 9;
+  }
 }
