@@ -14,6 +14,52 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き7（🍰 **「スウィーツ候補の安定収集」続き——詳細ページ追跡を実装**。
+    新規SWEETS判定22件が「内容」未確認で最終候補になっていない根本原因を特定・修正。
+    **Project 02 コミット・push あり／DB更新あり（DiscoveredContent 41件を実際に
+    詳細ページ取得・更新）／`./p2 crawl` は再実行せず（別の対象を絞った補完手段）／
+    記事生成・承認・note転記・公開は未実施**）:
+
+    **根本原因の特定**：`./p2 crawl` の Stage 2（個別ページ実取得）は全サイト共有の
+    予算（既定20件/回、`runCrawl.ts`）を SOURCE LEDGER の登録順（＝作成順）に消費する。
+    新規追加したスウィーツ情報源は既存Core Sourceより後にDB登録されているため、
+    処理が回ってくる頃には共有予算が尽きており、Stage 2が一度も実行されず
+    `articleFetchStatus='not_fetched'` のまま excerpt（内容）・venue（場所）・日付が
+    空欄になっていた——抽出ロジック自体の欠陥ではなく、予算配分の到達順序の問題。
+
+    **実装**：新規 `cms/src/scripts/sweetsDetailPageFetch.ts`（`./p2 sweets-detail-fetch
+    [--dry-run]`）。`./p2 crawl` を再実行せず、対象10情報源発の `discovered-content` の
+    うち `articleFetchStatus != 'fetched'` の行だけを対象に、**既存の汎用抽出器
+    `fetchArticleMetadata`**（JSON-LD／meta description／見出し／日付を Tier1〜3で
+    決定的に抽出、robots.txt準拠・4MB上限・15秒タイムアウトは元から実装済み）を
+    そのまま1回だけ追加実行。情報源別adapterの新規追加は不要だった（既存の汎用抽出で
+    十分機能）。リンク抽出・同一ドメイン制限（`isSameOrigin`）・一覧/企業情報/採用情報の
+    除外（`urlGranularity.ts` の既存 LISTING_SEGS／NON_ARTICLE_SEGS）は Stage 1で
+    既に適用済みの結果を使うため新規実装なし。DB書き込みは対象行の
+    title/excerpt/日付/venue/imageUrl/articleFetchStatus のみ（discoveryStatus・
+    curationStatus・linkFingerprint には触れず Stage 1 の差分判定を壊さない）。
+    リクエスト間隔350msで政治的配慮。
+
+    **実行結果**：10情報源中、未取得だった41件すべてに対しStage2実行、**41/41件成功**
+    （失敗0件）。excerpt は400〜1200字が新たに埋まり、帝国ホテル2件・とらや3件で
+    開催・販売期間も抽出できた。`facilityKey.ts`（前回コミット分）の効果で「場所」も
+    解決済みのため、officialCompleteness の finalEligible は **1件→14件に増加**。
+
+    **それでも確認候補は1件（DC#352）のまま——理由を安全性gateまで遡って特定**：
+    finalEligible な14件を安全性gate（`evaluateSafetyGate`）まで通すと、gate を
+    ノークレームで通過するのは **DC#352・#141・#247（すべてGINZA SIX）の3件のみ**
+    （施設分散キャップで1件に収束）。他11件はそれぞれ正当な理由で除外——千疋屋の
+    「6月の栗スイーツ」等は`expired`（今日9/11時点で6月の季節企画は終了済み）、
+    とらやの「敬老の日」「空港限定」等は`not_ginza`（銀座店ではなく全社共通ニュース）、
+    歌舞伎座・帝国ホテルの一部は`unknown_type`/`unknown_factkind`（記事種別を
+    決定的に判別できず）。**いずれも基準を緩めて救わず**、正当な除外として確定。
+
+    **検証**：`tsc --noEmit` 0エラー・`run-all.ts` **445 passed 0 failed**
+    （新規スクリプトはDB依存のためpure-function `.check.ts` 対象外、実データでの
+    41/41成功をもって検証とした）。`./p2 morning-brief` を再実行（crawl再実行なし）し
+    確認候補1件（DC#352）・不足理由・次回探索種別（百貨店の食品・催事公式情報）を
+    再確認。**記事生成・承認・note転記・外部公開は未実施。#352は保留のまま維持。**
+
   - 2026-09-11 続き6（🍰 **「スウィーツ候補の安定収集」続き——次回優先種別への実接続**。
     未完了（確認候補1/3件）を受け、公式情報源3件を追加実接続し、facilityKey.ts の
     情報源＝施設マッピング不足という構造要因を修正。**Project 02 コミット・push あり／

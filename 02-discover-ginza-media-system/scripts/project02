@@ -2710,6 +2710,19 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/reviewToday.ts "$@" )
     ;;
+  sweets-detail-fetch)
+    shift
+    # スウィーツ情報源の詳細ページ追跡（Stage 2 補完）：全サイト共有のcrawl予算が
+    # 尽きて個別ページ取得（内容・会場・日付）が空欄のままになっている候補だけを対象に、
+    # 既存の汎用抽出器（JSON-LD/meta description等）で1回だけ追加取得する。
+    # ./p2 crawl の再実行はしない。--dry-runで対象一覧のみ表示。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/sweetsDetailPageFetch.ts "$@" )
+    ;;
   morning-brief)
     shift
     # 朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ（スイーツ含む）③文化・アート
@@ -2780,6 +2793,7 @@ case "${1:-status}" in
     echo "  ./p2 am-candidates [--limit=N] [--json]  am-run の読み取り専用ビュー（--no-write 相当、外部取得なし）。A判定のみ優先順位5位まで、B/Cは別表。--json は 'grep -E \"^{\" | tail -1' で取得"
     echo "  ./p2 candidate-review <dcId...> [--no-fetch] [--json]  指定候補（複数可）の人間レビュー資料を1コマンドで生成：詳細・ArticleFacts/hashtags・既存Articles＋night queueとの重複・直近記事の施設/情報源偏り・（既定）当日の公式ページ再取得〈403等は「確認できません」と明記〉・適合理由/切り口・採用見送りの推奨。DB書き込み・AI呼び出し・ready化・記事作成・公開・push・note/Chrome/X操作なし。.devlogs/morning/candidate-review/ へ保存"
     echo "  ./p2 morning [--fetch]  朝の作業開始を1コマンドで：起動＋status/doctor/editorial/social/jobs/preflight＋【明朝パイプライン(am-run)】＋draft-today/draft-interestのdry-run＋次の推奨工程。明朝の候補生成はこの am-run が唯一の経路"
+    echo "  ./p2 sweets-detail-fetch [--dry-run]  スウィーツ情報源の詳細ページ追跡（Stage2補完）：crawl共有予算切れで内容/会場/日付が未取得のまま残っている候補だけ対象に1回だけ追加取得（JSON-LD/meta description等の既存汎用抽出器を再利用）。crawlの再実行はしない"
     echo "  ./p2 morning-brief [--limit=N] [--json]  朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ(スイーツ含む) ③文化・アート 各1本で選定（施設集中の自動回避・重複/既記事化の除外・偏り補正）→ 候補要約＋必須ArticleFacts12項目(無い項目は「公式記載なし」)＋公式出典を1画面 → 承認/保留/却下の1操作(admin URL)＋承認後のnote下書き自動転記手順。読み取り専用・推測補完なし。.devlogs/morning/brief/ へ保存"
     echo "  ./p2 review-today [--ids=..] [--port=N] [--no-open]  本日記事レビュー画面：本日生成した記事下書きをタイトル/リード/note本文全文/ArticleFacts/公式URL+確認日/X案/IG案(自動生成)/ハッシュタグ4個/挿絵注釈/WARNING を1画面表示（localhost・承認/修正/保留ボタン＋「選択内容を確定」1つ）。承認した記事だけ ./p2 review-today transfer <articleId> で note 下書きへ転記（下書きまで・公開はマロン手動）。DB書き込みは socialCopy.instagram 自動補完のみ"
     echo "  ./p2 prod-status Railway/Cloudflareの本番リソース状態を読み取り専用で確認（railway_ro/wrangler_ro経由のみ、値は表示しません）"
