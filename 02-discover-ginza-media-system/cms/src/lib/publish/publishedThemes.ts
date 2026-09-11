@@ -47,9 +47,18 @@ export function normalizeThemeText(s: string | null | undefined): string {
   return (s ?? '')
     .toString()
     .toLowerCase()
-    .replace(/[【】「」『』（）()［］\[\]〈〉《》｜|―—\-‐・･,.、。：:;；!！?？'"’”“]/g, '')
+    .replace(/[【】「」『』（）()［］\[\]〈〉《》｜|―—–━〜~\-‐・･,.、。：:;／/!！?？'"’”“]/g, '')
     .replace(/\s+/g, '')
     .replace(/展$|展。$/g, '展')
+    .trim()
+}
+
+/** タイトル末尾の「 – GINZA SIX」「（銀座 蔦屋書店）」等の会場サフィックスを落とす */
+export function stripFacilitySuffix(s: string | null | undefined): string {
+  return (s ?? '')
+    .toString()
+    .replace(/\s*[–—―\-]\s*[^–—―\-]{1,20}$/,'') // 「 – GINZA SIX」
+    .replace(/\s*[（(][^（()]{1,24}[)）]\s*$/,'') // 「（銀座 蔦屋書店）」
     .trim()
 }
 
@@ -171,6 +180,21 @@ export function matchPublishedTheme(
         reason: `イベント名が意味的に一致（類似度 ${evSim.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
         matchedUrl: p.noteUrl,
         matchedTitle: p.title,
+      }
+    }
+    // 3b. 候補の固有名（会場サフィックス等を除いた実体）が、既公開タイトル／催事名にほぼ丸ごと
+    //     埋もれている（別サイトの同一イベント告知を、タイトルの長短だけで取りこぼさない）。
+    const candCore = stripFacilitySuffix(cand.eventName ?? cand.title)
+    if (normalizeThemeText(candCore).length >= 6) {
+      const pText = `${p.title} ${p.eventName ?? ''}`
+      const cov = bigramCoverage(candCore, pText)
+      if (cov >= 0.78) {
+        return {
+          match: true,
+          reason: `固有名が既公開記事にほぼ一致（被覆 ${cov.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
+          matchedUrl: p.noteUrl,
+          matchedTitle: p.title,
+        }
       }
     }
     // 4. 会場一致 ＋ 期間重なり（or 会場一致＋イベント名の弱一致）

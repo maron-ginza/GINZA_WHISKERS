@@ -91,6 +91,20 @@ export interface ThemeCandidate {
   venueHistoryPenalty?: number
   /** ソース種別（source_balance 用。百貨店／飲食・菓子／美容・ウェルネス／…） */
   sourceTypeKey?: string | null
+  // --- 2026-09-11 追加：収集カバレッジ（candidateCoverageScore.ts。すべて任意・未設定なら従来どおり）---
+  /** 公式情報の完全度 0-1（公式URL・開催期間・場所・内容の確認割合） */
+  officialCompletenessScore?: number | null
+  /** 公式情報で未確認の項目（表示用） */
+  officialMissing?: string[] | null
+  /** URL・期間・場所・内容がすべて揃っているか。false は最終候補（推奨・予備）に上げない */
+  finalEligible?: boolean
+  /** 開催終了までの日数（null＝期日なし） */
+  daysUntilEnd?: number | null
+  daysUntilEndTier?: 'expired' | 'ending_soon' | 'this_week' | 'comfortable' | 'far' | 'no_end' | null
+  /** カバレッジ補正（biasAdjust に合流。正＝不足カテゴリー／終了間近／女性適合、負＝大手施設集中）*/
+  coverageAdjust?: number
+  /** カバレッジ補正の一言（候補一覧の表示用）*/
+  coverageReason?: string | null
   /**
    * CROSS CULTURE FILTER の結果（GINZA WHISKERS 適合判定の後段。読み取り専用で付与）。
    * 選定ロジックには一切影響しない —— 派生記事候補生成・有料化候補判定・マロン承認の
@@ -147,6 +161,12 @@ export interface SelectThemesConfig {
   categoryMaxInRec: number
   /** finalized にするために推奨10件が満たすべき最小カテゴリー種類数 */
   minCategoriesInRec: number
+  /**
+   * 2026-09-11：実データ経路（enableTargetFitRanking）で、公式URL・開催期間・場所・内容の
+   * いずれかが確認できない候補（finalEligible=false）を推奨・予備どちらにも出さない。
+   * 既定 true。THEMES_REQUIRE_OFFICIAL_COMPLETE=0 で緩められる。
+   */
+  requireOfficialCompleteFinal: boolean
 }
 
 export const DEFAULT_SELECT_THEMES_CONFIG: SelectThemesConfig = {
@@ -181,6 +201,7 @@ export const DEFAULT_SELECT_THEMES_CONFIG: SelectThemesConfig = {
   lowConfidenceTemporalMaxInRec: 0,
   categoryMaxInRec: 3,
   minCategoriesInRec: 6,
+  requireOfficialCompleteFinal: true,
 }
 
 export function loadSelectThemesConfigFromEnv(
@@ -189,6 +210,11 @@ export function loadSelectThemesConfigFromEnv(
   const num = (k: string, d: number) => {
     const v = Number(process.env[k])
     return Number.isFinite(v) && v >= 0 ? v : d
+  }
+  const bool = (k: string, d: boolean) => {
+    const v = process.env[k]
+    if (v == null || v === '') return d
+    return !/^(0|false|no|off)$/i.test(v.trim())
   }
   return {
     ...base,
@@ -216,6 +242,7 @@ export function loadSelectThemesConfigFromEnv(
     lowConfidenceTemporalMaxInRec: num('THEMES_LOW_CONFIDENCE_TEMPORAL_MAX', base.lowConfidenceTemporalMaxInRec),
     categoryMaxInRec: num('THEMES_CATEGORY_MAX', base.categoryMaxInRec),
     minCategoriesInRec: num('THEMES_MIN_CATEGORIES', base.minCategoriesInRec),
+    requireOfficialCompleteFinal: bool('THEMES_REQUIRE_OFFICIAL_COMPLETE', base.requireOfficialCompleteFinal),
   }
 }
 
@@ -231,6 +258,7 @@ export type SafetyGateFailCode =
   | 'unknown_type'
   | 'unknown_factkind'
   | 'no_title'
+  | 'official_incomplete'
 
 /**
  * 生成準備の状態（安全性 gate とは別。gate は「安全な候補か」、readiness は
@@ -389,6 +417,7 @@ export const SAFETY_GATE_CHECKS = [
   '追跡可能な公式出典 URL を持つ',
   '記事種別を判別できる（unknown でない）',
   '正式タイトルを確認できる',
+  '公式URL・開催期間・場所・内容をすべて確認できる',
 ] as const
 
 export function safetyGateEvidence(c: ThemeCandidate): { passed: string[]; failed: SafetyGateFailCode[] } {
@@ -402,6 +431,7 @@ export function safetyGateEvidence(c: ThemeCandidate): { passed: string[]; faile
     unknown_type: SAFETY_GATE_CHECKS[5],
     unknown_factkind: SAFETY_GATE_CHECKS[5],
     no_title: SAFETY_GATE_CHECKS[6],
+    official_incomplete: SAFETY_GATE_CHECKS[7],
   }
   const failedChecks = new Set(failed.map((f) => failCodeToCheck[f]))
   return { passed: SAFETY_GATE_CHECKS.filter((ch) => !failedChecks.has(ch)), failed }
@@ -499,6 +529,11 @@ export function selectRecommendedThemes(
   const pool: EvaluatedCandidate[] = []
   for (const c of input) {
     const fails = evaluateSafetyGate(c, cfg)
+    // 2026-09-11：実データ経路（tfOn）では、公式URL・開催期間・場所・内容のいずれかが
+    // 確認できない候補（finalEligible=false）を推奨・予備どちらにも出さない（推測補完しない・0件許容）。
+    if (tfOn && cfg.requireOfficialCompleteFinal && c.finalEligible === false && !fails.includes('official_incomplete')) {
+      fails.push('official_incomplete')
+    }
     if (fails.length > 0) {
       rejected.push({ candidate: c, gateFails: fails })
       continue
@@ -631,6 +666,9 @@ export function selectRecommendedThemes(
         parts.biasAdjust -= recommended.length < 5 ? 0.18 : 0.1
       // ART / CULTURE の過集中を抑制（合計3件目以降は逓増減点。旬度が高ければ freshness で相殺可）
       if (ART_CULTURE.has(e.categoryKey)) parts.biasAdjust -= 0.12 * artCultureRec
+      // 2026-09-11：収集カバレッジ補正（過去7日の大手施設集中−／18カテゴリー不足＋／終了間近＋／女性適合＋）。
+      // assessInboxPool が candidateCoverageScore.computeCandidateCoverage で決定的に算出済み。
+      parts.biasAdjust += c.coverageAdjust ?? 0
 
       parts.total += parts.targetFit + parts.editorial + parts.sourceBalance + parts.biasAdjust
     }

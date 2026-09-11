@@ -104,6 +104,19 @@ const cases: CheckCase[] = [
     },
   },
   {
+    name: '重複⑥：別サイトの同一イベント告知（会場サフィックス違い・タイトル長短違い）',
+    fn: () => {
+      // 既公開: 蔦屋書店の「UNO YOSHIHIKO個展「The Ghosts\' Party」」（長いタイトル）
+      // 候補:   GINZA SIX 掲載の「UNO YOSHIHIKO個展「The Ghosts\' Party」 – GINZA SIX」
+      const m = matchPublishedTheme(
+        { dcId: 596, title: 'UNO YOSHIHIKO個展「The Ghosts\' Party」 – GINZA SIX', eventName: 'UNO YOSHIHIKO個展「The Ghosts\' Party」 – GINZA SIX', venue: 'GINZA SIX', period: '2026-08-28〜2026-09-15' },
+        PUBLISHED,
+      )
+      assert(m.match, `別サイトの同一告知が取りこぼされた: ${m.reason}`)
+      assert(m.matchedUrl === 'https://note.com/ginza_whiskers/n/nda78e93e375f', m.matchedUrl ?? 'null')
+    },
+  },
+  {
     name: '非重複：会場が同じでも期間が離れ・テーマも別（別の展示）',
     fn: () => {
       const m = matchPublishedTheme(

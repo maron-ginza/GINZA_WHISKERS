@@ -53,6 +53,10 @@ export interface BriefCandidateInput {
   alreadyPublished?: boolean
   /** 既公開重複の理由（表示用） */
   publishedReason?: string | null
+  /** 公式URL・開催期間・場所・内容がすべて確認できるか。false は最終候補に上げない（推測補完しない） */
+  finalEligible?: boolean
+  /** 公式情報で未確認の項目（表示用） */
+  officialMissing?: string[] | null
 }
 
 export interface BriefFactsInput {
@@ -258,6 +262,14 @@ export function buildMorningBrief(
           dcId: c.dcId,
           title: c.displayTitle ?? c.title,
           skipped: `既公開テーマとの重複（${c.publishedReason ?? '全公開履歴と一致'}）`,
+        })
+        continue
+      }
+      if (c.finalEligible === false) {
+        bucket.considered.push({
+          dcId: c.dcId,
+          title: c.displayTitle ?? c.title,
+          skipped: `公式情報の完全度不足（未確認: ${(c.officialMissing ?? ['公式URL/期間/場所/内容']).join('・')}）— 最終候補に上げない`,
         })
         continue
       }

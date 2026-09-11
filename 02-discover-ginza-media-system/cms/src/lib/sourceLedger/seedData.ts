@@ -2,7 +2,8 @@ import type { SourceLedgerEntry } from './types'
 
 // SOURCE LEDGER v1（2026-08-15）初期Core Source候補。
 //
-// 全14件、CLAUDE.md記載の初期Core Source候補と一致させている。urlはすべてWebSearchで
+// 初期Core Source候補（14件）＋2026-09-04追加のprimary専門店/美術館7件＋2026-09-11追加の
+// 収集カバレッジ補完6件（enabled:false・要目視確認）。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -386,5 +387,114 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       '銀座夏野（銀座の箸専門店。工芸・暮らし・ワークショップ・季節のギフト）の「お知らせ」一覧。' +
       '2026-09-04、巡回フェッチャーで HTTP 200・robots.txt 許可・個別記事リンク15件' +
       '（/blog/news/<id>＝日付つき記事・ワークショップ案内）を実地確認。',
+  },
+  // ───────────────────────────────────────────────────────────────
+  // 2026-09-11 収集カバレッジ不足の補完（BEAUTY／FOOD／CULTURE が百貨店・蔦屋に偏り、
+  // ビューティー専門・老舗・路面店・ギャラリーの母数が薄いため追加）。
+  // URL は一般に公開されている公式トップ相当を暫定登録。**enabled:false のまま**にし、
+  // 次回巡回前に「一覧ページの実在・robots.txt・個別記事リンク形式」を目視確認してから
+  // enabled:true にすること（seedData の他エントリと同じ確認プロセス）。
+  // ───────────────────────────────────────────────────────────────
+  {
+    id: 'shiseido-the-store-ginza',
+    name: 'SHISEIDO THE STORE（銀座）',
+    url: 'https://thestore.shiseido.co.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'BEAUTY 母数の補完。資生堂の銀座フラッグシップ（コスメ・フレグランス・イベント・限定品）。' +
+      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+  },
+  {
+    id: 'itoya-ginza',
+    name: '銀座・伊東屋',
+    url: 'https://www.ito-ya.co.jp/ginza/',
+    category: 'commercial',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SHOPPING／WORKSHOP／GIFT 母数の補完。1904年創業の銀座の文具専門店（フェア・実演・ワークショップ・季節の品）。' +
+      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+  },
+  {
+    id: 'ginza-kimuraya-sohonten',
+    name: '銀座木村家（木村屋總本店）',
+    url: 'https://www.ginzakimuraya.jp/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'FOOD（老舗）母数の補完。1869年創業のあんぱん発祥の店（季節の菓子・限定品・催事）。' +
+      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+  },
+  {
+    id: 'ginza-akebono',
+    name: '銀座あけぼの',
+    url: 'https://www.ginza-akebono.co.jp/',
+    category: 'food',
+    tier: 'discovery',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'FOOD／GIFT（老舗和菓子）母数の補完。1948年創業（季節の和菓子・ギフト・限定）。' +
+      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+  },
+  {
+    id: 'ggg-ginza-graphic-gallery',
+    name: 'ギンザ・グラフィック・ギャラリー（ggg）',
+    url: 'https://www.ggg.jp/',
+    category: 'art_culture',
+    tier: 'secondary',
+    language: 'ja_en',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'CULTURE／ART（デザイン専門ギャラリー）母数の補完。DNP 運営、グラフィックデザインの企画展。' +
+      '2026-09-11 追加。展覧会一覧ページ URL・robots.txt・会期表記を目視確認してから enabled 化する。',
+  },
+  {
+    id: 'maison-hermes-le-forum-ginza',
+    name: '銀座メゾンエルメス フォーラム',
+    url: 'https://www.maisonhermes.jp/ginza/le-forum/',
+    category: 'art_culture',
+    tier: 'discovery',
+    language: 'ja_en',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: false,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'ART（現代美術）母数の補完。銀座メゾンエルメス8・9階の展示スペース。' +
+      '2026-09-11 追加。展覧会一覧ページ URL・robots.txt・会期表記を目視確認してから enabled 化する。',
   },
 ]

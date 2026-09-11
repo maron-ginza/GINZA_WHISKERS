@@ -22,6 +22,7 @@ import { buildTemplatePrecheck } from '../morning/templatePrecheck'
 import { extractExplicitPeriod, periodFromUrlSlug } from './extractExplicitPeriod'
 import { getOrComputeCrossCulture } from '../crossCulture'
 import { computeTargetFitScore, sourceTypeOf } from './targetFitScore'
+import { computeCandidateCoverage } from './candidateCoverageScore'
 import { deriveProvisionalCategory } from './provisionalCategory'
 import { resolveFacilityKey } from '../curation/facilityKey'
 import type {
@@ -102,8 +103,10 @@ export interface AssessInboxPoolResult {
     approvedCount: number
     /** 18カテゴリー別の採用件数 */
     categoryCounts: Record<string, number>
-    /** 施設別の採用件数 */
+    /** 施設別の採用件数（表示用ラベルをキーにする） */
     facilityCounts: Record<string, number>
+    /** 施設別の採用件数（facilityKey をキーにする。大手施設集中の抑制に使う） */
+    facilityKeyCounts: Record<string, number>
     /** 直近の採用施設（most-recent-first・最大12件。連続採用検知用） */
     recentFacilitySequence: string[]
   }
@@ -264,6 +267,7 @@ export async function assessInboxPool(
     approvedCount: 0,
     categoryCounts: {},
     facilityCounts: {},
+    facilityKeyCounts: {},
     recentFacilitySequence: [],
   }
   try {
@@ -310,6 +314,7 @@ export async function assessInboxPool(
       const fk = resolveFacilityKey({ venue: dl.venue, sourceName: dl.sourceSiteName, sourceUrl: dl.articleUrl, title: dl.title })
       const label = fk.store || dl.venue || '(会場不明)'
       history.facilityCounts[label] = (history.facilityCounts[label] ?? 0) + 1
+      if (fk.key) history.facilityKeyCounts[fk.key] = (history.facilityKeyCounts[fk.key] ?? 0) + 1
       if (history.recentFacilitySequence.length < 12) history.recentFacilitySequence.push(label)
     }
   } catch {
@@ -546,6 +551,36 @@ export async function assessInboxPool(
         })
         c.categoryHistoryPenalty = catHistPenalty(prov.category ?? c.primaryCategory ?? null)
         c.venueHistoryPenalty = facHistPenalty(fk.key ?? '(会場不明)')
+
+        // --- 2026-09-11：収集カバレッジ（過去7日の施設集中／18カテゴリー不足／公式完全度／
+        //     女性適合／開催終了までの日数）。candidateCoverageScore で決定的に算出（AI なし）---
+        const factsDoc = afByDc.get(c.discoveredContentId)
+        const cov = computeCandidateCoverage({
+          category: prov.category ?? c.primaryCategory ?? null,
+          facilityKey: fk.key,
+          categoryCounts7d: history.categoryCounts,
+          facilityCounts7d: history.facilityKeyCounts,
+          official: {
+            sourceUrl: c.sourceUrl,
+            eventStartAt: c.eventStartAt,
+            eventEndAt: c.eventEndAt,
+            eventPeriod: c.eventPeriod,
+            venue: c.venue,
+            facilityResolved: fk.key != null,
+            whatHappens: (factsDoc?.whatHappens as string | null) ?? null,
+            excerpt: c.excerpt,
+          },
+          targetFit: tf.score,
+          eventEndAt: c.eventEndAt,
+          now,
+        })
+        c.officialCompletenessScore = cov.official.score
+        c.officialMissing = cov.official.missing
+        c.finalEligible = cov.official.finalEligible
+        c.daysUntilEnd = cov.daysUntilEnd.days
+        c.daysUntilEndTier = cov.daysUntilEnd.tier
+        c.coverageAdjust = cov.adjust
+        c.coverageReason = cov.reason
       } catch {
         /* この候補だけスキップ */
       }

@@ -14,6 +14,70 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き2（📊 **候補収集カバレッジのスコアリングと診断**（過去7日の施設集中／18カテゴリー
+    不足／公式情報の完全度／女性適合／開催終了までの日数を毎朝の候補順位へ反映）。
+    **Project 02 コミット・push あり／DB 更新なし＝読み取り専用の診断・再選定のみ／
+    `./p2 crawl` で本日分を再収集（既存の情報源リスト・HTTP のみ・AI/課金なし）**）:
+
+    **背景**：既公開2本（#61/#62）除外後、本日の公式確認可能な候補が実質0本。原因を診断
+    したところ ①ART が突出して過収集（inbox 400件中 ART×80／FOOD×10／BEAUTY×3）
+    ②WELLNESS・CULTURE・ARCHITECTURE・HOTEL・EXPERIENCE は収集0件 ③施設が GINZA SIX・
+    蔦屋・(会場不明) に偏る ④公式URL・期間・場所・内容が4項目そろう候補は 111/400 件のみ。
+
+    **恒久改善（コード・すべて決定的・AI/DB なし）**：
+    - 新規 `cms/src/lib/pipeline/candidateCoverageScore.ts`＝5点を 0-1／±値で採点：
+      `facilityConcentrationPenalty`（過去7日の同一施設採用数。大手4施設＝GINZA SIX／
+      銀座三越／松屋銀座／銀座 蔦屋書店 は倍率2.2＋1件でも先行減点、下限 -0.4）／
+      `categoryDeficiencyBonus`（週次目標配分 `CATEGORY_WEEKLY_TARGET` との差。0件のコア
+      カテゴリーは高ボーナス、目標到達で0）／`officialCompleteness`（公式URL・開催期間・
+      場所・内容の4項目。全部そろわないと `finalEligible=false`）／`targetWomenFitScore`
+      （targetFit 0-100→0-1）／`daysUntilEndScore`（終了間近=1／終了済み=0）。
+      `computeCandidateCoverage` がこれらを biasAdjust 用の `adjust` に合成。
+      `aggregateCoverage` が収集済み候補を 18カテゴリー・施設・エリア別に集計し
+      不足カテゴリー・過集中施設を抽出（診断用）。回帰テスト
+      `candidateCoverageScore.check.ts`（7件）。
+    - `assessInboxPool.ts`＝7日履歴に `facilityKeyCounts`（facilityKey 別）を追加し、
+      素性付与ループで `computeCandidateCoverage` を各候補へ適用。新しい任意フィールド
+      `officialCompletenessScore` / `officialMissing` / `finalEligible` / `daysUntilEnd` /
+      `daysUntilEndTier` / `coverageAdjust` / `coverageReason` を `ThemeCandidate` へ付与。
+    - `selectRecommendedThemes.ts`＝(a) `enableTargetFitRanking` の実データ経路で、
+      `finalEligible=false` の候補を新 gate コード `official_incomplete` で**推奨・予備
+      どちらにも上げない**（公式URL・期間・場所・内容のいずれか未確認＝最終候補にしない。
+      `THEMES_REQUIRE_OFFICIAL_COMPLETE=0` で緩和可）。(b) `coverageAdjust` を biasAdjust に
+      合流。既定 false／fixture・S1〜S16 は挙動不変。新規テスト S17（4件）。
+    - `themesRecommend.ts`＝先頭に「■ 収集カバレッジ診断」節（18カテゴリー別・施設別・
+      不足カテゴリー・過集中施設・公式4項目そろう件数・過去7日採用）、各候補行に
+      「収集カバレッジ: 公式完全度／終了まで／補正」を追加。
+    - `morningBriefSelect.ts` / `morningBrief.ts`＝`finalEligible=false` を朝刊候補から
+      理由つきで除外（`officialMissing` を表示）。
+    - 新規 `./p2 sources coverage`（`cms/src/scripts/sourceCoverage.ts`）＝登録済み情報源
+      （SOURCE LEDGER）を施設種別・tier・enabled 別に、収集済み候補を 18カテゴリー・
+      施設別に集計し、不足カテゴリー・過集中施設・公式情報の完全度を1画面表示（読み取り専用）。
+    - `既公開テーマ判定の補強`（前エントリの続き）＝`publishedThemes.ts` に正規化の記号を
+      追加（–／━／〜／全角スラッシュ）、`stripFacilitySuffix`（「 – GINZA SIX」等）＋
+      ルール3b（候補の固有名が既公開タイトルに bigram 被覆 ≥0.78 で埋もれていれば重複）。
+      別サイトの同一イベント告知（例：UNO YOSHIHIKO 個展の 蔦屋掲載 vs GINZA SIX 掲載）を
+      取りこぼさない。テスト「重複⑥」を追加（publishedThemes 14件）。
+
+    **SOURCE LEDGER 拡張**：`seedData.ts` に BEAUTY／FOOD／CULTURE の母数が薄い問題への
+    補完として非百貨店の路面店・専門店・ギャラリー6件を追加（SHISEIDO THE STORE／
+    銀座・伊東屋／銀座木村家／銀座あけぼの／ギンザ・グラフィック・ギャラリー／
+    銀座メゾンエルメス フォーラム）。**すべて `enabled:false`**——次回巡回前に
+    一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する
+    （他エントリと同じ確認プロセス。今回は台帳へ記録するのみ）。
+
+    **本日の再収集・再選定（読み取り専用・記事生成/承認/note転記なし）**：
+    - `./p2 crawl`＝enabled な情報源を巡回（本日新規/更新 0 件・銀座三越は従来どおり
+      fetch 失敗）。DiscoveredContent 632件。
+    - `./p2 sources coverage`＝収集0件カテゴリー＝WELLNESS・CULTURE・ARCHITECTURE・
+      HOTEL・EXPERIENCE。公式4項目そろう候補 213/632 件。
+    - `./p2 themes recommend`＝gate 通過 53／**official_incomplete で 413件を除外**／
+      推奨 4＋予備 3。**再選定結果**：ビューティー **0本**（公式確認できる BEAUTY 候補なし）
+      ／グルメ・スイーツ **#352 栗とはちみつのパウンドケーキ（GINZA SIX）1本**（GINZA SIX
+      偏重の注意つき）／文化・アート **#527 弦楽器フェア 2026（山野楽器 銀座本店）1本**
+      （老舗専門店・施設偏りなし・スコア最高 1.527）。**= 2本（ビューティー0本）。品質優先で
+      無理な補完なし。** 承認・記事生成・note 転記は未実施。
+
   - 2026-09-11 続き（🔁 **既公開テーマの重複除外**（同一URL/DC id だけでなくイベント名・
     店舗名・期間・テーマの意味的重複を、過去7日ではなく全公開履歴に対して判定）。
     **Project 02 コミット・push あり／DB 更新2件（Article #62 に note 公開履歴を遡及登録・

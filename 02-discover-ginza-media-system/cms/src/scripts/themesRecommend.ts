@@ -27,6 +27,9 @@ import { buildSelectionBalance, renderSelectionBalanceText } from '../lib/pipeli
 import { assessInboxPool, type AssessInboxPoolResult } from '../lib/pipeline/assessInboxPool'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { crossCultureSummaryLine } from '../lib/crossCulture'
+import { deriveProvisionalCategory } from '../lib/pipeline/provisionalCategory'
+import { resolveFacilityKey } from '../lib/curation/facilityKey'
+import { aggregateCoverage, CATEGORY_WEEKLY_TARGET } from '../lib/pipeline/candidateCoverageScore'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import {
   assessCoreDailyFulfillment,
@@ -42,6 +45,7 @@ const EMPTY_HISTORY: AssessInboxPoolResult['history'] = {
   approvedCount: 0,
   categoryCounts: {},
   facilityCounts: {},
+  facilityKeyCounts: {},
   recentFacilitySequence: [],
 }
 
@@ -181,6 +185,51 @@ async function main(): Promise<void> {
   console.log(`2. gate 通過件数: ${res.gatePassed} ／ gate 落ち: ${res.rejected.length} ／ 選定: 推奨 ${res.recommended.length} ＋ 予備 ${res.spare.length}`)
   console.log('────────────────────────────────────────────')
 
+  // ── 収集カバレッジ診断（2026-09-11：18カテゴリー・施設・エリア別の集計と不足/過集中の特定）──
+  {
+    const covRows = candidates.map((c) => {
+      const cat = deriveProvisionalCategory({
+        primaryCategory: c.primaryCategory ?? null,
+        title: c.title ?? '',
+        venue: c.venue ?? '',
+        templateType: c.templateType ?? null,
+        contentType: c.contentType ?? undefined,
+        excerpt: c.excerpt ?? undefined,
+      }).category
+      const fk = resolveFacilityKey({ venue: c.venue, sourceName: c.sourceName, sourceUrl: c.sourceUrl, title: c.title })
+      return { category: cat, facilityKey: fk.key, facilityLabel: fk.store || c.venue || null, areaKey: fk.areaKey || fk.key, sourceName: c.sourceName }
+    })
+    const agg = aggregateCoverage(covRows)
+    const officialOk = candidates.filter((c) => c.finalEligible === true).length
+    console.log('■ 収集カバレッジ診断（収集済み inbox 候補 ' + agg.total + ' 件の内訳）')
+    console.log(
+      '  18カテゴリー別: ' +
+        Object.keys(CATEGORY_WEEKLY_TARGET)
+          .map((k) => `${k}×${agg.byCategory[k] ?? 0}`)
+          .join(' / '),
+    )
+    console.log(`  収集0件のカテゴリー（週次目標あり）: ${agg.missingCategories.join('・') || 'なし'}`)
+    console.log(
+      `  目標の半分未満のカテゴリー: ${agg.thinCategories.map((t) => `${t.category}(${t.count}/${t.target})`).join('・') || 'なし'}`,
+    )
+    console.log(
+      '  施設別 上位: ' +
+        Object.entries(agg.byFacility)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([k, v]) => `${k}×${v}`)
+          .join(' / '),
+    )
+    console.log(
+      `  過集中の施設（全体の3割以上）: ${agg.overweightFacilities.map((f) => `${f.facility}(${f.count}件/${Math.round(f.ratio * 100)}%)`).join('・') || 'なし'}`,
+    )
+    console.log(`  公式情報が4項目そろう候補（公式URL・期間・場所・内容）: ${officialOk} / ${agg.total} 件`)
+    console.log(
+      `  過去7日の採用: ${history.approvedCount} 件 ／ カテゴリー ${Object.entries(history.categoryCounts).map(([k, v]) => `${k}×${v}`).join(' / ') || 'なし'} ／ 施設 ${Object.entries(history.facilityCounts).map(([k, v]) => `${k}×${v}`).join(' / ') || 'なし'}`,
+    )
+    console.log('────────────────────────────────────────────')
+  }
+
   // --- 選定前：gate 通過候補の暫定カテゴリー（明記から。推測なし）---
   {
     const passed = res.candidates.length
@@ -217,6 +266,14 @@ async function main(): Promise<void> {
             : ''),
       )
       console.log(`      ソース種別: ${c.sourceTypeKey ?? '-'}／ 直近偏りペナルティ: カテゴリ -${(c.categoryHistoryPenalty ?? 0).toFixed(2)} / 施設 -${(c.venueHistoryPenalty ?? 0).toFixed(2)}`)
+      console.log(
+        `      収集カバレッジ: 公式完全度 ${c.officialCompletenessScore != null ? Math.round(c.officialCompletenessScore * 100) + '%' : '-'}` +
+          `${c.officialMissing && c.officialMissing.length ? `（未確認: ${c.officialMissing.join('・')}）` : ''}` +
+          ` ／ 終了まで ${c.daysUntilEnd == null ? '期日なし' : c.daysUntilEnd + '日'}（${c.daysUntilEndTier ?? '-'}）` +
+          ` ／ 補正 ${(c.coverageAdjust ?? 0) >= 0 ? '+' : ''}${(c.coverageAdjust ?? 0).toFixed(2)}` +
+          `${c.finalEligible === false ? '  ⛔ 公式情報の完全度不足で最終候補に上げない' : ''}`,
+      )
+      if (c.coverageReason && c.coverageReason !== 'カバレッジ補正なし') console.log(`      カバレッジ根拠: ${c.coverageReason}`)
       const ev = safetyGateEvidence(c)
       console.log(`      安全性 gate 根拠: 全${SAFETY_GATE_CHECKS.length}条件中${ev.passed.length}条件充足${ev.failed.length ? ` ／ 未充足: ${ev.failed.join(',')}` : ''}`)
       if (Array.isArray(c.classificationBasis) && c.classificationBasis.length)

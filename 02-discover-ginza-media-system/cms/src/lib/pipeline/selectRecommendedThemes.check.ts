@@ -539,5 +539,51 @@ section('S16: 会期の抽出信頼度が high 未満（body_label等）の候�
   delete process.env.THEMES_LOW_CONFIDENCE_TEMPORAL_MAX
 }
 
+// ---------------------------------------------------------------------------
+section('S17: 収集カバレッジ（2026-09-11）— 公式情報未確認は最終候補に上げない／不足カテゴリー加点')
+{
+  uid = 1700
+  // 6件中2件は公式情報が未確認（finalEligible=false）
+  const list: ThemeCandidate[] = []
+  for (let i = 0; i < 6; i++) {
+    list.push(
+      safe({
+        primaryCategory: ['ART', 'FOOD', 'MUSIC', 'PHOTO', 'CAFE', 'GIFT'][i],
+        venue: STORE_VENUES[i],
+        sourceName: `srcCOV${i}`,
+        title: `カバレッジ候補 ${i}`,
+        finalEligible: i < 4, // #4,#5 は false
+        officialMissing: i < 4 ? [] : ['開催・販売期間', '内容'],
+        coverageAdjust: i === 0 ? 0.3 : 0, // #0 に不足カテゴリー加点相当
+      }),
+    )
+  }
+  // flag OFF（既定）＝ finalEligible / coverageAdjust を一切見ない（回帰）
+  const off = selectRecommendedThemes(list, { now: NOW })
+  ok(off.recommended.length === 6, `flag 未指定なら公式未確認でも従来どおり全件推奨（実際: ${off.recommended.length}）`)
+
+  // flag ON ＝ finalEligible=false の2件は推奨・予備どちらにも出さず rejected へ
+  const on = selectRecommendedThemes(list, { now: NOW, enableTargetFitRanking: true })
+  const inFinal = [...on.recommended, ...on.spare].map((e) => e.candidate.discoveredContentId)
+  ok(inFinal.length === 4, `公式情報4項目そろう4件だけが最終候補（実際: ${inFinal.length}）`)
+  ok(
+    on.rejected.some((r) => r.gateFails.includes('official_incomplete')),
+    'finalEligible=false は official_incomplete で除外される',
+  )
+
+  // coverageAdjust が biasAdjust に合流している（#0 が加点で先頭寄り）
+  const top = on.recommended[0]
+  ok(top.scores.biasAdjust > 0.2, `coverageAdjust(+0.3) が biasAdjust に合流（実際: ${top.scores.biasAdjust.toFixed(2)}）`)
+
+  // env で緩められる（THEMES_REQUIRE_OFFICIAL_COMPLETE=0）
+  process.env.THEMES_REQUIRE_OFFICIAL_COMPLETE = '0'
+  const loos = selectRecommendedThemes(list, { now: NOW, enableTargetFitRanking: true, config: loadSelectThemesConfigFromEnv() })
+  ok(
+    [...loos.recommended, ...loos.spare].length === 6,
+    `THEMES_REQUIRE_OFFICIAL_COMPLETE=0 なら公式未確認も最終候補に含める（実際: ${[...loos.recommended, ...loos.spare].length}）`,
+  )
+  delete process.env.THEMES_REQUIRE_OFFICIAL_COMPLETE
+}
+
 console.log(`\n=== 結果: ${fail === 0 ? 'PASS ✅（全チェック合格）' : `FAIL ❌（${fail} 件）`} ===`)
 process.exit(fail === 0 ? 0 : 1)

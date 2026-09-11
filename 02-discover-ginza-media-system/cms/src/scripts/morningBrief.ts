@@ -121,6 +121,8 @@ async function main() {
       duplicate: !!c.duplicate,
       alreadyPublished: pub.match,
       publishedReason: pub.match ? pub.reason : null,
+      finalEligible: c.finalEligible,
+      officialMissing: c.officialMissing ?? null,
       facts: f
         ? {
             enrichmentStatus: (f.enrichmentStatus as string) ?? null,

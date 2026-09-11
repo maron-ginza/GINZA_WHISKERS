@@ -2470,7 +2470,17 @@ case "${1:-status}" in
     social
     ;;
   sources)
-    sources
+    shift
+    if [ "${1:-}" = "coverage" ]; then
+      shift
+      ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/sourceCoverage.ts "$@" 2>"$LOG_DIR/source_coverage.log" ) || {
+        fail "収集カバレッジ診断スクリプトの実行に失敗しました"
+        tail -15 "$LOG_DIR/source_coverage.log" 2>/dev/null
+        return 1
+      }
+    else
+      sources
+    fi
     ;;
   crawl)
     shift
@@ -2733,6 +2743,7 @@ case "${1:-status}" in
     echo "  ./p2 editorial  編集パイプライン状況（Sources/Articles集計、承認待ち一覧）"
     echo "  ./p2 social     SNS配信キュー状況（Phase 15、候補生成＋Dry Run＋承認待ち一覧）"
     echo "  ./p2 sources    SOURCE LEDGER v1（情報源台帳）確認（件数・tier別・Core Source一覧、DB不要）"
+    echo "  ./p2 sources coverage  収集カバレッジ診断（登録情報源／収集済み候補を18カテゴリー・施設別に集計、不足・過集中を特定。読み取り専用）"
     echo "  ./p2 crawl [--dry-run] [--budget=N]  SOURCE LEDGERのenabled情報源を巡回しSnapshot保存・差分検知＋一覧ページ発見＋個別記事・イベント抽出（--dry-runはDB書き込みなし、--budget=NはStage2予算の既定20を上書き。手動実行用。定期実行はPayload Jobs Queueが自動で行う）"
     echo "  ./p2 tns import-tracks <file> [--dry-run]  TNS MusicTracks候補曲の一括インポート（CSV/JSON、title×artist重複チェック・verified=false既定、--dry-runはDB書き込みなし。テンプレートはcms/import-templates/参照）"
     echo "  ./p2 tns next --yes [--dry-run] [\"観察テキスト\"]  次週TNS Draft生成（天気→選曲→記事draft作成→人間確認待ち。--yes必須＝Claude API課金の確認、--dry-runはDB保存なしで内容確認のみ、観察テキスト省略時は既定値を使用。同一週の二重生成は自動的にブロックされる）"
