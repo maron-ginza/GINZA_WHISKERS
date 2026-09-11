@@ -789,21 +789,24 @@ a.content-card:hover {
    無変更。
    ========================================================== */
 
-/* カードごとのビジュアル比率（既存 entry-visual--* に上書き指定） */
-.entry-visual.entry-visual--time-edit     { aspect-ratio: 16 / 8; }
-.entry-visual.entry-visual--soundtrack    { aspect-ratio: 4 / 3; }
-.entry-visual.entry-visual--diary         { aspect-ratio: 4 / 5; }
-.entry-visual.entry-visual--cross-culture { aspect-ratio: 21 / 6; }
-.entry-visual.entry-visual--400years      { aspect-ratio: 16 / 6; }
-.entry-visual.entry-visual--live          { aspect-ratio: 4 / 3; }
-.entry-visual.entry-visual--charmant      { aspect-ratio: 5 / 4; }
-.entry-visual.entry-visual--hitosaji      { aspect-ratio: 4 / 5; }
-.entry-visual.entry-visual--concierge     { aspect-ratio: 3 / 4; }
+/* カードごとのビジュアル比率（既存 entry-visual--* に上書き指定）。
+   2026-09-13：仮カード画像の本来の縦横比に合わせて修正
+   （01〜04＝3:2、05〜06＝2:1、07〜09＝4:3）。枠と画像比率を一致させ、
+   object-fit: cover で切り取りが発生しない状態にする。全breakpoint共通
+   （ブレークポイントごとの上書きは行わない）。
+   銀座昭和浪漫倶楽部LIVE／Club Charmant、銀座ひと匙の贅沢／
+   GINZA Concierge、Tokyo Nostalgic Soundtrack／銀座昭和浪漫日記の6枚は、
+   左右ペアを1:1で揃える／画像全体を切らずに収める必要があるため、
+   後方の専用ブロックで比率（4:3）と object-fit を上書きする（同日追記）。 */
+.entry-visual.entry-visual--time-edit       { aspect-ratio: 3 / 2; }
+.entry-visual.entry-visual--cross-culture   { aspect-ratio: 3 / 2; }
+.entry-visual.entry-visual--400years        { aspect-ratio: 2 / 1; }
+.entry-visual.entry-visual--digital-art-lab { aspect-ratio: 4 / 3; }
 
 /* セクション別のグリッド列数（デスクトップ） */
-.content-grid--feel       { grid-template-columns: repeat(5, 1fr); }
-.content-grid--experience { grid-template-columns: repeat(3, 1fr); }
-.content-grid--your-ginza { grid-template-columns: repeat(4, 1fr); }
+.content-grid--feel       { grid-template-columns: repeat(2, 1fr); }
+.content-grid--experience { grid-template-columns: repeat(2, 1fr); }
+.content-grid--your-ginza { grid-template-columns: repeat(2, 1fr); }
 
 /* カード幅の比率ユーティリティ（列数はセクション側の grid-template-columns で決まる） */
 .cc-span-1    { grid-column: span 1; }
@@ -816,18 +819,19 @@ a.content-card:hover {
   border-top: 1px solid var(--color-gold);
 }
 
-/* GINZA TIME EDIT：desktopで横長の主役カードへ（ビジュアル=左44%／本文=右56%） */
+/* GINZA TIME EDIT：desktopで横長の主役カードへ（ビジュアル=左44%／本文=右56%）。
+   2026-09-13：画像を本来の3:2比率のまま切り取らずに表示するため、
+   align-items は stretch ではなく flex-start とし、entry-visual の
+   aspect-ratio 上書き（auto）もやめて共通ルールの 3:2 をそのまま使う。 */
 @media (min-width: 720px) {
   .content-card--hero {
     flex-direction: row;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .content-card--hero .entry-visual {
     width: 44%;
-    aspect-ratio: auto;
     border-bottom: none;
-    border-right: 1px solid var(--color-border);
     flex-shrink: 0;
   }
 
@@ -874,19 +878,57 @@ a.content-card:hover {
   }
 }
 
-/* スマートフォン：極端な比率（帯状ビジュアル等）を読みやすい比率に統一 */
-@media (max-width: 720px) {
-  .entry-visual.entry-visual--soundtrack,
-  .entry-visual.entry-visual--diary,
-  .entry-visual.entry-visual--live,
-  .entry-visual.entry-visual--charmant,
-  .entry-visual.entry-visual--hitosaji,
-  .entry-visual.entry-visual--concierge {
-    aspect-ratio: 16 / 10;
-  }
+/* ==========================================================
+   入口カードの仮カード画像（2026-09-11 追加、同日 digital-art-lab 追加）
+   Downloads/project01_card_assets 2 の仮JPG（9点中8点）で抽象SVGを
+   差し替え。entry-visual のコンテナ（グリッド配置等）は無変更、
+   .entry-visual 内の子要素を <svg> から <img> に差し替えたぶんだけ
+   img 用のルールを追加する。2026-09-13：枠のアスペクト比を画像本来の
+   比率に一致させたため（上記参照）、object-fit: cover は名目上のみで
+   実際には切り取りが発生しない。object-position はカードごとに
+   分ける必要がなくなったため中央（center）に統一した。
+   銀座昭和浪漫日記カードは対応する仮画像がないため抽象SVGを維持。
+   ========================================================== */
 
-  .entry-visual.entry-visual--cross-culture,
-  .entry-visual.entry-visual--400years {
-    aspect-ratio: 16 / 9;
-  }
+.entry-visual img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* ==========================================================
+   4:3 コンテナ＋object-fit: contain で画像全体を切らずに収めるカード
+   （2026-09-13 追加、同日 銀座昭和浪漫日記／Tokyo Nostalgic Soundtrack を追加）
+   1) 銀座昭和浪漫倶楽部LIVE／Club Charmant（#experience）：
+      左右ペアの外枠を1:1（50%：50%）で揃える。
+   2) 銀座、ひと匙の贅沢／GINZA Concierge（#your-ginza）：
+      左右ペアの外枠を1:1（50%：50%）で揃える。
+   3) Tokyo Nostalgic Soundtrack／銀座昭和浪漫日記（#feel）：
+      左右ペアの外枠を1:1（50%：50%）で揃える。
+   各画像の元の縦横比は LIVE=3:2、Charmant=4:3、ひと匙=2:1、
+   Concierge=4:3、Soundtrack=3:2、日記=4:3 とまちまちのため、共通の
+   コンテナ比率（4:3）に統一し、object-fit: contain で画像全体を
+   切らずに収める。はみ出す余白はサイトの黒系背景（--color-bg）で
+   埋める。グリッド列数・span は各セクションで2列化・cc-span-1化済み
+   （HTML側で変更済み）。 */
+
+.entry-visual.entry-visual--live,
+.entry-visual.entry-visual--charmant,
+.entry-visual.entry-visual--hitosaji,
+.entry-visual.entry-visual--concierge,
+.entry-visual.entry-visual--diary,
+.entry-visual.entry-visual--soundtrack {
+  aspect-ratio: 4 / 3;
+}
+
+.entry-visual.entry-visual--live img,
+.entry-visual.entry-visual--charmant img,
+.entry-visual.entry-visual--hitosaji img,
+.entry-visual.entry-visual--concierge img,
+.entry-visual.entry-visual--diary img,
+.entry-visual.entry-visual--soundtrack img {
+  object-fit: contain;
+  background: var(--color-bg);
 }
