@@ -36,6 +36,9 @@ const TARGET_SOURCE_NAMES = [
   'CAFE PAULISTA（銀座カフェーパウリスタ）',
   '銀座菊廼舎',
   '空也（ぎんざ空也／空いろ）',
+  // 2026-09-12 追加（BEAUTY 母数拡充）
+  'SHISEIDO THE STORE（銀座）',
+  'AYURA GINZA',
 ]
 const PER_SOURCE_BUDGET = 8
 const REQUEST_INTERVAL_MS = 350

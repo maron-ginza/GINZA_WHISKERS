@@ -15,7 +15,7 @@ import { resolve } from 'node:path'
 
 import config from '../payload.config'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
-import { selectRecommendedThemes, loadSelectThemesConfigFromEnv, evaluateSafetyGate } from '../lib/pipeline/selectRecommendedThemes'
+import { selectRecommendedThemes, loadSelectThemesConfigFromEnv, evaluateSafetyGate, evaluateReadiness } from '../lib/pipeline/selectRecommendedThemes'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import { loadPublishedThemes } from '../lib/publish/loadPublishedThemes'
@@ -137,13 +137,14 @@ async function main() {
     .filter((x): x is SweetsCandidateInput => x != null)
   const sweetsSelection = selectSweetsCandidates(sweetsInputs, { now })
 
-  // 3. 既存 ArticleFacts（DB）
+  // 3. 既存 ArticleFacts（DB）。2026-09-12：3領域選定を top15 プールに限らず
+  //    assessed.candidates 全体から行うよう拡張したため、allDcIds を対象にする。
   const factsByDc = new Map<number, Record<string, unknown>>()
-  if (dcIds.length) {
+  if (allDcIds.length) {
     const af = await payload.find({
       collection: 'article-facts',
-      where: { discoveredContent: { in: dcIds } },
-      limit: 500,
+      where: { discoveredContent: { in: allDcIds } },
+      limit: 2000,
       depth: 0,
       overrideAccess: true,
     })
@@ -154,47 +155,70 @@ async function main() {
     }
   }
 
-  // 4. 純粋モジュール用の入力へ変換
-  const briefInputs: BriefCandidateInput[] = pool.map((e) => {
-    const c = e.candidate
-    const f = factsByDc.get(c.discoveredContentId)
-    const pub = matchPublishedTheme(
-      {
+  // 4. 純粋モジュール用の入力へ変換。
+  // 2026-09-12：3領域（ビューティー／グルメ・スイーツ／文化・アート）の選定を、
+  // selectRecommendedThemes の「推奨+予備15件」（全カテゴリー横断の相対順位で
+  // 上位に来ないと入らない）に限らず、assessed.candidates 全体（安全性gate通過分）
+  // から行うよう拡張した——ART が母数を占有しやすく、BEAUTY 等の少数派カテゴリーが
+  // 実在するのに top15 に一件も残らないケースがあったため（例：DC#246「花西子」が
+  // 安全性gate・公式完全度とも問題ないのに top15 圏外で「該当なし」表示になっていた）。
+  // scoreTotal は selectRecommendedThemes 本体の複雑な相対順位づけの代わりに、
+  // targetFit（コアターゲット適合）＋coverageAdjust（不足カテゴリー／終了間近／
+  // 施設集中の補正、assessInboxPool 側で算出済み）を組み合わせた簡易スコアを使う
+  // （3領域ピック用の並び替えにのみ使用。他の表示・推奨+予備の件数には影響しない）。
+  const briefInputs: BriefCandidateInput[] = assessed.candidates
+    .map((c): BriefCandidateInput | null => {
+      const safetyFails = evaluateSafetyGate(c, cfg)
+      if (safetyFails.length > 0) return null
+      const prov = deriveProvisionalCategory({
+        primaryCategory: c.primaryCategory ?? null,
+        title: c.title ?? '',
+        venue: c.venue ?? '',
+        templateType: c.templateType ?? null,
+        contentType: c.contentType ?? undefined,
+        excerpt: c.excerpt ?? undefined,
+      })
+      const fk = resolveFacilityKey({ venue: c.venue, sourceName: c.sourceName, sourceUrl: c.sourceUrl, title: c.title })
+      const rd = evaluateReadiness(c)
+      const f = factsByDc.get(c.discoveredContentId)
+      const pub = matchPublishedTheme(
+        {
+          dcId: c.discoveredContentId,
+          title: c.displayTitle ?? c.title,
+          eventName: (f?.eventName as string) ?? (c.displayTitle ?? c.title),
+          venue: c.venue ?? (f?.areaLead as string) ?? null,
+          period: (f?.eventDate as string) ?? c.eventPeriod ?? null,
+        },
+        publishedThemes,
+      )
+      const scoreTotal = (c.targetFit ?? 0) / 100 + (c.coverageAdjust ?? 0)
+      return {
         dcId: c.discoveredContentId,
-        title: c.displayTitle ?? c.title,
-        eventName: (f?.eventName as string) ?? (c.displayTitle ?? c.title),
-        venue: c.venue ?? (f?.areaLead as string) ?? null,
-        period: (f?.eventDate as string) ?? c.eventPeriod ?? null,
-      },
-      publishedThemes,
-    )
-    return {
-      dcId: c.discoveredContentId,
-      title: c.title,
-      displayTitle: c.displayTitle ?? null,
-      scoreTotal: e.scores.total,
-      categoryKey: e.categoryKey ?? null,
-      categoryBasis: e.categoryBasis ?? null,
-      facilityKey: e.facilityKey ?? null,
-      facilityLabel: e.facilityLabel,
-      sourceName: c.sourceName,
-      sourceUrl: c.sourceUrl,
-      venue: c.venue ?? null,
-      eventPeriod: c.eventPeriod ?? null,
-      eventStartAt: (c.eventStartAt as string | null) ?? null,
-      eventEndAt: (c.eventEndAt as string | null) ?? null,
-      verifiedAt: c.verifiedAt ?? null,
-      readiness: e.readiness,
-      targetFit: c.targetFit ?? null,
-      targetFitReason: c.targetFitReason ?? null,
-      targetFitCompass: c.targetFitCompass ?? null,
-      alreadyDrafted: alreadyDrafted.has(c.discoveredContentId),
-      duplicate: !!c.duplicate,
-      alreadyPublished: pub.match,
-      publishedReason: pub.match ? pub.reason : null,
-      finalEligible: c.finalEligible,
-      officialMissing: c.officialMissing ?? null,
-      facts: f
+        title: c.title,
+        displayTitle: c.displayTitle ?? null,
+        scoreTotal,
+        categoryKey: prov.category,
+        categoryBasis: prov.basis,
+        facilityKey: fk.key,
+        facilityLabel: fk.store || c.venue || '(会場不明)',
+        sourceName: c.sourceName,
+        sourceUrl: c.sourceUrl,
+        venue: c.venue ?? null,
+        eventPeriod: c.eventPeriod ?? null,
+        eventStartAt: (c.eventStartAt as string | null) ?? null,
+        eventEndAt: (c.eventEndAt as string | null) ?? null,
+        verifiedAt: c.verifiedAt ?? null,
+        readiness: rd.readiness,
+        targetFit: c.targetFit ?? null,
+        targetFitReason: c.targetFitReason ?? null,
+        targetFitCompass: c.targetFitCompass ?? null,
+        alreadyDrafted: alreadyDraftedAll.has(c.discoveredContentId),
+        duplicate: !!c.duplicate,
+        alreadyPublished: pub.match,
+        publishedReason: pub.match ? pub.reason : null,
+        finalEligible: c.finalEligible,
+        officialMissing: c.officialMissing ?? null,
+        facts: f
         ? {
             enrichmentStatus: (f.enrichmentStatus as string) ?? null,
             primaryCategory: (f.primaryCategory as string) ?? null,
@@ -212,8 +236,9 @@ async function main() {
             excerpt: (c.excerpt as string) ?? null,
           }
         : { excerpt: (c.excerpt as string) ?? null },
-    }
-  })
+      }
+    })
+    .filter((x): x is BriefCandidateInput => x != null)
 
   const brief = buildMorningBrief(briefInputs, {
     recentFacilities: assessed.history.recentFacilitySequence,

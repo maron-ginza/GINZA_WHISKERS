@@ -86,6 +86,12 @@ const SOURCE_AS_FACILITY: { re: RegExp; key: string; label: string }[] = [
   { re: /CAFE\s?PAULISTA|パウリスタ|paulista\.co\.jp/i, key: 'cafe-paulista-ginza', label: 'CAFE PAULISTA' },
   { re: /銀座菊廼舎|ginza-kikunoya\.co\.jp/i, key: 'ginza-kikunoya', label: '銀座菊廼舎' },
   { re: /空也|くうや|sorairo-kuya\.jp/i, key: 'ginza-kuya-sorairo', label: '空也' },
+  // 2026-09-12 追加（BEAUTY 母数の補完）：SHISEIDO THE STORE は銀座単独立地の
+  // 情報源＝施設として解決してよい。AYURA は全国に複数店舗があり ayura.co.jp は
+  // ブランド共通サイトのため、ドメイン全体を「AYURA GINZA」に決め打ちしない
+  // （個別ページの venue テキストに明記があれば facilityKeyFromVenue 側で解決される。
+  // 全社共通ニュースを銀座店と誤認しない、という方針を優先）。
+  { re: /SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp/i, key: 'shiseido-the-store-ginza', label: 'SHISEIDO THE STORE' },
 ]
 
 // 集約サイト（施設単位が URL スラッグ or タイトルの【店名】でしか分からない）

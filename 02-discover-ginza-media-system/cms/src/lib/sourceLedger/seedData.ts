@@ -6,7 +6,8 @@ import type { SourceLedgerEntry } from './types'
 // 収集カバレッジ補完6件（うち木村家・あけぼのの2件は同日中にWebSearchで実在確認しenabled化）
 // ＋2026-09-11「スウィーツ候補の安定収集」追加分5件（千疋屋・HIGASHIYA・とらや・銀座ウエスト・
 // 帝国ホテル）＋同日続き追加分3件（CAFE PAULISTA・銀座菊廼舎・空也、WebFetchでお知らせ一覧の
-// 稼働実績まで確認しenabled:true）。合計35件。urlは初期14件についてはWebSearchで
+// 稼働実績まで確認しenabled:true）＋2026-09-12 BEAUTY母数補完1件（AYURA GINZA）。合計36件。
+// urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -422,12 +423,15 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     sourceType: 'official_site',
     reliability: 'high',
     crawlFrequency: 'weekly',
-    enabled: false,
+    enabled: true,
     lastCheckedAt: null,
     lastChangedAt: null,
     notes:
-      'BEAUTY 母数の補完。資生堂の銀座フラッグシップ（コスメ・フレグランス・イベント・限定品）。' +
-      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+      'BEAUTY 母数の補完。資生堂の銀座フラッグシップ（コスメ・フレグランス・イベント・限定品）。銀座' +
+      '単独立地（他都市に同名店舗なし）。2026-09-11 追加時は要目視確認としたが、2026-09-12の' +
+      '「安定して3件以上」対応で WebFetch 再確認——「NEWS & TOPICS」が実際に稼働し、9月の新製品' +
+      'キャンペーン（ザ・ギンザ リバイタライザーｎ、Narciso Rodriguezフレグランス等）を掲載して' +
+      'いることを確認しenabled:true化。',
   },
   {
     id: 'itoya-ginza',
@@ -670,5 +674,29 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       'SWEETS（老舗和菓子・空也最中）母数の補完。1884年創業、1949年〜銀座並木通り。公式' +
       '通販サイト「空いろ」https://www.sorairo-kuya.jp/ を WebFetch で実地確認（2026-09-11、' +
       '「9月　催事出店のご案内」「8-10月　季節限定商品のご案内」等の日付つき告知を掲載していることを確認）。',
+  },
+  // ───────────────────────────────────────────────────────────────
+  // 2026-09-12（3件以上の安定生成に向けた BEAUTY 母数の追加補完）。
+  // ───────────────────────────────────────────────────────────────
+  {
+    id: 'ayura-ginza',
+    name: 'AYURA GINZA',
+    url: 'https://www.ayura.co.jp/',
+    category: 'brand',
+    tier: 'discovery',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'BEAUTY／WELLNESS 母数の補完。アイングループのスキンケアブランド「アユーラ」が' +
+      '2019年に開いた銀座フラッグシップ（1階ショップ＋2階ホリスティックサロン、銀座5-8-13）。' +
+      'SHISEIDO系列とは別会社で施設分散に資する。公式サイト https://www.ayura.co.jp/ を' +
+      'WebFetchで実地確認（2026-09-12。個別お知らせページ /news/215/ の実在は確認したが、' +
+      '一覧ページの正確なURL構造〈/topics/news/ 等の候補あり〉までは確認できていないため' +
+      'tier=discovery＝自動発見に委ねる）。',
   },
 ]
