@@ -932,3 +932,172 @@ a.content-card:hover {
   object-fit: contain;
   background: var(--color-bg);
 }
+
+/* ==========================================================
+   ヒーローの仮背景画像（2026-09-11 追加）
+   index.html の <section class="hero hero--image"> 専用。画像は
+   <img> としてHTMLに置き、その上に既存の .hero-inner（見出し・説明文・
+   CTA）を重ねる。見出し／説明文／CTAのマークアップと文言は無変更。
+   charmant.html の .hero.cc-hero は .hero--image を持たないため影響しない。
+   高さは 16:9（56.25vw）を基準にしつつ、縦長端末でも文章が収まるよう
+   min-height で下限を設ける（min-height のため文章が長い場合は
+   セクション側が伸び、文字が画像からはみ出して切れることはない）。
+   ========================================================== */
+
+.hero.hero--image {
+  position: relative;
+  overflow: hidden;
+  min-height: max(520px, min(56.25vw, 86vh));
+  background: var(--color-bg);
+}
+
+.hero--image .hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.hero--image .hero-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* PC幅ではコンテナ比率が画像の16:9とほぼ一致するため切り取りは生じない
+     （左＝夜空とフィルム、右＝時計塔と未来の光がそのまま出る） */
+  object-position: 50% 50%;
+}
+
+/* 文字の背後だけを黒→透明で落とす。2026-09-13：左端〜55%はしっかり
+   濃く保ち（本文が収まる範囲）、55%以降は緩やかに透明へつないで
+   フィルムの光の流れ・時計塔・街の光を暗くしすぎないようにする。
+   縦方向は上下だけを軽く締めて、中央のフィルムと光の流れは覆わない。 */
+.hero--image .hero-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg,
+      rgba(11, 11, 12, 0.95) 0%,
+      rgba(11, 11, 12, 0.92) 22%,
+      rgba(11, 11, 12, 0.86) 40%,
+      rgba(11, 11, 12, 0.80) 55%,
+      rgba(11, 11, 12, 0.36) 72%,
+      rgba(11, 11, 12, 0.06) 88%,
+      rgba(11, 11, 12, 0) 100%),
+    linear-gradient(180deg,
+      rgba(11, 11, 12, 0.5) 0%,
+      rgba(11, 11, 12, 0) 26%,
+      rgba(11, 11, 12, 0) 72%,
+      rgba(11, 11, 12, 0.55) 100%);
+}
+
+/* 本文領域（2026-09-13、同日に説明文の折返し調整で幅を再拡張）：
+   デスクトップでは左端の余白を既存 .container の32pxのみとして
+   少し左へ寄せる（.container 側の中央寄せ用 margin:0 auto を打ち消す）。
+   幅は下の .hero-lead 自身の上限（min(47vw, 640px)）＋左右パディング64px
+   ちょうどを確保し、説明文が親要素側で窮屈に折り返されないようにする
+   （見出し・ボタンは元々この幅で収まるため見た目は変わらない）。
+   860px以下では文字量に対して幅が足りなくなり見出しが3行以上へ
+   崩れるため、元の .container と同じ挙動（1120px・中央寄せ）へ戻す。 */
+.hero--image .hero-inner {
+  position: relative;
+  z-index: 1;
+  margin-left: 0;
+  margin-right: auto;
+  max-width: calc(min(47vw, 640px) + 64px);
+  padding-left: 32px;
+}
+
+@media (max-width: 860px) {
+  .hero--image .hero-inner {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: 1120px;
+    padding-left: 32px;
+  }
+}
+
+/* 説明文（.hero-lead）の折返し調整（2026-09-13）：見出し・ボタン・
+   グラデーション・画像は変更せず、説明文の右端のみ画面幅47%程度まで
+   広げ、不自然な位置での改行を減らす。line-break/word-break/
+   overflow-wrapは既定値を明示し直しただけ（挙動は変えていない）。
+   .nb（white-space:nowrap）は「文化」「メディア」「プラットフォーム」の
+   4箇所（index.html側でspan付与済み）が行末で分断されないようにする
+   ための印で、文言・語順は一切変更していない。charmant.html 側の
+   .hero-lead は .hero--image を持たないため影響しない。 */
+.hero--image .hero-lead {
+  max-width: min(47vw, 640px);
+  font-size: 0.96rem;
+  line-break: strict;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.hero-lead .nb {
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .hero--image .hero-lead {
+    /* 860px以下は .hero-inner が通常の .container 幅（実質画面幅いっぱい）に
+       戻るため、47vw上限は不要——他ページの .hero-lead と同じ560pxに戻す。 */
+    max-width: 560px;
+  }
+}
+
+/* タブレット（860px以下）：コンテナが画像より縦長になり左右が切れ始めるため、
+   基準を右寄りへ移して時計塔を残す。本文は .container の通常幅（実質
+   画面幅いっぱい・最大560pxで折り返し）に戻るため、2026-09-13に
+   濃い区間を74%付近（本文が実際に届きうる右端）まで伸ばし、そこから
+   時計塔側へ滑らかにフェードさせて文字と光の重なりを避ける。 */
+@media (max-width: 860px) {
+  .hero--image .hero-media img {
+    object-position: 74% 50%;
+  }
+
+  .hero--image .hero-media::after {
+    background:
+      linear-gradient(90deg,
+        rgba(11, 11, 12, 0.95) 0%,
+        rgba(11, 11, 12, 0.90) 30%,
+        rgba(11, 11, 12, 0.84) 50%,
+        rgba(11, 11, 12, 0.78) 74%,
+        rgba(11, 11, 12, 0.30) 88%,
+        rgba(11, 11, 12, 0) 100%),
+      linear-gradient(180deg,
+        rgba(11, 11, 12, 0.55) 0%,
+        rgba(11, 11, 12, 0) 30%,
+        rgba(11, 11, 12, 0) 64%,
+        rgba(11, 11, 12, 0.6) 100%);
+  }
+}
+
+/* スマートフォン（720px以下）：画面が縦長で表示は画像の縦スライスになる。
+   中央〜右側を基準にしてフィルムの流れと時計塔を残す。横方向グラデーション
+   では右端の文字が読めなくなるため、縦方向のスクリムへ切り替える。
+   2026-09-13：この幅では本文が画面のほぼ全幅を占め、時計塔の建物や
+   窓明かりと同じ帯に文字が乗るため、縦方向スクリムの中央帯（本文が
+   実際に載る範囲）の不透明度を底上げし、明るい窓と重なっても文字が
+   読める濃さを確保した（上下の締めは維持、フィルム・光は完全には
+   潰さない）。 */
+@media (max-width: 720px) {
+  .hero.hero--image {
+    min-height: max(500px, min(56.25vw, 78vh));
+  }
+
+  .hero--image .hero-media img {
+    /* 95%まで右へ寄せると、縦スライスの中でも右端の時計塔が欠けず、
+       左側にフィルムの流れも残る（390px幅で原寸 x=890〜1624 が可視） */
+    object-position: 95% 50%;
+  }
+
+  .hero--image .hero-media::after {
+    background:
+      linear-gradient(180deg,
+        rgba(11, 11, 12, 0.76) 0%,
+        rgba(11, 11, 12, 0.66) 30%,
+        rgba(11, 11, 12, 0.64) 50%,
+        rgba(11, 11, 12, 0.66) 70%,
+        rgba(11, 11, 12, 0.82) 100%);
+  }
+}

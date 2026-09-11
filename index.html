@@ -54,12 +54,25 @@
 
 <main>
 
-  <section class="hero">
+  <!-- ヒーロー：仮背景画像（images/hero-time-weaving.jpg、16:9）を2026-09-11に配置。
+       画像は装飾のため alt="" ／ aria-hidden とし、見出し・説明文・CTAは変更していない。
+       デスクトップは左に文章・右に時計塔／未来の光、スマホは中央〜右寄りに
+       object-position を寄せてフィルムと時計塔を残す（css/style.css の
+       「ヒーローの仮背景画像」ブロック参照）。最終素材が決まり次第この1枚を差し替える。 -->
+  <section class="hero hero--image">
+    <div class="hero-media" aria-hidden="true">
+      <img src="images/hero-time-weaving.jpg" width="1672" height="941" alt="" fetchpriority="high">
+    </div>
     <div class="hero-inner container">
       <p class="eyebrow">GINZA WHISKERS</p>
       <h1>銀座の記憶を、<br>未来へ手渡す。</h1>
+      <!-- .nb（white-space:nowrap）は表示文言・語順を変えず、指定の語（歴史／文化／
+           音楽／アート／体験／文化メディア／体験プラットフォーム）が行末で分断
+           されないようにするための行送り制御のみの印。文章そのものは無変更。
+           2026-09-13：「アート」が「アー／ト」に分断される実機確認を受け、
+           7語すべてを網羅する形に修正（文全体は通常どおり折り返し可能）。 -->
       <p class="hero-lead">
-        GINZA WHISKERS は、銀座の昔・今・未来を、歴史・文化・音楽・アート・街・体験を通じて編集する文化メディア／体験プラットフォームです。
+        GINZA WHISKERS は、銀座の昔・今・未来を、<span class="nb">歴史</span>・<span class="nb">文化</span>・<span class="nb">音楽</span>・<span class="nb">アート</span>・街・<span class="nb">体験</span>を通じて編集する<span class="nb">文化メディア</span>／<span class="nb">体験プラットフォーム</span>です。
       </p>
       <a href="#concept" class="btn">コンセプトを読む</a>
     </div>
