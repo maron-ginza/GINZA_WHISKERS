@@ -14,6 +14,46 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き3（✅ **本日の最終判断＝1本採用／グルメ保留／ビューティー0本／品質・施設分散優先**。
+    DC#527「弦楽器フェア2026」を記事化。**Project 02 コミット・push なし（コード変更なし）／
+    DB 更新あり（ArticleFacts #10・Article #63 作成、DC#527 承認）／note転記・外部公開は未実施**）:
+
+    マロンの最終判断：①文化・アート枠 DC#527「弦楽器フェア2026」（山野楽器 銀座本店）を承認
+    ②グルメ・スイーツ枠 DC#352（GINZA SIX）は**保留**——過去7日で GINZA SIX が既に3件のため
+    施設偏重を避ける ③ビューティー枠は該当なし ④本日は**1本のみ**で進める（品質・施設分散優先）。
+
+    **ArticleFacts #10**（DC#527・enrichmentStatus=draft）：出典は山野楽器公式サイト
+    （`https://www.yamano-music.co.jp/information/59409`、WebFetch のみで裏取り・AI課金なし）。
+    confirmed＝会期（2026-08-11〜10-18）・会場（山野楽器 銀座本店3F弦楽器サロン、
+    東京都中央区銀座4-5-6）・営業時間（平日11:00-19:30／土日祝10:30-19:30）・購入特典
+    （楽器本体または弓購入でスウェードクロス＋モイスレガート進呈）。unconfirmed＝入場料・
+    予約要否・最寄駅アクセス・防音室体験会の日時条件（公式記載なし、推測補完せず明記）。
+
+    **Article #63**（reviewStatus=draft・lane=free・pillars=[6 イベント]・
+    `aiGeneratedBy='manual (deterministic, not AI)...DC#527.'`）：note本文8見出し
+    （なぜ今見に行くか／見どころ／会期・時間・会場／訪問前の注意／出典／GINZA WHISKERSの
+    視点／挿絵注釈）・callToAction・SEO・`socialCopy`{note/X/Instagram}・
+    `editorialProvenance` 4件（confirmed）。**記事本文はClaudeが直接執筆**
+    （`./p2 draft-*` の live AI生成は未実行、8/30・9/4の前例と同じ方式）。
+
+    **DC#527**：`curationStatus` draft→**approved**（`DiscoveredContent.beforeChange` の
+    人間承認ゲートを `user:1` で通過、AI/自動化からの直接遷移は不可のまま）。
+
+    **重複判定（全公開履歴・生成前後の2回実施）**：`loadPublishedThemes`（DB publishHistory
+    ＋`.devlogs`巡回＋手動seed、計5件）と `matchPublishedTheme` で照合し、生成前・生成後とも
+    **match=false**（既公開テーマと非重複）。
+
+    **review-today 画面を再生成**（`./p2 review-today --port=4599`）：対象=**#63のみ**
+    （BLOCKER 0・WARNING 0）。#61（DC#327）・#62（DC#373）は既公開重複のまま除外表示を維持。
+    ブラウザで表示済み。**Chrome／noteへの転記・外部公開は未実施**——マロンが画面で最終確認
+    してから `./p2 review-today transfer 63` で転記する。
+
+    **実装**：一回限りスクリプト3本（ArticleFacts/Article作成・DC承認・事後dedup再検証、
+    いずれも実行後に削除）。**コード変更・commit・push はなし**（前エントリ b9b4bc0 のコード
+    をそのまま利用）。事前バックアップ `_backups/project02-dc527-article-create-20260911_101057.sql`
+    （articles／article_facts／discovered_content 等）。運用記録
+    `.devlogs/morning/brief/2026-09-11-result.md` に追記。
+
   - 2026-09-11 続き2（📊 **候補収集カバレッジのスコアリングと診断**（過去7日の施設集中／18カテゴリー
     不足／公式情報の完全度／女性適合／開催終了までの日数を毎朝の候補順位へ反映）。
     **Project 02 コミット・push あり／DB 更新なし＝読み取り専用の診断・再選定のみ／
