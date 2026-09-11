@@ -24,6 +24,7 @@ import { resolve } from 'node:path'
 import { getPayload } from 'payload'
 
 import config from '../payload.config'
+import { resolveBusinessDate } from '../lib/util/businessDate'
 import { assessCandidate } from '../lib/morning/assessCandidate'
 import { buildMorningReport, renderMorningReport } from '../lib/morning/buildMorningReport'
 import { buildFinalCandidateDigest, renderFinalCandidateDigest } from '../lib/morning/buildFinalCandidateDigest'
@@ -88,6 +89,8 @@ interface Args {
   registerFacts: boolean
   /** 実際に DB へ書く（--write-facts か env MORNING_WRITE_FACTS=1。既定 false＝差分のみ） */
   writeFacts: boolean
+  /** 業務日付の明示指定（--date=YYYY-MM-DD）。未指定なら Asia/Tokyo の当日 */
+  date?: string
 }
 
 function parseArgs(): Args {
@@ -117,6 +120,7 @@ function parseArgs(): Args {
     maxPerHost: num('--fetch-max-per-host=', 8),
     registerFacts,
     writeFacts,
+    date: (argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1] || undefined,
   }
 }
 
@@ -404,7 +408,8 @@ const LOCK_MAX_AGE_MS = 30 * 60 * 1000
 async function main(): Promise<void> {
   const args = parseArgs()
   const now = new Date()
-  const dateStr = now.toISOString().slice(0, 10)
+  // 業務日付＝Asia/Tokyo の暦日（--date= 指定時はそれを優先）。UTC 切り出しはしない。
+  const dateStr = resolveBusinessDate(args.date ?? null, now)
   const outDir = resolve(process.cwd(), '..', '.devlogs', 'morning', dateStr)
   const lockDir = resolve(process.cwd(), '..', '.devlogs', 'morning', '.lock')
   const t0 = Date.now()

@@ -17,6 +17,7 @@ import config from '../payload.config'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
+import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import {
   buildMorningBrief,
   type BriefCandidateInput,
@@ -27,11 +28,11 @@ const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
 const limArg = argv.find((a) => a.startsWith('--limit='))
 const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 200) : 200
-const DATE = (argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1] || new Date().toISOString().slice(0, 10)
+const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
 
 async function main() {
   const payload = await getPayload({ config })
-  const now = new Date(`${DATE}T00:00:00.000Z`)
+  const now = tokyoStartOfDay(DATE)
 
   // 1. 承諾前(inbox)＋承諾済み(approved) を評価してスコアリング
   const assessed = await assessInboxPool(payload, { now, statuses: ['inbox', 'approved'], limit: LIMIT })

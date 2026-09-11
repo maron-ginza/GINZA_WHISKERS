@@ -26,12 +26,14 @@ import {
   type ReviewDecisionFile,
   type ReviewDecision,
 } from '../lib/pipeline/reviewTodayData'
+import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 
 const ROOT = resolve(process.cwd(), '..')
 const argv = process.argv.slice(2)
 const SUB = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'serve'
 const dateArg = (argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1]
-const DATE = dateArg || new Date().toISOString().slice(0, 10)
+// 業務日付＝Asia/Tokyo の暦日（--date= 指定時はそれを優先）。UTC 切り出しはしない。
+const DATE = resolveBusinessDate(dateArg)
 const idsArg = (argv.find((a) => a.startsWith('--ids=')) ?? '').split('=')[1]
 const PORT = Number((argv.find((a) => a.startsWith('--port=')) ?? '').split('=')[1]) || 4599
 const NO_OPEN = argv.includes('--no-open')
@@ -60,7 +62,7 @@ async function buildItems(): Promise<ReviewItem[]> {
   if (idsArg) {
     ids = idsArg.split(',').map((n) => Number(n.trim())).filter(Number.isFinite)
   } else {
-    const since = new Date(`${DATE}T00:00:00.000Z`)
+    const since = tokyoStartOfDay(DATE)
     const res = await payload.find({
       collection: 'articles',
       where: { and: [{ reviewStatus: { equals: 'draft' } }, { createdAt: { greater_than_equal: since.toISOString() } }] },

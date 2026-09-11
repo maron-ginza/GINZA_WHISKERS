@@ -27,6 +27,7 @@ import { buildSelectionBalance, renderSelectionBalanceText } from '../lib/pipeli
 import { assessInboxPool, type AssessInboxPoolResult } from '../lib/pipeline/assessInboxPool'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { crossCultureSummaryLine } from '../lib/crossCulture'
+import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import {
   assessCoreDailyFulfillment,
   detectConsecutiveFacilityWarnings,
@@ -60,7 +61,7 @@ function parseArgs(): Args {
   const fr = argv.find((a) => a === '--from-report' || a.startsWith('--from-report='))
   const lim = argv.find((a) => a.startsWith('--limit='))
   return {
-    date: dateFlag ? dateFlag.split('=')[1] : new Date().toISOString().slice(0, 10),
+    date: resolveBusinessDate(dateFlag ? dateFlag.split('=')[1] : null),
     limit: lim ? Math.max(1, Number(lim.split('=')[1]) || 200) : 200,
     includeApproved: argv.includes('--include-approved'),
     fromReport: fr ? (fr.includes('=') ? fr.split('=')[1] : 'today') : undefined,
@@ -136,7 +137,7 @@ function adminCandidateReviewUrl(dcIds: number[]): string {
 async function main(): Promise<void> {
   const args = parseArgs()
   const cfg = loadSelectThemesConfigFromEnv()
-  const now = new Date(`${args.date}T00:00:00.000Z`)
+  const now = tokyoStartOfDay(args.date)
 
   let candidates: ThemeCandidate[]
   let collectedTotal = 0

@@ -14,6 +14,51 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11（🕘 日次処理の業務日付を **Asia/Tokyo 基準へ統一**（重大な日付不整合の修正）。
+    **Project 02 コミット・push あり／DB 更新なし／`.devlogs` の当セッション誤名ファイル3件のみ削除**）:
+
+    **不整合**：`review-today` / `morning-brief` / `themes recommend` / `morningRun` は
+    `new Date().toISOString().slice(0,10)`（UTC 切り出し）で業務日付を出していたため、
+    JST 00:00〜08:59（UTC で前日）に実行すると **1日ずれた**（本セッションで
+    `.devlogs/morning/review/2026-09-10-decision.json` になっていた。記事生成側の
+    `nightBuild` は `getFullYear()` 系＝ローカル TZ 依存で、この Mac が JST のため
+    偶然一致していたが Railway=UTC では同じくずれる）。
+
+    **修正**：共通関数 `cms/src/lib/util/businessDate.ts` を新設し、日次処理は
+    **すべてここから業務日付を取得**する：
+    - `tokyoBusinessDate(now?)`＝`Intl.DateTimeFormat(..., { timeZone:'Asia/Tokyo' }).formatToParts`
+      で Asia/Tokyo の暦日を `YYYY-MM-DD` で返す（UTC 切り出しもローカル TZ 依存もしない）。
+    - `resolveBusinessDate(explicit, now?)`＝妥当な明示指定（`--date=` 等）を最優先、無ければ当日。
+    - `tokyoStartOfDay(dateStr)`＝業務日の JST 00:00 の Date（スコアリングの基準時刻用。
+      `T00:00:00.000Z` は 9 時間ずれるため使わない）。
+    - `toTokyoDateString`＝イベント日・確認日の表示／比較用の別名。
+    **接続先**：`reviewToday.ts`（DATE／since）／`morningBrief.ts`（DATE／now）／
+    `themesRecommend.ts`（対象日／now）／`morningRun.ts`（`--date=` 追加＋dateStr）／
+    `nightBuild.ts`（`todayStr`）／`runNightBuild.ts`（date）／`runThemeToNoteDraft.ts`（dateStr）／
+    `assessCandidate.ts`（eventPeriod 表示・終了理由の日付）／`dedupCheck.ts`（同一日判定）。
+    → 対象：朝刊収集／morning brief／review-today／decision.json／night queue／
+    ArticleFacts の出典確認日／運用記録／note 下書きパッケージ／重複判定の過去7日／
+    ファイル名・保存ディレクトリ。各処理は個別に日付計算しない。
+
+    **回帰テスト** 新規 `cms/src/lib/__checks__/businessDate.check.ts`（9件）：
+    JST 00:00 ちょうど／JST 08:59:59（＝UTC 前日 23:59＝今回のバグ域）／JST 23:59:59 と翌 00:00／
+    月末・年末（JST 2026-01-01 05:00＝UTC 2025-12-31）／明示指定の優先と不正値フォールバック／
+    `tokyoStartOfDay` の往復一致（`2026-09-11` ⇔ `2026-09-10T15:00:00.000Z`）。
+
+    **既存データ**：`.devlogs/morning/2026-09-02〜09-09`（正しい履歴）は**一切触れていない**。
+    本セッションで誤った日付名で作成した出力
+    `.devlogs/morning/review/2026-09-10.html`・`.devlogs/morning/brief/2026-09-10.{txt,json}`
+    のみ削除（mtime＝本日・内容＝本日の #61/#62/#327/#373）。`2026-09-10-decision.json` は
+    そもそも未作成（未確定）＝今後の確定は `2026-09-11-decision.json` に入る。
+    `.devlogs/night/queue/2026-09-11/61,62/` は正しい日付のため不変。
+
+    **検証**：`tsc --noEmit`（cms）0エラー／`run-all.ts` **411 passed 0 failed**／
+    `./p2 themes recommend` の「対象日」＝`2026-09-11`／`./p2 morning-brief` の保存先＝
+    `.devlogs/morning/brief/2026-09-11.{txt,json}` を実機確認。
+    **Article #1〜#62・DB は不変。承認・AI 課金・note 転記・外部公開なし。**
+    レビューサーバーは 2026-09-11 データで再起動し、`.devlogs/morning/review/2026-09-11.html`
+    ＋ `2026-09-11-decision.json`（未確定）で提供。
+
   - 2026-09-11（📝 本日の候補選定＝**2本採用／ビューティー0本／品質優先で無理な補完なし**。
     **DB 更新あり（DC#327 承認・ArticleFacts #8/#9・Article #61/#62 作成）／挿絵注釈の統一
     はコード commit・push あり／AI 課金・記事生成(AI)・note 公開・reviewStatus 承認は未実施**）:

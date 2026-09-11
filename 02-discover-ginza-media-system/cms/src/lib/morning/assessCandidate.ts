@@ -23,6 +23,7 @@ import {
 import { assessGinzaRelevance, isSingleGinzaVenueSource } from './ginzaRelevance'
 import { imagePreflight } from './imagePreflight'
 import { isPastEventEnd } from '../curation/eventEndBoundary'
+import { toTokyoDateString } from '../util/businessDate'
 import type { CandidateAssessment, FactKind } from './types'
 
 export interface AssessCandidateInput {
@@ -121,8 +122,8 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   let eventPeriod = '不明'
   if (facts?.eventDate) eventPeriod = String(facts.eventDate)
   else if (startD && endD && startD.getTime() !== endD.getTime())
-    eventPeriod = `${startD.toISOString().slice(0, 10)} 〜 ${endD.toISOString().slice(0, 10)}`
-  else if (startD) eventPeriod = startD.toISOString().slice(0, 10)
+    eventPeriod = `${toTokyoDateString(startD)} 〜 ${toTokyoDateString(endD)}`
+  else if (startD) eventPeriod = toTokyoDateString(startD)
   const applyDeadline = (facts?.applyDeadline && String(facts.applyDeadline)) || '不明／なし'
 
   // --- 画像 preflight（候補提示前に確定） ---
@@ -163,7 +164,7 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
 
   if (expired) {
     verdict = 'C'
-    reasons.push(`開催終了済み（終了日 ${endD?.toISOString().slice(0, 10)} < 基準日）`)
+    reasons.push(`開催終了済み（終了日 ${endD ? toTokyoDateString(endD) : '不明'} < 基準日）`)
   } else if (dedup.duplicate) {
     verdict = 'C'
     if (dedup.signalSummary && dedup.signalSummary.length > 0)
