@@ -84,12 +84,16 @@ const VERIFICATION_STATUS_VALUES = [
 
 // --- 共通 Article Facts（記事種別非依存化。2026-09-03、RUNBOOKS 付録 G.25）---
 //
-// 【編集カテゴリー】VISUAL_ASSET_LIBRARY §3.3 の正式18カテゴリー。
+// 【編集カテゴリー】VISUAL_ASSET_LIBRARY §3.3 の正式18カテゴリー
+// （2026-09-11、SWEETS を FOOD から分離し追加。呼称「18カテゴリー」は歴史的名称として維持）。
 // カテゴリーアイコン選択と編集上の集計（ART 等）に使う。**記事テンプレート種別とは別概念**。
 // 展覧会・個展も編集カテゴリーとしては ART（templateType=exhibition を編集カテゴリー扱いしない）。
+// SWEETS＝菓子・デザート・アフタヌーンティーが主題のもの。FOOD＝単なる飲食店情報・食事メニュー
+// （provisionalCategory.ts の TITLE_RULES が同じ切り分けを決定的に行う）。
 const PRIMARY_CATEGORY_VALUES = [
   { label: 'グルメ / FOOD', value: 'FOOD' },
   { label: 'カフェ / CAFE', value: 'CAFE' },
+  { label: 'スウィーツ / SWEETS', value: 'SWEETS' },
   { label: 'ショッピング / SHOPPING', value: 'SHOPPING' },
   { label: '名所・建築 / ARCHITECTURE', value: 'ARCHITECTURE' },
   { label: 'アート・文化 / ART', value: 'ART' },

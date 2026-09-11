@@ -239,7 +239,7 @@ export function paidLanePotential(input: {
   const titleOk = HOWTO_TITLE_RE.test(input.title ?? '')
   const isSaleOnly = (input.templateType ?? '') === 'sale' || (input.contentType ?? '') === 'news'
   const cat = (input.categoryKey ?? '').toUpperCase()
-  const experienceCat = ['ART', 'CULTURE', 'EVENT', 'WORKSHOP', 'EXPERIENCE', 'CAFE', 'FOOD'].includes(cat)
+  const experienceCat = ['ART', 'CULTURE', 'EVENT', 'WORKSHOP', 'EXPERIENCE', 'CAFE', 'FOOD', 'SWEETS'].includes(cat)
 
   if (hasVenue) reasons.push('会場が特定でき、時間別プラン・立ち寄り順の起点にできる')
   if (hasPeriod) reasons.push('会期があり「今行く理由」と再訪設計を書ける')

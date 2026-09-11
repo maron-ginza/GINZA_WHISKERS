@@ -14,6 +14,89 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-11 続き5（🍰 **「スウィーツ候補の安定収集」を一括実装**——18カテゴリーに SWEETS を
+    FOOD から分離、公式情報源7件を施設種別分散で追加、毎朝最大3件のスウィーツ候補選定を
+    決定的にスコアリングし morning-brief へ自動接続。**Project 02 コミット・push あり／
+    DB更新あり（enum拡張・source-ledger 11件作成・ArticleFacts 1件正規化）／
+    記事生成・承認・note転記・外部公開は未実施**）:
+
+    **① カテゴリー改善**：`ArticleFacts.primaryCategory`（Postgres enum `af_primary_category`）
+    に **SWEETS**（表示ラベル「スウィーツ / SWEETS」）を追加（19値目。呼称「18カテゴリー」は
+    SOURCE LEDGER の「v1」同様、歴史的名称として維持）。`provisionalCategory.ts` の
+    TITLE_RULES を、菓子・デザート・アフタヌーンティー語（スイーツ／パフェ／ケーキ／
+    和菓子／洋菓子／アフタヌーンティー／プリン／マカロン／羊羹／最中／あんぱん 等）を
+    **SWEETS** へ、グルメ・レストラン・弁当・惣菜・パン等の**単なる飲食店情報は FOOD のまま**
+    に切り分け。判定順は SWEETS を BEAUTY／WELLNESS／CAFE／FOOD より前に配置し、
+    「ウェルネス系アフタヌーンティー」のような複数語共存でも明記どおり SWEETS を優先。
+    `noteMasthead.ts` の CATEGORY_ICONS に SWEETS を追加（専用アイコン画像は未制作のため
+    FOOD のアイコン画像を暫定流用・labelJa「スウィーツ」、テストで明示的に許容）。
+    `candidateCoverageScore.ts`（CATEGORY_WEEKLY_TARGET）・`selectRecommendedThemes.ts`
+    （PRIMARY_18）・`dailySelectionSupport.ts`（experienceCat／既存 CORE_DAILY_BUCKETS の
+    FOOD_SWEETS バケットは変更不要=既に SWEETS 参照済みだった）にも反映。
+    **既存データの正規化**：ArticleFacts 全件を新ルールで再判定し、FOOD/CAFE→SWEETS に
+    変わるものだけ更新（推測で他カテゴリーへは動かさない）。対象1件のみ該当：
+    ArticleFacts #8（DC#327「韓国ウェルネス アフタヌーンティー」、Article #61）を
+    CAFE→SWEETS へ正規化。スキーマ変更は `payload generate:types` → dev-push で適用
+    （事前バックアップ `_backups/project02-schema-before-sweets-20260911_113036.sql`・
+    `project02-data-before-sweets-20260911_113036.sql`）。
+
+    **② 公式情報源の拡充**：WebSearch で実在・稼働を確認できたもの**だけ**を追加
+    （まとめサイト・転載記事・SNS投稿は不採用）。**新規5件**（すべて enabled:true）：
+    銀座千疋屋（路面洋菓子・フルーツ専門店、1894年）／HIGASHIYA GINZA（現代和菓子・茶房）／
+    とらや TORAYA GINZA（老舗和菓子、1947年〜）／銀座ウエスト（老舗喫茶・洋菓子、1947年、
+    tier=discovery＝一覧URL構造未確認のため自動発見に委ねる）／帝国ホテル東京
+    ホテルショップ「ガルガンチュワ」（ホテル公式スイーツ、hotel カテゴリーは今回が初登録）。
+    加えて**前セッション追加済みで disabled だった2件**（銀座木村家＝木村屋總本店、
+    銀座あけぼの）を同日中に WebSearch で再確認し enabled:true へ変更。
+    `seedSourceLedger.ts` で DB へ投入（11件新規作成・21件スキップ=既存、冪等）。
+    施設種別カバー状況（`classifySweetsSourceFactoryType` 相当の9分類）：路面洋菓子店・
+    和菓子店・老舗菓子店・ホテル・商業施設（GINZA SIX 等既存）・百貨店（既存・現状収集0件は
+    既知の課題）・ブランド公式（既存）・季節イベント公式（既存）の8/9をカバー、
+    「喫茶店・カフェの公式情報」は今回未充足（次回探索対象として自動記録される設計）。
+
+    **③ 新規モジュール `cms/src/lib/pipeline/sweetsCandidateSelect.ts`**（純粋・決定的・
+    AI/DB非依存）：`selectSweetsCandidates()` が SWEETS 分類候補から毎朝最大3件を選ぶ。
+    必須ハードル：①全公開履歴との重複（`alreadyPublished`）除外 ②公式URL・開催期間・
+    場所・内容の4項目のいずれか未確認（`finalEligible=false`）は最終候補にしない
+    ③同一施設は原則1候補まで（スコア最良の1件だけ残す）。上記を満たした候補を
+    終了緊急度（`daysUntilEnd`）・季節性（`seasonalSignal` 再利用）・公式完全度・
+    ターゲット適合度で加重スコアリングし上位3件を返す。**3件に満たない場合は不完全な
+    候補で埋めず**、`shortfallReason`（生候補数・除外内訳）と `nextSourceTypesToExplore`
+    （情報源名から9分類へ決定的に推定し、本日カバーされなかった種別を提示）を返す。
+    回帰テスト `sweetsCandidateSelect.check.ts`（7件）・`provisionalCategory.check.ts`
+    （5件、新規）。既存 `noteMasthead.check.ts`／`selectRecommendedThemes.check.ts` の
+    「アフタヌーンティー→CAFE」「パウンドケーキ→FOOD」という**旧仕様の固定アサーション**を
+    新仕様（SWEETS）へ更新（回帰ではなく仕様変更の反映）。
+
+    **④ 毎朝の自動運用への接続**：`morningBrief.ts`（`./p2 morning-brief`）に
+    「■ スウィーツ候補」セクションを追加。`assessInboxPool.candidates`
+    全体（top15プールに限らない）から SWEETS 候補を抽出し、`matchPublishedTheme`
+    （全公開履歴）・既 Article 化チェック・`evaluateSafetyGate`（verdict/期限切れ/
+    銀座関連性/出典/種別/タイトル）を通したうえで `selectSweetsCandidates` へ渡す。
+    テキスト出力・JSON出力（`.devlogs/morning/brief/<date>.json` の
+    `sweetsCandidates` フィールド）の両方に反映。`themesRecommend.ts` の収集
+    カバレッジ診断にも SWEETS 内訳（生候補数・公式確認済み数）の1行を追加。
+
+    **⑤ 本日の実データ検証**（`./p2 crawl` 再収集 → `./p2 morning-brief --limit=800`）：
+    再収集で新規7情報源すべてが初回取得成功（DiscoveredContent 632→706件、本日
+    新規/更新83件）。SWEETS 分類の生候補 **28件**（既存21件収集時点では数件のみだった
+    ところから大幅増）。全公開履歴重複2件・公式情報不完全23件・施設偏り(同一施設2件目)
+    2件を機械的に除外した結果、**確認候補は1件**（目標3件に対し shortfall）：
+    **DC#352「栗とはちみつのパウンドケーキ」（GINZA SIX、会期9/1〜9/15、公式完全度100%）**
+    のみが基準を満たした。**#631「銀座ピエス・モンテのマドレーヌ」は基準を緩めず再度不採用**
+    （個別診断で確認：`finalEligible=false`、未確認=開催・販売期間／内容、かつ
+    `unknown_type`/`unknown_factkind` で安全性gateも不通過——ピエス・モンテ公式サイトの
+    DNS解決不可という既知の課題〈CLAUDE.md記載〉と整合）。**GINZA SIX 一辺倒の水増しは
+    行っていない**——施設分散キャップにより GINZA SIX から2件目以降は自動排除される設計で、
+    今回1件しか通過しなかったのは「他に無いから採用」ではなく「唯一基準を満たした」結果。
+    不足理由・次回探索対象（老舗菓子店／喫茶店・カフェの公式情報／百貨店の食品・催事公式情報）
+    は `.devlogs/morning/brief/2026-09-11.json` の `sweetsCandidates` に自動記録済み。
+
+    **検証**：`tsc --noEmit` 0エラー・`run-all.ts` **445 passed 0 failed**
+    （新規12件＝provisionalCategory 5＋sweetsCandidateSelect 7、既存 noteMasthead は
+    +1件・selectRecommendedThemes.check.ts は標準テスト外だが個別実行でPASS確認）。
+    **記事生成・承認・note転記・外部公開は一切実行していない。**
+
   - 2026-09-11 続き4（📰 **Article #63「弦楽器フェア2026」note公開を全公開履歴台帳へ登録**。
     **Project 02 コミット・push なし（コード変更なし）／DB更新あり
     （`articles_publish_history` 追加・`reviewStatus`→published）**）:

@@ -15,7 +15,7 @@ import { resolve } from 'node:path'
 
 import config from '../payload.config'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
-import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
+import { selectRecommendedThemes, loadSelectThemesConfigFromEnv, evaluateSafetyGate } from '../lib/pipeline/selectRecommendedThemes'
 import { buildAdminCandidateReviewUrl } from '../lib/pipeline/adminCandidateUrl'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import { loadPublishedThemes } from '../lib/publish/loadPublishedThemes'
@@ -25,6 +25,9 @@ import {
   type BriefCandidateInput,
   type BriefFacts,
 } from '../lib/pipeline/morningBriefSelect'
+import { deriveProvisionalCategory } from '../lib/pipeline/provisionalCategory'
+import { resolveFacilityKey } from '../lib/curation/facilityKey'
+import { selectSweetsCandidates, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -65,6 +68,74 @@ async function main() {
 
   // 2b. 既公開テーマ（全公開履歴：DB publishHistory ＋ .devlogs ＋ 手動シード）
   const publishedThemes = await loadPublishedThemes(payload, resolve(process.cwd(), '..'))
+
+  // 2c. スウィーツ候補の安定収集（2026-09-11）：assessed.candidates 全体（top15プールに
+  //     限らない）から SWEETS 分類の候補だけを評価し、毎朝最大3件を決定的に選ぶ。
+  //     既に Article 化済みの DC も除外（トップ15プール限定の alreadyDrafted とは別に、
+  //     全 assessed 候補ぶんを見る）。
+  const allDcIds = assessed.candidates.map((c) => c.discoveredContentId)
+  const alreadyDraftedAll = new Set<number>()
+  if (allDcIds.length) {
+    const prov2 = await payload.find({
+      collection: 'articles',
+      where: { 'editorialProvenance.discoveredContentSource': { in: allDcIds } },
+      limit: 500,
+      depth: 1,
+      overrideAccess: true,
+    })
+    for (const a of prov2.docs as unknown as Record<string, unknown>[]) {
+      for (const p of (Array.isArray(a.editorialProvenance) ? a.editorialProvenance : []) as Record<string, unknown>[]) {
+        const ref = p.discoveredContentSource
+        const id = typeof ref === 'object' && ref ? Number((ref as { id?: number }).id) : Number(ref)
+        if (Number.isFinite(id)) alreadyDraftedAll.add(id)
+      }
+    }
+  }
+  const sweetsInputs: SweetsCandidateInput[] = assessed.candidates
+    .map((c): SweetsCandidateInput | null => {
+      const prov = deriveProvisionalCategory({
+        primaryCategory: c.primaryCategory ?? null,
+        title: c.title ?? '',
+        venue: c.venue ?? '',
+        templateType: c.templateType ?? null,
+        contentType: c.contentType ?? undefined,
+        excerpt: c.excerpt ?? undefined,
+      })
+      if (prov.category !== 'SWEETS') return null
+      const fk = resolveFacilityKey({ venue: c.venue, sourceName: c.sourceName, sourceUrl: c.sourceUrl, title: c.title })
+      const pub = matchPublishedTheme(
+        { dcId: c.discoveredContentId, title: c.displayTitle ?? c.title, eventName: c.displayTitle ?? c.title, venue: c.venue, period: c.eventPeriod },
+        publishedThemes,
+      )
+      const alreadyPublished = pub.match || c.duplicate === true || alreadyDraftedAll.has(c.discoveredContentId)
+      // 安全性 gate（verdict/期限切れ/銀座関連性/出典/種別/タイトル）に落ちる候補は
+      // 公式情報不完全と同様に扱い、最終候補に上げない（推測で救わない）。
+      const safetyFails = evaluateSafetyGate(c, cfg)
+      const gateOk = safetyFails.length === 0
+      return {
+        dcId: c.discoveredContentId,
+        title: c.title,
+        displayTitle: c.displayTitle ?? null,
+        category: 'SWEETS',
+        facilityKey: fk.key,
+        facilityLabel: fk.store || c.venue || null,
+        sourceName: c.sourceName,
+        sourceUrl: c.sourceUrl,
+        venue: c.venue ?? null,
+        eventPeriod: c.eventPeriod ?? null,
+        eventStartAt: (c.eventStartAt as string | null) ?? null,
+        eventEndAt: (c.eventEndAt as string | null) ?? null,
+        officialCompletenessScore: c.officialCompletenessScore ?? null,
+        officialMissing: gateOk ? (c.officialMissing ?? null) : [...(c.officialMissing ?? []), ...safetyFails],
+        finalEligible: gateOk && c.finalEligible !== false,
+        daysUntilEnd: c.daysUntilEnd ?? null,
+        targetFit: c.targetFit ?? null,
+        alreadyPublished,
+        publishedReason: pub.match ? pub.reason : alreadyDraftedAll.has(c.discoveredContentId) ? '既に Article 化済み' : null,
+      }
+    })
+    .filter((x): x is SweetsCandidateInput => x != null)
+  const sweetsSelection = selectSweetsCandidates(sweetsInputs, { now })
 
   // 3. 既存 ArticleFacts（DB）
   const factsByDc = new Map<number, Record<string, unknown>>()
@@ -202,6 +273,23 @@ async function main() {
 
   L('')
   L('────────────────────────────────────────────')
+  L(`■ スウィーツ候補（SWEETS専用・毎朝最大3件・目標達成=${!sweetsSelection.shortfall}）`)
+  if (sweetsSelection.candidates.length === 0) {
+    L('   ❌ 本日は公式確認できるSWEETS候補がありません（不完全な候補で埋めない）')
+  }
+  for (const [i, sc] of sweetsSelection.candidates.entries()) {
+    L(`   ${i + 1}. DC #${sc.dcId}「${sc.title}」`)
+    L(`      施設: ${sc.facilityLabel ?? '不明'}／情報源: ${sc.sourceName}／会期: ${sc.eventPeriod ?? '確認できません'}`)
+    L(`      ${sc.reason}／${sc.seasonalNote}`)
+  }
+  if (sweetsSelection.shortfall) {
+    L(`   ⚠ ${sweetsSelection.shortfallReason}`)
+    if (sweetsSelection.nextSourceTypesToExplore?.length) {
+      L(`   → 次回優先して探索する情報源種別: ${sweetsSelection.nextSourceTypesToExplore.join(' / ')}`)
+    }
+  }
+  L('')
+  L('────────────────────────────────────────────')
   L(`■ 本日の確定: ${brief.filledCount}／3 領域`)
   for (const w of brief.warnings) L(`   ⚠ ${w}`)
   L('')
@@ -256,6 +344,13 @@ async function main() {
           considered: b.considered,
         })),
         warnings: brief.warnings,
+        sweetsCandidates: {
+          candidates: sweetsSelection.candidates,
+          shortfall: sweetsSelection.shortfall,
+          shortfallReason: sweetsSelection.shortfallReason,
+          nextSourceTypesToExplore: sweetsSelection.nextSourceTypesToExplore,
+          summary: sweetsSelection.summary,
+        },
       },
       null,
       2,
@@ -263,7 +358,16 @@ async function main() {
   )
 
   if (JSON_OUT) {
-    console.log(JSON.stringify({ date: DATE, filledCount: brief.filledCount, pickedDcIds: brief.pickedDcIds, approveUrl, buckets: brief.buckets }))
+    console.log(
+      JSON.stringify({
+        date: DATE,
+        filledCount: brief.filledCount,
+        pickedDcIds: brief.pickedDcIds,
+        approveUrl,
+        buckets: brief.buckets,
+        sweetsCandidates: sweetsSelection,
+      }),
+    )
   } else {
     console.log(text)
     console.log(`保存: .devlogs/morning/brief/${DATE}.txt / .json`)

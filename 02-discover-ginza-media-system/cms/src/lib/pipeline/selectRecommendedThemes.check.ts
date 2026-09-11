@@ -394,7 +394,8 @@ section('S12: 暫定カテゴリー — 明記から確定／全件未確定な�
   // タイトルの明記語からカテゴリー
   ok(deriveProvisionalCategory({ title: '山本浩二 写真展' }).category === 'PHOTO', '写真展 → PHOTO')
   ok(deriveProvisionalCategory({ title: 'アニメ天官賜福展 -天地流光-' }).category === 'ART', '◯◯展 → ART')
-  ok(deriveProvisionalCategory({ title: '栗とはちみつのパウンドケーキ' }).category === 'FOOD', 'パウンドケーキ → FOOD')
+  // 2026-09-11：SWEETS を FOOD から分離。菓子・デザートは SWEETS を優先する（マロン指示）。
+  ok(deriveProvisionalCategory({ title: '栗とはちみつのパウンドケーキ' }).category === 'SWEETS', 'パウンドケーキ → SWEETS（FOODから分離）')
   ok(deriveProvisionalCategory({ title: 'follow×JAPAN DENIM JEANS' }).category === 'SHOPPING', 'デニム/JEANS → SHOPPING')
   ok(deriveProvisionalCategory({ title: '第16回 銀座シャンソン＆音楽祭' }).category === 'MUSIC', 'シャンソン/音楽 → MUSIC')
   const noTok = deriveProvisionalCategory({ title: '銀座のなにか', templateType: 'exhibition' })

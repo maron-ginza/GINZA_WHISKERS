@@ -25,6 +25,7 @@ by GINZA WHISKERS
 export type CategoryCode =
   | 'FOOD'
   | 'CAFE'
+  | 'SWEETS'
   | 'SHOPPING'
   | 'ARCHITECTURE'
   | 'ART'
@@ -55,6 +56,10 @@ export interface CategoryIcon {
 export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   FOOD: { category: 'FOOD', labelJa: 'グルメ', iconSlug: 'icon_food', iconFile: '01_gourmet.jpg' },
   CAFE: { category: 'CAFE', labelJa: 'カフェ', iconSlug: 'icon_cafe', iconFile: '02_cafe.jpg' },
+  // 2026-09-11 追加：SWEETS 専用アイコン画像は未制作のため、暫定的に FOOD（グルメ）の
+  // アイコン画像を流用する（表示ラベルのみ「スウィーツ」）。専用アイコンが用意でき次第、
+  // iconSlug/iconFile を差し替える（VISUAL_ASSET_LIBRARY 側の対応は未着手）。
+  SWEETS: { category: 'SWEETS', labelJa: 'スウィーツ', iconSlug: 'icon_food', iconFile: '01_gourmet.jpg' },
   SHOPPING: { category: 'SHOPPING', labelJa: 'ショッピング', iconSlug: 'icon_shopping', iconFile: '03_shopping.jpg' },
   ARCHITECTURE: {
     category: 'ARCHITECTURE',

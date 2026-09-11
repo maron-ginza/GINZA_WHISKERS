@@ -951,7 +951,7 @@ export function selectRecommendedThemes(
 }
 
 const PRIMARY_18 = [
-  'FOOD', 'CAFE', 'SHOPPING', 'ARCHITECTURE', 'ART', 'EVENT', 'NIGHT', 'MUSIC', 'BEAUTY',
+  'FOOD', 'CAFE', 'SWEETS', 'SHOPPING', 'ARCHITECTURE', 'ART', 'EVENT', 'NIGHT', 'MUSIC', 'BEAUTY',
   'HOTEL', 'WELLNESS', 'EXPERIENCE', 'GIFT', 'WORKSHOP', 'PHOTO', 'FAMILY', 'NIGHT_VIEW', 'RAINY_DAY',
 ] as const
 

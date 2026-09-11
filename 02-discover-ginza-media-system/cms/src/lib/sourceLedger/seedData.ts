@@ -3,7 +3,9 @@ import type { SourceLedgerEntry } from './types'
 // SOURCE LEDGER v1（2026-08-15）初期Core Source候補。
 //
 // 初期Core Source候補（14件）＋2026-09-04追加のprimary専門店/美術館7件＋2026-09-11追加の
-// 収集カバレッジ補完6件（enabled:false・要目視確認）。urlは初期14件についてはWebSearchで
+// 収集カバレッジ補完6件（うち木村家・あけぼのの2件は同日中にWebSearchで実在確認しenabled化）
+// ＋2026-09-11「スウィーツ候補の安定収集」追加分5件（千疋屋・HIGASHIYA・とらや・銀座ウエスト・
+// 帝国ホテル、いずれもWebSearchで実在確認しenabled:true）。合計32件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -439,12 +441,13 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     sourceType: 'official_site',
     reliability: 'high',
     crawlFrequency: 'weekly',
-    enabled: false,
+    enabled: true,
     lastCheckedAt: null,
     lastChangedAt: null,
     notes:
-      'FOOD（老舗）母数の補完。1869年創業のあんぱん発祥の店（季節の菓子・限定品・催事）。' +
-      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+      'SWEETS（老舗・あんぱん）母数の補完。1869年創業のあんぱん発祥の店（季節の菓子・限定品・催事）。' +
+      '2026-09-11 追加時は enabled:false・要目視確認としたが、2026-09-11の「スウィーツ候補の安定収集」' +
+      '実装セッションで WebSearch により公式サイトが稼働中であることを再確認し enabled:true へ変更。',
   },
   {
     id: 'ginza-akebono',
@@ -456,12 +459,13 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     sourceType: 'official_site',
     reliability: 'medium',
     crawlFrequency: 'weekly',
-    enabled: false,
+    enabled: true,
     lastCheckedAt: null,
     lastChangedAt: null,
     notes:
-      'FOOD／GIFT（老舗和菓子）母数の補完。1948年創業（季節の和菓子・ギフト・限定）。' +
-      '2026-09-11 追加。一覧ページ URL・robots.txt・個別記事リンク形式を目視確認してから enabled 化する。',
+      'SWEETS／GIFT（老舗和菓子）母数の補完。1948年創業（季節の和菓子・ギフト・限定）。' +
+      '2026-09-11 追加時は enabled:false・要目視確認としたが、同日の「スウィーツ候補の安定収集」' +
+      '実装セッションで WebSearch により公式サイトが稼働中であることを再確認し enabled:true へ変更。',
   },
   {
     id: 'ggg-ginza-graphic-gallery',
@@ -496,5 +500,101 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
     notes:
       'ART（現代美術）母数の補完。銀座メゾンエルメス8・9階の展示スペース。' +
       '2026-09-11 追加。展覧会一覧ページ URL・robots.txt・会期表記を目視確認してから enabled 化する。',
+  },
+  // ───────────────────────────────────────────────────────────────
+  // 2026-09-11（スウィーツ候補の安定収集）追加。特定施設・ブランドへの偏りを避けるため、
+  // 路面洋菓子店・和菓子店・老舗菓子店・ホテル公式スイーツ情報の4種別から分散して選定。
+  // 各 URL は WebSearch で実在・稼働中を確認したうえで enabled:true とした
+  // （検索結果に直接返ってきたリンクを根拠に採用。まとめサイト・転載記事は不採用）。
+  // ───────────────────────────────────────────────────────────────
+  {
+    id: 'ginza-sembikiya',
+    name: '銀座千疋屋',
+    url: 'https://ginza-sembikiya.jp/f/news_release',
+    category: 'food',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（銀座の路面洋菓子・フルーツ専門店）母数の補完。1894年創業。「お知らせ・新着情報」' +
+      '一覧ページ https://ginza-sembikiya.jp/f/news_release を WebSearch で実在確認（2026-09-11、' +
+      '季節スイーツフェア等の新着記事を掲載していることを確認）。',
+  },
+  {
+    id: 'higashiya-ginza',
+    name: 'HIGASHIYA GINZA',
+    url: 'https://www.higashiya.com/news/?cat=3',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（現代和菓子・茶房）母数の補完。銀座の和菓子・茶房ブランド。「お知らせ」一覧ページ' +
+      'https://www.higashiya.com/news/?cat=3 を WebSearch で実在確認（2026-09-11、季節の和菓子・' +
+      '限定メニューの新着記事を掲載していることを確認）。',
+  },
+  {
+    id: 'toraya-ginza',
+    name: 'とらや（TORAYA GINZA）',
+    url: 'https://www.toraya-group.co.jp/toraya/news/?cid%5B%5D=2',
+    category: 'food',
+    tier: 'primary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（老舗和菓子）母数の補完。1947年〜銀座、2024年に喫茶中心の「TORAYA GINZA」へ' +
+      'リニューアル。株式会社虎屋の公式お知らせ一覧 https://www.toraya-group.co.jp/toraya/news/ ' +
+      'を WebSearch で実在確認（2026-09-11、新商品・季節の和菓子情報を掲載していることを確認）。',
+  },
+  {
+    id: 'ginza-west',
+    name: '銀座ウエスト（GINZA WEST）',
+    url: 'https://www.ginza-west.com/',
+    category: 'food',
+    tier: 'discovery',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（老舗喫茶・洋菓子）母数の補完。1947年創業、着色料・香料不使用の焼き菓子。公式サイト' +
+      'https://www.ginza-west.com/ を WebSearch で実在確認（2026-09-11、季節限定商品の告知を確認）。' +
+      '一覧ページの正確な URL 構造までは確認できていないため tier=discovery（自動発見に委ねる）。',
+  },
+  {
+    id: 'imperial-hotel-tokyo-gargantua',
+    name: '帝国ホテル 東京 ホテルショップ「ガルガンチュワ」',
+    url: 'https://www.imperialhotel.co.jp/j/tokyo/news/hotelshop/column_index.html',
+    category: 'hotel',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（ホテル公式スイーツ・ペストリー）母数の補完。帝国ホテル東京本館1階のペストリー・' +
+      '洋菓子ショップ。公式コラムページ https://www.imperialhotel.co.jp/j/tokyo/news/hotelshop/' +
+      'column_index.html を WebSearch で実在確認（2026-09-11、2024年8月のリニューアル情報等を確認）。',
   },
 ]

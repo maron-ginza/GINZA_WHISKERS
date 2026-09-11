@@ -224,6 +224,12 @@ async function main(): Promise<void> {
       `  過集中の施設（全体の3割以上）: ${agg.overweightFacilities.map((f) => `${f.facility}(${f.count}件/${Math.round(f.ratio * 100)}%)`).join('・') || 'なし'}`,
     )
     console.log(`  公式情報が4項目そろう候補（公式URL・期間・場所・内容）: ${officialOk} / ${agg.total} 件`)
+    const sweetsRows = candidates.filter((c, i) => covRows[i].category === 'SWEETS')
+    const sweetsOfficialOk = sweetsRows.filter((c) => c.finalEligible === true).length
+    console.log(
+      `  SWEETS内訳: 生候補 ${sweetsRows.length} 件（うち公式4項目確認済み ${sweetsOfficialOk} 件）。` +
+        '毎朝の確認候補選定は ./p2 morning-brief（スウィーツ候補セクション）を参照',
+    )
     console.log(
       `  過去7日の採用: ${history.approvedCount} 件 ／ カテゴリー ${Object.entries(history.categoryCounts).map(([k, v]) => `${k}×${v}`).join(' / ') || 'なし'} ／ 施設 ${Object.entries(history.facilityCounts).map(([k, v]) => `${k}×${v}`).join(' / ') || 'なし'}`,
     )

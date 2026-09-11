@@ -32,7 +32,9 @@ const OVEREXPOSED_SET = new Set<string>(OVEREXPOSED_FACILITY_KEYS)
 export const CATEGORY_WEEKLY_TARGET: Record<string, number> = {
   // コア3の柱（毎日1本 → 週7前後だが、循環運用なので週あたり目安は控えめに）
   BEAUTY: 3,
-  FOOD: 3,
+  FOOD: 2,
+  // 2026-09-11 追加：FOOD から分離。グルメ・スイーツ枠の中でも独立して不足を検知する。
+  SWEETS: 2,
   ART: 3,
   // コア3に内包されるサブカテゴリー
   CAFE: 2,
