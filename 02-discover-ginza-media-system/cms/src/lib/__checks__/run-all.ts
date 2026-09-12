@@ -24,6 +24,7 @@ import { suite as morningBriefSelect } from './morningBriefSelect.check'
 import { suite as reviewTodayData } from './reviewTodayData.check'
 import { suite as businessDate } from './businessDate.check'
 import { suite as publishedThemes } from './publishedThemes.check'
+import { suite as publishedRegistry } from './publishedRegistry.check'
 import { suite as candidateCoverageScore } from './candidateCoverageScore.check'
 import { suite as provisionalCategory } from './provisionalCategory.check'
 import { suite as sweetsCandidateSelect } from './sweetsCandidateSelect.check'
@@ -61,6 +62,7 @@ const results: SuiteResult[] = [
   reviewTodayData(),
   businessDate(),
   publishedThemes(),
+  publishedRegistry(),
   candidateCoverageScore(),
   provisionalCategory(),
   sweetsCandidateSelect(),

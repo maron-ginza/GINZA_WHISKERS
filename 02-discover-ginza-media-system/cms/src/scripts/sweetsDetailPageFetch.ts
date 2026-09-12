@@ -40,10 +40,17 @@ const TARGET_SOURCE_NAMES = [
   'SHISEIDO THE STORE（銀座）',
   'AYURA GINZA',
   // 2026-09-12 続き（デパ地下ブランド母数拡充）
-  'ピエール・エルメ・パリ（松屋銀座）',
-  'DALLOYAU（ダロワイヨ、銀座三越）',
+  'ピエール・エルメ・パリ（PIERRE HERMÉ PARIS）',
+  'DALLOYAU（ダロワイヨ）',
   'アンリ・シャルパンティエ（銀座メゾン）',
-  'GODIVA（ゴディバ、松屋銀座）',
+  'GODIVA（ゴディバ）',
+  // 2026-09-12 続き2（デパ地下・路面店ブランドの本格拡張）
+  'ブールミッシュ（銀座本店）',
+  'ジャン＝ポール・エヴァン（JEAN-PAUL HÉVIN JAPON）',
+  'フレデリック・カッセル（Frédéric Cassel）',
+  'ルノートル（LENÔTRE）',
+  '銀座コージーコーナー（銀座一丁目本店）',
+  '銀座若菜（株式会社若菜）',
 ]
 const PER_SOURCE_BUDGET = 8
 const REQUEST_INTERVAL_MS = 350

@@ -32,7 +32,13 @@ import { selectSweetsCandidates, type SweetsCandidateInput } from '../lib/pipeli
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
 const limArg = argv.find((a) => a.startsWith('--limit='))
-const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 200) : 200
+// 既定200→400（2026-09-12）：情報源拡張（グルメ・スイーツ本格拡張、SOURCE LEDGER
+// 36→46件）に伴い、1回のcrawlで新規/更新検知される候補が数百件規模になる日が
+// 出てきたため、-detectedAt上位200件だけでは新規追加ソース由来の候補が評価対象
+// ウィンドウから漏れる（実データで確認：limit=200では新規ブランド由来候補が
+// ウィンドウ外、limit=500では評価対象に入りSWEETS生候補19件を検出）。実行コストは
+// DB読み取りのみ（AI呼び出しなし）で400件でも実測1.5秒台のため、既定値を引き上げる。
+const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 400) : 400
 const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
 
 async function main() {

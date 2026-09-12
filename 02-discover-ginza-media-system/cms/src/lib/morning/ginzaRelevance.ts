@@ -100,8 +100,21 @@ export function hasMeaningfulTitle(title?: string | null, venue?: string | null,
 //   ・銀座木村家（ginzakimuraya.jp＝銀座の店舗専用ドメイン。木村屋總本店本体の
 //     全国展開とは別――kimuraya-sohonten.co.jp はここに含めない）
 //   ・SHISEIDO THE STORE：資生堂の銀座フラッグシップ（単独店舗、thestore.shiseido.co.jp）
+// 【重要・命名規則】ここに載る文字列は、SOURCE_LEDGERの`name`フィールドに含まれるだけで
+// 「銀座の単独施設」と自動判定される（sourceNameとsourceUrlを連結した文字列への部分一致）。
+// そのため、全国複数店舗を持つブランド（デパ地下テナント等）の`name`に、別の単独施設
+// （銀座三越・松屋銀座 等、ここに載っている語）を説明のためだけに含めると、意図せず
+// 単独施設と誤判定される（2026-09-12、GODIVA/DALLOYAU/ピエール・エルメ・パリ/フレデリック・
+// カッセル/ルノートル/銀座若菜の`name`に「（松屋銀座）」「（銀座三越）」等を付けていたために
+// 発生した実バグを修正した経緯あり）。複数店舗ブランドの`name`には、ここに載る語を
+// 含めないこと（出店先の説明は`notes`にのみ書く）。
+// 【注意】ここに追加する前に「本当に銀座に1店舗しかないか」を再確認すること。
+// facilityKey.ts の SOURCE_AS_FACILITY（施設分散カウント用）にある＝ここに含めてよい、
+// ではない——「情報源＝1施設として集計してよい」ことと「記事に銀座の明記が無くても
+// 銀座関連とみなしてよい」ことは別の問いであり、後者は個別に実在確認できたものだけを
+// 載せる（2026-09-12、ブールミッシュ追加時にこの2つを混同しかけたため明文化）。
 const SINGLE_GINZA_VENUE_RE =
-  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp/i
+  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp|ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp/i
 
 /** 情報源名（＋任意で公式URL）から「銀座の単独施設か」を判定する */
 export function isSingleGinzaVenueSource(sourceName?: string | null, sourceUrl?: string | null): boolean {

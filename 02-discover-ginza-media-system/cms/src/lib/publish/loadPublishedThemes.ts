@@ -1,69 +1,74 @@
-// GINZA WHISKERS / Project 02（2026-09-11）— 既公開テーマ台帳のロード（DB ＋ 作業記録 ＋ 手動シード）。
+// GINZA WHISKERS / Project 02（2026-09-11、2026-09-12改訂）
+// — 既公開テーマ台帳のロード（DB ＝ 主経路 ＋ 作業記録 ＋ 補助台帳）。
 //
-// 「全公開履歴」を対象にする。集める先：
-//   ・DB `articles.publishHistory`（channel='note'）
+// 【主経路（自動照合）】は DB。候補生成のたびに以下を必ず突き合わせる：
+//   ・DB `articles.publishHistory`（channel='note'）＝loadDbPublishedThemes()
 //   ・`.devlogs/night/queue/*/*/note-draft.json`（publishRecord に url / state='公開完了'）
 //   ・`.devlogs/manual-drafts/*/note-draft.json`（published:true / publishRecord あり）
-//   ・手動シード（マロン確認済みで URL 未記録のもの）
+// これらはいずれも「このシステム自身の記録」から機械的に導出され、コード変更なしに
+// 新しい公開が増えるたびに自動で反映される。
+//
+// 【補助台帳（PUBLISHED_REGISTRY）】は、上記の自動照合では検知できない――つまり
+// このシステムの外（別ルート・手動投稿等）で公開され、DB にも `.devlogs` にも
+// 一切の記録が残っていない――既公開テーマのための、最後の安全網。2026-09-12、
+// マロンから「MANUAL_PUBLISHED_SEEDは緊急用の補助に限定してほしい。今後も手動
+// 登録漏れが起こり得る」との指摘を受け、この配列を TypeScript ソースへの
+// 直書き（コード変更が必要）から、git管理のJSON台帳
+// （`publishedRegistry.json`）＋追記専用CLI（`./p2 publishlog add`、
+// `appendPublishedRegistryEntry()`）へ切り替えた。台帳への追記はコード変更を
+// 伴わない運用作業として行える。ただし性質は変わらない――ここに載るのは
+// 「このシステムでは自動検知できなかった」ケースであり、本来は根本対策
+// （note転記時に必ず `publishHistory` を残す運用の徹底）で件数を減らすべき
+// 補助手段である。
+//
+// 2026-09-12現在、DC#352・#246・#365 は `curationStatus=inbox`（承認すら
+// されていない）のままDB上に残っており、Article化・publishHistory記録の
+// いずれも存在しない。これは「自動照合ロジックの不備」ではなく「この3件が
+// そもそもこのシステムのDiscoveredContent承認フローを経由せず公開された」
+// ことを示す――DB外の行為はDBでは原理的に検知できないため、この種のケースは
+// 今後もPUBLISHED_REGISTRYへの手動登録が唯一の対処法になる。
 
 import type { Payload } from 'payload'
-import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { PublishedTheme } from './publishedThemes'
 
 const NOTE_URL_RE = /https:\/\/note\.com\/ginza_whiskers\/n\/[a-z0-9]+/i
+// ESM実行（tsx/esm）では __dirname が使えないため import.meta.url から解決する。
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
+const REGISTRY_PATH = resolve(MODULE_DIR, 'publishedRegistry.json')
+
+/** PUBLISHED_REGISTRY（補助台帳）を読み込む。ファイル欠落・壊れたJSONは空配列（推測補完しない）。 */
+export function loadPublishedRegistry(path: string = REGISTRY_PATH): PublishedTheme[] {
+  try {
+    const raw = readFileSync(path, 'utf8')
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed as PublishedTheme[]
+  } catch {
+    return []
+  }
+}
 
 /**
- * マロン確認済みだが URL がローカルに記録されていない既公開テーマ。
- * 恒久対策（publishHistory へ手動転記時も URL を残す）が入るまでのシード。
+ * PUBLISHED_REGISTRY へ1件追記する（`./p2 publishlog add` から呼ばれる）。
+ * 同一 dcId が既にあれば上書き（重複追加しない）。ファイル書き込みのみ・DBには触れない。
  */
-export const MANUAL_PUBLISHED_SEED: PublishedTheme[] = [
-  {
-    noteUrl: null,
-    title: '韓国ウェルネス アフタヌーンティー（NAMIKI667）',
-    eventName: '韓国ウェルネス アフタヌーンティー',
-    venue: 'NAMIKI667／ハイアット セントリック 銀座 東京',
-    period: '2026年9月1日〜10月31日',
-    dcId: 327,
-    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
-    publishedAt: null,
-  },
-  // 2026-09-12：マロンから「DC#352・#246・#365 はいずれも過去投稿済み」との指摘を受けて追加。
-  // DB（editorialProvenance／publishHistory）・.devlogs のいずれにも紐づく記録が見つからず、
-  // 本システムの記録範囲外（手動投稿・別ルート等）での既公開と判断し、URL・投稿日は
-  // 未記録のまま推測せず登録する（DC id による一致で以後は確実に除外される）。
-  {
-    noteUrl: null,
-    title: '【秋季限定】栗とはちみつのパウンドケーキ（GINZA SIX）',
-    eventName: '栗とはちみつのパウンドケーキ',
-    venue: 'GINZA SIX',
-    period: '2026年9月1日〜9月15日',
-    dcId: 352,
-    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
-    publishedAt: null,
-  },
-  {
-    noteUrl: null,
-    title: '花西子 FLORASIS UV機能付ファンデーション（GINZA SIX）',
-    eventName: '花西子 FLORASIS UV機能付ファンデーション',
-    venue: 'GINZA SIX',
-    period: '2026年8月29日〜9月16日',
-    dcId: 246,
-    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
-    publishedAt: null,
-  },
-  {
-    noteUrl: null,
-    title: '櫻井万里明 “Hustle!!” 刊行記念展示（銀座 蔦屋書店）',
-    eventName: '櫻井万里明 “Hustle!!” 刊行記念 ブックサイニング&作品展示',
-    venue: '銀座 蔦屋書店',
-    period: '2026年9月11日〜9月13日',
-    dcId: 365,
-    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
-    publishedAt: null,
-  },
-]
+export function appendPublishedRegistryEntry(entry: PublishedTheme, path: string = REGISTRY_PATH): PublishedTheme[] {
+  const current = loadPublishedRegistry(path)
+  const idx = entry.dcId != null ? current.findIndex((e) => e.dcId != null && Number(e.dcId) === Number(entry.dcId)) : -1
+  const next = idx >= 0 ? [...current.slice(0, idx), entry, ...current.slice(idx + 1)] : [...current, entry]
+  writeFileSync(path, JSON.stringify(next, null, 2) + '\n', 'utf8')
+  return next
+}
+
+/**
+ * @deprecated 後方互換のためのエイリアス（既存テストが参照）。新規コードは
+ * `loadPublishedRegistry()` を使うこと。中身は補助台帳（PUBLISHED_REGISTRY）そのもの。
+ */
+export const MANUAL_PUBLISHED_SEED: PublishedTheme[] = loadPublishedRegistry()
 
 function num(v: unknown): number | null {
   const n = Number(v)
@@ -174,11 +179,16 @@ export async function loadDbPublishedThemes(payload: Payload): Promise<Published
   return out
 }
 
-/** 全公開履歴（DB ＋ 作業記録 ＋ 手動シード）を重複除去してまとめる */
+/**
+ * 全公開履歴（DB＝主経路 ＋ 作業記録 ＋ PUBLISHED_REGISTRY＝補助台帳）を重複除去してまとめる。
+ * 補助台帳は呼び出しのたびにファイルから再読込する（`./p2 publishlog add` による
+ * 追記を、プロセス再起動なしに次回の候補生成から反映するため）。
+ */
 export async function loadPublishedThemes(payload: Payload, root: string): Promise<PublishedTheme[]> {
   const db = await loadDbPublishedThemes(payload)
   const devlog = scanDevlogPublishedThemes(root)
-  const merged: PublishedTheme[] = [...db, ...devlog, ...MANUAL_PUBLISHED_SEED]
+  const registry = loadPublishedRegistry()
+  const merged: PublishedTheme[] = [...db, ...devlog, ...registry]
 
   // URL または (dcId+title) で重複除去（DB 優先）
   const byKey = new Map<string, PublishedTheme>()

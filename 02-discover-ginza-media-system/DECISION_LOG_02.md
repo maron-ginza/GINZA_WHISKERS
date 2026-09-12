@@ -14,6 +14,123 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-12 続き2（🛑 **公開済み除外の主経路をDB自動照合中心へ再設計＋グルメ・
+    スイーツ情報源をブランド単位で本格拡張＋ginzaRelevance命名衝突バグを発見・修正
+    （Project 02 コミット・push あり／DB更新は名称同期のみ／記事生成・承認・
+    note転記・公開・DC#141・DC#388への操作は未実施）**）:
+
+    背景：直前エントリ（続き）のMANUAL_PUBLISHED_SEED追加を経ても、マロンより
+    「①グルメ・スイーツ候補が依然GINZA SIXの1件のみ ②情報源が銀座三越／松屋銀座の
+    デパ地下各ブランド・路面店・専門店へ広がっていない ③公開済み除外がMANUAL_
+    PUBLISHED_SEED中心で今後も手動登録漏れが起こり得る」との指摘。DC#141・DC#388の
+    記事生成・承認・note転記・外部公開は禁止し、候補数を埋めることより情報源拡張と
+    重複除外の自動化を優先する指示。
+
+    **①公開済み除外の再設計（MANUAL_PUBLISHED_SEEDを緊急用補助へ）**：
+    `MANUAL_PUBLISHED_SEED`（TypeScript直書き配列）を廃し、git管理のJSON台帳
+    `cms/src/lib/publish/publishedRegistry.json`（中身は従来と同じ4件）へ移行。
+    `loadPublishedThemes.ts` に `loadPublishedRegistry()`（読み込み、ファイル欠落・
+    壊れたJSON・非配列はいずれも空配列を返し例外を投げない）と
+    `appendPublishedRegistryEntry()`（dcId一致で上書き、新規は追加、ファイルへ
+    永続化）を新設。`MANUAL_PUBLISHED_SEED` は後方互換の`const`エイリアスとして残す
+    （既存テストの参照を壊さない）。新規CLI `./p2 publishlog add --dc=<id> [--title=]
+    [--event=] [--venue=] [--period=] [--url=] [--published-at=] [--source=]`
+    （`cms/src/scripts/publishLogAdd.ts`）：台帳への追記に加え、`--url` 指定時は
+    該当DCを`editorialProvenance`で参照するArticleが存在すればその
+    `publishHistory`へもベストエフォートで書き戻す（該当Articleが無ければ台帳登録の
+    みでDB外投稿と明記）——これにより次回以降は主経路（DB自動照合＝
+    `loadDbPublishedThemes`、既存実装で`articles.publishHistory`を機械的に走査）
+    だけで検知できるようになり、台帳への依存を漸減できる設計にした。**ただし
+    性質は変わらない**——DC#352・#246・#365は`curationStatus=inbox`のまま
+    （DiscoveredContent承認フローを一度も経由していない）と確認しており、DB外の
+    行為はDB照合では原理的に検知不能なため、この種のケースは今後もマロンによる
+    台帳登録が唯一の対処法である旨をコード内コメントに明記した。回帰テスト新規
+    `publishedRegistry.check.ts`（8件：実台帳の中身確認・後方互換確認・ファイル
+    欠落／壊れたJSON／非配列への耐性・追記の新規追加／上書き／既存保持）。
+
+    **②グルメ・スイーツ情報源のブランド単位拡張**：WebSearch・WebFetchで
+    銀座三越デパ地下洋菓子コーナーのリフレッシュオープン（2024-10、PR TIMES記事）に
+    登場する出店ブランドを中心に調査し、実在確認・reachability確認（curl 200・
+    robots.txt許可）を経て6件をSOURCE LEDGERへ新規登録（40→46件）：ブールミッシュ
+    （銀座本店、銀座1-2-3の単独立地を確認——facilityKey・ginzaRelevance双方の
+    単独施設として追加）／ジャン＝ポール・エヴァン（JEAN-PAUL HÉVIN JAPON、
+    /Page/journal/に日付つき記事）／フレデリック・カッセル（日本は銀座三越と
+    京都の2店舗のみとWebSearchで確認）／ルノートル（LENÔTRE、銀座三越含む
+    リニューアル出店ブランドの一つ、/topicsに日付つきスラッグ記事）／銀座
+    コージーコーナー（銀座一丁目本店の実在確認、「秋のスイーツが登場」等の季節限定
+    告知を/news/で確認、約400店舗チェーンにつきfacilityKey非追加）／銀座若菜
+    （銀座三越B2F出店の漬物専門店、マロン指名により調査したが業態はSWEETSでなく
+    低期待値のため参考登録・reliability=low）。**調査したが不採用**（理由つき）：
+    銀座若松（あんみつ発祥、ginza-wakamatsu.co.jp——WordPress feedの最新投稿が
+    「閉店のお知らせ（2023-12-30閉店）」で営業終了と判明、登録しない）／銀座
+    コロンバン（自社サイトは「原宿スイーツのコロンバン」を名乗り中央区観光協会の
+    「銀座本店」記載と矛盾、実態未確認のため見送り）／塩野（赤坂、銀座店舗なし）／
+    甘味処 月ヶ瀬（京都、銀座店舗なし）／ザ・ペニンシュラ東京（住所は日比谷、
+    銀座表記の実地確認できず見送り）／mistore.jp配下の三越側イベント・催事ページ
+    （既存の`mitsukoshi-ginza`と同一原因でTLS接続後にデータフェーズがタイムアウト、
+    既知の取得不能を再確認）／matsuya.com/ginza/event/（404、存在確認できず）。
+    `sweetsDetailPageFetch.ts`のTARGET_SOURCE_NAMESへ新規6件を追加し実行、
+    48/48件のStage2詳細取得に成功（失敗0件）。
+
+    **③ginzaRelevance命名衝突バグの発見・修正（本セッションの副産物、重要度：高）**：
+    ②の直後、Turn D（前エントリ）で追加したGODIVA・DALLOYAU・ピエール・エルメ・
+    パリの名称に説明目的で「（松屋銀座）」「（銀座三越）」を含めていたところ、
+    `isSingleGinzaVenueSource()`（ginzaRelevance.ts）がsourceName文字列への
+    **部分一致**で「銀座の単独施設」を判定する設計だったため、これら全国複数店舗
+    ブランドが**記事に銀座の明記が無くても銀座関連と誤判定される実バグ**を
+    誘発していたことを検証中に発見（GODIVA・DALLOYAU・ピエール・エルメ・パリに加え、
+    今回新規追加のフレデリック・カッセル・ルノートル・銀座若菜も同型の命名で同じ
+    バグを誘発しかけていた）。**修正**：該当6件の`name`から百貨店名の
+    parentheticalを除去し出店先情報は`notes`のみに記載する形へ改名（DB側は
+    seedSourceLedgerが冪等・名称更新なしのため一回限りスクリプトで6件のみ個別
+    `payload.update`——DiscoveredContent側は`sourceSiteId`のリレーション参照のみで
+    名前を保存していないため遡及的に正しく反映される）。ブールミッシュのみ
+    実在確認済みの単独立地のため`SINGLE_GINZA_VENUE_RE`へ正式追加。**過剰修正の
+    自制**：facilityKey.ts の SOURCE_AS_FACILITY（施設分散カウント用）にある
+    山野楽器・銀座夏野・HIGASHIYA・とらや・銀座ウエスト・銀座あけぼの・空也を
+    「情報源＝1施設として集計してよい」ことをもって「記事に銀座の明記が無くても
+    銀座関連とみなしてよい」の意味だと誤って一括追加しかけたが、既存回帰テスト
+    （`ginzaRelevance.check.ts`の「山野楽器はチェーン本店＝false」「銀座夏野は
+    多店舗＝false」）に明示的に反する誤った仮定と気づき差し戻した——この2つの
+    問いは別物であり、後者は個別に実在確認できたものだけを載せる方針をコード
+    コメントで明文化。回帰テスト追加（`ginzaRelevance.check.ts`）：命名衝突を再現
+    する6ブランド名がfalseを返すこと、SOURCE_LEDGER_SEED_DATA全46件を走査し
+    意図した21件以外が`isSingleGinzaVenueSource`でtrueにならないことを保証する
+    網羅テスト（今後の命名衝突の再発をCIで検知できるようにした）。
+
+    **④評価ウィンドウの構造的な狭さを発見・是正**：②のブランド拡張で1回のcrawlが
+    数百件規模の新規/更新DiscoveredContentを生成する日が出てきたため、
+    `morningBrief.ts`の候補評価ウィンドウ（`assessInboxPool`を`-detectedAt`降順
+    上位200件のみ評価）では新規登録ソース由来の候補がウィンドウ外に押し出され、
+    一切評価対象にならないことを実データで確認（limit=200では新規ブランド候補
+    ゼロ件、limit=500まで上げて初めてSWEETS生候補が3→19件に増加）。DB読み取りのみ
+    （AI呼び出しなし）で実測1.5秒台と軽量なため、既定値を200→400へ引き上げ
+    （`--limit=`指定時は従来どおり上書き可）。
+
+    **⑤結果（正直な報告）**：SOURCE LEDGER 40→46件（新規6件）。命名衝突バグの
+    修正により、既存のGODIVA・DALLOYAU・ピエール・エルメ・パリを含む計9ブランドが
+    正しく「記事に銀座の明記が必要」として評価されるようになった（修正前は誤って
+    無条件に銀座関連と判定されていた）。**本日時点でのSWEETS生候補（既定limit=400
+    で評価）＝6件、うち公式情報完全（期間・場所・内容・URLすべて確認可能）な候補は
+    0件**——新規登録ブランドの取得済みコンテンツは季節商品カタログページ・過去の
+    日付の告知・全社共通の注意喚起等が中心で、「今行く理由」のある期間限定情報が
+    現時点で確認できなかったため（推測で期間を補完しない）。DC#141・DC#388は
+    未操作のまま。**次にすべきこと**：今回のソース拡張は継続的な巡回基盤としての
+    価値が中心——翌日以降の巡回では今回のような大量バックログ取得は発生せず
+    （既存扱いになるため）、各ブランドが実際に銀座限定の期間限定施策を打ったタイミングで
+    自然に候補化される。数日〜数週間のスパンで`./p2 morning-brief`の
+    `sweetsCandidates.summary`を継続観察すること。
+
+    **検証**：`tsc --noEmit`（cms）0エラー／`run-all.ts` **457 passed 0 failed**
+    （新規10件：`publishedRegistry.check.ts` 8件＋`ginzaRelevance.check.ts`
+    追加2件）。実データ：`seedSourceLedger.ts`（created:6 skipped:40）／`./p2 crawl`
+    （新規6ソース全件HTTP200・初回取得・Sources候補6件生成）／
+    `sweetsDetailPageFetch.ts`（48/48成功、失敗0）／命名バグ修正後の
+    `isSingleGinzaVenueSource`全件走査で意図した21件のみtrue確認／
+    `./p2 morning-brief --json`（limit=400既定で実行、rawSweetsCount=6・
+    shortfall=true・0件が正直に報告される）。**スキーマ変更・migration・
+    記事生成・approve・note操作・課金は一切なし**。
+
   - 2026-09-12 続き（🛑 **公開済み記事の再候補化バグを修正＋グルメ・スイーツ情報源を
     本格拡張**——マロンより「DC#352・DC#246・DC#365はすべて過去投稿済み」との指摘。
     **Project 02 コミット・push あり／DB更新なし＝コード・シードデータのみ／

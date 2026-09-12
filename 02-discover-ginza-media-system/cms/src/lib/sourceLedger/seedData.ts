@@ -8,8 +8,18 @@ import type { SourceLedgerEntry } from './types'
 // 帝国ホテル）＋同日続き追加分3件（CAFE PAULISTA・銀座菊廼舎・空也、WebFetchでお知らせ一覧の
 // 稼働実績まで確認しenabled:true）＋2026-09-12 BEAUTY母数補完1件（AYURA GINZA）＋同日続き
 // デパ地下ブランド4件（ピエール・エルメ・パリ／DALLOYAU／アンリ・シャルパンティエ／GODIVA、
-// いずれも全国複数店舗のためfacilityKeyには追加せずginzaRelevanceの明記チェックに委ねる）。
-// 合計40件。urlは初期14件についてはWebSearchで
+// いずれも全国複数店舗のためfacilityKeyには追加せずginzaRelevanceの明記チェックに委ねる）
+// ＋同日続き2 デパ地下・路面店ブランド6件（ブールミッシュ〈銀座単独立地としてfacilityKey
+// 追加〉／ジャン＝ポール・エヴァン／フレデリック・カッセル／ルノートル／銀座コージー
+// コーナー／銀座若菜〈参考登録・SWEETS候補としては期待薄〉）。
+// 【2026-09-12続き2 命名バグ修正】ピエール・エルメ・パリ／DALLOYAU／GODIVA／
+// フレデリック・カッセル／ルノートル／銀座若菜の`name`に、説明目的で「（松屋銀座）」
+// 「（銀座三越）」等の百貨店名を含めていたところ、`isSingleGinzaVenueSource()`
+// （ginzaRelevance.ts）がsourceName文字列に対する部分一致で「銀座の単独施設」を
+// 判定する設計のため、これら全国複数店舗ブランドが誤って単独施設と判定される実バグを
+// 誘発していた（発見・修正は同日）。`name`から百貨店名を除去し出店先情報は`notes`のみに
+// 記載する形へ改めた。今後、複数店舗ブランドの`name`に他の単独施設名を含めないこと。
+// 合計46件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -710,7 +720,7 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
   // ───────────────────────────────────────────────────────────────
   {
     id: 'pierre-herme-paris',
-    name: 'ピエール・エルメ・パリ（松屋銀座）',
+    name: 'ピエール・エルメ・パリ（PIERRE HERMÉ PARIS）',
     url: 'https://www.pierreherme.co.jp/journal/journal_category/press-release/',
     category: 'brand',
     tier: 'secondary',
@@ -730,7 +740,7 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
   },
   {
     id: 'dalloyau-japon',
-    name: 'DALLOYAU（ダロワイヨ、銀座三越）',
+    name: 'DALLOYAU（ダロワイヨ）',
     url: 'https://www.dalloyau.co.jp/',
     category: 'brand',
     tier: 'secondary',
@@ -768,7 +778,7 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
   },
   {
     id: 'godiva-japan',
-    name: 'GODIVA（ゴディバ、松屋銀座）',
+    name: 'GODIVA（ゴディバ）',
     url: 'https://www.godiva.co.jp/news/',
     category: 'brand',
     tier: 'secondary',
@@ -784,5 +794,135 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       '一覧をWebFetchで実地確認（2026-09-12、ハロウィン新作コレクション等の日付つき記事' +
       'を確認）。全国複数店舗のためfacilityKeyには追加せず、銀座（松屋銀座）明記のある' +
       '記事のみ採用する。',
+  },
+  // 2026-09-12 続き2（マロン指摘「デパ地下各ブランド・路面店・専門店へ情報源が広がって
+  // いない」を受けた本格拡張）。銀座三越デパ地下洋菓子コーナーのリフレッシュオープン
+  // （2024-10、PR TIMES記事で実在確認）に登場するブランドを中心に、公式ドメイン単位で
+  // 個別調査・reachability確認（curl 200・robots.txt許可）のうえ追加。同時に調査したが
+  // 不採用としたもの（理由つき）：銀座若松（あんみつ発祥、ginza-wakamatsu.co.jp――
+  // WordPress feedの最新投稿が「閉店のお知らせ（2023-12-30閉店）」で営業終了と判明、
+  // 現存情報源として登録しない）／銀座コロンバン（自社サイトは「原宿スイーツの
+  // コロンバン」を名乗り、中央区観光協会側は銀座本店と記載――どちらが最新の実態か
+  // 未確認のため今回は見送り）／塩野（赤坂の店で銀座店舗なし）／甘味処 月ヶ瀬（京都の
+  // 店で銀座店舗なし）／ザ・ペニンシュラ東京（住所は日比谷でGinza表記の実地確認が
+  // 今回はできず見送り）／mistore.jp配下の三越側イベントページ・matsuya.com/ginza/
+  // event/（前者はTLS接続後にデータフェーズでタイムアウトし応答なし――既存の
+  // 銀座三越コア情報源と同一の既知の取得不可、後者はURLが404で存在確認できず）。
+  {
+    id: 'boulmich-ginza',
+    name: 'ブールミッシュ（銀座本店）',
+    url: 'https://www.boulmich.co.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（フランス菓子、路面店）。1973年創業・2004年銀座本店（銀座1-2-3）を' +
+      '開業した国内フランス菓子の草分けブランドで、銀座三越デパ地下にも出店。' +
+      'WebFetchで自社サイトの「銀座本店」表記を実地確認（2026-09-12）。銀座単独立地' +
+      'ブランドとしてfacilityKey／ginzaRelevanceの単独施設判定に追加した。',
+  },
+  {
+    id: 'jean-paul-hevin-japon',
+    name: 'ジャン＝ポール・エヴァン（JEAN-PAUL HÉVIN JAPON）',
+    url: 'https://www.jph-japon.co.jp/Page/journal/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（ショコラブランド、デパ地下洋菓子コーナーのリフレッシュオープン' +
+      '〈2024-10、PR TIMES確認〉で銀座三越出店を確認）。JOURNALページに日付つき' +
+      '記事（2026年1月・2025年10月等）を実地確認（2026-09-12）。全国複数店舗の' +
+      'ためfacilityKeyには追加せず、銀座（三越）明記のある記事のみ採用する。',
+  },
+  {
+    id: 'frederic-cassel-japan',
+    name: 'フレデリック・カッセル（Frédéric Cassel）',
+    url: 'https://www.frederic-cassel.jp/blogs/%E3%83%8B%E3%83%A5%E3%83%BC%E3%82%B9',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（フランス菓子、日本初上陸ブランド）。日本国内は銀座三越と京都の' +
+      '2店舗のみで、WebSearchで「東京の銀座三越…に店を構え」の記載を確認' +
+      '（2026-09-12）。ニュースブログをWebFetchで実地確認。京都店もあるため' +
+      'facilityKeyには追加せず、銀座（三越）明記のある記事のみ採用する。',
+  },
+  {
+    id: 'lenotre-japan',
+    name: 'ルノートル（LENÔTRE）',
+    url: 'https://www.lenotrejp.com/topics',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（フランス菓子）。銀座三越デパ地下のリフレッシュオープン' +
+      '（2024-10、PR TIMES確認）でリニューアル出店した4ブランドの一つ' +
+      '（他は麻布台ヒルズ等）。/topics に日付つきスラッグ（202607/202609）の' +
+      '記事を実地確認（2026-09-12）。複数店舗のためfacilityKeyには追加せず、' +
+      '銀座（三越）明記のある記事のみ採用する。',
+  },
+  {
+    id: 'ginza-cozycorner',
+    name: '銀座コージーコーナー（銀座一丁目本店）',
+    url: 'https://www.cozycorner.co.jp/news/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（洋菓子、路面店）。銀座一丁目本店（銀座1-8-1）の存在をWebSearchで' +
+      '確認、「秋のスイーツが登場」等の季節限定商品告知を/news/でWebFetch実地確認' +
+      '（2026-09-12）。全国約400店舗のチェーンでニュースは会社共通のためfacilityKey' +
+      'には追加せず、銀座（一丁目本店）明記のある記事のみ採用する。reliability=' +
+      'medium（会社全体ニュースに占める銀座固有情報の比率が低いと見込まれるため）。',
+  },
+  {
+    id: 'ginza-wakana',
+    name: '銀座若菜（株式会社若菜）',
+    url: 'https://www.ginzawakana.com/blog/category/news/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'low',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀座三越B2Fに店舗を構える漬物専門店（1953年創業）。マロンの指示で調査対象と' +
+      'なったが、業態はSWEETSではなく漬物・惣菜であり、ブログの内容も配送・決済' +
+      '案内が中心で「今紹介する理由」のある記事は少ないとWebFetchで確認' +
+      '（2026-09-12）。SWEETS候補の主戦力としては期待しない前提で、デパ地下' +
+      'ブランドの母数として参考登録のみ行う（reliability=low）。',
   },
 ]

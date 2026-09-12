@@ -92,6 +92,12 @@ const SOURCE_AS_FACILITY: { re: RegExp; key: string; label: string }[] = [
   // （個別ページの venue テキストに明記があれば facilityKeyFromVenue 側で解決される。
   // 全社共通ニュースを銀座店と誤認しない、という方針を優先）。
   { re: /SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp/i, key: 'shiseido-the-store-ginza', label: 'SHISEIDO THE STORE' },
+  // 2026-09-12 続き2（グルメ・スウィーツ情報源の本格拡張）：ブールミッシュは1973年創業・
+  // 2004年開業の「銀座本店」が情報発信の中心（デパ地下出店はあるが本店起点のブランド）
+  // のため、情報源＝施設として解決してよい。他の新規デパ地下ブランド（ジャン＝ポール・
+  // エヴァン／フレデリック・カッセル／ルノートル／銀座コージーコーナー）は全国複数店舗の
+  // ためここに追加せず、ginzaRelevanceの明記チェックに委ねる（GODIVA等と同じ扱い）。
+  { re: /ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp/i, key: 'boulmich-ginza', label: 'ブールミッシュ（銀座本店）' },
 ]
 
 // 集約サイト（施設単位が URL スラッグ or タイトルの【店名】でしか分からない）
