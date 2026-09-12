@@ -126,7 +126,17 @@ export async function assessInboxPool(
     limit,
     depth: 1,
     overrideAccess: true,
-    sort: '-detectedAt',
+    // 2026-09-12実データ検証で発見・修正：`detectedAt`は巡回のたびdiscoveryStatusが
+    // unchangedでも毎回「今」に更新される（processDiscoveredLinks.tsのコメント
+    // 参照）ため、-detectedAtでソートすると「その日のcrawlループで後の方に処理された
+    // 情報源」が毎日必ず上位を独占し、先に処理される情報源の候補が limit（400件）に
+    // 一度も入らないまま恒久的に評価対象から漏れる（新規登録した6ブランドの候補が
+    // 実データで一度も評価プールに現れないことを2026-09-12に確認して発覚）。
+    // `lastChangedAt`はfirst_seen/changedの回だけ更新される（dailyRanking.ts／
+    // discoveredContentSummary.tsが「本日新規/更新」判定に使っているのと同じ
+    // 2026-08-17確立済みの設計）ため、こちらでソートすることで「実際に新しい／
+    // 変化した候補」が公平に上位へ来るようにした。
+    sort: '-lastChangedAt',
   })
   const collectedTotalRes = await payload.count({
     collection: 'discovered-content',
