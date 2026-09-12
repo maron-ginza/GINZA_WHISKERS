@@ -1,7 +1,7 @@
 // 銀座関連性判定（assessGinzaRelevance）の回帰テスト。
 // 「銀座本店のサイトに載る他店舗情報」を除外できること・推測で通さないこと。
 import { runSuite, reportAndExit, type CheckCase } from './_harness'
-import { assessGinzaRelevance, isSingleGinzaVenueSource } from '../morning/ginzaRelevance'
+import { assessGinzaRelevance, isSingleGinzaVenueSource, stripSourceNameEcho } from '../morning/ginzaRelevance'
 import { SOURCE_LEDGER_SEED_DATA } from '../sourceLedger/seedData'
 
 function assert(c: unknown, m: string): void {
@@ -148,6 +148,87 @@ const cases: CheckCase[] = [
           `${s.id}（"${s.name}"）: isSingleGinzaVenueSource=${single} だが意図は${expected}（想定外の単独施設判定＝命名衝突の疑い）`,
         )
       }
+    },
+  },
+  // ─────────────────────────────────────────────────────────────────
+  // 2026-09-13：社名・ブランド名・商品タイトル・パンくずへの「銀座」の反復だけを
+  // 場所の根拠にしないための回帰テスト（「銀座コージーコーナー」の実データで発見）。
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'stripSourceNameEcho：社名（括弧の説明つき／なし）をテキストから取り除く',
+    fn: () => {
+      const a = stripSourceNameEcho('銀座コージーコーナー | ジャンボシュークリーム', '銀座コージーコーナー（銀座一丁目本店）')
+      assert(!/銀座/.test(a), `社名の埋め込みが除去されていない: "${a}"`)
+      const b = stripSourceNameEcho('銀座若菜 | 30%offセール', '銀座若菜（株式会社若菜）')
+      assert(!/銀座/.test(b), `社名の埋め込みが除去されていない: "${b}"`)
+      // 社名を除いても他の銀座明記が残る場合は残す
+      const c = stripSourceNameEcho('銀座コージーコーナー | 銀座本店限定 マロンケーキ', '銀座コージーコーナー（銀座一丁目本店）')
+      assert(/銀座本店/.test(c), `社名以外の銀座明記まで消えてしまっている: "${c}"`)
+    },
+  },
+  {
+    name: '銀座コージーコーナー：商品タイトルへの社名反復（実データ）だけでは銀座と判定しない（根拠不足で除外）',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: '銀座コージーコーナー | ジャンボシュークリーム（北海道産かぼちゃ）',
+        sourceName: '銀座コージーコーナー（銀座一丁目本店）',
+        articleUrl: 'https://www.cozycorner.co.jp/product/daily/18126.html',
+        sourceIsSingleGinzaVenue: isSingleGinzaVenueSource('銀座コージーコーナー（銀座一丁目本店）', 'https://www.cozycorner.co.jp/product/daily/18126.html'),
+      })
+      assert(r.ginzaRelevant === false, `根拠不足で除外されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+      assert(/根拠不足/.test(r.basis), `根拠不足の理由文言のはず（実際: ${r.basis}）`)
+    },
+  },
+  {
+    name: '銀座コージーコーナー：タイトルに社名反復に加えて「銀座本店限定」等の明記があれば銀座と判定する',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: '銀座コージーコーナー | 銀座本店限定 秋のモンブラン',
+        sourceName: '銀座コージーコーナー（銀座一丁目本店）',
+        sourceIsSingleGinzaVenue: false,
+      })
+      assert(r.ginzaRelevant === true, `社名以外の明記（銀座本店限定）で銀座と判定されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+    },
+  },
+  {
+    name: '銀座若菜：商品タイトルへの社名反復だけでは銀座と判定しない（同種の誤判定の再発防止）',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: '銀座若菜 | 春のキャンペーン開催中',
+        sourceName: '銀座若菜（株式会社若菜）',
+        sourceIsSingleGinzaVenue: isSingleGinzaVenueSource('銀座若菜（株式会社若菜）'),
+      })
+      assert(r.ginzaRelevant === false, `根拠不足で除外されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+    },
+  },
+  {
+    name: '社名に「銀座」を含むが単独施設ではない全SOURCE_LEDGER情報源：社名反復だけのタイトルは銀座と判定しない',
+    fn: () => {
+      for (const s of SOURCE_LEDGER_SEED_DATA) {
+        if (!/銀座/.test(s.name)) continue
+        const single = isSingleGinzaVenueSource(s.name, s.url)
+        if (single) continue // 単独施設はルール4（sourceIsSingleGinzaVenue）で正しく銀座と判定されるため対象外
+        const r = assessGinzaRelevance({
+          title: `${s.name} | 通常商品のご案内`,
+          sourceName: s.name,
+          sourceIsSingleGinzaVenue: false,
+        })
+        assert(
+          r.ginzaRelevant === false,
+          `${s.id}（"${s.name}"）: 社名反復だけで銀座と誤判定されている（実際: ${r.ginzaRelevant} / ${r.basis}）`,
+        )
+      }
+    },
+  },
+  {
+    name: '複数店舗ブランド（社名に銀座を含まない）の商品ページに「松屋銀座店限定」等の明記があれば銀座と判定する（社名除去の副作用が無いことの確認）',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: 'ハロウィン限定コレクション 松屋銀座店限定発売',
+        sourceName: 'GODIVA（ゴディバ）',
+        sourceIsSingleGinzaVenue: false,
+      })
+      assert(r.ginzaRelevant === true, `松屋銀座店の明記で銀座と判定されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
     },
   },
 ]

@@ -52,6 +52,28 @@ function joinFields(...vals: (string | null | undefined)[]): string {
   return vals.map((v) => (typeof v === 'string' ? v : '')).join(' ｜ ')
 }
 
+// 2026-09-13：「銀座コージーコーナー」のように、社名・ブランド名そのものに「銀座」が
+// 含まれる情報源の場合、タイトルへ社名がそのまま埋め込まれる（サイトが毎ページ
+// 「<商品名> | 銀座コージーコーナー」のように自社名を繰り返すテンプレートを使うため）
+// だけで「銀座の場所明記」と誤判定してしまうバグが実データで見つかった（全国約400店舗
+// チェーンの通常商品ページが銀座限定として候補に上がりうる状態だった）。
+// 社名・ブランド名の反復は「新しい場所の根拠」ではないため、銀座の場所判定の対象
+// テキストからは社名の埋め込みを取り除いたうえで判定する。取り除いた結果、他に
+// 銀座の明記が無ければ、既存のルール5（情報源名にのみ「銀座」がある＝根拠不足）が
+// そのまま適用され除外される。
+export function stripSourceNameEcho(text: string, sourceName: string | null | undefined): string {
+  const name = (sourceName ?? '').trim()
+  if (!name) return text
+  let result = text
+  if (name.length >= 2) result = result.split(name).join(' ')
+  // 括弧内の補足（例：「銀座コージーコーナー（銀座一丁目本店）」の「（銀座一丁目本店）」）を
+  // 除いた「素のブランド名」も別途取り除く——タイトルには括弧なしの素の社名だけが
+  // 埋め込まれるケースが多いため。
+  const bare = name.replace(/[（(][^）)]*[）)]/g, '').trim()
+  if (bare && bare !== name && bare.length >= 2) result = result.split(bare).join(' ')
+  return result
+}
+
 // タイトルの各セグメントが「意味を持たない」＝プレースホルダ／サイト名／一覧語 か
 const NOISE_SEGMENT_RE =
   /^(?:タイトル|title|無題|untitled|no\s*title|詳細|詳細ページ|ニュース(?:\s*詳細|リリース)?|news|お知らせ|新着情報|新着|最新情報|一覧|記事|ページ|page|press\s*release|プレスリリース|topics?|information|blog|—|-|\.\.\.|…|test|sample|dummy)$/i
@@ -130,7 +152,9 @@ export function assessGinzaRelevance(input: GinzaRelevanceInput): GinzaRelevance
 
   const offBranch = core.match(OFF_GINZA_BRANCH_RE)
   const offAddr = core.match(OFF_GINZA_ADDR_RE)
-  const ginzaInCore = GINZA_PLACE_RE.test(core)
+  // 銀座の場所明記チェックだけは、情報源自身の社名・ブランド名の埋め込みを除いたテキストで
+  // 判定する（社名・ブランド名・パンくずの反復だけを「場所の根拠」にしない。上のコメント参照）。
+  const ginzaInCore = GINZA_PLACE_RE.test(stripSourceNameEcho(core, input.sourceName))
 
   // 0) タイトルに記事の主題が無い（「タイトル」等のプレースホルダのみ／サイト名のみ）
   //    → 対象地も内容も確認できない＝根拠不足で除外（推測しない）
