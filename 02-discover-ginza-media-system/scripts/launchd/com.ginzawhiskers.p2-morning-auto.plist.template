@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  GINZA WHISKERS / Project 02 — 朝刊自動化 LaunchAgent（テンプレート、2026-09-12）
+
+  これは版管理用テンプレート。__REPO__ を実際の絶対パスへ置換したものを
+    ~/Library/LaunchAgents/com.ginzawhiskers.p2-morning-auto.plist
+  へ配置し、scripts/launchd/load-morning-auto.sh でロードする。
+
+  現時点では **未登録・未有効化**（ファイル整備のみ。OS設定変更のためClaudeは
+  launchctlを実行しない——既存のload.sh/load-night.shと同じ方針）。
+
+  挙動:
+    - 毎朝 06:00 に scripts/morningAutoRun.sh を1回実行
+      （Docker/PostgreSQL起動確認 → crawl → sweets-detail-fetch →
+        am-run --fetch --register-facts --write-facts → morning-brief --json）
+    - 記事生成・承認・note転記・外部公開はこのジョブでは一切しない
+      （それは常駐の p2-candidate-review サーバーが、マロンの承認クリックをトリガーに行う）
+    - 各フェーズは失敗時に間隔を空けて自動再試行する（既定3回・180秒間隔、
+      DB起動そのものの失敗時は早期に打ち切る）
+    - stdout/stderr は .devlogs/morning/auto/launchd.out / launchd.err へ追記
+    - RunAtLoad=false（ログイン毎の即時実行はしない）
+    - Mac がスリープ/オフで06:00を逃した場合、launchdが復帰後に1回だけ実行する
+      （確実な06:00実行を望む場合、マロンが `sudo pmset repeat wakeorpoweron` で
+      Macの自動起床を設定する必要がある——これはOS電源設定の変更のためClaudeは実行しない）
+
+  node解決：既存launchdジョブ（p2-trial-collect）と同じくnvm初期化を明示source。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ginzawhiskers.p2-morning-auto</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; . "$NVM_DIR/nvm.sh"; bash __REPO__/scripts/morningAutoRun.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/.devlogs/morning/auto/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/.devlogs/morning/auto/launchd.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+</dict>
+</plist>

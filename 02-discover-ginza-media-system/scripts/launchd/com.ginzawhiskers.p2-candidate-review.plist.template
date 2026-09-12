@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  GINZA WHISKERS / Project 02 — 朝刊候補レビュー画面 常駐サーバー LaunchAgent
+  （テンプレート、2026-09-12）
+
+  これは版管理用テンプレート。__REPO__ を実際の絶対パスへ置換したものを
+    ~/Library/LaunchAgents/com.ginzawhiskers.p2-candidate-review.plist
+  へ配置し、scripts/launchd/load-candidate-review.sh でロードする。
+
+  現時点では **未登録・未有効化**（ファイル整備のみ。OS設定変更のためClaudeは
+  launchctlを実行しない）。
+
+  挙動:
+    - ログイン時（RunAtLoad=true）に http://localhost:4600 の常駐サーバーを起動し、
+      KeepAlive=true でクラッシュ時に自動再起動する
+    - マロンはこのURLをブックマークして開くだけで、当日の朝刊候補
+      （①ビューティー②グルメ・スイーツ③文化・アート）を承認/保留/却下できる
+      （コマンド入力不要）
+    - 「承認」ボタンのみDB書き込み・Claude API 1回課金（指定した1件だけをCORE角度で
+      記事化）・note転記直前パッケージ生成を行う。外部公開・note投稿・Chrome操作はしない
+    - localhost（127.0.0.1）のみで待ち受け、ネットワークには公開しない
+    - stdout/stderr は .devlogs/morning/review/launchd.out / launchd.err へ追記
+
+  node解決：既存launchdジョブと同じくnvm初期化を明示source。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ginzawhiskers.p2-candidate-review</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; . "$NVM_DIR/nvm.sh"; cd __REPO__/cms &amp;&amp; node --env-file=.env --import=tsx/esm src/scripts/candidateReviewServer.ts</string>
+  </array>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__REPO__/.devlogs/morning/review/launchd.out</string>
+  <key>StandardErrorPath</key>
+  <string>__REPO__/.devlogs/morning/review/launchd.err</string>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__/cms</string>
+</dict>
+</plist>

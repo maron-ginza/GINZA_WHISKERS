@@ -14,6 +14,101 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-12 続き3（🌅 **朝刊処理の完全自動化——`./p2 morning-brief`の毎朝手入力運用を廃止し、
+    6:00無人実行＋承認専用レビュー画面へ移行（Project 02 コミット・push あり／
+    DB更新なし＝launchdへの実登録は含まない／記事生成・承認・note転記・外部公開・
+    DC#753への操作は未実施——保留として記録のみ）**）:
+
+    マロン指示：「毎朝`./p2 morning-brief`を手入力する運用にはしない。朝刊処理を完全
+    自動化してほしい」。既存の実行基盤（`./p2 crawl`／`./p2 sweets-detail-fetch`／
+    `./p2 am-run`／`./p2 morning-brief`）を**そのまま**、新しいパイプラインロジックを
+    足さずに以下2つの常駐プロセスへ組み上げた。
+
+    **①朝刊自動化オーケストレーター**（`scripts/morningAutoRun.sh`、毎朝6:00
+    launchd実行想定）：Docker/PostgreSQL起動確認（既存`wait_docker`/`start_db`と同じ
+    自動起動＋120秒待機を踏襲）→ `./p2 crawl`（公式情報源巡回・一覧ページ発見・
+    個別ページ取得）→ `./p2 sweets-detail-fetch`（crawl共有予算切れの追加取得）→
+    `./p2 am-run --fetch --register-facts --write-facts`（公開済み重複除外・
+    ArticleFacts抽出・登録＝`enrichmentStatus:draft`のみ、ready化は引き続き人間）→
+    `./p2 morning-brief --json`（①ビューティー②グルメ・スイーツ③文化・アート
+    各1件選定＋レポート生成）。各フェーズは失敗時に既定3回・180秒間隔で自動再試行、
+    DB起動そのものの失敗は早期打ち切り（後続の無駄な待機を避ける）。実行ログは
+    `.devlogs/morning/auto/<date>.jsonl`（フェーズごと）＋
+    `<date>-summary.json`（成功可否・フェーズ状態・有効候補数・カテゴリー別候補数・
+    除外件数上位・エラー内容を1つに集約、監視要件どおり）。個々のURL取得の再試行
+    （transient failure）は既存の`fetchArticlePage.ts`側の仕組みがそのまま効く——
+    このスクリプトはフェーズ単位の再試行だけを追加した。
+
+    **②朝刊候補レビュー画面（常駐サーバー、`candidateReviewServer.ts`、
+    `http://localhost:4600`）**：ログイン時に自動起動しKeepAliveで常駐する
+    （127.0.0.1限定・外部非公開）。`.devlogs/morning/brief/<date>.json`を毎回
+    読み直して当日候補を1画面表示——正式名称／カテゴリー／施設／価格／期間／
+    購入条件／公式URL／出典名／出典確認日／Editorial Compass／採用理由／
+    「過去投稿との重複結果：重複なし」（morning-briefの安全性gateが既に重複を
+    除外済みのため常に真——新たな照合ロジックは追加していない）を表示し、
+    承認／保留／却下ボタンを出す。ボタンのみDB書き込みを行う：**承認**は
+    (a) `curationStatus=approved`更新 → (b) 新規`createMultiAngleDraftsFromDiscoveredContent`
+    （既存の`draft-today`が内部で使う関数と同一、CORE角度のみ・
+    `enableCoreGuards:true`）を**指定した1件のDCだけ**に対して直接呼び出し
+    （他に承認済みの無関係DCが残っていても巻き込まない設計——`draft-today`の
+    広域スキャンとは別の、スコープを絞った新規エントリーポイント
+    `createDraftFromDiscoveredContent.ts`/`draftFromDiscoveredContent.ts`）→
+    (c) 既存`buildNoteDraftPackage`で note転記直前パッケージを生成し
+    `.devlogs/night/queue/<date>/<articleId>/`へ保存。外部公開・note投稿・
+    Chrome操作はしない（既存境界を維持）。**保留**はDBに触れない（翌日の
+    morning-briefで再評価）。**却下**は`curationStatus=rejected`のみ。同一dcIdへの
+    二重承認・二重課金を防ぐため、決定を`.devlogs/morning/review/
+    candidates-<date>.json`へファイル永続化し、既決定のdcIdへの再アクションは拒否する
+    （実データで確認：DC#753へ2回目に`approve`を送ると
+    `"この候補は既に処理済みです（二重処理防止）"`で拒否された）。
+
+    **③課金モデルは変更していない**：6:00の自動フェーズ（crawl／sweets-detail-fetch／
+    am-run／morning-brief）はいずれもAI呼び出しゼロ（既存設計のまま）。Claude APIが
+    呼ばれるのは**マロンが承認ボタンを押した候補1件につき1回だけ**——これは
+    `./p2 draft-today --yes`を手入力していた従来の課金と同一モデルで、トリガーが
+    「コマンド入力」から「クリック」に変わっただけ（§13運用コスト方針の「人間が
+    明示フラグで都度実行する」の例外規定の範囲内と判断し、`NIGHT_RUN_LIVE_ENABLED`の
+    ような追加の環境変数ゲートは設けていない）。
+
+    **④launchd登録は今回未実施**：`scripts/launchd/com.ginzawhiskers.p2-morning-auto
+    .plist.template`（Hour=6/Minute=0・RunAtLoad=false）と
+    `com.ginzawhiskers.p2-candidate-review.plist.template`（RunAtLoad=true・
+    KeepAlive=true）、およびそれぞれの`load-*.sh`/`unload-*.sh`を新設したが、
+    既存の`load.sh`/`load-night.sh`と同じ方針（OS設定変更のためClaudeは
+    `launchctl`を実行しない）で、実際の登録はマロンが`scripts/launchd/
+    load-morning-auto.sh`と`scripts/launchd/load-candidate-review.sh`を
+    それぞれ一度だけ実行する必要がある（登録後は無人・以後コマンド入力不要）。
+    確実な06:00起動には別途`sudo pmset repeat wakeorpoweron`によるMac自動起床設定
+    （既存の09-02決定と同種のOS電源設定変更）が必要——これもマロンが実行するもの
+    としてコマンド例のみ提示した（launchd自体は「スリープからの復帰後に1回だけ
+    実行する」ため、Macを毎朝手動で開くだけでも遅れて自動実行される）。
+
+    **⑤新規エントリーポイント**：`draftFromDiscoveredContent.ts`（`./p2 draft-from-dc
+    <dcId> --yes`、単一DC限定のCORE角度生成、手動テスト・単発生成用にも公開）。
+
+    **検証（実データ・実行済み）**：`tsc --noEmit`（cms）0エラー／`run-all.ts`
+    **457 passed 0 failed**（既存件数から変更なし——今回はI/O中心のスクリプト新設が
+    主で新規の純粋ロジックは追加していない）。`./p2 morning-auto`を実際に1回フル
+    実行し、db→crawl(140s)→sweets_detail_fetch(18s)→am_run(8s)→morning_brief(1s)の
+    全5フェーズが初回成功、サマリJSON（success:true、カテゴリー別候補数、
+    除外理由トップ5）が仕様どおり出力されることを確認。`candidateReviewServer.ts`を
+    ポート4601で実際に起動し、HTML描画（3領域・該当なし表示・DC#753の12項目・
+    承認/保留/却下ボタン）を確認、DC#753へ`hold`アクションをPOSTして
+    `.devlogs/morning/review/candidates-2026-09-12.json`への永続化と、続く
+    `approve`の二重処理防止拒否、DB上の`curationStatus`が`inbox`のまま不変で
+    あることを確認したうえでサーバーを停止した。**この`hold`は同時にマロンの
+    「本日のDC#753は保留してください」指示への対応も兼ねる**（新システム上で
+    正式に保留として記録された）。**承認アクション（記事生成・課金）は一度も
+    実行していない**。
+
+    **今回の範囲外（マロンの次アクション）**：①`scripts/launchd/
+    load-morning-auto.sh`と`load-candidate-review.sh`をそれぞれ一度実行して
+    launchdへ登録（以後は無人）②確実な06:00起動を望む場合`sudo pmset repeat
+    wakeorpoweron MTWRFSU 05:55:00`（Mac自動起床、任意）③`http://localhost:4600`
+    のブックマーク。
+
+  - 2026-09-12 続き2（🛑 **公開済み除外の主経路をDB自動照合中心へ再設計＋グルメ・
+
   - 2026-09-12 続き2（🛑 **公開済み除外の主経路をDB自動照合中心へ再設計＋グルメ・
     スイーツ情報源をブランド単位で本格拡張＋ginzaRelevance命名衝突バグを発見・修正
     （Project 02 コミット・push あり／DB更新は名称同期のみ／記事生成・承認・
