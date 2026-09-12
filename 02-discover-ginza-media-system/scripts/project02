@@ -1009,7 +1009,17 @@ crawl() {
     esac
   done
 
-  RAW=$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crawlSources.ts $MODE_ARG $BUDGET_ARG 2>"$LOG_DIR/crawl.log" | tail -1)
+  # 2026-09-12「スウィーツ公式情報Discovery層改善」で発見・修正：crawlSources.tsの
+  # 出力（43情報源のresults＋feedDiscovery等を含む1行JSON）がスウィーツ情報源拡張で
+  # 十分に大きくなり（実測9万バイト超）、`| tail -1`（パイプ経由）だとmacOSのtailが
+  # 長い1行を取りこぼし、JSONが途中で切れて「巡回結果の解析に失敗しました」になる
+  # 実バグを確認した（同じ内容でも通常ファイル経由のtail -1は正しく取得できる）。
+  # 一時ファイル経由に変更し、ファイルに対してtail -1することで回避する
+  # （ロジック・出力内容は無変更、取得方法だけの修正）。
+  CRAWL_STDOUT_TMP=$(mktemp)
+  (cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/crawlSources.ts $MODE_ARG $BUDGET_ARG >"$CRAWL_STDOUT_TMP" 2>"$LOG_DIR/crawl.log")
+  RAW=$(tail -1 "$CRAWL_STDOUT_TMP")
+  rm -f "$CRAWL_STDOUT_TMP"
 
   if [ -z "$RAW" ]; then
     fail "SOURCE LEDGER巡回スクリプトの実行に失敗しました"

@@ -20,6 +20,7 @@ import { extractArticleFactsCandidate } from '../morning/extractArticleFactsCand
 import { extractProductNewsFactsCandidate } from '../morning/extractProductNewsFacts'
 import { buildTemplatePrecheck } from '../morning/templatePrecheck'
 import { extractExplicitPeriod, periodFromUrlSlug } from './extractExplicitPeriod'
+import { hasNoveltySignal } from '../crawler/sweetsDiscoveryKeywords'
 import { getOrComputeCrossCulture } from '../crossCulture'
 import { computeTargetFitScore, sourceTypeOf } from './targetFitScore'
 import { computeCandidateCoverage } from './candidateCoverageScore'
@@ -352,11 +353,30 @@ export async function assessInboxPool(
         } else {
           // ③ ニュース系（会期を持たない告知・商品ニュース）は、サイトが明記した
           //    公開日を時期の基準にする（推測ではない）。古い公開日は expired で落ちる。
+          //
+          // 【2026-09-12「スウィーツ公式情報Discovery層改善」で追加】
+          // 終了日の明記がなくても、①公式掲載日が直近（RECENT_NOVELTY_WINDOW_DAYS以内）
+          // かつ②タイトルに新商品・季節限定・数量限定等のシグナル語がある場合は、
+          // 「まだ販売中の可能性が高い」候補として扱う——eventEndAtを公開日と同一に
+          // 設定しない（＝isPastEventEndによるexpired判定を発生させない）。終了日が
+          // 不明であることは変えず、「公式記載なし」のまま表示される（推測で終了日を
+          // 作らない）。通常商品（シグナル語なし）や公開日が古いものはこの緩和の
+          // 対象外——従来どおり公開日=終了日扱いのままexpiredで落ちる。
           const pub = (dcLike.publishedAt ?? (raw.contentUpdatedAt as string | null)) ?? null
           if (pub && !Number.isNaN(Date.parse(pub))) {
-            dcLike.eventStartAt = pub
-            dcLike.eventEndAt = pub
-            periodBasis = `公開日を時期基準に採用（${String(pub).slice(0, 10)}）`
+            const RECENT_NOVELTY_WINDOW_DAYS = 45
+            const ageDays = (now.getTime() - Date.parse(pub)) / (24 * 60 * 60 * 1000)
+            const isRecent = ageDays >= 0 && ageDays <= RECENT_NOVELTY_WINDOW_DAYS
+            const noveltyText = `${dcLike.title ?? ''} ${(dcLike.excerpt ?? '').slice(0, 200)}`
+            if (isRecent && hasNoveltySignal(noveltyText, now)) {
+              dcLike.eventStartAt = pub
+              // eventEndAtは意図的に設定しない（終了日不明のまま・expiredにしない）
+              periodBasis = `新商品・季節限定等のシグナルを検出、公開日を開始の目安に採用（終了日は公式記載なし・${String(pub).slice(0, 10)}）`
+            } else {
+              dcLike.eventStartAt = pub
+              dcLike.eventEndAt = pub
+              periodBasis = `公開日を時期基準に採用（${String(pub).slice(0, 10)}）`
+            }
           }
         }
       }

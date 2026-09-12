@@ -99,6 +99,27 @@ if listing_discovery is not None:
         f"成功 {listing_discovery.get('totalFetchSucceeded', 0)}件"
     )
 
+feed_discovery = data.get("feedDiscovery")
+if feed_discovery is not None:
+    print()
+    print("--- スウィーツ公式情報Discovery層（sitemap/RSS/Atom、2026-09-12） ---")
+    print(f"  対象情報源数（スウィーツ関連と判定）: {feed_discovery.get('sourcesTargeted', 0)}件")
+    print(
+        f"  sitemap: 試行 {feed_discovery.get('sitemapUrlsTried', 0)}件 / "
+        f"成功 {feed_discovery.get('sitemapUrlsFetchedOk', 0)}件"
+    )
+    print(
+        f"  RSS/Atom: 試行 {feed_discovery.get('feedUrlsTried', 0)}件 / "
+        f"成功 {feed_discovery.get('feedUrlsFetchedOk', 0)}件"
+    )
+    print(f"  発見した候補URL数（キーワード優先度づけ後）: {feed_discovery.get('totalLinksDiscovered', 0)}件")
+    print(f"  発見したPDFリンク数（本文は取得・解析しない）: {feed_discovery.get('totalPdfLinksFound', 0)}件")
+    errs = feed_discovery.get("errors") or []
+    if errs:
+        print(f"  取得できなかったURL（{len(errs)}件、先頭5件）:")
+        for e in errs[:5]:
+            print(f"    - {e}")
+
 article_extraction = data.get("articleExtraction")
 if article_extraction is not None:
     print()

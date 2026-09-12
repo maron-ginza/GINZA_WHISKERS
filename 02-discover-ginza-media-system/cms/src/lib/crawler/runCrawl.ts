@@ -7,6 +7,40 @@ import { mergeDiscoveredLinks } from './mergeDiscoveredLinks'
 import { normalizeArticleUrl } from './normalizeUrl'
 import { processDiscoveredLinks, type ProcessLinksStats } from './processDiscoveredLinks'
 import type { ListingPageCandidate } from './discoverListingPages'
+import { discoverFeedCandidates } from './discoverFeedCandidates'
+
+// スウィーツ公式情報Discovery層拡張（2026-09-12）の対象情報源（sourceId、明示allowlist）。
+// classifySweetsSourceFacilityType（sweetsCandidateSelect.ts）は「施設種別のカバレッジ
+// 報告」用に緩めに作られており（和光・SEIKO HOUSE・GINZA OFFICIAL・中央区観光等も
+// 「ブランド」「季節」の語でマッチしてしまう）、そのまま流用すると本来スウィーツと
+// 無関係な情報源にまでsitemap/RSS探索という重い処理を広げてしまう。ここでは
+// 「銀座の菓子・カフェ・ホテルスイーツ・デパ地下ブランド」に限定した明示IDリストを
+// 別途持つ（実行時間を抑えるための意図的なスコープ限定）。
+const FEED_DISCOVERY_SOURCE_IDS = new Set([
+  'mitsukoshi-ginza',
+  'matsuya-ginza',
+  'shiseido-parlour-ginza',
+  'ginza-sembikiya',
+  'higashiya-ginza',
+  'toraya-ginza',
+  'ginza-west',
+  'imperial-hotel-tokyo-gargantua',
+  'cafe-paulista-ginza',
+  'ginza-kikunoya',
+  'ginza-kuya-sorairo',
+  'ginza-kimuraya-sohonten',
+  'ginza-akebono',
+  'pierre-herme-paris',
+  'dalloyau-japon',
+  'henri-charpentier',
+  'godiva-japan',
+  'boulmich-ginza',
+  'jean-paul-hevin-japon',
+  'frederic-cassel-japan',
+  'lenotre-japan',
+  'ginza-cozycorner',
+  'ginza-wakana',
+])
 
 // SOURCE LEDGER 自動巡回オーケストレーター（2026-08-16）。
 //
@@ -64,6 +98,26 @@ export interface ListingPageDiscoveryStats {
   totalFetchSucceeded: number
 }
 
+/**
+ * スウィーツ公式情報Discovery層拡張（2026-09-12）の集計。sitemap／sitemap index／
+ * robots.txt宣言sitemap／RSS／Atomからの候補URL発見を、FEED_DISCOVERY_SOURCE_IDS
+ * （明示allowlist）に載る情報源にだけ適用する（実行時間を抑えるための意図的な
+ * スコープ限定。全43情報源に無条件適用しない）。
+ */
+export interface FeedDiscoveryStats {
+  /** スウィーツ関連と判定され対象になった情報源数 */
+  sourcesTargeted: number
+  sitemapUrlsTried: number
+  sitemapUrlsFetchedOk: number
+  feedUrlsTried: number
+  feedUrlsFetchedOk: number
+  /** 発見した候補URL総数（キーワード優先度づけ・上限適用後） */
+  totalLinksDiscovered: number
+  /** 見つかった.pdfリンク総数（本文は取得・解析しない。存在の記録のみ） */
+  totalPdfLinksFound: number
+  errors: string[]
+}
+
 export interface CrawlResult {
   persisted: boolean
   scannedSources: number
@@ -72,6 +126,7 @@ export interface CrawlResult {
   summary: CrawlSummary
   articleExtraction: ProcessLinksStats
   listingPageDiscovery: ListingPageDiscoveryStats
+  feedDiscovery: FeedDiscoveryStats
 }
 
 interface RunCrawlOptions {
@@ -154,6 +209,16 @@ export async function runSourceLedgerCrawl(
     totalDiscovered: 0,
     totalFetchAttempted: 0,
     totalFetchSucceeded: 0,
+  }
+  const feedDiscovery: FeedDiscoveryStats = {
+    sourcesTargeted: 0,
+    sitemapUrlsTried: 0,
+    sitemapUrlsFetchedOk: 0,
+    feedUrlsTried: 0,
+    feedUrlsFetchedOk: 0,
+    totalLinksDiscovered: 0,
+    totalPdfLinksFound: 0,
+    errors: [],
   }
 
   for (const source of enabledSources) {
@@ -288,7 +353,29 @@ export async function runSourceLedgerCrawl(
           }
         }
 
-        const merged = mergeDiscoveredLinks(outcome.links, ...listingPageLinkGroups)
+        // スウィーツ公式情報Discovery層拡張（2026-09-12）：sitemap／sitemap index／
+        // robots.txt宣言sitemap／RSS／Atomからの候補URL発見。トップページに一切
+        // リンクされない新着・季節限定・個店ニュースを拾うための追加経路。
+        // 実行時間を抑えるため、スウィーツ関連と判定した情報源にのみ適用する
+        // （全43情報源に無条件適用すると1巡回あたりの所要時間が大きく伸びるため）。
+        let feedLinks: typeof outcome.links = []
+        if (FEED_DISCOVERY_SOURCE_IDS.has(sourceId)) {
+          feedDiscovery.sourcesTargeted += 1
+          try {
+            const feedResult = await discoverFeedCandidates(url)
+            feedDiscovery.sitemapUrlsTried += feedResult.sitemapUrlsTried.length
+            feedDiscovery.sitemapUrlsFetchedOk += feedResult.sitemapUrlsFetchedOk.length
+            feedDiscovery.feedUrlsTried += feedResult.feedUrlsTried.length
+            feedDiscovery.feedUrlsFetchedOk += feedResult.feedUrlsFetchedOk.length
+            feedDiscovery.totalLinksDiscovered += feedResult.links.length
+            feedDiscovery.totalPdfLinksFound += feedResult.pdfLinksFound.length
+            feedLinks = feedResult.links
+          } catch (e) {
+            feedDiscovery.errors.push(`${name}: ${e instanceof Error ? e.message : String(e)}`)
+          }
+        }
+
+        const merged = mergeDiscoveredLinks(outcome.links, ...listingPageLinkGroups, feedLinks)
         mergedLinks = merged.links
         mergedDuplicatesRemoved = outcome.linksDuplicatesRemoved + merged.duplicatesRemoved
       }
@@ -353,5 +440,6 @@ export async function runSourceLedgerCrawl(
     summary,
     articleExtraction,
     listingPageDiscovery,
+    feedDiscovery,
   }
 }

@@ -93,14 +93,21 @@ export type SweetsSourceFacilityType = (typeof SWEETS_SOURCE_FACILITY_TYPES)[num
 export function classifySweetsSourceFacilityType(sourceName: string | null | undefined): SweetsSourceFacilityType | null {
   const s = (sourceName ?? '').trim()
   if (!s) return null
-  if (/千疋屋|ウエスト|WEST|HIGASHIYA/i.test(s)) return '銀座の路面洋菓子店'
-  if (/とらや|TORAYA|木村家|木村屋/i.test(s)) return '和菓子店'
+  if (/千疋屋|ウエスト|WEST|HIGASHIYA|ブールミッシュ|BOUL'?MICH/i.test(s)) return '銀座の路面洋菓子店'
+  if (/とらや|TORAYA|木村家|木村屋|若菜/i.test(s)) return '和菓子店'
   if (/あけぼの|菊廼舎|空也/i.test(s)) return '老舗菓子店'
   if (/帝国ホテル|ホテル|HOTEL/i.test(s)) return 'ホテルの公式スイーツ情報'
-  if (/資生堂パーラー|カフェ|喫茶|パーラー/i.test(s)) return '喫茶店・カフェの公式情報'
+  if (/資生堂パーラー|カフェ|喫茶|パーラー|CAFE|コージーコーナー/i.test(s)) return '喫茶店・カフェの公式情報'
   if (/三越|松屋銀座|百貨店/i.test(s)) return '百貨店の食品・催事公式情報'
   if (/GINZA SIX|蔦屋|Sony Park|プラザ|商業施設/i.test(s)) return '商業施設の公式情報'
-  if (/和光|SEIKO HOUSE|ブランド/i.test(s)) return 'ブランド公式サイト・公式ニュース'
+  // 2026-09-12「スウィーツ公式情報Discovery層改善」で拡張：デパ地下・全国ブランドを
+  // 「ブランド公式サイト・公式ニュース」として認識（従来は和光・SEIKO HOUSEのみ）。
+  if (
+    /和光|SEIKO HOUSE|ブランド|GODIVA|ゴディバ|DALLOYAU|ダロワイヨ|ピエール・エルメ|PIERRE\s?HERM|JEAN-PAUL|エヴァン|HÉVIN|Cassel|カッセル|LEN[ÔO]TRE|ルノートル|Henri\s?Charpentier|シャルパンティエ/i.test(
+      s,
+    )
+  )
+    return 'ブランド公式サイト・公式ニュース'
   if (/GINZA OFFICIAL|中央区観光|GO TOKYO|季節/i.test(s)) return '銀座の季節イベント公式情報'
   return null
 }

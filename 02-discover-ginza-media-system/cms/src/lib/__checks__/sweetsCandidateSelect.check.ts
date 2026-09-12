@@ -120,6 +120,24 @@ const cases: CheckCase[] = [
       assert(SWEETS_SOURCE_FACILITY_TYPES.length === 9, `9種別のはず: ${SWEETS_SOURCE_FACILITY_TYPES.length}`)
     },
   },
+  {
+    // 2026-09-12「スウィーツ公式情報Discovery層改善」で拡張登録したデパ地下・
+    // 全国ブランドが「ブランド公式サイト・公式ニュース」として認識されることの回帰。
+    name: 'classifySweetsSourceFacilityType：新規登録ブランドは「ブランド公式サイト・公式ニュース」',
+    fn: () => {
+      const expected = 'ブランド公式サイト・公式ニュース'
+      assert(classifySweetsSourceFacilityType('GODIVA（ゴディバ）') === expected, 'godiva')
+      assert(classifySweetsSourceFacilityType('DALLOYAU（ダロワイヨ）') === expected, 'dalloyau')
+      assert(classifySweetsSourceFacilityType('ピエール・エルメ・パリ（PIERRE HERMÉ PARIS）') === expected, 'pierre herme')
+      assert(classifySweetsSourceFacilityType('ジャン＝ポール・エヴァン（JEAN-PAUL HÉVIN JAPON）') === expected, 'jean-paul hevin')
+      assert(classifySweetsSourceFacilityType('フレデリック・カッセル（Frédéric Cassel）') === expected, 'frederic cassel')
+      assert(classifySweetsSourceFacilityType('ルノートル（LENÔTRE）') === expected, 'lenotre')
+      assert(classifySweetsSourceFacilityType('アンリ・シャルパンティエ（銀座メゾン）') === expected, 'henri charpentier')
+      assert(classifySweetsSourceFacilityType('ブールミッシュ（銀座本店）') === '銀座の路面洋菓子店', 'boulmich')
+      assert(classifySweetsSourceFacilityType('銀座コージーコーナー（銀座一丁目本店）') === '喫茶店・カフェの公式情報', 'cozycorner')
+      assert(classifySweetsSourceFacilityType('銀座若菜（株式会社若菜）') === '和菓子店', 'ginza wakana')
+    },
+  },
 ]
 
 export const suite = () => runSuite('sweetsCandidateSelect', cases)
