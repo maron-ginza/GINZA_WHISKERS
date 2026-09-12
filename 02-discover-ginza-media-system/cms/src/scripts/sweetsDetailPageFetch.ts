@@ -39,6 +39,11 @@ const TARGET_SOURCE_NAMES = [
   // 2026-09-12 追加（BEAUTY 母数拡充）
   'SHISEIDO THE STORE（銀座）',
   'AYURA GINZA',
+  // 2026-09-12 続き（デパ地下ブランド母数拡充）
+  'ピエール・エルメ・パリ（松屋銀座）',
+  'DALLOYAU（ダロワイヨ、銀座三越）',
+  'アンリ・シャルパンティエ（銀座メゾン）',
+  'GODIVA（ゴディバ、松屋銀座）',
 ]
 const PER_SOURCE_BUDGET = 8
 const REQUEST_INTERVAL_MS = 350

@@ -26,7 +26,41 @@ export const MANUAL_PUBLISHED_SEED: PublishedTheme[] = [
     venue: 'NAMIKI667／ハイアット セントリック 銀座 東京',
     period: '2026年9月1日〜10月31日',
     dcId: 327,
-    source: 'manual:seed（マロン確認・note投稿済み・URL未記録）',
+    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
+    publishedAt: null,
+  },
+  // 2026-09-12：マロンから「DC#352・#246・#365 はいずれも過去投稿済み」との指摘を受けて追加。
+  // DB（editorialProvenance／publishHistory）・.devlogs のいずれにも紐づく記録が見つからず、
+  // 本システムの記録範囲外（手動投稿・別ルート等）での既公開と判断し、URL・投稿日は
+  // 未記録のまま推測せず登録する（DC id による一致で以後は確実に除外される）。
+  {
+    noteUrl: null,
+    title: '【秋季限定】栗とはちみつのパウンドケーキ（GINZA SIX）',
+    eventName: '栗とはちみつのパウンドケーキ',
+    venue: 'GINZA SIX',
+    period: '2026年9月1日〜9月15日',
+    dcId: 352,
+    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
+    publishedAt: null,
+  },
+  {
+    noteUrl: null,
+    title: '花西子 FLORASIS UV機能付ファンデーション（GINZA SIX）',
+    eventName: '花西子 FLORASIS UV機能付ファンデーション',
+    venue: 'GINZA SIX',
+    period: '2026年8月29日〜9月16日',
+    dcId: 246,
+    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
+    publishedAt: null,
+  },
+  {
+    noteUrl: null,
+    title: '櫻井万里明 “Hustle!!” 刊行記念展示（銀座 蔦屋書店）',
+    eventName: '櫻井万里明 “Hustle!!” 刊行記念 ブックサイニング&作品展示',
+    venue: '銀座 蔦屋書店',
+    period: '2026年9月11日〜9月13日',
+    dcId: 365,
+    source: 'manual:seed（マロン確認・過去投稿済み・URL未記録）',
     publishedAt: null,
   },
 ]

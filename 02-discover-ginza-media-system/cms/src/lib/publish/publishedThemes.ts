@@ -166,18 +166,23 @@ export function matchPublishedTheme(
   for (const p of published) {
     // 1. 同一 DC
     if (cand.dcId != null && p.dcId != null && Number(cand.dcId) === Number(p.dcId)) {
-      return { match: true, reason: `同一 DiscoveredContent #${p.dcId}`, matchedUrl: p.noteUrl, matchedTitle: p.title }
+      return {
+        match: true,
+        reason: `過去投稿済み（同一 DiscoveredContent #${p.dcId}${p.source ? ` ／ ${p.source}` : ''}）`,
+        matchedUrl: p.noteUrl,
+        matchedTitle: p.title,
+      }
     }
     // 2. 同一 note URL
     if (cand.noteUrl && p.noteUrl && cand.noteUrl.trim() === p.noteUrl.trim()) {
-      return { match: true, reason: '同一 note URL', matchedUrl: p.noteUrl, matchedTitle: p.title }
+      return { match: true, reason: `過去投稿済み（同一 note URL${p.source ? ` ／ ${p.source}` : ''}）`, matchedUrl: p.noteUrl, matchedTitle: p.title }
     }
     // 3. イベント名
     const evSim = textSimilarity(cand.eventName, p.eventName)
     if (evSim >= thresholds.eventNameSim && (cand.eventName?.length ?? 0) >= 3) {
       return {
         match: true,
-        reason: `イベント名が意味的に一致（類似度 ${evSim.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
+        reason: `過去投稿済み（イベント名が意味的に一致・類似度 ${evSim.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
         matchedUrl: p.noteUrl,
         matchedTitle: p.title,
       }
@@ -191,7 +196,7 @@ export function matchPublishedTheme(
       if (cov >= 0.78) {
         return {
           match: true,
-          reason: `固有名が既公開記事にほぼ一致（被覆 ${cov.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
+          reason: `過去投稿済み（固有名が既公開記事にほぼ一致・被覆 ${cov.toFixed(2)}）: 「${p.eventName ?? p.title}」`,
           matchedUrl: p.noteUrl,
           matchedTitle: p.title,
         }
@@ -202,19 +207,19 @@ export function matchPublishedTheme(
     const venueHit = !!candVenue && !!pVenue && (candVenue.includes(pVenue) || pVenue.includes(candVenue))
     if (venueHit) {
       if (periodsOverlap(cand.period, p.period)) {
-        return { match: true, reason: `同一会場「${p.venue}」＋開催期間が重なる`, matchedUrl: p.noteUrl, matchedTitle: p.title }
+        return { match: true, reason: `過去投稿済み（同一会場「${p.venue}」＋開催期間が重なる）`, matchedUrl: p.noteUrl, matchedTitle: p.title }
       }
       // 期間の記述が弱くても、会場が一致しテーマ語が既公開タイトル／催事名に埋もれていれば重複とみなす
       const pText = `${p.title} ${p.eventName ?? ''}`
       const themeCov = Math.max(bigramCoverage(cand.eventName, pText), bigramCoverage(cand.title, pText))
       if (evSim >= 0.4 || textSimilarity(cand.title, p.title) >= 0.45 || themeCov >= 0.6) {
-        return { match: true, reason: `同一会場「${p.venue}」＋テーマが近い`, matchedUrl: p.noteUrl, matchedTitle: p.title }
+        return { match: true, reason: `過去投稿済み（同一会場「${p.venue}」＋テーマが近い）`, matchedUrl: p.noteUrl, matchedTitle: p.title }
       }
     }
     // 5. タイトル
     const tSim = textSimilarity(cand.title, p.title)
     if (tSim >= thresholds.titleSim) {
-      return { match: true, reason: `タイトルが意味的に一致（類似度 ${tSim.toFixed(2)}）: 「${p.title}」`, matchedUrl: p.noteUrl, matchedTitle: p.title }
+      return { match: true, reason: `過去投稿済み（タイトルが意味的に一致・類似度 ${tSim.toFixed(2)}）: 「${p.title}」`, matchedUrl: p.noteUrl, matchedTitle: p.title }
     }
   }
   return { match: false, reason: '', matchedUrl: null, matchedTitle: null }

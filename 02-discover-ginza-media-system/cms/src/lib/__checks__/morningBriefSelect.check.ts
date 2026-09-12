@@ -189,6 +189,19 @@ const cases: CheckCase[] = [
       assert(/GINZA SIX/.test(r) && /連続集中/.test(r), '情報源と集中回避の明示')
     },
   },
+  {
+    name: '2026-09-12：グルメ・スイーツ枠はSWEETSをFOOD/CAFE/GIFTより優先する（スコアが低くても）',
+    fn: () => {
+      const list: BriefCandidateInput[] = [
+        cand({ dcId: 10, categoryKey: 'FOOD', facilityKey: 'fac-food', facilityLabel: '食品店', scoreTotal: 0.9 }),
+        cand({ dcId: 11, categoryKey: 'SWEETS', facilityKey: 'fac-sweets', facilityLabel: '菓子店', scoreTotal: 0.3 }),
+        cand({ dcId: 12, categoryKey: 'ART', facilityKey: 'fac-art', facilityLabel: 'ギャラリー', scoreTotal: 0.8 }),
+      ]
+      const r = buildMorningBrief(list)
+      const gourmet = r.buckets.find((b) => b.bucketKey === 'FOOD_SWEETS')!
+      assert(gourmet.pick?.dcId === 11, `スコアが低くてもSWEETS(#11)が選ばれるべき（実際: #${gourmet.pick?.dcId}）`)
+    },
+  },
 ]
 
 export const suite = () => runSuite('morningBriefSelect', cases)

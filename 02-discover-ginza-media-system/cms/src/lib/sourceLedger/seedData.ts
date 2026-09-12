@@ -6,8 +6,10 @@ import type { SourceLedgerEntry } from './types'
 // 収集カバレッジ補完6件（うち木村家・あけぼのの2件は同日中にWebSearchで実在確認しenabled化）
 // ＋2026-09-11「スウィーツ候補の安定収集」追加分5件（千疋屋・HIGASHIYA・とらや・銀座ウエスト・
 // 帝国ホテル）＋同日続き追加分3件（CAFE PAULISTA・銀座菊廼舎・空也、WebFetchでお知らせ一覧の
-// 稼働実績まで確認しenabled:true）＋2026-09-12 BEAUTY母数補完1件（AYURA GINZA）。合計36件。
-// urlは初期14件についてはWebSearchで
+// 稼働実績まで確認しenabled:true）＋2026-09-12 BEAUTY母数補完1件（AYURA GINZA）＋同日続き
+// デパ地下ブランド4件（ピエール・エルメ・パリ／DALLOYAU／アンリ・シャルパンティエ／GODIVA、
+// いずれも全国複数店舗のためfacilityKeyには追加せずginzaRelevanceの明記チェックに委ねる）。
+// 合計40件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -698,5 +700,89 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       'WebFetchで実地確認（2026-09-12。個別お知らせページ /news/215/ の実在は確認したが、' +
       '一覧ページの正確なURL構造〈/topics/news/ 等の候補あり〉までは確認できていないため' +
       'tier=discovery＝自動発見に委ねる）。',
+  },
+  // ───────────────────────────────────────────────────────────────
+  // 2026-09-12 続き（マロン指摘によるグルメ・スイーツ本格拡張）。百貨店（銀座三越・
+  // 松屋銀座）に出店する洋菓子ブランドの**ブランド側公式サイト**。いずれも全国複数
+  // 店舗を持つため facilityKey.ts へは追加せず、ginzaRelevance の明記チェック
+  // （タイトル・本文に「銀座」「松屋銀座」等の明記があるものだけ）に委ねる——
+  // 全社共通ニュースを銀座店確認済みとして扱わない方針を維持。
+  // ───────────────────────────────────────────────────────────────
+  {
+    id: 'pierre-herme-paris',
+    name: 'ピエール・エルメ・パリ（松屋銀座）',
+    url: 'https://www.pierreherme.co.jp/journal/journal_category/press-release/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（デパ地下パティスリーブランド）母数の補完。松屋銀座B1に店舗。ニュース&' +
+      'プレスリリース一覧 https://www.pierreherme.co.jp/journal/journal_category/' +
+      'press-release/ をWebFetchで実地確認（2026-09-12、ハロウィンコラボ・新作マカロン' +
+      '等の日付つき記事を多数掲載していることを確認）。全国複数店舗のため' +
+      'facilityKeyには追加せず、銀座（松屋銀座）明記のある記事のみ採用する。',
+  },
+  {
+    id: 'dalloyau-japon',
+    name: 'DALLOYAU（ダロワイヨ、銀座三越）',
+    url: 'https://www.dalloyau.co.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（デパ地下洋菓子ブランド）母数の補完。銀座三越B2に店舗。「ACTUALITÉS」' +
+      '一覧をWebFetchで実地確認（2026-09-12、価格改定・新作コラボ等の日付つき記事を' +
+      '確認）。全国複数店舗のためfacilityKeyには追加せず、銀座（三越）明記のある記事' +
+      'のみ採用する。',
+  },
+  {
+    id: 'henri-charpentier',
+    name: 'アンリ・シャルパンティエ（銀座メゾン）',
+    url: 'https://www.henri-charpentier.com/news/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（洋菓子ブランド、サロン・ド・テ併設の銀座メゾン店あり）母数の補完。' +
+      'ニュース一覧をWebFetchで実地確認（2026-09-12、「銀座メゾン サロン・ド・テ貸切' +
+      '営業のお知らせ」等、銀座メゾン店に直接言及する記事の実在を確認済み）。全国複数' +
+      '店舗のためfacilityKeyには追加せず、銀座メゾン明記のある記事のみ採用する。',
+  },
+  {
+    id: 'godiva-japan',
+    name: 'GODIVA（ゴディバ、松屋銀座）',
+    url: 'https://www.godiva.co.jp/news/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（チョコレートブランド）母数の補完。松屋銀座B1に店舗。ニュース＆トピックス' +
+      '一覧をWebFetchで実地確認（2026-09-12、ハロウィン新作コレクション等の日付つき記事' +
+      'を確認）。全国複数店舗のためfacilityKeyには追加せず、銀座（松屋銀座）明記のある' +
+      '記事のみ採用する。',
   },
 ]

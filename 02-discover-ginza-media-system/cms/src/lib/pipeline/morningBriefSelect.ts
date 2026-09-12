@@ -248,7 +248,16 @@ export function buildMorningBrief(
         const b = bucketForCategory(c.categoryKey)
         return b?.key === bucket.bucketKey
       })
-      .sort((a, b) => b.scoreTotal - a.scoreTotal)
+      // 2026-09-12：グルメ・スイーツ枠は SWEETS を最優先カテゴリーとする（マロン指示）。
+      // 同枠内では SWEETS 分類の候補を FOOD/CAFE/GIFT より先に検討し、その中で scoreTotal 降順。
+      .sort((a, b) => {
+        if (bucket.bucketKey === 'FOOD_SWEETS') {
+          const aSweets = a.categoryKey === 'SWEETS' ? 1 : 0
+          const bSweets = b.categoryKey === 'SWEETS' ? 1 : 0
+          if (aSweets !== bSweets) return bSweets - aSweets
+        }
+        return b.scoreTotal - a.scoreTotal
+      })
 
     if (pool.length === 0) {
       bucket.reasonIfEmpty = `該当なし：${coreBucket.label}に分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。`

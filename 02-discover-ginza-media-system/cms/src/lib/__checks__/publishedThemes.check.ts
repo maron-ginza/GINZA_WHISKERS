@@ -13,6 +13,7 @@ import {
   normalizeVenue,
   type PublishedTheme,
 } from '../publish/publishedThemes'
+import { MANUAL_PUBLISHED_SEED } from '../publish/loadPublishedThemes'
 
 function assert(c: unknown, m: string): void {
   if (!c) throw new Error(m)
@@ -164,6 +165,28 @@ const cases: CheckCase[] = [
         old,
       )
       assert(m.match, `古い公開でも除外されるべき: ${m.reason}`)
+    },
+  },
+  {
+    name: '2026-09-12：DC#352・#246・#365（マロン指摘の過去投稿済み）はMANUAL_PUBLISHED_SEEDで恒久除外される',
+    fn: () => {
+      const cases: { dcId: number; title: string; eventName: string; venue: string; period: string }[] = [
+        { dcId: 352, title: '【秋季限定】栗とはちみつのパウンドケーキ – GINZA SIX', eventName: '栗とはちみつのパウンドケーキ', venue: 'GINZA SIX', period: '2026年9月1日〜9月15日' },
+        { dcId: 246, title: '【花西子 FLORASIS】待望のUV機能付ファンデーション登場！ – GINZA SIX', eventName: '花西子 FLORASIS UV機能付ファンデーション', venue: 'GINZA SIX', period: '2026年8月29日〜9月16日' },
+        { dcId: 365, title: '【展示】櫻井万里明 “Hustle!!” 刊行記念 ブックサイニング&作品展示', eventName: '櫻井万里明 “Hustle!!” 刊行記念 ブックサイニング&作品展示', venue: '銀座 蔦屋書店', period: '2026年9月11日〜9月13日' },
+      ]
+      for (const c of cases) {
+        const m = matchPublishedTheme(c, MANUAL_PUBLISHED_SEED)
+        assert(m.match, `DC#${c.dcId} が除外されない: ${m.reason}`)
+        assert(m.reason.includes('過去投稿済み'), `除外理由に「過去投稿済み」が含まれない: ${m.reason}`)
+      }
+      // DC id が一致しなくても再現できるよう、タイトルのみの一致でも拾えることを確認
+      // （同じ案件が再取得で別 DC id を振られた場合でも取りこぼさない）
+      const retitled = matchPublishedTheme(
+        { dcId: 999999, title: '【秋季限定】栗とはちみつのパウンドケーキ – GINZA SIX', eventName: '栗とはちみつのパウンドケーキ', venue: 'GINZA SIX', period: '2026年9月1日〜9月15日' },
+        MANUAL_PUBLISHED_SEED,
+      )
+      assert(retitled.match, `別DC idでもタイトル一致で除外されるべき: ${retitled.reason}`)
     },
   },
   {
