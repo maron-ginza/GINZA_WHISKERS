@@ -1,8 +1,14 @@
-// GINZA WHISKERS Note Auto-Transfer — content script（2026-09-14新設）。
-// note.com/notes/new （新規投稿）へ Chrome 拡張の content_scripts として自動注入される
-// （Claude in Chrome のオンデマンド script injection とは別の仕組み——マニフェストの
-// 宣言的マッチングにより、ページ読み込み時にブラウザ自身が実行する。2026-09-02・
+// GINZA WHISKERS Note Auto-Transfer — content script（2026-09-14新設、
+// 2026-09-14 続き editor.note.com 対応）。
+// 実際の編集画面 https://editor.note.com/notes/{noteId}/edit/ 、および互換性
+// のため旧URL note.com/notes/new・note.com/<username>/n/<noteId>/edit へ、
+// Chrome 拡張の content_scripts として自動注入される（Claude in Chrome の
+// オンデマンド script injection とは別の仕組み——マニフェストの宣言的
+// マッチングにより、ページ読み込み時にブラウザ自身が実行する。2026-09-02・
 // 2026-09-13 に再現したタイムアウト障害の再発を避けるための設計）。
+// このスクリプト自体はDOM構造だけを見て動作するためURLホストには依存しない
+// （URL側の対象範囲は manifest.json の content_scripts.matches と
+// urlMatch.js が管理する）。
 //
 // 【絶対禁止】「公開に進む」「公開する」等、公開系ボタンには一切触れない。
 // クリック対象を探すときは常に「下書き保存」に一致するテキストのみを対象にする。

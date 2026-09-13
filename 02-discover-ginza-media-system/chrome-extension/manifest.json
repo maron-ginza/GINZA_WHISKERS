@@ -4,13 +4,22 @@
   "version": "1.0.0",
   "description": "Project 02: 承認済み記事をnote.comの下書きへ自動転記する（公開は絶対に行わない）。マロンのログイン済みブラウザセッションのみを使用し、パスワード等は一切扱わない。",
   "permissions": ["tabs", "scripting", "alarms", "storage"],
-  "host_permissions": ["http://localhost/*", "https://note.com/*"],
+  "host_permissions": [
+    "http://localhost/*",
+    "https://note.com/*",
+    "https://editor.note.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://note.com/notes/new*", "https://note.com/*/n/*/edit*"],
+      "matches": [
+        "https://editor.note.com/*",
+        "https://editor.note.com/notes/*/edit*",
+        "https://note.com/notes/new*",
+        "https://note.com/*/n/*/edit*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

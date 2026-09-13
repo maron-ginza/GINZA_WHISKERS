@@ -127,13 +127,66 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'content_scriptsがnote.comの新規投稿URLにマッチする設定を持つ',
+    name: 'content_scriptsが旧URL（note.com/notes/new）に引き続きマッチする設定を持つ（互換性維持）',
     fn: () => {
       const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
       const matches: string[] = (manifest.content_scripts ?? []).flatMap((c: any) => c.matches ?? [])
       assert.ok(
         matches.some((m) => /note\.com.*notes\/new/.test(m)),
         `content_scripts.matches に note.com/notes/new 相当のパターンが無い: ${JSON.stringify(matches)}`,
+      )
+    },
+  },
+  {
+    // 2026-09-14続き：実際の編集画面URLは https://editor.note.com/notes/{noteId}/edit/
+    // と判明。content_scripts.matches と host_permissions の両方が対応していることを
+    // 確認する（片方だけの対応漏れを防ぐ——host_permissionsが無いとfetch等がブロック
+    // されうる／content_scripts.matchesが無いとcontent.jsがそもそも注入されない）。
+    name: '【新URL対応】content_scriptsとhost_permissionsの両方がeditor.note.comに対応している',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const matches: string[] = (manifest.content_scripts ?? []).flatMap((c: any) => c.matches ?? [])
+      const hostPermissions: string[] = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : []
+
+      assert.ok(
+        matches.some((m) => m.includes('editor.note.com')),
+        `content_scripts.matches に editor.note.com が無い: ${JSON.stringify(matches)}`,
+      )
+      assert.ok(
+        hostPermissions.some((h) => h.includes('editor.note.com')),
+        `host_permissions に editor.note.com が無い: ${JSON.stringify(hostPermissions)}`,
+      )
+      // 旧ドメイン note.com も host_permissions に残っていること（互換性維持）。
+      assert.ok(
+        hostPermissions.some((h) => h.includes('note.com') && !h.includes('editor.note.com')),
+        `host_permissions に旧ドメイン note.com が残っていない（互換性が失われている）: ${JSON.stringify(hostPermissions)}`,
+      )
+    },
+  },
+  {
+    // 「content script起動」の静的検証：ページ読み込み時に content.js が即座に
+    // ready を通知し、note.comのDOM準備を能動的に待つ構造になっていることを確認する
+    // （起動時に何もせず終了する退行を防ぐ）。
+    name: '【content script起動】content.jsがready通知を送信しエディタの初期化を待機する',
+    fn: () => {
+      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      assert.ok(
+        /chrome\.runtime\.sendMessage\(\s*\{\s*type:\s*['"]note-transfer:ready['"]/.test(content),
+        'content.jsが起動時に note-transfer:ready を送信していない',
+      )
+      assert.ok(
+        /note-transfer:start/.test(content),
+        'content.jsが note-transfer:start メッセージを受信するリスナーを持たない',
+      )
+    },
+  },
+  {
+    name: '【安全境界】content.jsは「公開」を含むボタンを明示的に除外している',
+    fn: () => {
+      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      assert.ok(
+        /if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(content),
+        '「公開」を含むボタンを除外するガードが見つからない（下書き保存ボタン探索ロジックの安全境界）',
       )
     },
   },

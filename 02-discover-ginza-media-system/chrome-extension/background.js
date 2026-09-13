@@ -1,5 +1,16 @@
 // GINZA WHISKERS Note Auto-Transfer — background service worker（2026-09-14新設、
-// 2026-09-14 実機エラー修正）。
+// 2026-09-14 実機エラー修正、2026-09-14 続き editor.note.com 対応）。
+//
+// 【2026-09-14 続き】実際の編集画面URLは https://editor.note.com/notes/{noteId}/edit/
+// であることが判明した（note.com/notes/new は新規作成の入口にすぎず、実際の
+// 編集はeditor.note.comサブドメインへ遷移してから行われる）。URL判定を
+// urlMatch.js（isomorphic・Node のテストからも同じ関数を検証できる）へ切り出し、
+// checkPending() は新規タブを無条件に作るのではなく、まず「既に開いている
+// note編集タブ」（今回のケースではマロンが既に開いていた空のeditor.note.com編集
+// 画面）を chrome.tabs.query で探し、見つかればそれを再読み込みして使う
+// （新しいmanifestのcontent_scripts.matchesが効くのは新規ナビゲーション時のみの
+// ため、既存タブへは reload が必要）。見つからなければ従来どおり
+// note.com/notes/new を新規タブで開く（旧URLとの互換性を維持）。
 //
 // ローカルサーバー（cms/src/scripts/noteTransferServer.ts、既定 http://localhost:4601）へ
 // 定期的に「未転記の承認済み記事はあるか」を問い合わせ、あれば note.com/notes/new を
@@ -33,6 +44,31 @@ const SERVER_BASE = 'http://localhost:4601'
 const POLL_ALARM = 'note-transfer-poll'
 const POLL_INTERVAL_MS = 20000
 
+// urlMatch.js を読み込む（isomorphic・chrome-extension/urlMatch.js と同一ロジック
+// をNodeのテストからも検証する）。名前空間オブジェクト self.NoteUrlMatch 経由で
+// 参照する（importScriptsは同一トップレベルスコープを共有するため、
+// const/functionの再宣言衝突を避けるためurlMatch.js側はIIFEで包んでいる）。
+// importScripts自体が失敗しても（将来Chromeの仕様変更等で）Service Worker
+// 全体を落とさないよう、フォールバック判定を用意する。
+let noteUrlMatchNS = null
+try {
+  importScripts('urlMatch.js')
+  noteUrlMatchNS = self.NoteUrlMatch || null
+} catch (e) {
+  console.error('[note-transfer] urlMatch.js の読み込みに失敗、簡易フォールバック判定を使用します', e)
+}
+
+function isNoteEditorTargetUrl(url) {
+  if (noteUrlMatchNS && typeof noteUrlMatchNS.isNoteEditorTargetUrl === 'function') {
+    return noteUrlMatchNS.isNoteEditorTargetUrl(url)
+  }
+  return (
+    typeof url === 'string' &&
+    /(editor\.note\.com)|(note\.com\/notes\/new)|(note\.com\/[^/]+\/n\/[^/]+\/edit)/.test(url)
+  )
+}
+const NOTE_NEW_DRAFT_URL = (noteUrlMatchNS && noteUrlMatchNS.NOTE_NEW_DRAFT_URL) || 'https://note.com/notes/new'
+
 // --- chrome.storage が使えない場合のメモリ内フォールバック ---
 let memoryInFlightArticleId = null
 const storageAvailable = !!(chrome.storage && chrome.storage.local)
@@ -62,6 +98,34 @@ async function setInFlight(articleId) {
   }
 }
 
+/**
+ * 既に開いているnote編集タブ（例：マロンが手動で開いた空のeditor.note.com編集
+ * 画面）があればそれを再読み込みして再利用し、無ければ note.com/notes/new を
+ * 新規タブで開く。既存タブを再利用するのは、拡張の manifest 更新
+ * （content_scripts.matches の追加）は「新規ナビゲーション」時にしか効かず、
+ * 既に開いているタブへは自動的に再注入されないため（reloadで新しいnavigation
+ * を発生させ、更新後のmatchesでcontent.jsを注入させる）。
+ */
+async function findOrOpenNoteEditorTab() {
+  try {
+    const tabs = await chrome.tabs.query({})
+    const candidates = tabs.filter((t) => isNoteEditorTargetUrl(t.url))
+    if (candidates.length > 0) {
+      // editor.note.com（実際の編集画面）を優先し、note.com/notes/new（入口）は次点。
+      candidates.sort((a, b) => {
+        const score = (t) => (new URL(t.url).hostname === 'editor.note.com' ? 0 : 1)
+        return score(a) - score(b)
+      })
+      const target = candidates[0]
+      await chrome.tabs.reload(target.id)
+      return target
+    }
+  } catch (e) {
+    console.error('[note-transfer] 既存タブの検索に失敗、新規タブを開きます', e)
+  }
+  return chrome.tabs.create({ url: NOTE_NEW_DRAFT_URL, active: false })
+}
+
 async function checkPending() {
   try {
     const inFlight = await getInFlight()
@@ -75,9 +139,10 @@ async function checkPending() {
     const item = data.item
     await setInFlight(item.articleId)
 
-    const tab = await chrome.tabs.create({ url: 'https://note.com/notes/new', active: false })
+    const tab = await findOrOpenNoteEditorTab()
     // content script の起動・onMessage登録を待つため、readyメッセージを待つ
-    // （タブ作成直後は content script がまだ読み込まれていない可能性があるため）。
+    // （タブ作成／再読み込み直後は content script がまだ読み込まれていない
+    // 可能性があるため）。
     pendingItemByTab.set(tab.id, item)
   } catch (e) {
     console.error('[note-transfer] pending check failed', e)

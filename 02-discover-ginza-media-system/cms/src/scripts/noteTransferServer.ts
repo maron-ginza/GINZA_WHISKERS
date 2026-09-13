@@ -37,26 +37,23 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { resolve, extname } from 'node:path'
 
 import config from '../payload.config'
+import {
+  selectNextPendingArticleId,
+  claimInProgress,
+  recordSuccess,
+  recordFailure,
+  MAX_TRANSFER_ATTEMPTS,
+  type TransferState,
+} from '../lib/night/noteTransferState'
 
 const ROOT = resolve(process.cwd(), '..')
 const argv = process.argv.slice(2)
 const PORT = Number((argv.find((a) => a.startsWith('--port=')) ?? '').split('=')[1]) || 4601
-const MAX_ATTEMPTS = 3
+const MAX_ATTEMPTS = MAX_TRANSFER_ATTEMPTS
 
 const QUEUE_DIR = resolve(ROOT, '.devlogs', 'night', 'queue')
 const STATE_PATH = resolve(ROOT, '.devlogs', 'night', 'transfer-state.json')
 const ICON_DIR = resolve(ROOT, 'media', 'discover-ginza-category-icons')
-
-interface TransferStateEntry {
-  articleId: number
-  status: 'pending' | 'in_progress' | 'success' | 'failed'
-  attempts: number
-  lastError?: string
-  lastErrorAt?: string
-  draftUrl?: string
-  transferredAt?: string
-}
-type TransferState = Record<string, TransferStateEntry>
 
 function loadState(): TransferState {
   if (!existsSync(STATE_PATH)) return {}
@@ -95,19 +92,30 @@ async function findPendingTransfer(
   const state = loadState()
   const files = findNoteDraftFiles()
   const seen = new Set<number>()
+  const dedupedIds: number[] = []
+  const pathByArticleId = new Map<number, string>()
   for (const f of files) {
     if (seen.has(f.articleId)) continue // 同一articleIdは最新日付の1件のみ対象
     seen.add(f.articleId)
-    const entry = state[String(f.articleId)]
-    if (entry && (entry.status === 'success' || entry.status === 'failed' || entry.status === 'in_progress')) {
-      continue // 転記済み・失敗確定・処理中のいずれかはスキップ
-    }
+    dedupedIds.push(f.articleId)
+    pathByArticleId.set(f.articleId, f.path)
+  }
+
+  // 二重転記防止・3回リトライ上限の判定は純粋関数（noteTransferState.ts）に委譲する。
+  // ここでは承認済みかどうかを候補の中から順に確認するだけ。
+  let cursor = 0
+  while (cursor < dedupedIds.length) {
+    const remaining = dedupedIds.slice(cursor)
+    const candidateId = selectNextPendingArticleId(state, remaining)
+    if (candidateId == null) return null
+    cursor = dedupedIds.indexOf(candidateId) + 1
+
     // 承認済みかどうかをPayloadへ直接確認する（ファイルの存在だけで判定しない）
     let article: { reviewStatus?: string } | null = null
     try {
       article = (await payload.findByID({
         collection: 'articles',
-        id: f.articleId,
+        id: candidateId,
         depth: 0,
         overrideAccess: true,
         locale: 'ja',
@@ -116,7 +124,7 @@ async function findPendingTransfer(
       continue
     }
     if (!article || article.reviewStatus !== 'approved') continue
-    return { articleId: f.articleId, draftPath: f.path }
+    return { articleId: candidateId, draftPath: pathByArticleId.get(candidateId)! }
   }
   return null
 }
@@ -163,14 +171,8 @@ async function main() {
             return
           }
           const state = loadState()
-          const key = String(pending.articleId)
-          const prevAttempts = state[key]?.attempts ?? 0
-          state[key] = {
-            articleId: pending.articleId,
-            status: 'in_progress',
-            attempts: prevAttempts,
-          }
-          saveState(state)
+          const prevAttempts = state[String(pending.articleId)]?.attempts ?? 0
+          saveState(claimInProgress(state, pending.articleId))
 
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
           const iconFile: string | undefined = draft?.masthead?.categoryIcon?.iconFile
@@ -220,18 +222,10 @@ async function main() {
             return
           }
           const state = loadState()
-          const key = String(articleId)
-          const prev = state[key] ?? { articleId, status: 'pending', attempts: 0 }
 
           if (body.status === 'success') {
-            state[key] = {
-              articleId,
-              status: 'success',
-              attempts: prev.attempts,
-              draftUrl: typeof body.draftUrl === 'string' ? body.draftUrl : undefined,
-              transferredAt: new Date().toISOString(),
-            }
-            saveState(state)
+            const draftUrl = typeof body.draftUrl === 'string' ? body.draftUrl : undefined
+            saveState(recordSuccess(state, articleId, draftUrl, new Date().toISOString()))
 
             // 注：Articles.publishHistory は書き換えない。既存の channel enum
             // （site/note/x/instagram/newsletter）は「実際の公開」を表す値のみで、
@@ -245,16 +239,14 @@ async function main() {
           }
 
           // 失敗報告
-          const attempts = (prev.attempts ?? 0) + 1
-          const exhausted = attempts >= MAX_ATTEMPTS
-          state[key] = {
+          const errorMessage = typeof body.error === 'string' ? body.error : '不明なエラー'
+          const { state: nextState, exhausted, attempts } = recordFailure(
+            state,
             articleId,
-            status: exhausted ? 'failed' : 'pending',
-            attempts,
-            lastError: typeof body.error === 'string' ? body.error : '不明なエラー',
-            lastErrorAt: new Date().toISOString(),
-          }
-          saveState(state)
+            errorMessage,
+            new Date().toISOString(),
+          )
+          saveState(nextState)
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ ok: true, exhausted, attempts }))
         } catch (e) {

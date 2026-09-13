@@ -896,6 +896,21 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   Chrome仕様上自動化できない1回の手動操作待ちのまま未検証**——Article #67は
   `reviewStatus=approved`のままnote転記待ちを維持。詳細は`DECISION_LOG_02.md`
   2026-09-13 続き11参照。
+- 2026-09-13: 🔧 **note下書き自動転記——実際の編集画面URL
+  `https://editor.note.com/notes/{noteId}/edit/`へ正式対応、旧URLとの互換性を
+  維持（Project 02 commit・push あり／DB更新なし）**——続き11時点のmanifest.jsonが
+  `note.com`のみを対象としていたため、実際の編集先である`editor.note.com`
+  サブドメインへcontent.jsが注入されず自動転記が機能していなかった。新規
+  `urlMatch.js`（isomorphic）へURL判定を一本化し、`manifest.json`の
+  `content_scripts.matches`・`host_permissions`双方へ`editor.note.com`を追加
+  （旧2パターンは維持）。`background.js`は新規タブを無条件に作らず、既存の
+  一致タブ（マロンが開いていた空の編集画面）を`chrome.tabs.reload()`で再利用
+  する方式へ変更。状態遷移ロジックを新規`noteTransferState.ts`（純粋関数）へ
+  分離し、新規回帰テスト24件（URL判定・content script起動・重複防止・3回
+  リトライ上限・下書き保存成功報告）を追加。`run-all.ts` **551 passed 0
+  failed**（+18）。note.com上での実際の保存成功は引き続き拡張再読み込み
+  （Chrome仕様上自動化不可）待ちのまま未検証、Article #67は転記待ちを維持。
+  詳細は`DECISION_LOG_02.md` 2026-09-13 続き12参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

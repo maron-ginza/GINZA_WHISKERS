@@ -50,6 +50,8 @@ import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
 import { suite as factVerification, runFetchOutcomeTests } from './factVerification.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
+import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
+import { suite as noteTransferState } from './noteTransferState.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -97,6 +99,8 @@ const results: SuiteResult[] = [
   factVerification(),
   p0Morning(),
   chromeExtensionManifest(),
+  noteTransferUrlMatch(),
+  noteTransferState(),
 ]
 
 void (async () => {

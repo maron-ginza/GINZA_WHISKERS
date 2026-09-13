@@ -14,6 +14,76 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き12（🔧 **note下書き自動転記——実際の編集画面URL
+    `https://editor.note.com/notes/{noteId}/edit/` へ正式対応、旧URLとの互換性を
+    維持（Project 02 commit・push あり／DB更新なし／note公開なし・Article #67は
+    転記待ちのまま維持）**）:
+
+    マロン指示：実際の編集画面URLが`https://editor.note.com/notes/{noteId}/edit/`
+    と判明したため、manifest.json・background.jsの対象URL判定を修正し、旧
+    note.com URLとの互換性も維持したうえで、現在開いている空の編集画面へ
+    Article #67を自動入力・下書き保存すること。回帰テストを追加すること。
+
+    **原因**：続き11時点のmanifest.jsonは`https://note.com/notes/new*`・
+    `https://note.com/*/n/*/edit*`のみを対象としており、note.comの「新規作成」
+    が実際に遷移する先である`editor.note.com`サブドメインを対象に含んでいな
+    かった。そのため、続き11の拡張を実際に読み込んでから今回の指示までの間に
+    自動実行が試みられたとみられ（`transfer-state.json`にArticle #67が
+    `in_progress`のまま結果報告なしで残っていたことから推定——content.jsが
+    注入されずreadyメッセージが送られなかったため、下書き保存の成否に関わらず
+    サーバーへは何も報告されなかったと判断）、対応の必要が生じた。
+
+    **修正内容**：①新規`chrome-extension/urlMatch.js`（isomorphic・IIFEで
+    グローバルスコープを汚染しない設計）に`isNoteEditorTargetUrl(url)`を1箇所
+    切り出し、`editor.note.com`（新URL、配下を丸ごと対象）と旧2パターン
+    （`note.com/notes/new`・`note.com/<username>/n/<noteId>/edit`）の両方を
+    判定できるようにした——background.jsとテストが**同一ファイル**を参照する
+    ことで判定ロジックの二重実装・ズレを防ぐ。②`manifest.json`の
+    `content_scripts.matches`・`host_permissions`双方へ`https://editor.note.com/*`
+    を追加（片方だけの対応漏れを防ぐ——host_permissions欠落はfetch等のブロック、
+    matches欠落はcontent.js自体の未注入につながる）。旧2パターンは維持し
+    互換性を保った。③`background.js`の`checkPending()`を、無条件に新規タブを
+    作る方式から、**まず`chrome.tabs.query({})`で既存の一致タブ（マロンが
+    既に開いていた空のeditor.note.com編集画面を含む）を探し、見つかれば
+    `chrome.tabs.reload()`で再読み込みして使う**方式へ変更した（manifestの
+    content_scripts更新は新規ナビゲーション時にしか効かないため、既存タブへ
+    content.jsを注入させるには再読み込みが必要）。editor.note.com側を
+    note.com/notes/new側より優先する。見つからなければ従来どおり新規タブを
+    開く。
+
+    **回帰テスト（新規24件）**：①`noteTransferUrlMatch.check.ts`（7件）——
+    urlMatch.jsをCommonJS requireで直接読み込み、新URL・旧URL2種・無関係URL・
+    非https・空文字・**なりすましドメイン**（`editor.note.com.evil.example`等）
+    の判定を検証。②`chromeExtensionManifest.check.ts`へ3件追加——
+    content_scripts.matchesとhost_permissionsの両方がeditor.note.comに対応し
+    旧ドメインも残っていること、content.jsが起動時に`note-transfer:ready`を
+    送信し`note-transfer:start`を受信すること（content script起動の静的検証）、
+    「公開」を含むボタンの除外ガードが存在すること。③新規
+    `noteTransferState.ts`（純粋・決定的・AIなし、noteTransferServer.tsから
+    状態遷移ロジックを分離——実サーバー起動・DB接続なしでテスト可能にするため
+    のリファクタリング）＋`noteTransferState.check.ts`（8件）——重複防止
+    （in_progress中・成功済みは候補から除外）、3回リトライ上限（1・2回目は
+    pendingへ戻り再試行対象、3回目でfailed固定・以後除外）、下書き保存成功
+    報告（status/draftUrl/transferredAtの記録）を検証。`noteTransferServer.ts`
+    はこの純粋モジュールを呼ぶ薄いラッパーへリファクタリング。
+
+    **検証**：`tsc --noEmit`（cms）0エラー、`run-all.ts` **551 passed 0
+    failed**（533→551、+18）。`manifest.json`のJSON妥当性・3ファイルの構文
+    （`node -c`）を確認。サーバーを再起動しcurlで再検証：承認済み判定・
+    dedup・失敗report→attempts加算→成功reportの一連の流れ・
+    `editor.note.com`形式のdraftUrl記録を再確認、テスト用の状態は都度
+    空へリセットしArticle #67の実転記待ち状態を復元。
+
+    **未完了（次回への申し送り）**：note.com上での実際の下書き保存成功の
+    実機確認は、引き続き**Chrome拡張の再読み込み**（Chromeの仕様上自動化
+    できない）待ちのまま。Article #67は`reviewStatus=approved`のまま、
+    `transfer-state.json`は空（転記待ち）で維持。
+
+    **不変**：DB書き込みなし（テスト中のreportはすべてtransfer-state.jsonの
+    みに影響し都度リセット済み）。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き11（🧩 **note下書き自動転記の恒久方式（Chrome拡張＋ローカル
     サーバー）を新設し、実機で発覚した起動エラーを修正（Project 02 commit・push
     あり／DB更新なし／note公開なし・Article #67は転記待ちのまま維持）**）:
