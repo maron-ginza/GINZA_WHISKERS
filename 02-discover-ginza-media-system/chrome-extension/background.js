@@ -333,6 +333,69 @@ function injectedNoteTransfer(item) {
         return patterns.some((p) => p.test(label))
       })
     }
+    // 2026-09-14続き6：ハッシュタグ・カテゴリー画像の入力欄は編集画面ではなく
+    // 「公開に進む」の次画面（公開設定）で初めて現れると判明（マロン指示）。
+    // 「公開に進む」は設定画面への遷移としてのみ許可し、実際に公開を確定させる
+    // 最終ボタンは文言パターンで明示的に禁止する——findClickableByLabel等の
+    // 汎用「公開」除外だけに頼らず、ここで二重に絶対禁止する。
+    const PUBLISH_FINAL_RE = /^公開する$|投稿する|この内容で公開|今すぐ公開|公開して(終了|完了)/
+    function isForbiddenPublishLabel(label) {
+      return PUBLISH_FINAL_RE.test(label)
+    }
+    /** 「公開に進む」ボタンだけを探す（設定画面への遷移。最終公開ボタンは
+     * isForbiddenPublishLabelで明示的に除外——「公開に進む」自体は
+     * PUBLISH_FINAL_REに一致しないため通過する）。 */
+    function findProceedToPublishButton() {
+      return deepQuerySelectorAll('button, [role="button"], a').find((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t) return false
+        if (isForbiddenPublishLabel(t)) return false
+        return /公開に進む/.test(t)
+      })
+    }
+    /** 画像調整（クロップ等）画面で出現しうる「確定」系ボタン。「公開」を含む
+     * ものは一切対象にしない。 */
+    function findConfirmLikeButton() {
+      return deepQuerySelectorAll('button, [role="button"]').find((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t) return false
+        if (/公開/.test(t)) return false
+        return /確定|適用|設定する|完了|トリミング|OK/.test(t)
+      })
+    }
+    /** 指定したハッシュタグ（#なし正規化済み）が、画面上に「#タグ名」チップ等
+     * として実際に反映されているかを数える（読み戻し検証用）。 */
+    function countAppliedHashtags(expectedTagsNoHash) {
+      const texts = deepQuerySelectorAll('span, div, li, button, a, p')
+        .filter(isVisible)
+        .map(visibleText)
+        .filter((t) => t && t.length < 40)
+      let count = 0
+      for (const tag of expectedTagsNoHash) {
+        if (texts.some((t) => t === `#${tag}` || t === tag)) count++
+      }
+      return count
+    }
+    /** アイキャッチ／カテゴリー画像が実際に反映されたっぽい img 要素
+     * （blob:／data: のsrc、またはファイル名を含むsrc）が存在するかを確認する。 */
+    function checkIconApplied(fileNameHint) {
+      const imgs = deepQuerySelectorAll('img').filter(isVisible)
+      return imgs.some((img) => {
+        const src = img.getAttribute('src') || ''
+        return src.startsWith('blob:') || src.startsWith('data:') || (fileNameHint && src.includes(fileNameHint))
+      })
+    }
+    /** タイトル・本文が意図せず変更されていないことを確認するための正規化
+     * ハッシュ（2026-09-14続き6、マロン指示：「タイトル・本文は正規化後の
+     * ハッシュで既存内容と一致確認し、変更しない」）。SubtleCryptoでSHA-256。 */
+    async function normalizedHash(text) {
+      const normalized = (text || '').trim().replace(/\s+/g, ' ')
+      const enc = new TextEncoder().encode(normalized)
+      const buf = await crypto.subtle.digest('SHA-256', enc)
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+    }
     /** タグ入力欄が最初から見えていればそれを返す。無ければ「タグ」関連の
      * クリック可能要素を1つクリックして出現を待ち、再探索する（見つからなければ
      * null）。 */
@@ -424,28 +487,6 @@ function injectedNoteTransfer(item) {
         el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
       }
     }
-    async function attachCategoryIcon(iconInfo) {
-      if (!iconInfo || !iconInfo.url) return { attached: false, reason: 'カテゴリーアイコン情報なし' }
-      const { fi: fileInput, revealed, triggerFound, triggerLabel } = await revealAndFindFileInput()
-      if (!fileInput) {
-        return {
-          attached: false,
-          reason: triggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
-        }
-      }
-      try {
-        const res = await fetch(iconInfo.url)
-        const blob = await res.blob()
-        const file = new File([blob], iconInfo.url.split('/').pop() || 'category-icon.jpg', { type: blob.type || 'image/jpeg' })
-        const dt = new DataTransfer()
-        dt.items.add(file)
-        fileInput.files = dt.files
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-        return { attached: true, revealed, triggerLabel }
-      } catch (e) {
-        return { attached: false, reason: String(e?.message ?? e), revealed, triggerLabel }
-      }
-    }
     function domDebugSnapshot() {
       const buttons = deepQuerySelectorAll('button, [role="button"]').filter(isVisible).map(visibleText).filter(Boolean).slice(0, 40)
       const editables = deepQuerySelectorAll('[contenteditable="true"], [role="textbox"]').filter(isVisible)
@@ -514,36 +555,128 @@ function injectedNoteTransfer(item) {
       if (bodyReadback.length === 0) {
         return { status: 'failure', error: 'stage=body_write_not_verified: 本文欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
       }
-    } else {
+    }
+
+    let titleHashBefore = null
+    let bodyHashBefore = null
+    if (mode === 'completion') {
       // completion-onlyジョブ：タイトル・本文は既に保存済みのはず——再入力せず、
       // 既存の内容が0文字でないことだけ確認する（sanity check、書き換えない）。
       bodyField = titleField ? findBodyField(titleField.el) : findBodyField(null)
       const titleSanity = readBackText(titleField)
       const bodySanity = readBackText(bodyField)
       log('completion_sanity_check', { titleLength: titleSanity.length, bodyLength: bodySanity.length })
+      // 2026-09-14続き6（マロン指示）：正規化後のハッシュを保存し、この後の
+      // ハッシュタグ・画像操作でタイトル・本文が変化していないことを最後に
+      // 検証する（本文の再入力は一切行わないが、副作用による変化が無いことの
+      // 保険）。
+      titleHashBefore = await normalizedHash(titleSanity)
+      bodyHashBefore = await normalizedHash(bodySanity)
+      log('content_hash_before', { titleHash: titleHashBefore.slice(0, 12), bodyHash: bodyHashBefore.slice(0, 12) })
     }
 
-    // --- ハッシュタグ（reveal-click対応） ---
-    let hashtagResult = { attempted: false }
-    const { input: hashtagInput, revealed: hashtagRevealed, triggerFound: hashtagTriggerFound, triggerLabel: hashtagTriggerLabel } =
+    // --- ハッシュタグ・カテゴリー画像 ---
+    // 2026-09-14続き6：まず現在の画面（編集画面）で単純探索・reveal-clickを
+    // 試す。見つからなければ「公開に進む」で公開設定画面へ遷移し（設定画面
+    // への遷移としてのみ許可、最終公開ボタンは絶対に押さない）、そちらで
+    // 再探索する。
+    let { input: hashtagInput, revealed: hashtagRevealed, triggerFound: hashtagTriggerFound, triggerLabel: hashtagTriggerLabel } =
       await revealAndFindHashtagInput()
+    let { fi: fileInput, revealed: iconRevealed, triggerFound: iconTriggerFound, triggerLabel: iconTriggerLabel } =
+      await revealAndFindFileInput()
+
+    let navigatedToSettings = false
+    if (!hashtagInput || !fileInput) {
+      const proceedBtn = findProceedToPublishButton()
+      if (proceedBtn) {
+        log('proceed_to_settings_click', { text: visibleText(proceedBtn) })
+        proceedBtn.click()
+        navigatedToSettings = true
+        await waitFor(() => findHashtagInput() || deepQuerySelectorAll('input[type="file"]').length > 0, 8000)
+        await sleep(500)
+        log('settings_screen_snapshot', domDebugSnapshot())
+        if (!hashtagInput) {
+          const r = await revealAndFindHashtagInput()
+          hashtagInput = r.input
+          hashtagRevealed = r.revealed
+          hashtagTriggerFound = r.triggerFound
+          hashtagTriggerLabel = r.triggerLabel
+        }
+        if (!fileInput) {
+          const r2 = await revealAndFindFileInput()
+          fileInput = r2.fi
+          iconRevealed = r2.revealed
+          iconTriggerFound = r2.triggerFound
+          iconTriggerLabel = r2.triggerLabel
+        }
+      } else {
+        log('proceed_to_settings_not_found', {})
+      }
+    }
+
+    let hashtagResult
     if (hashtagInput) {
-      hashtagResult = { attempted: true, revealed: hashtagRevealed, triggerLabel: hashtagTriggerLabel }
+      hashtagResult = { attempted: true, revealed: hashtagRevealed, triggerLabel: hashtagTriggerLabel, navigatedToSettings }
       for (const tag of item.hashtags || []) {
         setNativeValue(hashtagInput, tag.replace(/^#/, ''))
         pressEnter(hashtagInput)
         await sleep(200)
       }
     } else {
-      hashtagResult = { attempted: false, revealed: false, triggerFound: hashtagTriggerFound === true }
+      hashtagResult = { attempted: false, revealed: false, triggerFound: hashtagTriggerFound === true, navigatedToSettings }
     }
     log('hashtags_done', hashtagResult)
 
-    const iconResult = await attachCategoryIcon(item.categoryIcon)
+    let iconResult
+    if (fileInput && item.categoryIcon && item.categoryIcon.url) {
+      try {
+        const res = await fetch(item.categoryIcon.url)
+        const blob = await res.blob()
+        const fileName = item.categoryIcon.url.split('/').pop() || 'category-icon.jpg'
+        const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        fileInput.files = dt.files
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+        await sleep(800)
+        // 画像調整（クロップ等）画面が出た場合は確定操作を自動で行う
+        // （マロン指示：「画像調整画面が出た場合は確定まで自動処理」）。
+        const confirmBtn = await waitFor(() => findConfirmLikeButton(), 4000)
+        if (confirmBtn) {
+          log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
+          confirmBtn.click()
+          await sleep(500)
+        }
+        iconResult = { attached: true, revealed: iconRevealed, triggerLabel: iconTriggerLabel, navigatedToSettings, fileName }
+      } catch (e) {
+        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed, navigatedToSettings }
+      }
+    } else {
+      iconResult = {
+        attached: false,
+        reason: !item.categoryIcon?.url ? 'カテゴリーアイコン情報なし' : iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
+        navigatedToSettings,
+      }
+    }
     log('icon_attach_done', iconResult)
     await sleep(300)
 
-    const saveBtn = await waitFor(() => findSaveDraftButton(), 8000)
+    // --- 読み戻し検証（マロン指示：「完了後、DOMからハッシュタグ4個と画像設定
+    // 状態を読み戻し」） ---
+    const expectedTagsNoHash = (item.hashtags || []).map((t) => t.replace(/^#/, ''))
+    const appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
+    const iconApplied = checkIconApplied(iconResult.fileName)
+    log('hashtag_icon_readback', { appliedTagCount, expectedTagCount: expectedTagsNoHash.length, iconApplied })
+
+    // --- 下書き保存（設定画面にいる場合はまずこの画面で探し、無ければEscで
+    // 編集画面へ戻ってから探す。「公開する」等の最終公開ボタンには一切触れない） ---
+    let saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
+    if (!saveBtn && navigatedToSettings) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+      await sleep(500)
+      saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
+      log('escape_back_to_editor_attempted', { saveBtnFoundAfter: !!saveBtn })
+    }
     if (!saveBtn) {
       return {
         status: 'failure',
@@ -551,15 +684,14 @@ function injectedNoteTransfer(item) {
         debug: domDebugSnapshot(),
         hashtagResult,
         iconResult,
+        appliedTagCount,
+        iconApplied,
         stages,
       }
     }
     log('save_button_found', { text: visibleText(saveBtn) })
     saveBtn.click()
     await sleep(2000)
-
-    const hashtagsDone = hashtagResult.attempted === true
-    const iconDone = iconResult.attached === true
 
     if (mode === 'full') {
       const finalTitle = readBackText(titleField)
@@ -574,7 +706,43 @@ function injectedNoteTransfer(item) {
       }
     }
 
-    return { status: 'success', draftUrl: location.href, hashtagResult, iconResult, hashtagsDone, iconDone, stages }
+    let integrityOk = true
+    if (mode === 'completion' && titleHashBefore && bodyHashBefore) {
+      const finalTitleField = findTitleField()
+      const finalBodyField = finalTitleField ? findBodyField(finalTitleField.el) : bodyField
+      const titleHashAfter = await normalizedHash(readBackText(finalTitleField))
+      const bodyHashAfter = await normalizedHash(readBackText(finalBodyField))
+      integrityOk = titleHashAfter === titleHashBefore && bodyHashAfter === bodyHashBefore
+      log('content_hash_after', {
+        titleHash: titleHashAfter.slice(0, 12),
+        bodyHash: bodyHashAfter.slice(0, 12),
+        integrityOk,
+      })
+      if (!integrityOk) {
+        return {
+          status: 'failure',
+          error: 'stage=content_integrity_check_failed: ハッシュタグ・画像操作の前後でタイトルまたは本文のハッシュが一致しませんでした',
+          stages,
+        }
+      }
+    }
+
+    const hashtagsDone = appliedTagCount >= expectedTagsNoHash.length && expectedTagsNoHash.length > 0
+    const iconDone = iconResult.attached === true && iconApplied === true
+
+    return {
+      status: 'success',
+      draftUrl: location.href,
+      hashtagResult,
+      iconResult,
+      hashtagsDone,
+      iconDone,
+      appliedTagCount,
+      expectedTagCount: expectedTagsNoHash.length,
+      iconApplied,
+      integrityOk,
+      stages,
+    }
   })()
 }
 
@@ -614,8 +782,16 @@ async function runTransferViaExecuteScript(tabId, item) {
     })
     const result = results?.[0]?.result
     if (!result) {
-      logToServer('execute_script_no_result', { tabId })
-      await reportResult(item.articleId, 'failure', { error: 'stage=execute_script_no_result: 注入した関数から結果が返りませんでした' })
+      // 2026-09-14続き6で発見した重大バグの修正：ここで mode: item.mode を
+      // 渡し忘れていたため、completion-onlyジョブの失敗がサーバー側で
+      // 通常ジョブの失敗（recordFailure、既存のattempts/statusを破壊し
+      // 'success'を'pending'へ格下げしてしまう）として処理され、3回で
+      // status='failed'に恒久固定されてしまっていた（実機で発生・確認済み）。
+      logToServer('execute_script_no_result', { tabId, mode: item.mode })
+      await reportResult(item.articleId, 'failure', {
+        error: 'stage=execute_script_no_result: 注入した関数から結果が返りませんでした',
+        mode: item.mode,
+      })
       return
     }
     // 注入した関数が内部で記録した段階別ログ（stages）をまとめてサーバーへ転送する。

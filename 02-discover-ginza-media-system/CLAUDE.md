@@ -966,6 +966,26 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   **完成／未完成の報告：未完成**（ハッシュタグ4個・カテゴリーアイコンが
   未完了のため）。公開操作は行っていない。詳細は`DECISION_LOG_02.md`
   2026-09-13 続き15参照。
+- 2026-09-13: 🐛🔧 **note下書き自動転記——実機ログで発見した重大バグを修正
+  （completion-onlyジョブが3回でstatus='failed'に恒久固定）、ハッシュタグ・
+  カテゴリー画像は「公開に進む」の次画面（公開設定）で扱う実装へ変更
+  （Project 02 commit・push あり／DB更新なし）**——原因は
+  `runTransferViaExecuteScript`の「executeScript無応答」失敗報告に
+  `mode: item.mode`を渡し忘れており、completion-onlyジョブの失敗が通常の
+  `recordFailure`（`needsCompletion`を保持せず`status`を格下げ）として
+  処理され、3回で恒久`failed`化していた——修正し再発防止テストを追加。
+  あわせて、ハッシュタグ・カテゴリー画像の入力欄は編集画面ではなく
+  「公開に進む」の次画面にあると判明したため、新規`PUBLISH_FINAL_RE`
+  （最終公開文言のみを明示的に禁止）＋`findProceedToPublishButton`
+  （「公開に進む」のみ許可）で設定画面への遷移を実装し、画像調整確定・
+  読み戻し検証（`countAppliedHashtags`／`checkIconApplied`）・タイトル/
+  本文の正規化ハッシュ前後比較（`normalizedHash`、不一致なら失敗扱い）を
+  追加。**「公開に進む」を誤って禁止しないこと・「公開する」等は確実に
+  禁止すること」を正規表現の実挙動として検証する最重要安全境界テストを
+  含む回帰テスト新規5件**、`run-all.ts` **574 passed 0 failed**。
+  Article #67はタイトル・本文・保存は完成のまま、ハッシュタグ・アイコンは
+  `needsCompletion:true`で自動完了待ち。マロンへ新たなChrome操作は
+  要求していない。詳細は`DECISION_LOG_02.md` 2026-09-13 続き16参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

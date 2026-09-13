@@ -357,6 +357,70 @@ const cases: CheckCase[] = [
       assert.ok(server.includes("mode === 'completion'") || server.includes('mode==="completion"'), "mode==='completion' の分岐が見つからない")
     },
   },
+  {
+    // 2026-09-14続き6で実機発見・修正した重大バグの再発防止：
+    // executeScriptが結果を返さなかった場合の失敗報告に mode が渡っておらず、
+    // completion-onlyジョブの失敗が通常ジョブの失敗として処理され、
+    // 3回でstatus='failed'に恒久固定されてしまっていた。
+    name: '【重要バグ再発防止】execute_script_no_result時の失敗報告にmodeが含まれる',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const idx = bg.indexOf("logToServer('execute_script_no_result'")
+      assert.ok(idx >= 0, 'execute_script_no_result ログが見つからない')
+      const nearby = bg.slice(idx, idx + 400)
+      assert.ok(/mode:\s*item\.mode/.test(nearby), 'execute_script_no_result 周辺の reportResult 呼び出しに mode: item.mode が渡っていない（再発）')
+    },
+  },
+  {
+    // 2026-09-14続き6：ハッシュタグ・カテゴリー画像は「公開に進む」の次画面
+    // （公開設定）で初めて現れると判明。設定画面への遷移としてのみ許可し、
+    // 最終公開ボタンは文言パターンで明示的に禁止する——このパターンの実際の
+    // 挙動（「公開に進む」は通す・「公開する」等は弾く）を正規表現として
+    // 直接評価して検証する（安全境界そのものの振る舞いテスト）。
+    name: '【最重要安全境界】PUBLISH_FINAL_REは「公開に進む」を許可し「公開する」等の最終公開文言のみを禁止する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const m = bg.match(/const PUBLISH_FINAL_RE = (\/.+\/)\n/)
+      assert.ok(m, 'PUBLISH_FINAL_RE の定義が見つからない')
+      // eslint-disable-next-line no-eval -- 正規表現リテラルのみを固定パターンで抽出して評価する（任意コード実行ではない）
+      const re = eval(m![1]) as RegExp
+      assert.equal(re.test('公開に進む'), false, '「公開に進む」が誤って禁止されている（設定画面へ遷移できなくなる）')
+      assert.equal(re.test('公開する'), true, '「公開する」が禁止パターンに一致しない（最終公開ボタンを誤ってクリックしうる）')
+      assert.equal(re.test('投稿する'), true, '「投稿する」が禁止パターンに一致しない')
+      assert.equal(re.test('この内容で公開'), true, '「この内容で公開」が禁止パターンに一致しない')
+      assert.equal(re.test('下書き保存'), false, '「下書き保存」が誤って禁止されている')
+    },
+  },
+  {
+    name: '【設定画面遷移】findProceedToPublishButtonが最終公開ボタンを除外したうえで「公開に進む」のみに一致する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findProceedToPublishButton/.test(bg), 'findProceedToPublishButtonが見つからない')
+      const start = bg.indexOf('function findProceedToPublishButton')
+      const end = bg.indexOf('function findConfirmLikeButton')
+      const body = bg.slice(start, end)
+      assert.ok(/isForbiddenPublishLabel\(t\)/.test(body), '最終公開ボタン除外チェックが呼ばれていない')
+      assert.ok(/\/公開に進む\//.test(body), '「公開に進む」への一致条件が見つからない')
+    },
+  },
+  {
+    name: '【読み戻し検証】ハッシュタグ4個・画像設定状態をDOMから読み戻す関数が存在する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function countAppliedHashtags/.test(bg), 'countAppliedHashtagsが見つからない')
+      assert.ok(/function checkIconApplied/.test(bg), 'checkIconAppliedが見つからない')
+      assert.ok(/appliedTagCount/.test(bg) && /iconApplied/.test(bg), '読み戻し結果の使用箇所が見つからない')
+    },
+  },
+  {
+    name: '【タイトル・本文の不変性検証】completion-onlyジョブは正規化ハッシュで前後一致を確認し、不一致なら失敗扱いにする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/async function normalizedHash/.test(bg), 'normalizedHash（SHA-256）が見つからない')
+      assert.ok(/content_hash_before/.test(bg) && /content_hash_after/.test(bg), 'ハッシュの前後比較ログが見つからない')
+      assert.ok(/content_integrity_check_failed/.test(bg), 'ハッシュ不一致時の失敗ステージが見つからない')
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)
