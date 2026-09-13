@@ -20,10 +20,18 @@ export interface CoreDailyBucket {
   cats: string[]
 }
 
-/** 通常記事3本の基本構成（2026-10 初期トライアル。マロン指示）。 */
+/**
+ * 通常記事の基本構成・優先順位（2026-09-13、朝刊実運用開始にあたりマロン指示で
+ * 4領域へ改訂——①スイーツ・和菓子②グルメ③ビューティー④文化・アート、の順）。
+ * 配列の並び順＝選定時の優先順位（buildMorningBrief〈morningBriefSelect.ts〉は
+ * この順に施設重複チェックを行うため、先に並ぶバケットほど施設を優先的に確保する）。
+ * 旧FOOD_SWEETS（FOOD/CAFE/SWEETS/GIFT混在）はSWEETS_WAGASHI（SWEETS専用）と
+ * GOURMET（FOOD/CAFE/GIFT）に分離した。
+ */
 export const CORE_DAILY_BUCKETS: CoreDailyBucket[] = [
+  { key: 'SWEETS_WAGASHI', label: 'スイーツ・和菓子', cats: ['SWEETS'] },
+  { key: 'GOURMET', label: 'グルメ', cats: ['FOOD', 'CAFE', 'GIFT'] },
   { key: 'BEAUTY', label: 'ビューティー', cats: ['BEAUTY', 'WELLNESS'] },
-  { key: 'FOOD_SWEETS', label: 'グルメ・スイーツ', cats: ['FOOD', 'CAFE', 'SWEETS', 'GIFT'] },
   { key: 'CULTURE_ART', label: '文化・アート', cats: ['ART', 'CULTURE', 'EVENT', 'MUSIC', 'PHOTO', 'ARCHITECTURE', 'WORKSHOP'] },
 ]
 

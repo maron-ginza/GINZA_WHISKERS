@@ -40,6 +40,12 @@ const FEED_DISCOVERY_SOURCE_IDS = new Set([
   'lenotre-japan',
   'ginza-cozycorner',
   'ginza-wakana',
+  // 2026-09-13追加：銀茶会2025参加和菓子店（優先調査対象）
+  'kobikicho-yoshiya',
+  'seigetsudo-honten',
+  'tokyo-fugetsudo-ginza',
+  'kitchoan',
+  'matsuzaki-senbei-ginza',
 ])
 
 // SOURCE LEDGER 自動巡回オーケストレーター（2026-08-16）。

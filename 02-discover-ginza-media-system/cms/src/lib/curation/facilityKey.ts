@@ -98,6 +98,12 @@ const SOURCE_AS_FACILITY: { re: RegExp; key: string; label: string }[] = [
   // エヴァン／フレデリック・カッセル／ルノートル／銀座コージーコーナー）は全国複数店舗の
   // ためここに追加せず、ginzaRelevanceの明記チェックに委ねる（GODIVA等と同じ扱い）。
   { re: /ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp/i, key: 'boulmich-ginza', label: 'ブールミッシュ（銀座本店）' },
+  // 2026-09-13追加（銀茶会オリジナル和菓子13店の優先調査）：木挽町よしや・銀座松﨑煎餅は
+  // WebSearchで他店舗の存在が確認できなかった単独立地。清月堂本店・東京凮月堂銀座・
+  // 宗家源吉兆庵は他所（松屋銀座B1F/新宿・横浜・上野の喫茶、百貨店・駅ビル出店、
+  // 全国チェーン）が確認できたためここには追加しない。
+  { re: /木挽町よしや|kobikichoyoshiya/i, key: 'kobikicho-yoshiya', label: '木挽町よしや' },
+  { re: /松﨑煎餅|松崎煎餅|matsuzaki-senbei/i, key: 'matsuzaki-senbei-ginza', label: '銀座 松﨑煎餅' },
 ]
 
 // 集約サイト（施設単位が URL スラッグ or タイトルの【店名】でしか分からない）

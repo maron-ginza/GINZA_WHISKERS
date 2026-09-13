@@ -1,9 +1,12 @@
-// GINZA WHISKERS / Project 02（2026-09-11）— 朝刊ブリーフの選定・整形（純粋・AI/DB/ネットワークなし）。
+// GINZA WHISKERS / Project 02（2026-09-11、2026-09-13改訂）— 朝刊ブリーフの選定・整形
+// （純粋・AI/DB/ネットワークなし）。
 //
-// 目的：本日の公開候補を「①ビューティー ②グルメ（スイーツ含む）③文化・アート」各1本で
-// 選び、各候補について必須 ArticleFacts（12項目）・Editorial Compass・選定理由を1画面へ
-// まとめる。**推測でデータを補完しない**——ArticleFacts / DiscoveredContent に無い項目は
-// すべて「公式記載なし」（検証状態は「未確認」）とする。
+// 目的：本日の公開候補を「①スイーツ・和菓子 ②グルメ ③ビューティー ④文化・アート」
+// 各1本で選び、各候補について必須 ArticleFacts（12項目）・Editorial Compass・選定理由を
+// 1画面へまとめる。**推測でデータを補完しない**——ArticleFacts / DiscoveredContent に
+// 無い項目はすべて「公式記載なし」（検証状態は「未確認」）とする。
+// 4領域・優先順位はCORE_DAILY_BUCKETS（dailySelectionSupport.ts）の並び順そのもの
+// （2026-09-13、朝刊実運用開始にあたりマロン指示で3領域→4領域へ改訂）。
 //
 // 選定条件（マロン指示・2026-09-11）：
 //   ・コアターゲット＝20代後半〜30代女性。Editorial Compass かわいい20／上質30／
@@ -159,7 +162,7 @@ function resolveConditions(c: BriefCandidateInput): string {
 
 /** 選定理由：カテゴリー・旬・target_fit・偏り補正の観点から機械生成（推測なし・数値と事実のみ）。 */
 export function buildSelectionReason(c: BriefCandidateInput, bucketLabel: string): string {
-  const bits: string[] = [`本日の3領域「${bucketLabel}」枠として選定`]
+  const bits: string[] = [`本日の${CORE_DAILY_BUCKETS.length}領域「${bucketLabel}」枠として選定`]
   if (c.categoryKey && c.categoryKey !== '未確定') bits.push(`18カテゴリー＝${c.categoryKey}（${c.categoryBasis === 'primaryCategory' ? 'ArticleFacts確定' : '明記'}）`)
   if (typeof c.targetFit === 'number') bits.push(`コアターゲット適合 ${c.targetFit}／100`)
   if (clean(c.targetFitReason)) bits.push(clean(c.targetFitReason))
@@ -217,7 +220,7 @@ export function assembleBriefFacts(c: BriefCandidateInput): BriefFacts {
 }
 
 /**
- * 候補プール → 3領域（ビューティー／グルメ・スイーツ／文化・アート）各1本を選ぶ。
+ * 候補プール → 4領域（スイーツ・和菓子／グルメ／ビューティー／文化・アート）各1本を選ぶ。
  *  ・alreadyDrafted / duplicate は除外
  *  ・同一施設は2枠に跨がせない
  *  ・直近採用の施設（recentFacility）と同一なら次点へ
@@ -243,21 +246,14 @@ export function buildMorningBrief(
   for (const bucket of buckets) {
     const coreBucket = CORE_DAILY_BUCKETS.find((b) => b.key === bucket.bucketKey)!
     // このバケットに該当する候補（カテゴリー確定のみ。未確定は推測しないので対象外）
+    // 2026-09-13：SWEETS専用バケット（SWEETS_WAGASHI）を新設したため、バケット内での
+    // カテゴリー優先ソートは不要になった（1バケット1カテゴリー系統）。scoreTotal 降順のみ。
     const pool = candidates
       .filter((c) => {
         const b = bucketForCategory(c.categoryKey)
         return b?.key === bucket.bucketKey
       })
-      // 2026-09-12：グルメ・スイーツ枠は SWEETS を最優先カテゴリーとする（マロン指示）。
-      // 同枠内では SWEETS 分類の候補を FOOD/CAFE/GIFT より先に検討し、その中で scoreTotal 降順。
-      .sort((a, b) => {
-        if (bucket.bucketKey === 'FOOD_SWEETS') {
-          const aSweets = a.categoryKey === 'SWEETS' ? 1 : 0
-          const bSweets = b.categoryKey === 'SWEETS' ? 1 : 0
-          if (aSweets !== bSweets) return bSweets - aSweets
-        }
-        return b.scoreTotal - a.scoreTotal
-      })
+      .sort((a, b) => b.scoreTotal - a.scoreTotal)
 
     if (pool.length === 0) {
       bucket.reasonIfEmpty = `該当なし：${coreBucket.label}に分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。`
@@ -323,7 +319,8 @@ export function buildMorningBrief(
 
   const pickedDcIds = buckets.filter((b) => b.pick).map((b) => b.pick!.dcId)
   if (concentratedUsed >= 2) warnings.push('GINZA SIX／三越／松屋 系が2枠以上を占めています。追加収集で分散してください。')
-  if (pickedDcIds.length < 3) warnings.push(`本日確定できたのは ${pickedDcIds.length}／3 領域。残りは「該当なし」として報告（推測で埋めない）。`)
+  if (pickedDcIds.length < CORE_DAILY_BUCKETS.length)
+    warnings.push(`本日確定できたのは ${pickedDcIds.length}／${CORE_DAILY_BUCKETS.length} 領域。残りは「該当なし」として報告（推測で埋めない）。`)
 
   return { buckets, pickedDcIds, warnings, filledCount: pickedDcIds.length }
 }

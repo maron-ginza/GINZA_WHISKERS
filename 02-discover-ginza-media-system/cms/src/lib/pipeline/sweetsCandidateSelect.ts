@@ -95,7 +95,7 @@ export function classifySweetsSourceFacilityType(sourceName: string | null | und
   if (!s) return null
   if (/千疋屋|ウエスト|WEST|HIGASHIYA|ブールミッシュ|BOUL'?MICH/i.test(s)) return '銀座の路面洋菓子店'
   if (/とらや|TORAYA|木村家|木村屋|若菜/i.test(s)) return '和菓子店'
-  if (/あけぼの|菊廼舎|空也/i.test(s)) return '老舗菓子店'
+  if (/あけぼの|菊廼舎|空也|木挽町よしや|清月堂|凮月堂|源吉兆庵|松﨑煎餅|松崎煎餅/i.test(s)) return '老舗菓子店'
   if (/帝国ホテル|ホテル|HOTEL/i.test(s)) return 'ホテルの公式スイーツ情報'
   if (/資生堂パーラー|カフェ|喫茶|パーラー|CAFE|コージーコーナー/i.test(s)) return '喫茶店・カフェの公式情報'
   if (/三越|松屋銀座|百貨店/i.test(s)) return '百貨店の食品・催事公式情報'

@@ -139,6 +139,7 @@ const cases: CheckCase[] = [
         'kabukiza', 'aida-mitsuo-museum', 'kyobunkwan-ginza', 'gekkoso-ginza', 'ginza-motoji',
         'shiseido-parlour-ginza', 'ginza-sembikiya', 'cafe-paulista-ginza', 'ginza-kikunoya',
         'ginza-kimuraya-sohonten', 'shiseido-the-store-ginza', 'boulmich-ginza',
+        'kobikicho-yoshiya', 'matsuzaki-senbei-ginza',
       ])
       for (const s of SOURCE_LEDGER_SEED_DATA) {
         const single = isSingleGinzaVenueSource(s.name, s.url)

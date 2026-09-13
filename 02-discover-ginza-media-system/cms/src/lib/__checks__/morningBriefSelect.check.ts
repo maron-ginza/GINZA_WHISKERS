@@ -37,23 +37,29 @@ function cand(over: Partial<BriefCandidateInput>): BriefCandidateInput {
 
 const cases: CheckCase[] = [
   {
-    name: '3領域 各1本：BEAUTY / FOOD / ART で1本ずつ選ばれる',
+    // 2026-09-13：3領域→4領域（①スイーツ・和菓子②グルメ③ビューティー④文化・アート）へ改訂。
+    name: '4領域 各1本：SWEETS_WAGASHI / GOURMET / BEAUTY / CULTURE_ART で1本ずつ選ばれる',
     fn: () => {
       const inp = [
+        cand({ dcId: 9, categoryKey: 'SWEETS', facilityKey: 'f0', facilityLabel: '和菓子店', scoreTotal: 0.6 }),
         cand({ dcId: 10, categoryKey: 'BEAUTY', facilityKey: 'f1', facilityLabel: '資生堂', scoreTotal: 0.9 }),
         cand({ dcId: 11, categoryKey: 'CAFE', facilityKey: 'f2', facilityLabel: '歌舞伎座', scoreTotal: 0.8 }),
         cand({ dcId: 12, categoryKey: 'ART', facilityKey: 'f3', facilityLabel: '画廊', scoreTotal: 0.7 }),
         cand({ dcId: 13, categoryKey: 'SHOPPING', facilityKey: 'f4', facilityLabel: 'その他', scoreTotal: 1.0 }),
       ]
       const r = buildMorningBrief(inp)
-      assert(r.filledCount === 3, `filled: ${r.filledCount}`)
+      assert(r.filledCount === 4, `filled: ${r.filledCount}`)
       const byBucket = Object.fromEntries(r.buckets.map((b) => [b.bucketKey, b.pick?.dcId ?? null]))
+      assert(byBucket.SWEETS_WAGASHI === 9, `SWEETS: ${byBucket.SWEETS_WAGASHI}`)
       assert(byBucket.BEAUTY === 10, `BEAUTY: ${byBucket.BEAUTY}`)
-      assert(byBucket.FOOD_SWEETS === 11, `FOOD: ${byBucket.FOOD_SWEETS}`)
+      assert(byBucket.GOURMET === 11, `GOURMET: ${byBucket.GOURMET}`)
       assert(byBucket.CULTURE_ART === 12, `ART: ${byBucket.CULTURE_ART}`)
-      assert(r.pickedDcIds.length === 3, 'pickedDcIds 3')
-      // SHOPPING(#13) はコア3領域外なので選ばれない
-      assert(!r.pickedDcIds.includes(13), 'コア3外は選ばない')
+      assert(r.pickedDcIds.length === 4, 'pickedDcIds 4')
+      // SHOPPING(#13) はコア4領域外なので選ばれない
+      assert(!r.pickedDcIds.includes(13), 'コア4外は選ばない')
+      // バケット優先順位：スイーツ・和菓子が最初に並ぶ
+      assert(r.buckets[0].bucketKey === 'SWEETS_WAGASHI', `最優先バケット: ${r.buckets[0].bucketKey}`)
+      assert(r.buckets[1].bucketKey === 'GOURMET', `第2優先バケット: ${r.buckets[1].bucketKey}`)
     },
   },
   {
@@ -66,7 +72,7 @@ const cases: CheckCase[] = [
       assert(beauty.pick === null, 'BEAUTY pick null')
       assert(!!beauty.reasonIfEmpty && /該当なし/.test(beauty.reasonIfEmpty), `理由: ${beauty.reasonIfEmpty}`)
       assert(r.filledCount === 1, `filled: ${r.filledCount}`)
-      assert(r.warnings.some((w) => /1／3/.test(w)), '3未満の警告')
+      assert(r.warnings.some((w) => /1／4/.test(w)), '4未満の警告')
     },
   },
   {
@@ -87,16 +93,21 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '施設集中回避：同一施設は2枠に跨がせない／GINZA SIX が既に1枠なら次点',
+    // 2026-09-13：バケット優先順位が SWEETS_WAGASHI→GOURMET→BEAUTY→CULTURE_ART に
+    // 改訂されたため、GOURMET が BEAUTY より先に施設を確保する（優先順位どおり）。
+    // 同一施設は2枠に跨がせない、という制約自体は維持されることを確認する。
+    name: '施設集中回避：同一施設は2枠に跨がせない（優先順位の高いGOURMETが先にGINZA SIXを確保→BEAUTYは他施設へ）',
     fn: () => {
       const r = buildMorningBrief([
         cand({ dcId: 40, categoryKey: 'BEAUTY', facilityKey: 'ginza-six', facilityLabel: 'GINZA SIX', sourceName: 'GINZA SIX', scoreTotal: 1.0 }),
+        cand({ dcId: 43, categoryKey: 'BEAUTY', facilityKey: 'wako', facilityLabel: '和光', sourceName: '和光', scoreTotal: 0.5 }),
         cand({ dcId: 41, categoryKey: 'CAFE', facilityKey: 'ginza-six', facilityLabel: 'GINZA SIX', sourceName: 'GINZA SIX', scoreTotal: 1.0 }),
-        cand({ dcId: 42, categoryKey: 'CAFE', facilityKey: 'kabukiza', facilityLabel: '歌舞伎座', sourceName: '歌舞伎座', scoreTotal: 0.3 }),
       ])
-      const food = r.buckets.find((b) => b.bucketKey === 'FOOD_SWEETS')!
-      assert(food.pick?.dcId === 42, `FOOD pick: ${food.pick?.dcId}（GINZA SIX 連続を避け歌舞伎座へ）`)
-      assert(food.considered.some((c) => c.dcId === 41 && /(施設|GINZA SIX)/.test(c.skipped)), '#41 を集中回避で除外記録')
+      const gourmet = r.buckets.find((b) => b.bucketKey === 'GOURMET')!
+      const beauty = r.buckets.find((b) => b.bucketKey === 'BEAUTY')!
+      assert(gourmet.pick?.dcId === 41, `GOURMET pick: ${gourmet.pick?.dcId}（優先順位が高くGINZA SIXを先取り）`)
+      assert(beauty.pick?.dcId === 43, `BEAUTY pick: ${beauty.pick?.dcId}（GINZA SIXは既にGOURMETが使用済みのため和光へ）`)
+      assert(beauty.considered.some((c) => c.dcId === 40 && /施設/.test(c.skipped)), '#40 を施設重複で除外記録')
     },
   },
   {
@@ -190,7 +201,11 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '2026-09-12：グルメ・スイーツ枠はSWEETSをFOOD/CAFE/GIFTより優先する（スコアが低くても）',
+    // 2026-09-13：SWEETS専用バケット（SWEETS_WAGASHI）を新設したため、旧テスト
+    // 「グルメ・スイーツ枠内でSWEETSを優先する」は前提が無くなった（SWEETSはFOOD/CAFEと
+    // 同じバケットに入らない）。代わりに、SWEETSとFOOD/CAFEがそれぞれ独立のバケットへ
+    // 正しく振り分けられることを確認する。
+    name: '2026-09-13：SWEETSはSWEETS_WAGASHI、FOODはGOURMETへ、それぞれ独立に振り分けられる',
     fn: () => {
       const list: BriefCandidateInput[] = [
         cand({ dcId: 10, categoryKey: 'FOOD', facilityKey: 'fac-food', facilityLabel: '食品店', scoreTotal: 0.9 }),
@@ -198,8 +213,10 @@ const cases: CheckCase[] = [
         cand({ dcId: 12, categoryKey: 'ART', facilityKey: 'fac-art', facilityLabel: 'ギャラリー', scoreTotal: 0.8 }),
       ]
       const r = buildMorningBrief(list)
-      const gourmet = r.buckets.find((b) => b.bucketKey === 'FOOD_SWEETS')!
-      assert(gourmet.pick?.dcId === 11, `スコアが低くてもSWEETS(#11)が選ばれるべき（実際: #${gourmet.pick?.dcId}）`)
+      const sweets = r.buckets.find((b) => b.bucketKey === 'SWEETS_WAGASHI')!
+      const gourmet = r.buckets.find((b) => b.bucketKey === 'GOURMET')!
+      assert(sweets.pick?.dcId === 11, `SWEETS_WAGASHIはSWEETS(#11)を選ぶべき（実際: #${sweets.pick?.dcId}）`)
+      assert(gourmet.pick?.dcId === 10, `GOURMETはFOOD(#10)を選ぶべき（実際: #${gourmet.pick?.dcId}）`)
     },
   },
 ]

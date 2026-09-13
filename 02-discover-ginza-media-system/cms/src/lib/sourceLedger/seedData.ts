@@ -19,7 +19,9 @@ import type { SourceLedgerEntry } from './types'
 // 判定する設計のため、これら全国複数店舗ブランドが誤って単独施設と判定される実バグを
 // 誘発していた（発見・修正は同日）。`name`から百貨店名を除去し出店先情報は`notes`のみに
 // 記載する形へ改めた。今後、複数店舗ブランドの`name`に他の単独施設名を含めないこと。
-// 合計46件。urlは初期14件についてはWebSearchで
+// ＋2026-09-13追加：銀茶会2025参加和菓子店のうち未登録5件（木挽町よしや／清月堂本店／
+// 東京凮月堂銀座／宗家源吉兆庵／銀座松﨑煎餅）。
+// 合計51件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -924,5 +926,110 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       '案内が中心で「今紹介する理由」のある記事は少ないとWebFetchで確認' +
       '（2026-09-12）。SWEETS候補の主戦力としては期待しない前提で、デパ地下' +
       'ブランドの母数として参考登録のみ行う（reliability=low）。',
+  },
+  // 2026-09-13（マロン指示「本日の朝刊実運用、銀茶会オリジナル和菓子13店を優先調査」）：
+  // 銀茶会（ginchakai.ginza.jp、銀座通連合会主催）は毎年秋に開催され、参加和菓子店が
+  // オリジナル和菓子を提供する。2026年（第24回）は準備中で未公開だったため、直近の
+  // 実績（2025年＝第23回、WebFetchで実地確認）の参加12店舗のうち、既存SOURCE_LEDGER
+  // 未登録の5件をここに追加する（既登録：HIGASHIYA GINZA・とらや・銀座あけぼの・
+  // 銀座ウエスト・銀座菊廼舎・空也）。住所はいずれも銀茶会公式サイト掲載の
+  // 「銀座N-N-N」表記で確認済み（notesに記載）。
+  {
+    id: 'kobikicho-yoshiya',
+    name: '木挽町よしや',
+    url: 'https://kobikichoyoshiya.com/news/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀茶会2025参加店（WebFetchでginchakai.ginza.jp/2025/chaseki/wagashi.htmlの' +
+      '参加店一覧を実地確認、住所「銀座3-12-9」掲載）。歌舞伎座裏、創業102年・' +
+      '銀座で一番小さいと称される和菓子店。WebSearchで他店舗の存在は確認できず、' +
+      '単独立地として扱う（facilityKey・ginzaRelevance双方の単独施設に追加）。',
+  },
+  {
+    id: 'seigetsudo-honten',
+    name: '清月堂本店',
+    url: 'https://www.seigetsudo-honten.co.jp/archives/category/season_wagashi',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀茶会2025参加店（住所「銀座7-16-15」）。本店は銀座だが、WebSearchで' +
+      '松屋銀座B1F・京王百貨店新宿店・横浜高島屋・上野松坂屋にも菓子売店/喫茶を' +
+      '確認したため単独施設としては扱わない（facilityKeyには追加しない）。' +
+      '銀座本店明記のある記事のみ採用する。「季節の和菓子」カテゴリページを' +
+      'URLに採用（news一覧より新規性シグナルとの親和性が高いため）。',
+  },
+  {
+    id: 'tokyo-fugetsudo-ginza',
+    name: '東京凮月堂銀座',
+    url: 'https://www.tokyo-fugetsudo.jp/news',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀茶会2025参加店（住所「銀座2-6-8」）。自社サイトは「東京凮月堂銀座」を' +
+      '名乗るが、会社概要ページ（WebFetch確認）に「有名百貨店、駅ビル、他銘店街」' +
+      'での販売の記載があり、全国の百貨店・駅ビル（大宮ルミネ・蒲田東急プラザ等）' +
+      'にも出店していることをWebSearchで確認したため単独施設としては扱わない。' +
+      '銀座本店明記のある記事のみ採用する。「銀座凮月堂」（ginza-fugetsudo.co.jp）' +
+      'は別法人のため混同しないこと。',
+  },
+  {
+    id: 'kitchoan',
+    name: '宗家源吉兆庵',
+    url: 'https://www.kitchoan.co.jp/news/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀茶会2025参加店（住所「銀座6-9-8」＝銀座本店）。全国に多数店舗を持つ' +
+      'ナショナルブランドのためfacilityKeyには追加せず、銀座本店明記のある' +
+      '記事のみ採用する。',
+  },
+  {
+    id: 'matsuzaki-senbei-ginza',
+    name: '銀座 松﨑煎餅',
+    url: 'https://matsuzaki-senbei.com/',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      '銀茶会2025参加店（住所「銀座5-6-9」）。創業1804年、「大江戸菓子匠」を' +
+      '名乗る煎餅の老舗。WebSearchで他店舗の存在は確認できず単独立地として扱う' +
+      '（facilityKey・ginzaRelevance双方の単独施設に追加）。サイト内に明確な' +
+      'news一覧ページが見つからずreliability=medium・URLは暫定でトップページ、' +
+      'sitemap/RSS探索（Discovery層）での補完に期待する。',
   },
 ]

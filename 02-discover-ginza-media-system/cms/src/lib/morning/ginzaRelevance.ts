@@ -136,7 +136,7 @@ export function hasMeaningfulTitle(title?: string | null, venue?: string | null,
 // 銀座関連とみなしてよい」ことは別の問いであり、後者は個別に実在確認できたものだけを
 // 載せる（2026-09-12、ブールミッシュ追加時にこの2つを混同しかけたため明文化）。
 const SINGLE_GINZA_VENUE_RE =
-  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp|ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp/i
+  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp|ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp|木挽町よしや|kobikichoyoshiya|松﨑煎餅|松崎煎餅|matsuzaki-senbei/i
 
 /** 情報源名（＋任意で公式URL）から「銀座の単独施設か」を判定する */
 export function isSingleGinzaVenueSource(sourceName?: string | null, sourceUrl?: string | null): boolean {

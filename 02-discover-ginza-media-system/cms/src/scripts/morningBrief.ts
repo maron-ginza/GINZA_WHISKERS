@@ -1,9 +1,10 @@
-// GINZA WHISKERS / Project 02（2026-09-11）— 朝刊ブリーフ（1画面・読み取り専用）。
+// GINZA WHISKERS / Project 02（2026-09-11、2026-09-13改訂）— 朝刊ブリーフ（1画面・読み取り専用）。
 //
 //   ./p2 morning-brief [--limit=N] [--json]
 //
-// 本日の公開候補を「①ビューティー ②グルメ（スイーツ含む）③文化・アート」各1本で選び、
-// 候補要約・必須 ArticleFacts（12項目）・公式出典 を1画面へまとめる。
+// 本日の公開候補を「①スイーツ・和菓子 ②グルメ ③ビューティー ④文化・アート」各1本で選び、
+// 候補要約・必須 ArticleFacts（12項目）・公式出典 を1画面へまとめる（優先順位・バケット
+// 定義は dailySelectionSupport.ts の CORE_DAILY_BUCKETS を正とする）。
 // マロンの操作は「承認／保留／却下」の1回だけ（末尾の admin URL）。
 //
 // **DB 書き込み・AI 呼び出し・課金・approve・note/Chrome 操作は一切しない。**
@@ -38,7 +39,16 @@ const limArg = argv.find((a) => a.startsWith('--limit='))
 // ウィンドウから漏れる（実データで確認：limit=200では新規ブランド由来候補が
 // ウィンドウ外、limit=500では評価対象に入りSWEETS生候補19件を検出）。実行コストは
 // DB読み取りのみ（AI呼び出しなし）で400件でも実測1.5秒台のため、既定値を引き上げる。
-const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 400) : 400
+// 既定400→1000（2026-09-13、朝刊実運用開始日に発見・修正）：スウィーツ公式情報
+// Discovery層の稼働でinbox/approvedプールの規模が続けて増え続けており
+// （実測：2026-09-13時点で1150件、うち559件がDC#388〈9/9に最後に変化・現在も
+// 開催期間内で有効〉よりlastChangedAtが新しい）、limit=400では文化・アート等の
+// 有効な既存候補まで評価ウィンドウから漏れ始めていることを実データで確認した。
+// assessInboxPool側の上限（1000）まで引き上げる。DB読み取りのみでAI呼び出しは
+// 無いため実行コストへの影響は小さい（実測：400件で数秒、1000件でも同オーダー）。
+// 1000件を超えてなお漏れが再発する場合は、件数上限ではなく状態ベース
+// （承諾前プール全件評価等）への設計変更を検討する。
+const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 1000) : 1000
 const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
 
 async function main() {
@@ -321,7 +331,7 @@ async function main() {
   }
   L('')
   L('────────────────────────────────────────────')
-  L(`■ 本日の確定: ${brief.filledCount}／3 領域`)
+  L(`■ 本日の確定: ${brief.filledCount}／${brief.buckets.length} 領域`)
   for (const w of brief.warnings) L(`   ⚠ ${w}`)
   L('')
   L('■ マロンの操作は次の1回だけ（承認／保留／却下）')

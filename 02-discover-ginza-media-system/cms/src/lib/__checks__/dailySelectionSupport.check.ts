@@ -23,29 +23,38 @@ const codes = (fs: { code: string }[]) => fs.map((f) => f.code)
 
 const cases: CheckCase[] = [
   {
-    name: 'コア3バケット定義：ビューティー／グルメ・スイーツ／文化・アート、カテゴリー→バケット',
+    // 2026-09-13：朝刊実運用開始にあたりマロン指示で3領域→4領域へ改訂
+    // （①スイーツ・和菓子②グルメ③ビューティー④文化・アート、この優先順位）。
+    name: 'コア4バケット定義：スイーツ・和菓子／グルメ／ビューティー／文化・アート、カテゴリー→バケット',
     fn: () => {
-      assert(CORE_DAILY_BUCKETS.length === 3, `バケット数: ${CORE_DAILY_BUCKETS.length}`)
-      assert(CORE_DAILY_BUCKETS.map((b) => b.label).join(',') === 'ビューティー,グルメ・スイーツ,文化・アート', 'ラベル')
+      assert(CORE_DAILY_BUCKETS.length === 4, `バケット数: ${CORE_DAILY_BUCKETS.length}`)
+      assert(
+        CORE_DAILY_BUCKETS.map((b) => b.label).join(',') === 'スイーツ・和菓子,グルメ,ビューティー,文化・アート',
+        `ラベル・優先順位: ${CORE_DAILY_BUCKETS.map((b) => b.label).join(',')}`,
+      )
+      assert(bucketForCategory('SWEETS')?.key === 'SWEETS_WAGASHI', 'SWEETS→スイーツ・和菓子')
       assert(bucketForCategory('BEAUTY')?.key === 'BEAUTY', 'BEAUTY→ビューティー')
-      assert(bucketForCategory('CAFE')?.key === 'FOOD_SWEETS', 'CAFE→グルメ・スイーツ')
+      assert(bucketForCategory('CAFE')?.key === 'GOURMET', 'CAFE→グルメ')
+      assert(bucketForCategory('FOOD')?.key === 'GOURMET', 'FOOD→グルメ')
       assert(bucketForCategory('ART')?.key === 'CULTURE_ART', 'ART→文化・アート')
       assert(bucketForCategory('EVENT')?.key === 'CULTURE_ART', 'EVENT→文化・アート')
-      assert(bucketForCategory('SHOPPING') === null, 'SHOPPING はコア3外')
+      assert(bucketForCategory('SHOPPING') === null, 'SHOPPING はコア4外')
       assert(bucketForCategory('未確定') === null && bucketForCategory(null) === null, '未確定/null は null')
     },
   },
   {
-    name: 'assessCoreDailyFulfillment：3カテゴリー各1で allFilled、欠けたら未充足＋uncategorized',
+    name: 'assessCoreDailyFulfillment：4カテゴリー各1で allFilled、欠けたら未充足＋uncategorized',
     fn: () => {
       const full = assessCoreDailyFulfillment([
         { dcId: 1, title: '新作リップ', categoryKey: 'BEAUTY' },
+        { dcId: 5, title: '栗の練り切り', categoryKey: 'SWEETS' },
         { dcId: 2, title: '秋のパフェ', categoryKey: 'CAFE' },
         { dcId: 3, title: '更紗展', categoryKey: 'ART' },
         { dcId: 4, title: 'デニムPOPUP', categoryKey: 'SHOPPING' },
       ])
-      assert(full.allFilled, '3カテゴリー充足で allFilled')
-      assert(full.buckets.find((b) => b.key === 'FOOD_SWEETS')!.have === 1, 'CAFE が グルメ・スイーツ に入る')
+      assert(full.allFilled, '4カテゴリー充足で allFilled')
+      assert(full.buckets.find((b) => b.key === 'SWEETS_WAGASHI')!.have === 1, 'SWEETS が スイーツ・和菓子 に入る')
+      assert(full.buckets.find((b) => b.key === 'GOURMET')!.have === 1, 'CAFE が グルメ に入る')
       assert(full.uncategorized.length === 1 && full.uncategorized[0].dcId === 4, 'SHOPPING は uncategorized')
 
       const partial = assessCoreDailyFulfillment([
