@@ -328,13 +328,19 @@ async function main() {
           // これまで受信していたが診断ログへ記録していなかったため、サムネイル
           // UIの実構造が一度も確認できていなかった。次回失敗時に原因特定できる
           // よう、debugペイロードを別イベントとして必ず記録する。
-          if (body.status === 'failure' && body.debug) {
+          // 2026-09-14続き23：status='success'（ハッシュタグ・保存は成功したが
+          // 画像トリガーが編集画面で見つからなかった場合）でも、
+          // iconResult.debugにdom_snapshotが入っていれば同様に記録する——
+          // 画像以外が成功してしまいfailure経路が発火しないケースでも
+          // 画像UIの実構造を確認できるようにする。
+          const debugPayload = body.debug ?? body.iconDebug
+          if (debugPayload) {
             appendDiagnosticLog({
               source: 'server',
               event: 'result_debug_snapshot',
               articleId,
               mode: body.mode,
-              debug: body.debug,
+              debug: debugPayload,
             })
           }
           const state = loadState()

@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br12-2026-09-14-imageasset-sha256-preview'
+const BUILD_REVISION = 'br13-2026-09-14-editor-image-button-noreload'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -180,8 +180,12 @@ async function findOrOpenNoteEditorTab(preferredUrl) {
       // preferredUrlを直接開く——別記事のタブを誤って使わない。
       const exact = candidates.find((t) => t.url === preferredUrl)
       if (exact) {
-        await chrome.tabs.reload(exact.id)
-        logToServer('existing_tab_reloaded', { tabId: exact.id, url: exact.url, matchedPreferredUrl: true })
+        // 2026-09-14続き23（マロン指示）：completion-onlyジョブでは
+        // tabs.reloadを禁止する——注入経路が chrome.scripting.executeScript
+        // （現在のDOM状態へ直接注入）である以上、reloadによる再ナビゲーション
+        // は不要かつ有害（reload直後のDOM未確定状態でのタイムアウトが実機で
+        // 繰り返し観測された）。既存タブをそのままの状態で再利用する。
+        logToServer('existing_tab_reused_no_reload', { tabId: exact.id, url: exact.url, matchedPreferredUrl: true })
         return exact
       }
       logToServer('preferred_url_tab_not_found_opening_directly', { preferredUrl, otherCandidateUrls: candidates.map((t) => t.url) })
@@ -661,57 +665,25 @@ function injectedNoteTransfer(item) {
       log('content_hash_before', { titleHash: titleHashBefore.slice(0, 12), bodyHash: bodyHashBefore.slice(0, 12) })
     }
 
-    // --- ハッシュタグ・カテゴリー画像 ---
-    // 2026-09-14続き6：まず現在の画面（編集画面）で単純探索・reveal-clickを
-    // 試す。見つからなければ「公開に進む」で公開設定画面へ遷移し（設定画面
-    // への遷移としてのみ許可、最終公開ボタンは絶対に押さない）、そちらで
-    // 再探索する。
-    let { input: hashtagInput, revealed: hashtagRevealed, triggerFound: hashtagTriggerFound, triggerLabel: hashtagTriggerLabel } =
-      await revealAndFindHashtagInput()
+    // 2026-09-14続き23（マロン確定事実・処理順の変更）：
+    // 「公開設定画面にはfile inputも画像トリガーも存在しない」「note編集画面
+    // 上部には『画像＋』の追加ボタンが存在する」ことが実機で確定した。これを
+    // 受け、新しい処理順は ①画像（編集画面のみで完結、設定画面には進まない）
+    // →②下書き保存→③必要な場合だけ設定画面でハッシュタグを確認→④キャン
+    // セルで編集画面へ戻る、とする（従来の「見つからなければ設定画面へ
+    // フォールバックする」という画像側の推測探索は廃止した）。
+
+    // --- ① カテゴリー画像（編集画面上部の「画像＋」ボタンのみを対象とする） ---
     let { fi: fileInput, revealed: iconRevealed, triggerFound: iconTriggerFound, triggerLabel: iconTriggerLabel } =
       await revealAndFindFileInput()
-
-    let navigatedToSettings = false
-    if (!hashtagInput || !fileInput) {
-      const proceedBtn = findProceedToPublishButton()
-      if (proceedBtn) {
-        log('proceed_to_settings_click', { text: visibleText(proceedBtn) })
-        clickElement(proceedBtn)
-        navigatedToSettings = true
-        await waitFor(() => findHashtagInput() || deepQuerySelectorAll('input[type="file"]').length > 0, 8000)
-        await sleep(500)
-        log('settings_screen_snapshot', domDebugSnapshot())
-        if (!hashtagInput) {
-          const r = await revealAndFindHashtagInput()
-          hashtagInput = r.input
-          hashtagRevealed = r.revealed
-          hashtagTriggerFound = r.triggerFound
-          hashtagTriggerLabel = r.triggerLabel
-        }
-        if (!fileInput) {
-          const r2 = await revealAndFindFileInput()
-          fileInput = r2.fi
-          iconRevealed = r2.revealed
-          iconTriggerFound = r2.triggerFound
-          iconTriggerLabel = r2.triggerLabel
-        }
-      } else {
-        log('proceed_to_settings_not_found', {})
-      }
+    // マロン指示：「編集画面で画像ボタンを特定できなければ、その時点の
+    // dom_snapshotを必ず保存し、推測で別画面を探さない」——設定画面への
+    // フォールバックは行わず、この時点のDOM状態を診断用に保存するのみ。
+    let imageNotFoundSnapshot = null
+    if (!fileInput) {
+      imageNotFoundSnapshot = domDebugSnapshot()
+      log('image_trigger_not_found_on_editor', imageNotFoundSnapshot)
     }
-
-    let hashtagResult
-    if (hashtagInput) {
-      hashtagResult = { attempted: true, revealed: hashtagRevealed, triggerLabel: hashtagTriggerLabel, navigatedToSettings }
-      for (const tag of item.hashtags || []) {
-        setNativeValue(hashtagInput, tag.replace(/^#/, ''))
-        pressEnter(hashtagInput)
-        await sleep(200)
-      }
-    } else {
-      hashtagResult = { attempted: false, revealed: false, triggerFound: hashtagTriggerFound === true, navigatedToSettings }
-    }
-    log('hashtags_done', hashtagResult)
 
     // 2026-09-14続き11（マロン指示）：画像ファイルは
     // {url, fileName, mimeType, sha256} が「すべて」揃っている場合のみ実在する
@@ -731,8 +703,8 @@ function injectedNoteTransfer(item) {
     } else if (!fileInput) {
       iconResult = {
         attached: false,
-        reason: iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
-        navigatedToSettings,
+        reason: iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった（編集画面上）' : '編集画面上に画像トリガー（「画像を追加」等）が見つからない',
+        debug: imageNotFoundSnapshot,
       }
     } else {
       try {
@@ -742,7 +714,7 @@ function injectedNoteTransfer(item) {
         const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
         log('image_sha256_verify', { expected: img.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === img.sha256 })
         if (actualSha256 !== img.sha256) {
-          iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）`, navigatedToSettings }
+          iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）` }
         } else {
           const blob = new Blob([buf], { type: img.mimeType })
           const file = new File([blob], img.fileName, { type: img.mimeType })
@@ -774,61 +746,73 @@ function injectedNoteTransfer(item) {
             reason: previewAppeared ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
             revealed: iconRevealed,
             triggerLabel: iconTriggerLabel,
-            navigatedToSettings,
             fileName: img.fileName,
             sha256Verified: true,
           }
         }
       } catch (e) {
-        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed, navigatedToSettings }
+        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed }
       }
     }
     log('icon_attach_done', iconResult)
     await sleep(300)
 
-    // --- 読み戻し検証（マロン指示：「完了後、DOMからハッシュタグ4個と画像設定
-    // 状態を読み戻し」） ---
-    const expectedTagsNoHash = (item.hashtags || []).map((t) => t.replace(/^#/, ''))
-    const appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
-    const iconApplied = checkIconApplied(iconResult.fileName)
-    log('hashtag_icon_readback', { appliedTagCount, expectedTagCount: expectedTagsNoHash.length, iconApplied })
-
-    // --- 下書き保存（設定画面にいる場合はまずこの画面で探し、無ければ
-    // 「キャンセル」ボタンで編集画面へ戻ってから探す。「公開する」等の
-    // 最終公開ボタンには一切触れない） ---
-    // 2026-09-14続き10：実機ログで「公開に進む」がモーダルではなく実際の
-    // ページ遷移（URLが/publish/へ変わる）であり、Escapeキーでは戻れないと
-    // 判明した。設定画面には「キャンセル」ボタンが実在するため、まずこれを
-    // 使う（Escapeはそれでも見つからない場合の保険として残す）。
+    // --- ② 下書き保存（編集画面上で直接。画像操作は編集画面で完結して
+    // いるため、ここで公開設定画面へ進む必要は無い） ---
     let saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
-    if (!saveBtn && navigatedToSettings) {
-      const cancelBtn = findCancelButton()
-      if (cancelBtn) {
-        log('cancel_button_click', { text: visibleText(cancelBtn) })
-        clickElement(cancelBtn)
-        await sleep(800)
-      } else {
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
-        await sleep(500)
-      }
-      saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
-      log('back_to_editor_attempted', { usedCancelButton: !!cancelBtn, saveBtnFoundAfter: !!saveBtn })
-    }
     if (!saveBtn) {
       return {
         status: 'failure',
         error: 'stage=save_button_not_found: 「下書き保存」ボタンが見つかりません（公開ボタンは対象外のため誤操作はしていません）',
         debug: domDebugSnapshot(),
-        hashtagResult,
         iconResult,
-        appliedTagCount,
-        iconApplied,
         stages,
       }
     }
-    log('save_button_found', { text: visibleText(saveBtn) })
+    log('save_button_found', { text: visibleText(saveBtn), stage: 'editor' })
     clickElement(saveBtn)
     await sleep(2000)
+
+    // --- ③ ハッシュタグの確認（既に保存済みのはず。編集画面上で確認できな
+    // ければ「確認のためだけに」公開設定画面へ進む——画像のためには一切
+    // 進まない。再入力はせず、既存の反映状況を読み取るのみ） ---
+    const expectedTagsNoHash = (item.hashtags || []).map((t) => t.replace(/^#/, ''))
+    let appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
+    let navigatedToSettings = false
+    let hashtagResult = { checkedOn: 'editor', appliedTagCount, expectedCount: expectedTagsNoHash.length }
+
+    if (appliedTagCount < expectedTagsNoHash.length && expectedTagsNoHash.length > 0) {
+      const proceedBtn = findProceedToPublishButton()
+      if (proceedBtn) {
+        log('proceed_to_settings_for_hashtag_check', { text: visibleText(proceedBtn) })
+        clickElement(proceedBtn)
+        navigatedToSettings = true
+        await waitFor(() => countAppliedHashtags(expectedTagsNoHash) > 0 || findHashtagInput() !== null, 8000)
+        await sleep(500)
+        log('settings_screen_snapshot', domDebugSnapshot())
+        appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
+        hashtagResult = { checkedOn: 'settings', appliedTagCount, expectedCount: expectedTagsNoHash.length }
+        log('hashtags_verified', hashtagResult)
+
+        // --- ④ キャンセル経由で編集画面へ戻る（最終公開には一切触れない） ---
+        const cancelBtn = findCancelButton()
+        if (cancelBtn) {
+          log('cancel_button_click', { text: visibleText(cancelBtn) })
+          clickElement(cancelBtn)
+          await sleep(800)
+        } else {
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+          await sleep(500)
+        }
+      } else {
+        log('proceed_to_settings_not_found_for_hashtag_check', {})
+      }
+    } else {
+      log('hashtags_already_confirmed_on_editor', hashtagResult)
+    }
+
+    const iconApplied = checkIconApplied(iconResult.fileName)
+    log('hashtag_icon_readback', { appliedTagCount, expectedTagCount: expectedTagsNoHash.length, iconApplied })
 
     if (mode === 'full') {
       const finalTitle = readBackText(titleField)
@@ -941,11 +925,17 @@ async function runTransferViaExecuteScript(tabId, item) {
       logToServer(s.event, { ...s.detail, tabId, via: 'executeScript' })
     }
     if (result.status === 'success') {
+      // 2026-09-14続き23：statusがsuccessでも画像トリガーが編集画面で
+      // 見つからなかった場合は iconResult.debug にdom_snapshotが入っている
+      // ——success応答でも握りつぶさずサーバーへ転送し、診断できるようにする
+      // （画像以外は成功してしまい失敗経路のdebug送信が一度も発火しなかった
+      // 実機での反省を踏まえた対応）。
       await reportResult(item.articleId, 'success', {
         draftUrl: result.draftUrl,
         mode: item.mode,
         hashtagsDone: result.hashtagsDone,
         iconDone: result.iconDone,
+        iconDebug: result.iconResult?.debug ?? null,
       })
     } else {
       await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug, mode: item.mode })

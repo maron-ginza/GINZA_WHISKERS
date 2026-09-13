@@ -14,6 +14,118 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き23（🎯 **note下書き自動転記——マロン確定の実機事実
+    （公開設定画面にはfile inputも画像トリガーも存在しない／編集画面上部に
+    「画像＋」の追加ボタンが存在する）を受け、画像処理を編集画面上で完結
+    させる方式へ処理順を全面的に組み替え、tabs.reloadも廃止（Project 02
+    commit・push あり／DB更新なし／note公開なし。実ブラウザでの検証は
+    次回のマロン拡張再読み込み待ち）**）:
+
+    マロン指示：「残りのカテゴリー画像だけを修正してください。公開設定画面
+    にはfile inputも画像トリガーも存在しない、note編集画面上部には
+    『画像＋』の追加ボタンが存在する、という事実を踏まえ、処理順を
+    ①既存/edit/タブ1枚だけ再利用（tabs.reload禁止）②編集画面上部の画像
+    追加ボタンをDOMから特定③categoryIconのBlob/FileをDataTransferで設定
+    ④プレビュー出現・アップロード完了を読み戻す⑤下書き保存⑥必要な場合
+    だけ公開設定画面へ進み既存ハッシュタグ4個を確認⑦キャンセル経由で編集
+    画面へ戻る⑧最終公開は禁止、へ変更してください。編集画面で画像ボタンを
+    特定できなければその時点のdom_snapshotを必ず保存し、推測で別画面を
+    探さないこと。」
+
+    **対応内容**：
+
+    1. **tabs.reload廃止**（`findOrOpenNoteEditorTab`のpreferredUrl完全
+       一致分岐）：`chrome.tabs.reload(exact.id)`の呼び出しを削除し、
+       既存タブをそのままの状態で再利用する（`existing_tab_reused_no_reload`
+       ログへ変更）。注入経路が`chrome.scripting.executeScript`（現在のDOM
+       状態へ直接注入）である以上reloadは本来不要であり、続き22で確認した
+       「reload直後のDOM未確定状態でのタイムアウト」の一因になっていた
+       可能性がある。
+
+    2. **処理順の全面組み替え**（`injectedNoteTransfer`内）：
+       - ①**画像**：`revealAndFindFileInput()`を編集画面上でまず実行
+         （従来は設定画面遷移後にのみ試行していた）。見つからない場合は
+         `findProceedToPublishButton`等の設定画面遷移を一切呼ばず、その
+         時点の`domDebugSnapshot()`（`<img>`捕捉込み）を
+         `imageNotFoundSnapshot`として保存・`image_trigger_not_found_on_
+         editor`ログへ記録するのみ（推測で他画面を探さない、マロン指示の
+         直接実装）。見つかった場合は従来どおりSHA-256照合→Blob/File→
+         DataTransfer→画像調整確定→プレビュー出現の時系列差分検証（続き21
+         で実装済みのロジックはそのまま維持）。
+       - ②**下書き保存**：画像処理の直後、編集画面上で直接
+         `findSaveDraftButton()`を試みる（`dom_snapshot`で編集画面上部に
+         「下書き保存」ボタンが既に存在することを確認済み）。見つからなけ
+         れば`stage=save_button_not_found`で失敗を返す（設定画面へ遷移
+         してから探す旧ロジックは廃止——画像のために遷移しなくなった以上、
+         保存ボタン自体は最初から編集画面上に存在する）。
+       - ③**ハッシュタグの確認**：`countAppliedHashtags`をまず編集画面上で
+         実行し、`appliedTagCount < expectedTagsNoHash.length`（未反映が
+         ある場合）**のみ**`findProceedToPublishButton`で設定画面へ遷移。
+         再入力はせず、遷移後に`countAppliedHashtags`を再実行して既存の
+         反映状況を読み取るのみ（マロン指示「確認」の字義どおり、タグの
+         再送信・重複入力はしない設計にした）。
+       - ④**キャンセル経由での復帰**：設定画面へ遷移した場合のみ、続き20の
+         `findCancelButton`（「公開」を含む文言は対象外）で編集画面へ戻る
+         （Escapeはフォールバックとして維持）。
+       - **最終公開への不関与**：`findProceedToPublishButton`・
+         `PUBLISH_FINAL_RE`・「公開」除外ガードはいずれも無変更のまま
+         維持——このラウンドで新たに公開系ボタンへ触れる経路は一切追加して
+         いない。
+
+    3. **失敗時debugのsuccess応答での送信漏れを解消**：画像トリガーが見つ
+       からなくても、ハッシュタグ・保存が成功すれば全体はstatus='success'
+       で応答する（続き22までと同じ設計）。従来はfailure応答時の`debug`
+       しかサーバーへ転送しておらず、この「画像だけ失敗・他は成功」という
+       最頻出パターンでは`domDebugSnapshot`が一度も記録されない構造的な
+       盲点があった。success応答にも`iconDebug: result.iconResult?.debug`
+       を追加し、`noteTransferServer.ts`側は`body.debug ?? body.iconDebug`
+       のいずれかがあれば`result_debug_snapshot`として記録するよう修正
+       ——次回、画像トリガーが見つからなければ編集画面の実DOM構造
+       （`<img>`一覧・labeled要素一覧含む）が確実に診断ログへ残る。
+
+    4. **維持した既存の安全境界・検証ロジック**：タブ重複防止
+       （`selectNextPendingArticleId`・`claimInProgress`、続き22のstale
+       回収含む）・タイトル/本文の正規化ハッシュ前後比較
+       （`content_hash_before`/`content_hash_after`、位置は全DOM操作の
+       完了後に据え置き）・画像のSHA-256整合性検証・プレビュー出現の時系列
+       差分検証・「公開」を含むボタンへの物理的な不関与、いずれも変更なし。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.12.0`→`1.13.0`
+    へ、`BUILD_REVISION`を`br13-2026-09-14-editor-image-button-noreload`
+    へ更新した。
+
+    **回帰テスト新規6件**：①画像トリガー探索がハッシュタグの設定画面遷移
+    判定より前に実行されること（処理順の直接検証）②画像未検出時に
+    `domDebugSnapshot`を保存し`findProceedToPublishButton`を呼ばない
+    こと（推測探索の再発防止）③ハッシュタグの設定画面遷移が
+    `appliedTagCount`不足時のみ行われること④下書き保存が画像処理の直後・
+    ハッシュタグ確認より前に位置すること⑤`preferredUrl`完全一致タブの
+    再利用で`chrome.tabs.reload`が呼ばれないこと（tabs.reload禁止の直接
+    検証）⑥success応答でも`iconDebug`がサーバーへ転送され
+    `result_debug_snapshot`として記録されること。`run-all.ts`
+    **601 passed 0 failed**（595→601）。`tsc --noEmit`0エラー、
+    `node -c background.js`・`manifest.json`妥当性を確認。
+
+    **state再アーム**：新しい処理順は続き20〜22までの「設定画面優先」
+    アプローチとは根本的に異なるため、`completionAttempts`を0へリセット
+    （新しいコードパスに対する公正な3回の試行機会として扱う。従来の失敗
+    2回は旧ロジックによるものであり、新ロジックの失敗として数えない）。
+    `needsCompletion:true`で再アームし、サーバーは再起動済み（新しい
+    `/pending`ロジック・`result_debug_snapshot`ロジックが反映済み）。
+
+    **申し送り**：本ラウンドの変更は構造的にブラウザ側（`background.js`）
+    の新しい処理順そのものが検証対象であり、サーバー側の変更だけでは
+    実ブラウザでの動作を確認できない——次回マロンが拡張を再読み込みし
+    version 1.13.0・buildRevision `br13-...`を確認したうえで、既存タブ
+    （article 67、`.../n12d7568d8bd2/edit/`）が自動ポーリングで拾われる
+    のを待てば、今回初めて「編集画面上部の画像＋ボタン」を対象にした
+    実際のアップロード試行が行われる見込み。見つからなければ
+    `result_debug_snapshot`イベントで編集画面の実DOM構造が確認できる。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き22（🔬 **note下書き自動転記——実機でハッシュタグ4個・
     タイトル本文無変更・下書き保存の3点を追加で2回再確認、カテゴリー画像は
     「ファイル入力要素・トリガー要素とも見つからない」で引き続き失敗を確認。

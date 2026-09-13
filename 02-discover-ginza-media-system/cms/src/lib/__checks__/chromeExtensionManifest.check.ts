@@ -584,6 +584,97 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
 ]
 cases.push(...IMAGE_ASSET_TEST_CASES)
 
+const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き23（マロン確定事実）：「公開設定画面にはfile inputも
+    // 画像トリガーも存在しない」「note編集画面上部には『画像＋』の追加ボタンが
+    // 存在する」。画像探索（revealAndFindFileInput）は、ハッシュタグの
+    // 公開設定画面遷移判定（proceed_to_settings_for_hashtag_check）より
+    // 前に実行されることを確認する——画像のために設定画面へは進まない。
+    name: '【処理順】画像トリガー探索はハッシュタグの設定画面遷移判定より前に実行される',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const iconSearchIdx = bg.indexOf('await revealAndFindFileInput()')
+      const proceedForHashtagIdx = bg.indexOf('proceed_to_settings_for_hashtag_check')
+      assert.ok(iconSearchIdx >= 0, 'revealAndFindFileInputの呼び出しが見つからない')
+      assert.ok(proceedForHashtagIdx >= 0, 'proceed_to_settings_for_hashtag_checkが見つからない')
+      assert.ok(iconSearchIdx < proceedForHashtagIdx, '画像探索がハッシュタグの設定画面遷移より後になっている（画像のために設定画面へ進んでしまう可能性）')
+    },
+  },
+  {
+    // マロン指示：「編集画面で画像ボタンを特定できなければ、その時点の
+    // dom_snapshotを必ず保存し、推測で別画面を探さないでください」。
+    name: '【推測禁止】編集画面で画像トリガーが見つからない場合、dom_snapshotを保存し公開設定画面へはフォールバックしない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/image_trigger_not_found_on_editor/.test(bg), 'image_trigger_not_found_on_editorログが見つからない')
+      const idx = bg.indexOf('let imageNotFoundSnapshot = null')
+      assert.ok(idx >= 0, 'imageNotFoundSnapshotの宣言が見つからない')
+      const nearby = bg.slice(idx, idx + 400)
+      assert.ok(/imageNotFoundSnapshot = domDebugSnapshot\(\)/.test(nearby), '画像トリガー未検出時にdomDebugSnapshotを保存していない')
+      // 画像未検出ブロック内でfindProceedToPublishButton等の設定画面遷移を
+      // 呼んでいないこと（推測で別画面を探さない）。
+      const blockEnd = bg.indexOf('const img = item.categoryIcon')
+      const block = bg.slice(idx, blockEnd)
+      assert.ok(!/findProceedToPublishButton/.test(block), '画像未検出時に公開設定画面への遷移を試みている（推測探索の再発）')
+    },
+  },
+  {
+    name: '【必要な場合だけ】ハッシュタグの公開設定画面遷移は編集画面上で未反映のタグがある場合のみ行われる',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const idx = bg.indexOf('if (appliedTagCount < expectedTagsNoHash.length && expectedTagsNoHash.length > 0) {')
+      assert.ok(idx >= 0, 'appliedTagCountに基づく設定画面遷移の条件分岐が見つからない')
+      const nearby = bg.slice(idx, idx + 300)
+      assert.ok(/proceed_to_settings_for_hashtag_check/.test(nearby), '条件成立時の設定画面遷移ログが見つからない')
+    },
+  },
+  {
+    name: '【下書き保存の位置】下書き保存は画像処理の直後・ハッシュタグ確認より前に実行される',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const iconDoneIdx = bg.indexOf("log('icon_attach_done', iconResult)")
+      const saveIdx = bg.indexOf("log('save_button_found', { text: visibleText(saveBtn), stage: 'editor' })")
+      const hashtagCheckIdx = bg.indexOf('let appliedTagCount = countAppliedHashtags(expectedTagsNoHash)')
+      assert.ok(iconDoneIdx >= 0 && saveIdx >= 0 && hashtagCheckIdx >= 0, '画像処理・保存・ハッシュタグ確認いずれかの位置が特定できない')
+      assert.ok(iconDoneIdx < saveIdx, '画像処理が下書き保存より後になっている')
+      assert.ok(saveIdx < hashtagCheckIdx, '下書き保存がハッシュタグ確認より後になっている')
+    },
+  },
+  {
+    // 2026-09-14続き23（マロン指示）：「保存済みArticle #67の正しい /edit/
+    // URLを1タブだけ再利用」「tabs.reloadは禁止」。completion-onlyジョブ
+    // （preferredUrl指定時）の完全一致タブ再利用でchrome.tabs.reloadを
+    // 呼ばないことを確認する。
+    name: '【重要】tabs.reload禁止——preferredUrl完全一致タブはreloadせずそのまま再利用する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('if (preferredUrl) {')
+      const end = bg.indexOf("logToServer('preferred_url_tab_not_found_opening_directly'")
+      assert.ok(start >= 0 && end > start, 'preferredUrl分岐の範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(!/chrome\.tabs\.reload/.test(body), 'preferredUrl完全一致タブの再利用でchrome.tabs.reloadが呼ばれている（禁止事項）')
+      assert.ok(/existing_tab_reused_no_reload/.test(body), 'reloadしない旨のログ（existing_tab_reused_no_reload）が見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き23：success応答でもiconResult.debug（画像未検出時の
+    // dom_snapshot）をサーバーへ転送し、result_debug_snapshotとして記録する
+    // ——画像以外が成功してしまいfailure経路が発火しないケースでも画像UIの
+    // 実構造を確認できるようにする。
+    name: '【診断ログ配線】success応答でもiconDebugをサーバーへ転送し、result_debug_snapshotとして記録される',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/iconDebug:\s*result\.iconResult\?\.debug/.test(bg), "success応答にiconDebug: result.iconResult?.debug が含まれていない")
+
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(/body\.debug\s*\?\?\s*body\.iconDebug/.test(server), 'サーバー側がbody.debugだけでなくbody.iconDebugも見ていない')
+      assert.ok(server.includes("event: 'result_debug_snapshot'"), 'result_debug_snapshotイベントの記録が見つからない')
+    },
+  },
+]
+cases.push(...EDITOR_IMAGE_BUTTON_TEST_CASES)
+
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 
 if (import.meta.url === `file://${process.argv[1]}`) {
