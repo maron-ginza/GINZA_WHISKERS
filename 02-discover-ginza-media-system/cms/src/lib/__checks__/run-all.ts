@@ -29,6 +29,7 @@ import { suite as publishedRegistry } from './publishedRegistry.check'
 import { suite as candidateCoverageScore } from './candidateCoverageScore.check'
 import { suite as provisionalCategory } from './provisionalCategory.check'
 import { suite as sweetsCandidateSelect } from './sweetsCandidateSelect.check'
+import { suite as recurringEventYearGuard } from './recurringEventYearGuard.check'
 import { suite as sweetsDiscoveryKeywords } from './sweetsDiscoveryKeywords.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
@@ -69,6 +70,7 @@ const results: SuiteResult[] = [
   candidateCoverageScore(),
   provisionalCategory(),
   sweetsCandidateSelect(),
+  recurringEventYearGuard(),
   sweetsDiscoveryKeywords(),
   extractPriceHint(),
   buildEditorialBrief(),

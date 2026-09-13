@@ -71,7 +71,14 @@ export interface SweetsSelectionResult {
   /** 除外された候補（理由つき。監査用） */
   excluded: { dcId: number; title: string; reason: string }[]
   /** 集計：raw SWEETS 候補数・除外内訳 */
-  summary: { rawSweetsCount: number; excludedPublished: number; excludedIncomplete: number; excludedFacilityCap: number }
+  summary: {
+    rawSweetsCount: number
+    excludedPublished: number
+    excludedIncomplete: number
+    excludedFacilityCap: number
+    /** 2026-09-13 追加：固定要件による施設除外（例：本日限定でGINZA SIXを除外） */
+    excludedFixedRule: number
+  }
 }
 
 // ─────────────── 公式情報源の種別分類（不足検知用） ───────────────
@@ -134,7 +141,28 @@ export interface SweetsSelectOptions {
   now?: Date
   /** 返す最大件数（既定3） */
   maxCandidates?: number
-  weights?: { endUrgency?: number; seasonal?: number; official?: number; targetFit?: number }
+  weights?: { endUrgency?: number; seasonal?: number; official?: number; targetFit?: number; facilityDiversity?: number }
+  /**
+   * 2026-09-13 追加：固定要件による施設の完全除外（facilityKey 一致で丸ごと除外）。
+   * 「本日はGINZA SIX・銀座 蔦屋書店を除外」のような一時的な運用指示に使う——
+   * 恒久的な偏りではなく、呼び出し側が都度指定する明示的な除外リスト。
+   */
+  excludeFacilityKeys?: string[]
+  /** 除外理由の接頭辞（既定「本日の固定要件により除外」）。監査ログ用に上書き可。 */
+  excludeReasonLabel?: string
+}
+
+/**
+ * 過去7日間の同一施設からの採用件数（facilityCount7d）を、スコアへ反映する。
+ * 2026-09-13：`scoreParts.facilityDiversity` が常に0のまま未使用だった欠落を修正
+ * （施設偏重を防ぐsource diversity制御の実装。GINZA SIX等の特定施設が「唯一の
+ * 完全情報候補」である限り除外だけでは0件化するため、除外〈excludeFacilityKeys〉と
+ * 減点〈本関数〉の2段構えにする）。
+ */
+function facilityDiversityScore(count7d: number | null | undefined): number {
+  const n = count7d ?? 0
+  if (n <= 0) return 1
+  return clamp(1 - n * 0.3, 0, 1)
 }
 
 export function selectSweetsCandidates(
@@ -148,12 +176,16 @@ export function selectSweetsCandidates(
     seasonal: opts.weights?.seasonal ?? 0.2,
     official: opts.weights?.official ?? 0.25,
     targetFit: opts.weights?.targetFit ?? 0.3,
+    facilityDiversity: opts.weights?.facilityDiversity ?? 0.15,
   }
+  const excludeFacilityKeys = new Set(opts.excludeFacilityKeys ?? [])
+  const excludeReasonLabel = opts.excludeReasonLabel ?? '本日の固定要件により除外'
 
   const excluded: SweetsSelectionResult['excluded'] = []
   let excludedPublished = 0
   let excludedIncomplete = 0
   let excludedFacilityCap = 0
+  let excludedFixedRule = 0
 
   const sweetsOnly = inputs.filter((c) => (c.category ?? '').toUpperCase() === 'SWEETS')
   const rawSweetsCount = sweetsOnly.length
@@ -161,6 +193,15 @@ export function selectSweetsCandidates(
   const pool: (SweetsCandidateInput & { score: number; scoreParts: RankedSweetsCandidate['scoreParts']; seasonalNote: string })[] = []
 
   for (const c of sweetsOnly) {
+    if (c.facilityKey && excludeFacilityKeys.has(c.facilityKey)) {
+      excluded.push({
+        dcId: c.dcId,
+        title: c.displayTitle ?? c.title,
+        reason: `${excludeReasonLabel}（施設: ${c.facilityLabel ?? c.facilityKey}）`,
+      })
+      excludedFixedRule++
+      continue
+    }
     if (c.alreadyPublished) {
       excluded.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, reason: `既公開テーマとの重複（${c.publishedReason ?? '全公開履歴と一致'}）` })
       excludedPublished++
@@ -180,11 +221,12 @@ export function selectSweetsCandidates(
     const seasScore = seas.cityWide ? 1 : seas.inSeason ? 0.8 : seas.season ? 0.3 : 0.5
     const off = c.officialCompletenessScore ?? 0
     const tf = targetFitNorm(c.targetFit)
-    const score = w.endUrgency * due + w.seasonal * seasScore + w.official * off + w.targetFit * tf
+    const fd = facilityDiversityScore(c.facilityCount7d)
+    const score = w.endUrgency * due + w.seasonal * seasScore + w.official * off + w.targetFit * tf + w.facilityDiversity * fd
     pool.push({
       ...c,
       score,
-      scoreParts: { endUrgency: due, seasonal: seasScore, official: off, targetFit: tf, facilityDiversity: 0 },
+      scoreParts: { endUrgency: due, seasonal: seasScore, official: off, targetFit: tf, facilityDiversity: fd },
       seasonalNote: seas.note,
     })
   }
@@ -218,7 +260,7 @@ export function selectSweetsCandidates(
     score: c.score,
     scoreParts: c.scoreParts,
     seasonalNote: c.seasonalNote,
-    reason: `score ${c.score.toFixed(2)}（終了緊急度 ${c.scoreParts.endUrgency.toFixed(2)} / 季節性 ${c.scoreParts.seasonal.toFixed(2)} / 公式完全度 ${c.scoreParts.official.toFixed(2)} / 女性適合 ${c.scoreParts.targetFit.toFixed(2)}）`,
+    reason: `score ${c.score.toFixed(2)}（終了緊急度 ${c.scoreParts.endUrgency.toFixed(2)} / 季節性 ${c.scoreParts.seasonal.toFixed(2)} / 公式完全度 ${c.scoreParts.official.toFixed(2)} / 女性適合 ${c.scoreParts.targetFit.toFixed(2)} / 施設分散 ${c.scoreParts.facilityDiversity.toFixed(2)}）`,
   }))
 
   const shortfall = candidates.length < max
@@ -227,8 +269,9 @@ export function selectSweetsCandidates(
   if (shortfall) {
     shortfallReason =
       `SWEETS分類の生候補 ${rawSweetsCount} 件のうち、既公開重複 ${excludedPublished} 件・` +
-      `公式情報不完全 ${excludedIncomplete} 件・施設偏り(同一施設2件目以降) ${excludedFacilityCap} 件を除外した結果、` +
-      `確認候補は ${candidates.length} 件（目標3件）にとどまった。`
+      `公式情報不完全 ${excludedIncomplete} 件・施設偏り(同一施設2件目以降) ${excludedFacilityCap} 件・` +
+      `固定要件による除外 ${excludedFixedRule} 件を除外した結果、` +
+      `確認候補は ${candidates.length} 件（目標${max}件）にとどまった。`
     const coveredTypes = new Set(
       sweetsOnly.map((c) => classifySweetsSourceFacilityType(c.sourceName)).filter((t): t is SweetsSourceFacilityType => t != null),
     )
@@ -242,9 +285,35 @@ export function selectSweetsCandidates(
     shortfallReason,
     nextSourceTypesToExplore,
     excluded,
-    summary: { rawSweetsCount, excludedPublished, excludedIncomplete, excludedFacilityCap },
+    summary: { rawSweetsCount, excludedPublished, excludedIncomplete, excludedFacilityCap, excludedFixedRule },
   }
 }
 
 // 季節を伴わないダミー export（季節ロジックを外部から直接使いたい呼び出し元向け）
 export { currentSeason }
+
+// ─────────────── 優先カテゴリー・ドミナンスの自動失敗ゲート（2026-09-13） ───────────────
+//
+// マロン指示：「今日の優先カテゴリーが候補上位を占めない場合は処理を自動失敗させる」。
+// SWEETS_WAGASHI は CORE_DAILY_BUCKETS の最優先バケット（dailySelectionSupport.ts）。
+// このゲートは selectSweetsCandidates の結果を評価し、確認候補が1件も無ければ
+// 「処理失敗」として明示する（呼び出し側は passed:false を検出したら、非0の終了コードで
+// 停止し、理由を人間へ明示する。低品質な代替候補で静かに埋めない）。
+
+export interface SweetsPriorityGateResult {
+  passed: boolean
+  reason: string | null
+}
+
+export function evaluateSweetsGate(result: SweetsSelectionResult): SweetsPriorityGateResult {
+  if (result.candidates.length > 0) return { passed: true, reason: null }
+  return {
+    passed: false,
+    reason:
+      `本日の最優先カテゴリー（スイーツ・和菓子）の確認候補が0件です。` +
+      `生候補 ${result.summary.rawSweetsCount} 件（既公開重複 ${result.summary.excludedPublished}／` +
+      `公式情報不完全 ${result.summary.excludedIncomplete}／施設偏り ${result.summary.excludedFacilityCap}／` +
+      `固定要件による除外 ${result.summary.excludedFixedRule}）。低品質な代替候補やSWEETS以外の候補で` +
+      `静かに埋めず、処理を失敗として報告する。`,
+  }
+}

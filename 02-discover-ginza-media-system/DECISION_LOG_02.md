@@ -14,6 +14,107 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き5（🛑 **Article #64・#65を保留・note転記対象から除外＋SWEETS候補
+    選定の恒久修正（施設固定除外・source diversity・自動失敗ゲート・定例イベント
+    年ガード）を実装し本日のSWEETS候補を再抽出（Project 02 commit・push あり／
+    DB更新なし＝note-transferパッケージのファイル移動のみ／記事生成・承認・note転記・
+    外部公開は未実施／実行結果＝確認候補0件・GATE FAILED）**）:
+
+    マロン指示：本日の候補選定が10項目の固定要件を満たしていないため、
+    Article #64・#65をdraftのまま保留しnote転記・公開対象から外す。原因分析と
+    恒久修正を行ったうえで、本日のSWEETS候補抽出をやり直す。
+
+    **① 保留処理**：Article #64・#65は`reviewStatus=draft`のまま変更していない
+    （元々approve/publishしていないため状態変更は不要）。note転記対象から外す
+    ため、`.devlogs/night/queue/2026-09-13/{64,65}/`を`_held/`配下へ移動し
+    README.mdで理由を記録（削除はしていない。マロン判断で`./p2 night package`を
+    再実行すればいつでも同内容を再生成できる）。
+
+    **② 原因分析**：Article #64（DC#141・ISHIYA G・GINZA SIX）・Article #65
+    （DC#388・写真展・銀座 蔦屋書店）とも、2026-09-13続きの朝刊実運用初回実行で
+    正しい選定ロジック（SWEETS_WAGASHI優先バケット・4領域構成・施設分散キャップ）
+    により選ばれた候補であり、選定ロジック自体のバグではなかった。しかし
+    ①`selectSweetsCandidates`は同一施設を「1回の実行内で1件まで」しか制限
+    しておらず、GINZA SIXが日をまたいで繰り返し選ばれることを防ぐ仕組みが
+    無かった（`SweetsCandidateInput.facilityCount7d`フィールドは用意されていたが
+    スコアリングに一切使われていない死んだフィールドだったことを発見）、
+    ②特定施設を一時的に除外する明示的な仕組みが無かった、③「今日の優先
+    カテゴリーが機能しているか」を検証する自動ゲートが無かった、④銀茶会のような
+    毎年開催の定例イベントで前年情報を今年の候補として誤用するリスクへの
+    ガードが無かった。
+
+    **③ 恒久修正（実装・回帰テストとも完了）**：
+    - `sweetsCandidateSelect.ts`に`excludeFacilityKeys`オプションを追加
+      （facilityKey一致で完全除外、監査ログに理由記録）。
+    - 死んでいた`facilityCount7d`をスコアリングへ実配線
+      （`facilityDiversityScore(count)=clamp(1-count*0.3,0,1)`、重み0.15で
+      加点。直近7日間の同一施設からの採用件数が多いほど減点＝source
+      diversity制御）。`morningBrief.ts`・新規`sweetsTodayCandidates.ts`
+      とも`assessed.history.facilityKeyCounts`から実配線。
+    - `evaluateSweetsGate()`を新設——確認候補が0件なら`passed:false`＋
+      詳細理由を返す（「今日の優先カテゴリーが候補上位を占めない場合は
+      処理を自動失敗させる」の実装）。`morningBrief.ts`は🛑バナー表示、
+      新規`sweetsTodayCandidates.ts`は非0終了コードで停止する（後者は
+      SWEETS抽出専任コマンドのため失敗を明確に扱える。前者は他3領域も
+      扱う日次ブリーフのため画面上の警告に留め、全体を止めない）。
+    - 新規`recurringEventYearGuard.ts`（`checkRecurringEventYearClaim`）——
+      銀茶会等の定例イベント名パターンに一致する情報源について、抽出された
+      タイトル・期間に現在年以降の明記が無ければ除外する（推測で年を
+      補完しない）。`morningBrief.ts`・`sweetsTodayCandidates.ts`双方の
+      安全性gateへ合流。
+    - 新規`sweetsTodayCandidates.ts`＋`./p2 sweets-today
+      [--exclude-facility=key1,key2] [--limit=5] [--json]`——SWEETS専用の
+      独立コマンドとして新設。既存の重複除外（`loadAlreadyDraftedDcIds`
+      共通ヘルパーへ集約、`morningBrief.ts`の重複コード2箇所もこれに統合する
+      リファクター込み）・公式情報完全度チェック・施設分散キャップ・新設の
+      施設固定除外／source diversity／自動失敗ゲート／定例イベント年ガードを
+      すべて適用し、確認候補ごとに店舗名・施設名・商品名・価格・販売期間・
+      購入条件・公式URL・出典確認日・新規/既存（DiscoveredContent.detectedAtが
+      本日と一致するか）を表示する。
+    - ④の「既投稿・既承認・既下書き・過去に提示済みの候補は除外」は、既存の
+      `loadAlreadyDraftedDcIds`（Articles.editorialProvenance逆引き、
+      reviewStatus不問）と`matchPublishedTheme`（全公開履歴）で既に構造的に
+      満たされていることを確認した（DC#141・DC#388は今回の再抽出でも
+      正しく除外対象に入った）——新規実装は不要だった。
+    - ④の「デパ地下出店ブランド・独立店の横断収集」は、SOURCE_LEDGER
+      （51件）に銀座三越・松屋銀座・資生堂パーラー・宗家源吉兆庵・
+      銀座菊廼舎・帝国ホテル等が既に登録済みであることを確認——収集先の
+      追加登録は不要で、実際の収集・完全度確認を今回の`./p2 crawl`→
+      `./p2 sweets-detail-fetch`→`./p2 am-run`で実行した。
+
+    **④ 回帰テスト**：`sweetsCandidateSelect.check.ts`に7件追加（施設固定除外・
+    除外により0件になるケース・facilityCount7dによるスコア低下・
+    `evaluateSweetsGate`のpass/fail両方）、新規`recurringEventYearGuard.check.ts`
+    5件（銀茶会の前年情報検出・当年明記時のok・年明記なしの除外・無関係情報源への
+    非影響・英語URL検出）。`run-all.ts`へ登録。`tsc --noEmit`0エラー、
+    **`run-all.ts` 487 passed 0 failed**（既存470＋新規13＋5＝18増を確認）。
+
+    **⑤ 本日のSWEETS候補 実再抽出（`./p2 crawl`→`./p2 sweets-detail-fetch`→
+    `./p2 am-run --fetch --register-facts --write-facts`→`./p2 sweets-today
+    --exclude-facility=ginza-six,ginza-tsutaya --limit=5`を一括実行）**：
+    crawlでSOURCE_LEDGER 51件を巡回（銀座三越・山野楽器の2件のみ取得失敗、
+    東京メトロ403は既知の恒久事象）、スウィーツDiscovery層で27情報源・
+    sitemap試行157/成功88・RSS試行162/成功47・発見候補URL 715件、
+    sweets-detail-fetchで41件試行・7件新規取得成功（宗家源吉兆庵・帝国ホテル
+    ガルガンチュワ等の独立店・デパ地下ブランドの実ページを含む＝収集自体は
+    機能）。**結果：SWEETS分類の生候補73件のうち、GINZA SIX起点4件
+    （DC#141含む）を固定要件で除外、既公開・既下書き重複1件を除外、残る68件は
+    公式情報の完全度不足（開催・販売期間／内容／場所いずれかが未確認、または
+    `verdict_c`／`expired`／`not_ginza`の安全性gate不通過）で除外——
+    **確認候補は0件、`evaluateSweetsGate`はpassed:false（GATE FAILED）**。
+    GINZA SIX起点の除外4件の内訳（DC#141・#247・#352・#353）を見ると、
+    GINZA SIXが除外候補の中で唯一「複数の完全情報候補を持つ情報源」だった
+    ことが確認でき、従来GINZA SIXへ偏っていた根本原因（他情報源の候補は
+    存在するが完全度・銀座関連性・有効期限のいずれかで軒並み不成立）を
+    裏付けた。本日は不完全な候補や非SWEETS候補で埋めず、GATE FAILEDとして
+    正直に報告する（マロン指示の「終了済み・取扱い未確認・公式情報が古いだけの
+    商品は候補化しない」を貫いた結果であり、実装の不備ではない）。
+
+    **不変**：DB書き込みはcrawl／sweets-detail-fetch／am-runの通常書き込みのみ
+    （Sources新規2件、SnapshotsとDiscoveredContentの通常更新）。Articles・
+    DiscoveredContentのcurationStatus・記事生成・承認・note転記・外部公開・
+    課金はいずれも実施していない。DC#141・#388のcurationStatusは変更していない。
+
   - 2026-09-13 続き4（✍️ **Article #64・#65のnote公開用最終整文——内部制作
     表現の削除・ラベル名称の変更・重複表現の整理（Project 02 DB更新あり／
     公開・note転記は未実施）**）:

@@ -28,7 +28,9 @@ import {
 } from '../lib/pipeline/morningBriefSelect'
 import { deriveProvisionalCategory } from '../lib/pipeline/provisionalCategory'
 import { resolveFacilityKey } from '../lib/curation/facilityKey'
-import { selectSweetsCandidates, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
+import { selectSweetsCandidates, evaluateSweetsGate, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
+import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
+import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -50,6 +52,13 @@ const limArg = argv.find((a) => a.startsWith('--limit='))
 // （承諾前プール全件評価等）への設計変更を検討する。
 const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 1000) : 1000
 const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
+// 2026-09-13追加：固定要件による施設の一時除外（例：本日はGINZA SIX・銀座 蔦屋書店を除外）。
+// 既定は空＝従来どおり全施設を対象とする（恒久的な偏りにしない。都度の明示指定のみ）。
+const excludeFacilityArg = argv.find((a) => a.startsWith('--exclude-facility='))?.split('=')[1] ?? process.env.SWEETS_EXCLUDE_FACILITY_KEYS ?? ''
+const EXCLUDE_FACILITY_KEYS = excludeFacilityArg
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
 
 async function main() {
   const payload = await getPayload({ config })
@@ -64,23 +73,7 @@ async function main() {
   const dcIds = pool.map((e) => e.candidate.discoveredContentId)
 
   // 2. 既に Article／note下書き 化済みの DC（重複除外用）
-  const alreadyDrafted = new Set<number>()
-  if (dcIds.length) {
-    const prov = await payload.find({
-      collection: 'articles',
-      where: { 'editorialProvenance.discoveredContentSource': { in: dcIds } },
-      limit: 500,
-      depth: 1,
-      overrideAccess: true,
-    })
-    for (const a of prov.docs as unknown as Record<string, unknown>[]) {
-      for (const p of (Array.isArray(a.editorialProvenance) ? a.editorialProvenance : []) as Record<string, unknown>[]) {
-        const ref = p.discoveredContentSource
-        const id = typeof ref === 'object' && ref ? Number((ref as { id?: number }).id) : Number(ref)
-        if (Number.isFinite(id)) alreadyDrafted.add(id)
-      }
-    }
-  }
+  const alreadyDrafted = await loadAlreadyDraftedDcIds(payload, dcIds)
 
   // 2b. 既公開テーマ（全公開履歴：DB publishHistory ＋ .devlogs ＋ 手動シード）
   const publishedThemes = await loadPublishedThemes(payload, resolve(process.cwd(), '..'))
@@ -90,23 +83,7 @@ async function main() {
   //     既に Article 化済みの DC も除外（トップ15プール限定の alreadyDrafted とは別に、
   //     全 assessed 候補ぶんを見る）。
   const allDcIds = assessed.candidates.map((c) => c.discoveredContentId)
-  const alreadyDraftedAll = new Set<number>()
-  if (allDcIds.length) {
-    const prov2 = await payload.find({
-      collection: 'articles',
-      where: { 'editorialProvenance.discoveredContentSource': { in: allDcIds } },
-      limit: 500,
-      depth: 1,
-      overrideAccess: true,
-    })
-    for (const a of prov2.docs as unknown as Record<string, unknown>[]) {
-      for (const p of (Array.isArray(a.editorialProvenance) ? a.editorialProvenance : []) as Record<string, unknown>[]) {
-        const ref = p.discoveredContentSource
-        const id = typeof ref === 'object' && ref ? Number((ref as { id?: number }).id) : Number(ref)
-        if (Number.isFinite(id)) alreadyDraftedAll.add(id)
-      }
-    }
-  }
+  const alreadyDraftedAll = await loadAlreadyDraftedDcIds(payload, allDcIds)
   const sweetsInputs: SweetsCandidateInput[] = assessed.candidates
     .map((c): SweetsCandidateInput | null => {
       const prov = deriveProvisionalCategory({
@@ -127,7 +104,14 @@ async function main() {
       // 安全性 gate（verdict/期限切れ/銀座関連性/出典/種別/タイトル）に落ちる候補は
       // 公式情報不完全と同様に扱い、最終候補に上げない（推測で救わない）。
       const safetyFails = evaluateSafetyGate(c, cfg)
-      const gateOk = safetyFails.length === 0
+      // 2026-09-13追加：毎年開催の定例イベント（銀茶会等）が前年情報のまま今年の
+      // 候補として扱われることを防ぐ（推測で年を補完しない）。
+      const yearCheck = checkRecurringEventYearClaim(
+        { sourceName: c.sourceName, sourceUrl: c.sourceUrl, title: c.displayTitle ?? c.title, eventPeriod: c.eventPeriod },
+        { now },
+      )
+      const yearFails = yearCheck.ok ? [] : [yearCheck.reason!]
+      const gateOk = safetyFails.length === 0 && yearCheck.ok
       return {
         dcId: c.discoveredContentId,
         title: c.title,
@@ -142,16 +126,22 @@ async function main() {
         eventStartAt: (c.eventStartAt as string | null) ?? null,
         eventEndAt: (c.eventEndAt as string | null) ?? null,
         officialCompletenessScore: c.officialCompletenessScore ?? null,
-        officialMissing: gateOk ? (c.officialMissing ?? null) : [...(c.officialMissing ?? []), ...safetyFails],
+        officialMissing: gateOk ? (c.officialMissing ?? null) : [...(c.officialMissing ?? []), ...safetyFails, ...yearFails],
         finalEligible: gateOk && c.finalEligible !== false,
         daysUntilEnd: c.daysUntilEnd ?? null,
         targetFit: c.targetFit ?? null,
         alreadyPublished,
         publishedReason: pub.match ? pub.reason : alreadyDraftedAll.has(c.discoveredContentId) ? '既に Article 化済み' : null,
+        // 2026-09-13追加：直近7日間の同一施設からの採用件数（施設偏重を防ぐsource diversity制御）
+        facilityCount7d: fk.key ? (assessed.history.facilityKeyCounts[fk.key] ?? 0) : 0,
       }
     })
     .filter((x): x is SweetsCandidateInput => x != null)
-  const sweetsSelection = selectSweetsCandidates(sweetsInputs, { now })
+  const sweetsSelection = selectSweetsCandidates(sweetsInputs, {
+    now,
+    excludeFacilityKeys: EXCLUDE_FACILITY_KEYS.length ? EXCLUDE_FACILITY_KEYS : undefined,
+  })
+  const sweetsGate = evaluateSweetsGate(sweetsSelection)
 
   // 3. 既存 ArticleFacts（DB）。2026-09-12：3領域選定を top15 プールに限らず
   //    assessed.candidates 全体から行うよう拡張したため、allDcIds を対象にする。
@@ -315,6 +305,11 @@ async function main() {
   L('')
   L('────────────────────────────────────────────')
   L(`■ スウィーツ候補（SWEETS専用・毎朝最大3件・目標達成=${!sweetsSelection.shortfall}）`)
+  if (EXCLUDE_FACILITY_KEYS.length) L(`   固定要件による施設除外: ${EXCLUDE_FACILITY_KEYS.join(', ')}（除外 ${sweetsSelection.summary.excludedFixedRule} 件）`)
+  if (!sweetsGate.passed) {
+    L('   🛑 GATE FAILED：本日の最優先カテゴリー（スイーツ・和菓子）が候補上位を占めていません')
+    L(`      ${sweetsGate.reason}`)
+  }
   if (sweetsSelection.candidates.length === 0) {
     L('   ❌ 本日は公式確認できるSWEETS候補がありません（不完全な候補で埋めない）')
   }
@@ -391,6 +386,8 @@ async function main() {
           shortfallReason: sweetsSelection.shortfallReason,
           nextSourceTypesToExplore: sweetsSelection.nextSourceTypesToExplore,
           summary: sweetsSelection.summary,
+          excludeFacilityKeys: EXCLUDE_FACILITY_KEYS,
+          gate: sweetsGate,
         },
       },
       null,
@@ -407,6 +404,7 @@ async function main() {
         approveUrl,
         buckets: brief.buckets,
         sweetsCandidates: sweetsSelection,
+        sweetsGate,
       }),
     )
   } else {

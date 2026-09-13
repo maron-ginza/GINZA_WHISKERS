@@ -4,6 +4,7 @@ import { runSuite, reportAndExit, type CheckCase } from './_harness'
 import {
   selectSweetsCandidates,
   classifySweetsSourceFacilityType,
+  evaluateSweetsGate,
   SWEETS_SOURCE_FACILITY_TYPES,
   type SweetsCandidateInput,
 } from '../pipeline/sweetsCandidateSelect'
@@ -136,6 +137,65 @@ const cases: CheckCase[] = [
       assert(classifySweetsSourceFacilityType('ブールミッシュ（銀座本店）') === '銀座の路面洋菓子店', 'boulmich')
       assert(classifySweetsSourceFacilityType('銀座コージーコーナー（銀座一丁目本店）') === '喫茶店・カフェの公式情報', 'cozycorner')
       assert(classifySweetsSourceFacilityType('銀座若菜（株式会社若菜）') === '和菓子店', 'ginza wakana')
+    },
+  },
+  {
+    // 2026-09-13：マロン指示「本日はGINZA SIXと銀座 蔦屋書店を除外」の再現。
+    name: 'excludeFacilityKeys：固定要件の施設は完全除外される（Article #64/#65 型の再発防止）',
+    fn: () => {
+      const list = [
+        mk({ dcId: 141, facilityKey: 'ginza-six', facilityLabel: 'GINZA SIX', targetFit: 90, daysUntilEnd: 1 }),
+        mk({ dcId: 2, facilityKey: 'other-shop', targetFit: 20, daysUntilEnd: 60 }),
+      ]
+      const r = selectSweetsCandidates(list, { now: NOW, excludeFacilityKeys: ['ginza-six', 'ginza-tsutaya'] })
+      const ids = r.candidates.map((c) => c.dcId)
+      assert(!ids.includes(141), `GINZA SIXは除外されるはず: ${ids}`)
+      assert(ids.includes(2), `other-shopは残るはず: ${ids}`)
+      assert(r.summary.excludedFixedRule === 1, `excludedFixedRule=${r.summary.excludedFixedRule}`)
+      assert(r.excluded.some((e) => e.dcId === 141 && e.reason.includes('固定要件')), JSON.stringify(r.excluded))
+    },
+  },
+  {
+    name: 'excludeFacilityKeysで唯一の完全候補が消えるとshortfall（0件）になり、埋め合わせない',
+    fn: () => {
+      const list = [mk({ dcId: 141, facilityKey: 'ginza-six', targetFit: 90 })]
+      const r = selectSweetsCandidates(list, { now: NOW, excludeFacilityKeys: ['ginza-six'] })
+      assert(r.candidates.length === 0, `candidates.length=${r.candidates.length}`)
+      assert(r.shortfall === true, 'shortfall=true')
+    },
+  },
+  {
+    name: 'facilityCount7d：直近7日間の採用実績が多い施設ほどスコアが下がる（source diversity制御）',
+    fn: () => {
+      const list = [
+        mk({ dcId: 1, facilityKey: 'a', facilityCount7d: 0, targetFit: 40, daysUntilEnd: 10 }),
+        mk({ dcId: 2, facilityKey: 'b', facilityCount7d: 5, targetFit: 40, daysUntilEnd: 10 }),
+      ]
+      const r = selectSweetsCandidates(list, { now: NOW, maxCandidates: 2 })
+      const c1 = r.candidates.find((c) => c.dcId === 1)!
+      const c2 = r.candidates.find((c) => c.dcId === 2)!
+      assert(c1.scoreParts.facilityDiversity === 1, `facilityCount7d=0はfacilityDiversity=1のはず: ${c1.scoreParts.facilityDiversity}`)
+      assert(c2.scoreParts.facilityDiversity < c1.scoreParts.facilityDiversity, '直近採用が多い施設は facilityDiversity が低いはず')
+      assert(c1.score > c2.score, `他条件が同じなら直近未採用の施設が上位に来るはず: ${c1.score} vs ${c2.score}`)
+    },
+  },
+  {
+    name: 'evaluateSweetsGate：確認候補0件は自動失敗（passed:false）と明示理由を返す',
+    fn: () => {
+      const list = [mk({ dcId: 1, finalEligible: false, officialMissing: ['開催・販売期間'] })]
+      const r = selectSweetsCandidates(list, { now: NOW })
+      const gate = evaluateSweetsGate(r)
+      assert(gate.passed === false, 'passed=false のはず')
+      assert(!!gate.reason && gate.reason.includes('0件'), gate.reason ?? 'null')
+    },
+  },
+  {
+    name: 'evaluateSweetsGate：確認候補が1件以上あればpassed:true',
+    fn: () => {
+      const list = [mk({ dcId: 1 })]
+      const r = selectSweetsCandidates(list, { now: NOW })
+      const gate = evaluateSweetsGate(r)
+      assert(gate.passed === true && gate.reason === null, JSON.stringify(gate))
     },
   },
 ]

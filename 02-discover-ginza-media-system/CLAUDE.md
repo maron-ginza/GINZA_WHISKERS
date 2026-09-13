@@ -833,6 +833,23 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-13: 🛑 **Article #64・#65を保留・note転記対象から除外＋SWEETS候補選定の
+  恒久修正（施設固定除外・source diversity・自動失敗ゲート・定例イベント年ガード）を
+  実装し本日のSWEETS候補を再抽出（Project 02 commit・push あり／DB更新なし＝
+  note-transferパッケージのファイル移動のみ／実行結果＝確認候補0件・GATE FAILED）**
+  ——GINZA SIX・銀座 蔦屋書店を本日の固定要件で除外した結果、Article #64/#65は
+  draftのまま保留・`.devlogs/night/queue/2026-09-13/_held/`へ移動。原因分析：
+  `SweetsCandidateInput.facilityCount7d`が用意されていたが未使用の死んだ
+  フィールドで、同一施設の連続採用を防ぐsource diversity制御が機能していな
+  かった。新設：`excludeFacilityKeys`（施設固定除外）／facilityCount7dの実配線
+  （施設偏重を防ぐスコア減点）／`evaluateSweetsGate`（優先カテゴリー0件で自動
+  失敗）／`recurringEventYearGuard`（銀茶会等の定例イベントの前年情報流用防止）
+  ／新規独立コマンド`./p2 sweets-today`。回帰テスト新規18件、`run-all.ts`
+  **487 passed 0 failed**。実データで`./p2 crawl`→`sweets-detail-fetch`→
+  `am-run`→`sweets-today --exclude-facility=ginza-six,ginza-tsutaya`を実行した
+  結果、SWEETS生候補73件中GINZA SIX起点4件を固定除外・残り68件は公式情報
+  完全度不足で確認候補0件（GATE FAILED）——不完全な候補で埋めず正直に報告。
+  詳細は`DECISION_LOG_02.md` 2026-09-13 続き5。
 - 2026-09-13: 🛠 **マロンの公式情報最終照合でArticle #64「ISHIYA G アイガトー」の
   事実誤り（公式記載のない販売期間の生成）を発見・修正し、再発防止の自動チェック
   `unsourcedPeriodClaimGate.ts` を新設（Project 02 commit・push あり／DB更新は

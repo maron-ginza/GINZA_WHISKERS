@@ -2829,6 +2829,20 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningBrief.ts "$@" )
     ;;
+  sweets-today)
+    shift
+    # 2026-09-13新設：本日のSWEETS候補 再抽出（独立コマンド）。SWEETS_WAGASHI専用の
+    # 候補選定を最大5件まで表示。--exclude-facility=key1,key2 で施設を一時除外できる
+    # （既定は空＝除外なし）。確認候補が0件なら非0終了コードで停止する
+    # （今日の優先カテゴリーが候補上位を占めない場合の自動失敗ゲート）。
+    # 読み取り専用（DB書き込み・AI・課金・approve・note操作なし）。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/sweetsTodayCandidates.ts "$@" )
+    ;;
   morning-auto)
     shift
     # 朝刊自動化を今すぐ1回、手動で走らせる（本来は毎朝6:00にlaunchdが自動実行。
@@ -2914,6 +2928,7 @@ case "${1:-status}" in
     echo "  ./p2 sweets-detail-fetch [--dry-run]  スウィーツ情報源の詳細ページ追跡（Stage2補完）：crawl共有予算切れで内容/会場/日付が未取得のまま残っている候補だけ対象に1回だけ追加取得（JSON-LD/meta description等の既存汎用抽出器を再利用）。crawlの再実行はしない"
     echo "  ./p2 publishlog add --dc=<id> [--title=] [--event=] [--venue=] [--period=] [--url=] [--published-at=] [--source=]  既公開テーマ台帳（PUBLISHED_REGISTRY）への追記：DB自動照合で検知できない、DB外で公開されたとマロンが確認した案件を登録。--url指定時は該当ArticleのpublishHistoryへも書き戻しを試みる（ベストエフォート）。台帳＝MANUAL_PUBLISHED_SEEDの緊急用補助であり主経路ではない"
     echo "  ./p2 morning-brief [--limit=N] [--json]  朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ(スイーツ含む) ③文化・アート 各1本で選定（施設集中の自動回避・重複/既記事化の除外・偏り補正）→ 候補要約＋必須ArticleFacts12項目(無い項目は「公式記載なし」)＋公式出典を1画面 → 承認/保留/却下の1操作(admin URL)＋承認後のnote下書き自動転記手順。読み取り専用・推測補完なし。.devlogs/morning/brief/ へ保存"
+    echo "  ./p2 sweets-today [--exclude-facility=key1,key2] [--limit=5] [--json]  本日のSWEETS候補 再抽出：SWEETS_WAGASHI専用の候補を最大5件（既公開/既下書き/施設分散/公式情報完全度/定例イベントの前年流用防止を適用）。--exclude-facilityで施設を一時除外可（例: ginza-six,ginza-tsutaya）。確認候補0件は非0終了（優先カテゴリーが候補上位を占めない場合の自動失敗ゲート）。読み取り専用。.devlogs/morning/sweets-today/ へ保存"
     echo "  ./p2 morning-auto  朝刊自動化を今すぐ1回手動実行（本来は毎朝6:00にlaunchdが自動実行）。crawl→sweets-detail-fetch→am-run(--fetch --register-facts --write-facts)→morning-brief を順に実行し、失敗フェーズは間隔を空けて自動再試行。ログは.devlogs/morning/auto/"
     echo "  ./p2 candidate-review-server [--port=4600]  朝刊候補レビュー画面（常駐サーバー）。http://localhost:4600 を開くだけで当日候補の承認/保留/却下ができる。承認のみDB書き込み・Claude API課金1回・note転記直前パッケージ生成、他は読み取り専用。localhost限定"
     echo "  ./p2 draft-from-dc <dcId> --yes  指定した1件のDiscoveredContentだけをCORE角度で記事化（他の承認済みDCは巻き込まない）。候補レビュー画面の承認ボタンと同じロジック（手動テスト・単発生成用）"
