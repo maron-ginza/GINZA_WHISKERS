@@ -14,6 +14,148 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き27（🏗 **note下書き自動転記——実機で3回連続再現した
+    「executeScriptが最初の1行のログすら送らないまま約140秒間無応答」現象
+    （続き26、Service Worker Console赤エラー0件をマロンが実機確認）を受け、
+    根本監査のうえ注入方式を全面的に組み替えた：chrome.scripting.
+    executeScript({func: injectedNoteTransfer, ...})という直列化・対象
+    タブ内再構築に依存する方式を廃止し、固定content scriptファイル
+    injected-transfer.jsをfiles:で注入・データはtabs.sendMessageで渡す
+    構成へ変更。あわせて最外周try/catch/finally・非同期ログの非ブロック化・
+    単発watchdog・実行中スクリプトとの重複防止ガードを新設した
+    （Project 02 commit・push あり／DB更新なし／note公開なし。**実ブラウザ
+    での動作は今回未検証——マロン指示どおり自動再試行は行っていない**）**）:
+
+    マロン指示：「Service WorkerのConsoleを実機確認したが赤いエラーは0件
+    で完全に空だった。既知の実測（completion-only取得3/3・タブ再利用3/3・
+    executeScript開始3/3・injected_transfer_started 0/3・executeScript
+    終了0/3・SW Consoleエラー0件・公開0件・自動再試行は停止済み）を境界に、
+    executeScriptへ渡した関数の直列化依存・外部クロージャ参照・先頭ログ
+    送信の待機を重点的にコード監査し、根本修正すること。必須修正10項目
+    （自己完結化／files:+tabs.sendMessage化・第1命令からtry/catch/finally
+    で{status,error,stack,stages,buildRevision}を必ず返す・診断ログ送信を
+    awaitしない・単発watchdog＋重複防止・タイトル本文再入力禁止・既存タブ
+    のみ使用＋reload禁止・未完了部分（ハッシュタグ4/4・画像SHA-256＋
+    プレビュー・下書き保存）のみ完了対象・「投稿する」絶対禁止・テスト＋
+    tsc＋commit・push・実ブラウザ自動再試行はまだ行わない）を実施し、
+    途中確認なしで完了させること。」
+
+    **コード監査で判明した事実**：旧`injectedNoteTransfer`（background.js
+    内、chrome.scripting.executeScriptの`func:`引数として直接渡していた
+    自己完結関数、約780行）は、実際には外部クロージャ変数
+    （SERVER_BASE・POLL_INTERVAL_MS・BUILD_REVISION・logToServer等）への
+    参照が**1件も無く**、それ自体は既に自己完結していた——「外部クロージャ
+    依存」という仮説は監査の結果棄却した。ただし、Service Worker Console
+    エラー0件（=SW側のクラッシュではない）と、`injected_transfer_started`
+    （関数内最初の1行）すら3回とも一度も届かない、という2つの実測事実は、
+    問題が**注入された関数がPAGE側コンテキストで実際に開始されたかどうか、
+    またはfunc:のFunction.prototype.toString()による直列化・対象タブ内
+    での再構築というステップそのもの**にある可能性を排除できなかった——
+    マロンが実機確認したのはSW側コンソールのみで、注入関数の例外は
+    PAGE（editor.note.com）側のコンソールに出る可能性があり、そちら側は
+    未確認のまま停止する、という指示（「Service Worker例外の追加確認は
+    終了します」）を受けた。**推測で犯人を断定せず**、直列化・再構築の
+    ステップ自体を構造的に無くす方式へ全面的に組み替える、という対応を
+    選んだ。
+
+    **実装**：
+
+    1. **新規`chrome-extension/injected-transfer.js`**（固定content
+       scriptファイル）：旧`injectedNoteTransfer`の全ロジック
+       （ハッシュタグのスコープ判定・誤りタグ削除・不足タグ追加、
+       画像2段階クリック・SHA-256検証・プレビュー確認、下書き保存、
+       タイトル・本文の正規化ハッシュ前後比較等、続き20〜26で実装した
+       内容はすべてそのまま移植・無変更）をこのファイル1本へ移植。
+       トップレベルはIIFEで、**第1命令から`try { ... } catch (e) { ... }
+       finally { ... }`で完全に囲む**（マロン必須修正②）。
+       `window.__NOTE_TRANSFER_LISTENER_INSTALLED__`で同一タブへの
+       複数回注入時のリスナー二重登録を防止し、さらに`isRunning`
+       フラグで**同一リスナーが複数の`note-transfer:run`メッセージを
+       並行処理すること自体も防ぐ**（マロン必須修正④「実行中スクリプト
+       との重複を防止する」——リスナー二重登録防止だけでは、同一リスナーが
+       2つ目のメッセージを受けて2つ目の`handleRun`を並行実行してしまう
+       穴があったため、続き26で懸念した「同一DOMへの複数の並行実行」を
+       より確実に塞いだ）。診断ログ送信（`logNonBlocking`）は
+       `chrome.runtime.sendMessage(...).catch(()=>{})`のみで**await
+       しない**（マロン必須修正③）。最終的に必ず`{status, error, stack,
+       stages, buildRevision}`を返す（マロン必須修正②）。
+    2. **`chrome-extension/background.js`の`runTransferViaExecuteScript`
+       を全面書き換え**：①`chrome.scripting.executeScript({target,
+       files:['injected-transfer.js']})`でリスナー登録まで注入→
+       ②`chrome.tabs.sendMessage(tabId, {type:'note-transfer:run', item,
+       buildRevision})`でデータを渡す（マロン必須修正①）。③新規
+       `INJECTED_RUN_TIMEOUT_MS`（90秒、ブラウザ側`INFLIGHT_TIMEOUT_MS`
+       120秒・サーバー側`STALE_IN_PROGRESS_MS`150秒のいずれよりも短い）
+       による**単発watchdog**（`Promise.race`）——タイムアウト時は
+       `injected_run_watchdog_timeout`として**1回だけ**失敗報告し、
+       本関数自身が自動的に`executeScript`を再度呼ぶことはしない
+       （マロン必須修正④「タイムアウト後の自動再試行は禁止」。ポーリング
+       ループ・サーバー側リトライ上限という既存の別レイヤーの仕組みは
+       維持）。旧`injectedNoteTransfer`関数本体（約780行＋docコメント）は
+       background.jsから削除し、移植先への参照コメントに置き換えた。
+    3. **維持した安全境界**（マロン必須修正⑤〜⑧、既存実装のまま）：
+       completion-onlyモードはタイトル・本文を再入力しない
+       （`setContentEditableParagraphs`はmode==='full'の分岐内のみ）／
+       `findOrOpenNoteEditorTab`のpreferredUrl完全一致分岐は
+       `chrome.tabs.create`・`chrome.tabs.reload`のいずれも呼ばない
+       （既存タブのみ使用）／ハッシュタグ4/4（scope限定）・カテゴリー
+       画像のSHA-256整合性検証＋プレビュー出現確認・下書き保存は
+       続き20〜26のロジックをそのまま維持／「投稿する」等の最終公開文言は
+       `PUBLISH_FINAL_RE`・`isForbiddenPublishLabel`で一貫して除外、
+       最終公開ボタンを探す専用ロジックは存在しない。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.15.0`→`1.16.0`
+    へ、`BUILD_REVISION`を`br16-2026-09-14-files-injection-watchdog`へ
+    更新した。
+
+    **回帰テスト**：既存の全テストケースを、ロジック移動先
+    （`injected-transfer.js`）に合わせて参照先ファイルを更新（構造は
+    無変更、`background.js`から読んでいた箇所を`injected-transfer.js`
+    から読むよう修正）。新規9件——①`injected-transfer.js`が
+    `chrome.runtime`以外の特権APIに依存しないこと（コメント中の言及を
+    誤検出しないようコメント除外済みのコード本体のみで判定）②files:注入
+    ＋func:方式の完全排除の直接検証③handleRunの
+    try/catch/finally＋stages/buildRevision返却④トップレベルIIFEの
+    try/catch/finally⑤`logNonBlocking`がawaitしないことの直接検証
+    ⑥単発watchdogの存在とタイムアウト時に自動再実行しないことの直接検証
+    ⑦watchdogタイムアウト値が client/server 双方のタイムアウトより短い
+    こと⑧リスナー二重登録防止＋`isRunning`による重複実行防止（`finally`で
+    確実に解除されることも含む）⑨タイトル本文再入力禁止・新規タブ禁止・
+    reload禁止・最終公開ボタンなしの横断的な維持確認。`run-all.ts`
+    **620 passed 0 failed**（611→620）。`tsc --noEmit`0エラー、
+    `node -c`（background.js・injected-transfer.js）・`manifest.json`
+    妥当性を確認。
+
+    **state**：`transfer-state.json`は前回セッション終了時点の
+    `status:'success', needsCompletion:false, completionAttempts:0`
+    （一時停止状態）のまま**変更していない**——マロン必須修正⑩「修正後も
+    実ブラウザの自動再試行はまだ行わない」に従い、今回はコード変更・
+    テスト・commit・pushのみで、サーバー側の再アーム・実機での検証は
+    一切行っていない。
+
+    **次の実機検証を1回だけで完了させる手順**：①拡張を再読み込みし
+    version 1.16.0・buildRevision `br16-...`を確認②
+    `transfer-state.json`のarticle 67を`needsCompletion:true,
+    completionAttempts:0`へ再アーム（サーバー側から1回）③自動ポーリングが
+    既存タブ（新規タブなし・reloadなし）を拾い`files:['injected-transfer.
+    js']`注入→`tabs.sendMessage`→（90秒以内に）結果を待つ④90秒を超えても
+    無応答なら1回だけ`injected_run_watchdog_timeout`として失敗報告され
+    自動再試行はされない（この場合はPAGE側＝editor.note.comタブの
+    DevTools Consoleの確認が次の調査候補となる）⑤結果が返れば
+    `hashtagsDone`・`iconDone`・`draftUrl`を実ログで確認する。
+
+    **変更ファイル**：新規＝`chrome-extension/injected-transfer.js`。
+    変更＝`chrome-extension/background.js`（旧`injectedNoteTransfer`削除・
+    `runTransferViaExecuteScript`全面書き換え・`BUILD_REVISION`更新）、
+    `chrome-extension/manifest.json`（version更新）、
+    `cms/src/lib/__checks__/chromeExtensionManifest.check.ts`（参照先
+    ファイル更新＋新規9件）。`noteTransferServer.ts`等サーバー側コードは
+    今回無変更。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き26（🛑 **note下書き自動転記——1.15.0実機再アーム後、3回
     連続で`executeScript`が内部ログ1件も送らないまま約140秒間無応答となる
     現象を発見。原因未特定のまま、同一タブへの並行実行という安全上の懸念

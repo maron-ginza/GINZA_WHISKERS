@@ -1189,6 +1189,32 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   して以後の自動再試行のみ停止（title/body/保存の既知の成功事実は維持）。
   ハッシュタグ・画像・保存いずれも実測不能（結果自体が一切返っていない）。
   マロンへの追加操作要求なし。詳細は`DECISION_LOG_02.md` 2026-09-13 続き26参照。
+- 2026-09-13: 🏗 **note下書き自動転記——「executeScriptが最初の1行のログすら
+  送らないまま約140秒間無応答」現象（続き26、SW Console赤エラー0件を実機確認済み）
+  を受け、注入方式を全面組み替え：func:直列化方式を廃止しfiles:+tabs.sendMessage
+  方式へ（Project 02 commit・push あり／DB更新なし。実ブラウザでの検証は今回
+  未実施——マロン指示どおり自動再試行は行っていない）**——コード監査の結果、旧
+  `injectedNoteTransfer`（background.js内、約780行）は外部クロージャ参照が
+  1件も無く既に自己完結していたと判明（「外部クロージャ依存」仮説は棄却）。ただし
+  SW Console 0件・`injected_transfer_started`すら0/3という2事実は、func:の
+  Function.prototype.toString()による直列化・対象タブ内再構築のステップ自体を
+  排除できなかったため、そのステップごと無くす方式へ組み替えた。新規
+  `chrome-extension/injected-transfer.js`（固定content scriptファイル、旧ロジック
+  を無変更で移植）：トップレベルIIFEを第1命令からtry/catch/finallyで完全に囲み
+  必ず`{status,error,stack,stages,buildRevision}`を返す、`window.__NOTE_TRANSFER_
+  LISTENER_INSTALLED__`でリスナー二重登録防止、`isRunning`フラグで同一リスナーの
+  並行処理も防止（続き26で懸念した並行実行リスクをより確実に解消）、診断ログは
+  awaitしないfire-and-forget。`background.js`の`runTransferViaExecuteScript`を
+  全面書き換え：`files:['injected-transfer.js']`で注入→`tabs.sendMessage`で
+  データを渡す→`INJECTED_RUN_TIMEOUT_MS`（90秒、client/serverの既存タイムアウト
+  いずれよりも短い）による単発watchdog、タイムアウト後の自動再試行はしない。
+  タイトル本文再入力禁止・新規タブ禁止・tabs.reload禁止・「投稿する」絶対禁止の
+  既存安全境界は無変更のまま維持。`manifest.json`のversionを`1.16.0`へ、
+  `BUILD_REVISION`を`br16-...`へ更新。既存回帰テストの参照先ファイルを移植に
+  合わせて更新＋新規9件、`run-all.ts` **620 passed 0 failed**。
+  `transfer-state.json`は前回の一時停止状態（`needsCompletion:false`）のまま
+  変更せず、サーバー側再アーム・実機検証は今回行っていない。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き27参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

@@ -1,5 +1,6 @@
 // GINZA WHISKERS / Project 02（2026-09-14新設）— chrome-extension/ の
-// manifest.json と background.js／content.js の整合性を静的検証する回帰テスト。
+// manifest.json と background.js／content.js／injected-transfer.js の整合性を
+// 静的検証する回帰テスト。
 //
 // 【背景】manifest.json の permissions に "alarms"／"storage" が欠けたまま
 // background.js が chrome.alarms.onAlarm / chrome.storage.local を無条件に
@@ -8,8 +9,19 @@
 // が発生した（2026-09-14）。この種の「background.js が使うAPI名前空間に対応する
 // 権限がmanifest.jsonに無い」不整合を、実機で動かす前に機械的に検出する。
 //
+// 【2026-09-14続き27】実機で3回連続、chrome.scripting.executeScript
+// ({func: injectedNoteTransfer, ...})方式が最初の1行のログすら送らないまま
+// 約140秒間無応答になる現象が再現し（DECISION_LOG_02.md 2026-09-13続き26）、
+// func:のFunction.prototype.toString()による直列化・対象タブ内での再構築と
+// いうステップ自体を疑う理由が生じたため、固定content scriptファイル
+// injected-transfer.js を files: で注入し、データはchrome.tabs.sendMessageで
+// 渡す構成へ変更した（マロン指示）。転記ロジック本体（ハッシュタグ・
+// カテゴリー画像・下書き保存等）はbackground.jsからinjected-transfer.jsへ
+// 移植されたため、対応する回帰テストの参照先ファイルもこの移動に合わせて
+// 更新している。
+//
 // AIなし・ネットワークなし・純粋な静的解析（正規表現によるAPI名前空間の抽出と
-// permissions配列の突合）。
+// permissions配列の突合、文字列・正規表現によるコード構造の検証）。
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -20,6 +32,10 @@ import { runSuite, type CheckCase } from './_harness'
 const ROOT = resolve(process.cwd(), '..')
 const EXT_DIR = resolve(ROOT, 'chrome-extension')
 const SERVER_SRC = resolve(ROOT, 'cms', 'src', 'scripts', 'noteTransferServer.ts')
+
+const bgSrc = () => readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+const injSrc = () => readFileSync(resolve(EXT_DIR, 'injected-transfer.js'), 'utf8')
+const contentSrc = () => readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
 
 /** chrome.<namespace>.… の名前空間ごとに、MV3で明示的な permissions 宣言が必要なもの。
  * chrome.runtime はいかなる場合も暗黙的に使え、permissions 宣言は不要。 */
@@ -40,6 +56,29 @@ function extractChromeNamespaces(source: string): Set<string> {
   return found
 }
 
+/** コメント行（// ... や JSDoc の * ...）を除いた実コードのみからchrome API
+ * 名前空間を抽出する。解説コメント中の「chrome.tabs.sendMessage」等の言及を
+ * 実際のAPI利用と誤認しないようにする（2026-09-14続き27で追加）。 */
+function extractChromeNamespacesFromCodeOnly(source: string): Set<string> {
+  const codeOnly = source
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .join('\n')
+  return extractChromeNamespaces(codeOnly)
+}
+
+function assertPermissionsCover(source: string, permissions: string[], label: string) {
+  const namespaces = extractChromeNamespaces(source)
+  const missing: string[] = []
+  for (const ns of namespaces) {
+    const requiredPermission = NAMESPACE_TO_PERMISSION[ns]
+    if (requiredPermission && !permissions.includes(requiredPermission)) {
+      missing.push(`chrome.${ns} は permissions に "${requiredPermission}" が必要`)
+    }
+  }
+  assert.deepEqual(missing, [], `${label}: 不足しているpermissions: ${JSON.stringify(missing)}`)
+}
+
 const cases: CheckCase[] = [
   {
     name: 'manifest.jsonが存在しJSONとしてパース可能',
@@ -54,17 +93,7 @@ const cases: CheckCase[] = [
     fn: () => {
       const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
       const permissions: string[] = Array.isArray(manifest.permissions) ? manifest.permissions : []
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const namespaces = extractChromeNamespaces(bg)
-
-      const missing: string[] = []
-      for (const ns of namespaces) {
-        const requiredPermission = NAMESPACE_TO_PERMISSION[ns]
-        if (requiredPermission && !permissions.includes(requiredPermission)) {
-          missing.push(`chrome.${ns} は permissions に "${requiredPermission}" が必要`)
-        }
-      }
-      assert.deepEqual(missing, [], `不足しているpermissions: ${JSON.stringify(missing)}`)
+      assertPermissionsCover(bgSrc(), permissions, 'background.js')
     },
   },
   {
@@ -72,23 +101,29 @@ const cases: CheckCase[] = [
     fn: () => {
       const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
       const permissions: string[] = Array.isArray(manifest.permissions) ? manifest.permissions : []
-      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
-      const namespaces = extractChromeNamespaces(content)
-
-      const missing: string[] = []
-      for (const ns of namespaces) {
-        const requiredPermission = NAMESPACE_TO_PERMISSION[ns]
-        if (requiredPermission && !permissions.includes(requiredPermission)) {
-          missing.push(`chrome.${ns} は permissions に "${requiredPermission}" が必要`)
-        }
-      }
-      assert.deepEqual(missing, [], `不足しているpermissions: ${JSON.stringify(missing)}`)
+      assertPermissionsCover(contentSrc(), permissions, 'content.js')
+    },
+  },
+  {
+    // 2026-09-14続き27：injected-transfer.jsはchrome.runtime.sendMessage／
+    // onMessageのみを使い（暗黙的に利用可・permissions宣言不要）、
+    // alarms/storage/tabs/scripting等の特権APIを一切使わないことを確認する
+    // ——「自己完結した固定ファイル」という設計意図どおり、注入先の
+    // isolated worldで使えるAPIの範囲に収まっていることの検証。
+    name: 'injected-transfer.jsが使うchrome API名前空間もmanifest.jsonのpermissionsに宣言済み（かつ特権APIに依存しない）',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const permissions: string[] = Array.isArray(manifest.permissions) ? manifest.permissions : []
+      const src = injSrc()
+      assertPermissionsCover(src, permissions, 'injected-transfer.js')
+      const namespaces = extractChromeNamespacesFromCodeOnly(src)
+      assert.deepEqual([...namespaces].sort(), ['runtime'], 'injected-transfer.jsはchrome.runtime以外の名前空間に依存しないこと（自己完結・isolated world前提の設計）')
     },
   },
   {
     name: 'background.jsがchrome.alarms.onAlarmを呼ぶ箇所は必ずundefinedチェックを伴う（トップレベル無条件呼び出しの再発防止）',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       // 「if (...chrome.alarms...) { ... chrome.alarms.onAlarm... }」のように、
       // onAlarm への言及より前に chrome.alarms の存在チェック（!chrome.alarms や
       // chrome.alarms &&）が同一関数内に存在することを、ごく単純な行ベースの
@@ -170,7 +205,7 @@ const cases: CheckCase[] = [
     // （起動時に何もせず終了する退行を防ぐ）。
     name: '【content script起動】content.jsがready通知を送信しエディタの初期化を待機する',
     fn: () => {
-      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      const content = contentSrc()
       assert.ok(
         /chrome\.runtime\.sendMessage\(\s*\{\s*type:\s*['"]note-transfer:ready['"]/.test(content),
         'content.jsが起動時に note-transfer:ready を送信していない',
@@ -184,7 +219,7 @@ const cases: CheckCase[] = [
   {
     name: '【安全境界】content.jsは「公開」を含むボタンを明示的に除外している',
     fn: () => {
-      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      const content = contentSrc()
       assert.ok(
         /if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(content),
         '「公開」を含むボタンを除外するガードが見つからない（下書き保存ボタン探索ロジックの安全境界）',
@@ -199,7 +234,7 @@ const cases: CheckCase[] = [
     // 静的に確認する。
     name: '【0文字成功禁止】content.jsはタイトル・本文の読み戻し文字数が0の場合にreport(...,\'success\',...)を呼ばない',
     fn: () => {
-      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      const content = contentSrc()
       assert.ok(
         /titleReadback\.length\s*===\s*0/.test(content),
         'タイトルの読み戻し文字数0を検知するガードが見つからない',
@@ -223,7 +258,7 @@ const cases: CheckCase[] = [
   {
     name: '【診断ログ】content.jsが主要ステージをlogStageで記録している',
     fn: () => {
-      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      const content = contentSrc()
       for (const stage of ['content_script_loaded', 'dom_snapshot', 'title_write_verify', 'body_write_verify']) {
         assert.ok(content.includes(`'${stage}'`), `logStage('${stage}', ...) が見つからない`)
       }
@@ -235,7 +270,7 @@ const cases: CheckCase[] = [
     // 静的検証。
     name: '【多重防止の永久ブロック再発防止】background.jsのinFlightにタイムアウトがあり、拡張再読み込み時にクリアされる',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/INFLIGHT_TIMEOUT_MS/.test(bg), 'inFlightのタイムアウト定数が見つからない')
       assert.ok(/startedAt/.test(bg), 'inFlight記録に開始時刻(startedAt)が含まれていない')
       const onInstalledIdx = bg.indexOf('onInstalled.addListener')
@@ -251,7 +286,7 @@ const cases: CheckCase[] = [
   {
     name: '【診断ログ配線】background.jsがnote-transfer:logメッセージをサーバーへ転送する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/note-transfer:log/.test(bg), 'note-transfer:log メッセージのハンドラが見つからない')
       assert.ok(/\/api\/note-transfer\/log/.test(bg), '/api/note-transfer/log への送信が見つからない')
     },
@@ -265,50 +300,47 @@ const cases: CheckCase[] = [
     },
   },
   {
-    // 2026-09-14続き3：content_scriptsの宣言的注入・ready/startメッセージ往復
-    // だけに依存せず、chrome.scripting.executeScriptで対象タブへ確実に注入する
-    // 経路を実装すること（マロン指示）。静的に存在を確認する。
-    name: '【確実な注入経路】background.jsがchrome.scripting.executeScriptで対象タブへ直接注入する',
+    // 2026-09-14続き27：func:方式（Function.prototype.toString()による直列化・
+    // 対象タブ内での再構築）を廃止し、固定ファイルinjected-transfer.jsを
+    // files:で注入する構成へ変更した（マロン必須修正①）。
+    name: '【確実な注入経路】background.jsがchrome.scripting.executeScriptでinjected-transfer.jsをfiles注入し、func:方式は使わない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/chrome\.scripting\.executeScript/.test(bg), 'chrome.scripting.executeScript の呼び出しが見つからない')
-      assert.ok(/func:\s*injectedNoteTransfer/.test(bg), 'executeScriptにinjectedNoteTransfer関数が渡されていない')
-      assert.ok(/function injectedNoteTransfer/.test(bg), 'injectedNoteTransfer関数の定義が見つからない')
+      assert.ok(/files:\s*\[\s*['"]injected-transfer\.js['"]\s*\]/.test(bg), "executeScriptにfiles: ['injected-transfer.js'] が渡されていない")
+      assert.ok(!/func:\s*injectedNoteTransfer/.test(bg), 'func: injectedNoteTransfer（旧方式）がまだ残っている')
+      assert.ok(!/function injectedNoteTransfer/.test(bg), '旧injectedNoteTransfer関数の定義がbackground.jsに残っている（injected-transfer.jsへ移植したはず）')
     },
   },
   {
     name: '【確実な注入経路】DOM読み込み完了（waitForTabComplete）を待ってから注入する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/function waitForTabComplete/.test(bg), 'waitForTabComplete関数が見つからない')
       assert.ok(/await waitForTabComplete\(/.test(bg), 'checkPending内でwaitForTabCompleteを待機していない')
       assert.ok(/onUpdated\.addListener/.test(bg), "status:'complete' 判定用の chrome.tabs.onUpdated リスナーが見つからない")
     },
   },
   {
-    // executeScriptで注入されるinjectedNoteTransfer自身も、content.jsと同様に
+    // injected-transfer.js（旧injectedNoteTransfer相当）も、content.jsと同様に
     // 0文字のまま成功報告しないガードを持つこと（実行経路が変わっても安全境界は
     // 変わらないことの確認）。
-    name: '【0文字成功禁止・executeScript経路】injectedNoteTransferもタイトル・本文0文字では成功を返さない',
+    name: '【0文字成功禁止・注入ファイル経路】injected-transfer.jsもタイトル・本文0文字では成功を返さない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const start = bg.indexOf('function injectedNoteTransfer')
-      const end = bg.indexOf('async function waitForTabComplete')
-      assert.ok(start >= 0 && end > start, 'injectedNoteTransfer関数の範囲を特定できない')
-      const body = bg.slice(start, end)
-      assert.ok(/titleReadback\.length\s*===\s*0/.test(body), 'injectedNoteTransfer内にタイトル0文字ガードが見つからない')
-      assert.ok(/bodyReadback\.length\s*===\s*0/.test(body), 'injectedNoteTransfer内に本文0文字ガードが見つからない')
+      const inj = injSrc()
+      assert.ok(/titleReadback\.length\s*===\s*0/.test(inj), 'injected-transfer.js内にタイトル0文字ガードが見つからない')
+      assert.ok(/bodyReadback\.length\s*===\s*0/.test(inj), 'injected-transfer.js内に本文0文字ガードが見つからない')
       assert.ok(
-        /finalTitle\.length\s*===\s*0\s*\|\|\s*finalBody\.length\s*===\s*0/.test(body),
-        'injectedNoteTransfer内に保存後の最終確認ガードが見つからない',
+        /finalTitle\.length\s*===\s*0\s*\|\|\s*finalBody\.length\s*===\s*0/.test(inj),
+        'injected-transfer.js内に保存後の最終確認ガードが見つからない',
       )
-      assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(body), 'injectedNoteTransfer内に「公開」ボタン除外ガードが見つからない')
+      assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(inj), 'injected-transfer.js内に「公開」ボタン除外ガードが見つからない')
     },
   },
   {
     name: '【最原始的な起動証跡】background.jsが他の何よりも早い段階でservice_worker_evaluatedログを送る',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       const evalIdx = bg.indexOf("logToServer('service_worker_evaluated'")
       const firstListenerIdx = bg.indexOf('onInstalled.addListener')
       assert.ok(evalIdx >= 0, 'service_worker_evaluated ログ送信が見つからない')
@@ -320,31 +352,30 @@ const cases: CheckCase[] = [
     // アイコンが未完了だった（タグ入力欄・ファイル入力欄が最初のDOMに存在
     // しなかった）。クリックして出現させる「reveal」ロジックが実装されている
     // ことを確認する。
-    name: '【ハッシュタグ・アイコンのreveal-click】background.jsが最初に見つからない場合にクリックして出現を試みる',
+    name: '【ハッシュタグ・アイコンのreveal-click】injected-transfer.jsが最初に見つからない場合にクリックして出現を試みる',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findClickableByLabel/.test(bg), 'findClickableByLabel（ラベル一致のクリック対象探索）が見つからない')
-      assert.ok(/async function revealAndFindHashtagInput/.test(bg), 'revealAndFindHashtagInputが見つからない')
-      assert.ok(/async function revealAndFindFileInput/.test(bg), 'revealAndFindFileInputが見つからない')
+      const inj = injSrc()
+      assert.ok(/function findClickableByLabel/.test(inj), 'findClickableByLabel（ラベル一致のクリック対象探索）が見つからない')
+      assert.ok(/async function revealAndFindFileInput/.test(inj), 'revealAndFindFileInputが見つからない')
       // findClickableByLabel自体も「公開」を含む要素は除外すること（安全境界の踏襲）。
-      const start = bg.indexOf('function findClickableByLabel')
-      const end = bg.indexOf('async function revealAndFindHashtagInput')
-      const body = bg.slice(start, end)
+      const start = inj.indexOf('function findClickableByLabel')
+      const end = inj.indexOf('const PUBLISH_FINAL_RE')
+      const body = inj.slice(start, end)
       assert.ok(/if\s*\(\s*\/公開\/\.test\(label\)\)\s*return\s*false/.test(body), 'findClickableByLabel内に「公開」除外ガードが見つからない')
     },
   },
   {
-    name: '【completion-onlyモード】injectedNoteTransferがmode==="completion"でタイトル・本文の再入力をスキップする',
+    name: '【completion-onlyモード】injected-transfer.jsがmode==="completion"でタイトル・本文の再入力をスキップする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/mode === 'completion'/.test(bg), "mode==='completion' の分岐が見つからない")
-      assert.ok(/completion_sanity_check/.test(bg), 'completion-onlyモードでのタイトル/本文サニティチェックが見つからない')
+      const inj = injSrc()
+      assert.ok(/mode === 'completion'/.test(inj), "mode==='completion' の分岐が見つからない")
+      assert.ok(/completion_sanity_check/.test(inj), 'completion-onlyモードでのタイトル/本文サニティチェックが見つからない')
     },
   },
   {
     name: '【completion-only配線】checkPendingがpreferredUrl（既存下書き）を優先してタブを探す',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/preferredUrl/.test(bg), 'preferredUrl（既存下書きURLの優先一致）が見つからない')
       assert.ok(/existingDraftUrl/.test(bg), 'item.existingDraftUrl の参照が見つからない')
     },
@@ -364,7 +395,7 @@ const cases: CheckCase[] = [
     // 3回でstatus='failed'に恒久固定されてしまっていた。
     name: '【重要バグ再発防止】execute_script_no_result時の失敗報告にmodeが含まれる',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       const idx = bg.indexOf("logToServer('execute_script_no_result'")
       assert.ok(idx >= 0, 'execute_script_no_result ログが見つからない')
       const nearby = bg.slice(idx, idx + 400)
@@ -379,8 +410,8 @@ const cases: CheckCase[] = [
     // 直接評価して検証する（安全境界そのものの振る舞いテスト）。
     name: '【最重要安全境界】PUBLISH_FINAL_REは「公開に進む」を許可し「公開する」等の最終公開文言のみを禁止する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const m = bg.match(/const PUBLISH_FINAL_RE = (\/.+\/)\n/)
+      const inj = injSrc()
+      const m = inj.match(/const PUBLISH_FINAL_RE = (\/.+\/)\n/)
       assert.ok(m, 'PUBLISH_FINAL_RE の定義が見つからない')
       // eslint-disable-next-line no-eval -- 正規表現リテラルのみを固定パターンで抽出して評価する（任意コード実行ではない）
       const re = eval(m![1]) as RegExp
@@ -394,11 +425,11 @@ const cases: CheckCase[] = [
   {
     name: '【設定画面遷移】findProceedToPublishButtonが最終公開ボタンを除外したうえで「公開に進む」のみに一致する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findProceedToPublishButton/.test(bg), 'findProceedToPublishButtonが見つからない')
-      const start = bg.indexOf('function findProceedToPublishButton')
-      const end = bg.indexOf('function findConfirmLikeButton')
-      const body = bg.slice(start, end)
+      const inj = injSrc()
+      assert.ok(/function findProceedToPublishButton/.test(inj), 'findProceedToPublishButtonが見つからない')
+      const start = inj.indexOf('function findProceedToPublishButton')
+      const end = inj.indexOf('function findConfirmLikeButton')
+      const body = inj.slice(start, end)
       assert.ok(/isForbiddenPublishLabel\(t\)/.test(body), '最終公開ボタン除外チェックが呼ばれていない')
       assert.ok(/\/公開に進む\//.test(body), '「公開に進む」への一致条件が見つからない')
     },
@@ -406,42 +437,72 @@ const cases: CheckCase[] = [
   {
     name: '【読み戻し検証】ハッシュタグ4個・画像設定状態をDOMから読み戻す関数が存在する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function countAppliedHashtags/.test(bg), 'countAppliedHashtagsが見つからない')
-      assert.ok(/function checkIconApplied/.test(bg), 'checkIconAppliedが見つからない')
-      assert.ok(/appliedTagCount/.test(bg) && /iconApplied/.test(bg), '読み戻し結果の使用箇所が見つからない')
+      const inj = injSrc()
+      assert.ok(/function countAppliedHashtags/.test(inj), 'countAppliedHashtagsが見つからない')
+      assert.ok(/function checkIconApplied/.test(inj), 'checkIconAppliedが見つからない')
+      assert.ok(/appliedTagCount/.test(inj) && /iconApplied/.test(inj), '読み戻し結果の使用箇所が見つからない')
     },
   },
   {
     name: '【タイトル・本文の不変性検証】completion-onlyジョブは正規化ハッシュで前後一致を確認し、不一致なら失敗扱いにする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/async function normalizedHash/.test(bg), 'normalizedHash（SHA-256）が見つからない')
-      assert.ok(/content_hash_before/.test(bg) && /content_hash_after/.test(bg), 'ハッシュの前後比較ログが見つからない')
-      assert.ok(/content_integrity_check_failed/.test(bg), 'ハッシュ不一致時の失敗ステージが見つからない')
+      const inj = injSrc()
+      assert.ok(/async function normalizedHash/.test(inj), 'normalizedHash（SHA-256）が見つからない')
+      assert.ok(/content_hash_before/.test(inj) && /content_hash_after/.test(inj), 'ハッシュの前後比較ログが見つからない')
+      assert.ok(/content_integrity_check_failed/.test(inj), 'ハッシュ不一致時の失敗ステージが見つからない')
     },
   },
   {
     // 2026-09-14続き7：実機で「executeScriptから結果が返らない」障害が繰り返し
-    // 発生したが、injectedNoteTransfer内で未捕捉例外が起きるとPromiseが
-    // rejectし、蓄積したstagesも含めて一切の診断情報が返らなかった
-    // （原因不明のまま3回失敗し恒久failed化していた）。関数全体を
-    // try/catchで包み、例外発生時も必ずstages＋例外情報を返す構造に
-    // なっていることを確認する。
-    name: '【重大バグ再発防止】injectedNoteTransferは未捕捉例外が起きても必ずstages付きの結果を返す（結果なし＝原因不明を構造的に無くす）',
+    // 発生したが、注入処理内で未捕捉例外が起きるとPromiseがrejectし、蓄積した
+    // stagesも含めて一切の診断情報が返らなかった（原因不明のまま3回失敗し
+    // 恒久failed化していた）。2026-09-14続き27でhandleRunへ再構成した後も、
+    // 最外周をtry/catch/finallyで包み、例外発生時も必ずstages＋例外情報を
+    // 返す構造になっていることを確認する（マロン必須修正②）。
+    name: '【重大バグ再発防止】injected-transfer.jsのhandleRunは未捕捉例外が起きても必ずstages・buildRevision付きの結果を返す（結果なし＝原因不明を構造的に無くす）',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const start = bg.indexOf('function injectedNoteTransfer(item) {')
-      assert.ok(start >= 0, 'injectedNoteTransferの定義が見つからない')
-      const nearby = bg.slice(start, start + 1200)
-      assert.ok(/try\s*\{/.test(nearby), 'injectedNoteTransfer冒頭にtry節が見つからない')
-      assert.ok(/await runInjectedTransfer\(\)/.test(nearby), 'runInjectedTransferの呼び出しが見つからない')
-      assert.ok(/catch\s*\(e\)\s*\{/.test(nearby), 'catch節が見つからない')
-      assert.ok(/uncaught_exception_in_injected_function/.test(nearby), '例外時のステージ名・エラーコードが見つからない')
-      // catch節がstagesを含む結果を返していることを確認する。
-      const catchIdx = nearby.indexOf('catch (e)')
-      const afterCatch = nearby.slice(catchIdx, catchIdx + 500)
-      assert.ok(/stages,?\s*\}/.test(afterCatch), 'catch節の戻り値にstagesが含まれていない')
+      const inj = injSrc()
+      const start = inj.indexOf('async function handleRun(item, buildRevision, log) {')
+      assert.ok(start >= 0, 'handleRunの定義が見つからない')
+      const end = inj.indexOf('async function runTransfer(item, log, stages) {')
+      assert.ok(end > start, 'handleRunの範囲を特定できない')
+      const body = inj.slice(start, end)
+      assert.ok(/try\s*\{/.test(body), 'handleRun冒頭にtry節が見つからない')
+      assert.ok(/catch\s*\(e\)\s*\{/.test(body), 'catch節が見つからない')
+      assert.ok(/finally\s*\{/.test(body), 'finally節が見つからない（マロン指示：try/catch/finallyで完全に囲む）')
+      assert.ok(/uncaught_exception_in_injected_function/.test(body), '例外時のステージ名・エラーコードが見つからない')
+      assert.ok(/stages,\s*\n\s*buildRevision,/.test(body) || /stages,\s*buildRevision,/.test(body), 'catch節の戻り値にstages・buildRevisionが含まれていない')
+    },
+  },
+  {
+    // 2026-09-14続き27（マロン必須修正②の一部）：注入処理の第1命令（トップ
+    // レベルIIFE）自体もtry/catch/finallyで囲まれていることを確認する。
+    name: '【重大バグ再発防止】injected-transfer.jsのトップレベルIIFEも第1命令からtry/catch/finallyで囲まれている',
+    fn: () => {
+      const inj = injSrc()
+      const iifeStart = inj.indexOf(';(function () {')
+      assert.ok(iifeStart >= 0, 'トップレベルIIFEの開始が見つからない')
+      const afterIife = inj.slice(iifeStart, iifeStart + 300)
+      assert.ok(/'use strict'\s*\n\s*try\s*\{/.test(afterIife), 'IIFE内の第1命令がtry節ではない')
+      const catchIdx = inj.indexOf('} catch (e) {', iifeStart)
+      const finallyIdx = inj.indexOf('} finally {', catchIdx)
+      assert.ok(catchIdx > iifeStart && finallyIdx > catchIdx, 'IIFE本体にcatch・finallyが両方見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き27（マロン必須修正③）：診断ログ送信（chrome.runtime.
+    // sendMessage）をawaitせず、fire-and-forgetで送ることを確認する——
+    // ログ通信障害で本処理を止めない。
+    name: '【重大バグ再発防止】logNonBlockingは診断ログ送信をawaitせず、失敗しても本処理を止めない',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('function logNonBlocking(event, detail) {')
+      assert.ok(start >= 0, 'logNonBlockingの定義が見つからない')
+      const end = inj.indexOf('logNonBlocking(\'injected_file_top_level_start\'')
+      const body = inj.slice(start, end)
+      assert.ok(!/await\s+chrome\.runtime\.sendMessage/.test(body), 'chrome.runtime.sendMessageをawaitしている（ログ通信で本処理をブロックしうる）')
+      assert.ok(/maybePromise\.catch\(\(\)\s*=>\s*\{\}\)/.test(body), '送信失敗を握りつぶすcatchが見つからない')
+      assert.ok(/catch\s*\(e\)\s*\{/.test(body), 'logNonBlocking自体のtry/catchが見つからない（送信失敗で例外が漏れないことの保証）')
     },
   },
   {
@@ -452,12 +513,12 @@ const cases: CheckCase[] = [
     // 直接呼び出しが残っていないことを確認する。
     name: '【重大バグ再発防止】trigger.click直接呼び出しが無く、clickElement（祖先解決）を経由する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function nearestClickable/.test(bg), 'nearestClickableが見つからない')
-      assert.ok(/function clickElement/.test(bg), 'clickElementが見つからない')
+      const inj = injSrc()
+      assert.ok(/function nearestClickable/.test(inj), 'nearestClickableが見つからない')
+      assert.ok(/function clickElement/.test(inj), 'clickElementが見つからない')
       // コメント文中の言及を除外し、実コードで trigger.click()／proceedBtn.click()／
       // confirmBtn.click()／saveBtn.click() を直接呼んでいる行が無いことを確認する。
-      const codeLines = bg.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      const codeLines = inj.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
       const directCallRe = /\b(trigger|proceedBtn|confirmBtn|saveBtn)\.click\(\)/
       const offendingLine = codeLines.find((line) => directCallRe.test(line))
       assert.equal(offendingLine, undefined, `直接.click()呼び出しが残っている: ${offendingLine}`)
@@ -471,9 +532,9 @@ const cases: CheckCase[] = [
     // 完全一致が無ければ他candidateへフォールバックせず直接開くことを確認する。
     name: '【重大バグ再発防止】preferredUrl指定時、完全一致タブが無ければ他のnoteタブへフォールバックせずpreferredUrlを直接開く',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       const start = bg.indexOf('async function findOrOpenNoteEditorTab')
-      const end = bg.indexOf('function injectedNoteTransfer')
+      const end = bg.indexOf('/**\n * 2026-09-14続き27')
       assert.ok(start >= 0 && end > start, 'findOrOpenNoteEditorTabの範囲を特定できない')
       const body = bg.slice(start, end)
       assert.ok(/if\s*\(preferredUrl\)\s*\{/.test(body), 'preferredUrl分岐が見つからない')
@@ -492,7 +553,7 @@ const cases: CheckCase[] = [
       const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
       assert.ok(typeof manifest.version === 'string' && manifest.version !== '1.0.0', 'manifest.jsonのversionが既定値のまま更新されていない')
 
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/const BUILD_REVISION = /.test(bg), 'BUILD_REVISION定数が見つからない')
       const evalIdx = bg.indexOf("logToServer('service_worker_evaluated'")
       const nearby = bg.slice(evalIdx, evalIdx + 300)
@@ -506,6 +567,116 @@ const cases: CheckCase[] = [
   },
 ]
 
+const WATCHDOG_DEDUP_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き27（マロン必須修正④）：executeScript側に単発watchdogを
+    // 設け、タイムアウト後の自動再試行はしないことを確認する。
+    name: '【単発watchdog】background.jsはPromise.raceで単発タイムアウトを設け、タイムアウト時は1回だけ失敗報告して終わる（本関数内で自動的に再試行しない）',
+    fn: () => {
+      const bg = bgSrc()
+      assert.ok(/const INJECTED_RUN_TIMEOUT_MS = \d+/.test(bg), 'INJECTED_RUN_TIMEOUT_MS定数が見つからない')
+      assert.ok(/Promise\.race\(\[runPromise, watchdogPromise\]\)/.test(bg), 'Promise.raceによるwatchdogが見つからない')
+      const idx = bg.indexOf('if (result && result.__watchdogTimeout) {')
+      assert.ok(idx >= 0, 'watchdogタイムアウト時の分岐が見つからない')
+      const body = bg.slice(idx, idx + 600)
+      assert.ok(/injected_run_watchdog_timeout/.test(body), 'watchdogタイムアウトのログ・エラーステージ名が見つからない')
+      assert.ok(/await reportResult\(item\.articleId, 'failure'/.test(body), 'watchdogタイムアウト時に1回だけ失敗報告していることが確認できない')
+      // タイムアウト分岐内でchrome.scripting.executeScriptやcheckPendingを
+      // 再度呼んでいない（＝本関数が自分で再試行しない）ことを確認する。
+      assert.ok(!/chrome\.scripting\.executeScript/.test(body), 'watchdogタイムアウト分岐内でexecuteScriptを再度呼んでいる（自動再試行の再発）')
+    },
+  },
+  {
+    name: '【単発watchdog】タイムアウト値はブラウザ側inFlightタイムアウト（120秒）より短く、サーバー側stale判定（150秒）より短い',
+    fn: () => {
+      const bg = bgSrc()
+      const m = bg.match(/const INJECTED_RUN_TIMEOUT_MS = (\d+)/)
+      assert.ok(m, 'INJECTED_RUN_TIMEOUT_MSの値を取得できない')
+      const timeoutMs = Number(m![1])
+      const inflightMatch = bg.match(/const INFLIGHT_TIMEOUT_MS = (\d+)/)
+      assert.ok(inflightMatch, 'INFLIGHT_TIMEOUT_MSの値を取得できない')
+      const inflightMs = Number(inflightMatch![1])
+      assert.ok(timeoutMs < inflightMs, `単発watchdog（${timeoutMs}ms）がブラウザ側inFlightタイムアウト（${inflightMs}ms）以上——watchdogが意味をなさない`)
+    },
+  },
+  {
+    // 2026-09-14続き27（マロン必須修正④「実行中スクリプトとの重複を防止
+    // する」）：同一タブへの複数回の注入でリスナーが重複登録されないこと、
+    // かつ同一リスナーが並行して複数のnote-transfer:runを処理しない
+    // （isRunningガード）ことを確認する。
+    name: '【重複実行防止】injected-transfer.jsはリスナーの二重登録を防ぎ、実行中は新しい実行を開始せず即座に「実行中」を報告する',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/window\.__NOTE_TRANSFER_LISTENER_INSTALLED__/.test(inj), 'リスナー二重登録防止ガードが見つからない')
+      const idx = inj.indexOf('if (window.__NOTE_TRANSFER_LISTENER_INSTALLED__) {')
+      assert.ok(idx >= 0, '二重登録ガードの分岐が見つからない')
+      const nearby = inj.slice(idx, idx + 200)
+      assert.ok(/return/.test(nearby), '二重登録ガードがreturnで処理を終えていない')
+
+      assert.ok(/let isRunning = false/.test(inj), 'isRunningフラグが見つからない')
+      const runIdx = inj.indexOf('if (isRunning) {')
+      assert.ok(runIdx >= 0, 'isRunningチェックの分岐が見つからない')
+      const runBody = inj.slice(runIdx, runIdx + 400)
+      assert.ok(/injected_run_already_in_progress/.test(runBody), '実行中を示すログ・エラーステージ名が見つからない')
+      assert.ok(/sendResponse\(\{/.test(runBody), '実行中の場合に即座にsendResponseしていることが確認できない')
+    },
+  },
+  {
+    name: '【重複実行防止】isRunningはfinallyで必ずfalseへ戻され、次のメッセージを恒久的にブロックしない',
+    fn: () => {
+      const inj = injSrc()
+      const idx = inj.indexOf('.finally(() => {\n          isRunning = false\n        })')
+      assert.ok(idx >= 0, 'isRunningをfalseへ戻すfinally節が見つからない（恒久ブロックの再発防止）')
+    },
+  },
+  {
+    // 2026-09-14続き27（マロン必須修正⑤・⑥）：タイトル・本文は再入力せず、
+    // 保存済みURLの既存タブのみを使用し新規タブ作成・tabs.reloadを行わない
+    // ——既存の安全境界がfiles:注入方式へ移行後も維持されていることを確認する。
+    name: '【維持確認】タイトル・本文の再入力禁止・新規タブ作成禁止・tabs.reload禁止の安全境界はfiles:注入方式へ移行後も維持されている',
+    fn: () => {
+      const bg = bgSrc()
+      // preferredUrl（completion-onlyジョブ）の経路でchrome.tabs.createが
+      // 呼ばれていないこと（新規タブを作らない）。
+      const start = bg.indexOf('if (preferredUrl) {')
+      const end = bg.indexOf('logToServer(\'preferred_url_tab_not_found_opening_directly\'')
+      const body = bg.slice(start, end)
+      assert.ok(!/chrome\.tabs\.create/.test(body), 'preferredUrl経路でchrome.tabs.createが呼ばれている（新規タブ作成の再発）')
+      assert.ok(!/chrome\.tabs\.reload/.test(body), 'preferredUrl経路でchrome.tabs.reloadが呼ばれている（reload禁止の再発）')
+
+      // injected-transfer.js側：completion-onlyモードではタイトル・本文の
+      // 書き込み関数（setContentEditableParagraphs等）がmode==='full'の
+      // 分岐内にのみ存在し、completionモードの経路では呼ばれないこと。
+      const inj = injSrc()
+      const completionIdx = inj.indexOf("if (mode === 'completion') {")
+      const imageSectionIdx = inj.indexOf('// --- ① カテゴリー画像')
+      assert.ok(completionIdx >= 0 && imageSectionIdx > completionIdx, 'completion分岐と画像処理の位置関係を特定できない')
+      const completionToImageSection = inj.slice(completionIdx, imageSectionIdx)
+      assert.ok(!/setContentEditableParagraphs/.test(completionToImageSection), 'completion-onlyジョブの経路上でタイトル・本文の書き込み関数が呼ばれている（再入力禁止の再発）')
+    },
+  },
+  {
+    // 2026-09-14続き27（マロン必須修正⑧）：「投稿する」はコード上で絶対に
+    // 押さない——injected-transfer.js全体でPUBLISH_FINAL_REに一致する文言を
+    // 持つ要素をfindする関数がfindProceedToPublishButton・
+    // isForbiddenPublishLabelの除外ガード以外の経路から呼ばれていないこと
+    // （＝最終公開ボタンを探して押す専用ロジックがそもそも存在しない）ことを
+    // 確認する。
+    name: '【最終公開絶対禁止】injected-transfer.js内に最終公開ボタンをクリックする経路が存在しない',
+    fn: () => {
+      const inj = injSrc()
+      // 「投稿する」「公開する」等の文言を持つ要素を明示的にfindして
+      // clickElementへ渡すような専用関数・コードパスが無いことを確認する
+      // （findProceedToPublishButtonは「公開に進む」のみに一致し、
+      // isForbiddenPublishLabelで最終公開文言を除外する構造——既存テストで
+      // 検証済み。ここでは「公開する」自体を検索対象にする別ロジックが
+      // 追加されていないことを確認する）。
+      assert.ok(!/【投稿する】|findPublishButton|findSubmitButton/.test(inj), '最終公開ボタンを探す専用関数らしきものが見つかった（存在してはならない）')
+    },
+  },
+]
+cases.push(...WATCHDOG_DEDUP_TEST_CASES)
+
 const CANCEL_TEST_CASES: CheckCase[] = [
   {
     // 2026-09-14続き10：実機ログで「公開に進む」が実際のページ遷移
@@ -514,12 +685,12 @@ const CANCEL_TEST_CASES: CheckCase[] = [
     // 文言には一致しないことを確認する。
     name: '【設定画面からの復帰】findCancelButtonは「キャンセル」に一致し「公開」を含む文言には一致しない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findCancelButton/.test(bg), 'findCancelButtonが見つからない')
-      const start = bg.indexOf('function findCancelButton')
-      const end = bg.indexOf("log('injected_transfer_started'")
+      const inj = injSrc()
+      assert.ok(/function findCancelButton/.test(inj), 'findCancelButtonが見つからない')
+      const start = inj.indexOf('function findCancelButton')
+      const end = inj.indexOf("log('injected_transfer_started'")
       assert.ok(start >= 0 && end > start, 'findCancelButtonの範囲を特定できない')
-      const body = bg.slice(start, end)
+      const body = inj.slice(start, end)
       assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(body), 'findCancelButton内に「公開」除外ガードが見つからない')
       assert.ok(/\^キャンセル\$/.test(body), '「キャンセル」への一致条件が見つからない')
     },
@@ -527,12 +698,12 @@ const CANCEL_TEST_CASES: CheckCase[] = [
   {
     name: '【設定画面からの復帰】下書き保存ボタンが見つからない場合、まずキャンセルボタンを試し、無ければEscapeへフォールバックする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/cancel_button_click/.test(bg), 'cancel_button_clickログが見つからない')
-      assert.ok(/findCancelButton\(\)/.test(bg), 'findCancelButtonの呼び出しが見つからない')
-      const idx = bg.indexOf('const cancelBtn = findCancelButton()')
+      const inj = injSrc()
+      assert.ok(/cancel_button_click/.test(inj), 'cancel_button_clickログが見つからない')
+      assert.ok(/findCancelButton\(\)/.test(inj), 'findCancelButtonの呼び出しが見つからない')
+      const idx = inj.indexOf('const cancelBtn = findCancelButton()')
       assert.ok(idx >= 0, 'cancelBtn取得箇所が見つからない')
-      const nearby = bg.slice(idx, idx + 400)
+      const nearby = inj.slice(idx, idx + 400)
       assert.ok(/Escape/.test(nearby), 'Escapeへのフォールバックが見つからない')
     },
   },
@@ -547,38 +718,38 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
     // ない」ことを明示すること。
     name: '【画像なし明示】categoryIconの必須項目が1つでも欠けていれば無断代替せずno_usable_image_fileを報告する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/no_usable_image_file/.test(bg), 'no_usable_image_fileステージが見つからない')
-      assert.ok(/noUsableImageFile:\s*true/.test(bg), 'noUsableImageFileフラグが見つからない')
-      const idx = bg.indexOf('const imageAvailable =')
+      const inj = injSrc()
+      assert.ok(/no_usable_image_file/.test(inj), 'no_usable_image_fileステージが見つからない')
+      assert.ok(/noUsableImageFile:\s*true/.test(inj), 'noUsableImageFileフラグが見つからない')
+      const idx = inj.indexOf('const imageAvailable =')
       assert.ok(idx >= 0, 'imageAvailable判定が見つからない')
-      const nearby = bg.slice(idx, idx + 300)
+      const nearby = inj.slice(idx, idx + 300)
       assert.ok(/img\.url/.test(nearby) && /img\.fileName/.test(nearby) && /img\.mimeType/.test(nearby) && /img\.sha256/.test(nearby), 'url/fileName/mimeType/sha256のすべてを必須項目として確認していない')
     },
   },
   {
     name: '【画像整合性検証】取得した画像の実SHA-256をペイロードのsha256と比較し、不一致なら添付しない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/image_sha256_verify/.test(bg), 'image_sha256_verifyログが見つからない')
-      assert.ok(/actualSha256 !== img\.sha256/.test(bg), 'SHA-256不一致時のガードが見つからない')
-      assert.ok(/image_integrity_mismatch/.test(bg), '不一致時の失敗ステージ名が見つからない')
+      const inj = injSrc()
+      assert.ok(/image_sha256_verify/.test(inj), 'image_sha256_verifyログが見つからない')
+      assert.ok(/actualSha256 !== img\.sha256/.test(inj), 'SHA-256不一致時のガードが見つからない')
+      assert.ok(/image_integrity_mismatch/.test(inj), '不一致時の失敗ステージ名が見つからない')
     },
   },
   {
     name: '【プレビュー読み戻し】アップロード後に新しいblob:プレビュー画像が出現したことを確認してからattachedとする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/beforePreviewImgs/.test(bg), 'アップロード前のblob:画像一覧の記録が見つからない')
-      assert.ok(/image_preview_verify/.test(bg), 'image_preview_verifyログが見つからない')
-      assert.ok(/attached:\s*!!previewAppeared/.test(bg), 'previewAppearedに基づくattached判定が見つからない')
+      const inj = injSrc()
+      assert.ok(/beforePreviewImgs/.test(inj), 'アップロード前のblob:画像一覧の記録が見つからない')
+      assert.ok(/image_preview_verify/.test(inj), 'image_preview_verifyログが見つからない')
+      assert.ok(/attached:\s*!!previewAppeared/.test(inj), 'previewAppearedに基づくattached判定が見つからない')
     },
   },
   {
     name: '【iconDoneの正確性】iconDoneは緩いcheckIconAppliedではなく検証済みのiconResult.attachedのみで判定する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/const iconDone = iconResult\.attached === true$/m.test(bg), 'iconDoneがiconResult.attachedのみで判定されていない（checkIconAppliedとのAND条件が残っている可能性）')
+      const inj = injSrc()
+      assert.ok(/const iconDone = iconResult\.attached === true$/m.test(inj), 'iconDoneがiconResult.attachedのみで判定されていない（checkIconAppliedとのAND条件が残っている可能性）')
     },
   },
 ]
@@ -593,9 +764,9 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
     // 前に実行されることを確認する——画像のために設定画面へは進まない。
     name: '【処理順】画像トリガー探索はハッシュタグの設定画面遷移判定より前に実行される',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const iconSearchIdx = bg.indexOf('await revealAndFindFileInput()')
-      const proceedForHashtagIdx = bg.indexOf('proceed_to_settings_for_hashtag_check')
+      const inj = injSrc()
+      const iconSearchIdx = inj.indexOf('await revealAndFindFileInput()')
+      const proceedForHashtagIdx = inj.indexOf('proceed_to_settings_for_hashtag_check')
       assert.ok(iconSearchIdx >= 0, 'revealAndFindFileInputの呼び出しが見つからない')
       assert.ok(proceedForHashtagIdx >= 0, 'proceed_to_settings_for_hashtag_checkが見つからない')
       assert.ok(iconSearchIdx < proceedForHashtagIdx, '画像探索がハッシュタグの設定画面遷移より後になっている（画像のために設定画面へ進んでしまう可能性）')
@@ -606,36 +777,36 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
     // dom_snapshotを必ず保存し、推測で別画面を探さないでください」。
     name: '【推測禁止】編集画面で画像トリガーが見つからない場合、dom_snapshotを保存し公開設定画面へはフォールバックしない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/image_trigger_not_found_on_editor/.test(bg), 'image_trigger_not_found_on_editorログが見つからない')
-      const idx = bg.indexOf('let imageNotFoundSnapshot = null')
+      const inj = injSrc()
+      assert.ok(/image_trigger_not_found_on_editor/.test(inj), 'image_trigger_not_found_on_editorログが見つからない')
+      const idx = inj.indexOf('let imageNotFoundSnapshot = null')
       assert.ok(idx >= 0, 'imageNotFoundSnapshotの宣言が見つからない')
-      const nearby = bg.slice(idx, idx + 400)
+      const nearby = inj.slice(idx, idx + 400)
       assert.ok(/imageNotFoundSnapshot = domDebugSnapshot\(\)/.test(nearby), '画像トリガー未検出時にdomDebugSnapshotを保存していない')
       // 画像未検出ブロック内でfindProceedToPublishButton等の設定画面遷移を
       // 呼んでいないこと（推測で別画面を探さない）。
-      const blockEnd = bg.indexOf('const img = item.categoryIcon')
-      const block = bg.slice(idx, blockEnd)
+      const blockEnd = inj.indexOf('const img = item.categoryIcon')
+      const block = inj.slice(idx, blockEnd)
       assert.ok(!/findProceedToPublishButton/.test(block), '画像未検出時に公開設定画面への遷移を試みている（推測探索の再発）')
     },
   },
   {
     name: '【必要な場合だけ】ハッシュタグの公開設定画面遷移は編集画面上で未反映のタグがある場合のみ行われる',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const idx = bg.indexOf('if (appliedTagCount < expectedTagsNoHash.length && expectedTagsNoHash.length > 0) {')
+      const inj = injSrc()
+      const idx = inj.indexOf('if (appliedTagCount < expectedTagsNoHash.length && expectedTagsNoHash.length > 0) {')
       assert.ok(idx >= 0, 'appliedTagCountに基づく設定画面遷移の条件分岐が見つからない')
-      const nearby = bg.slice(idx, idx + 300)
+      const nearby = inj.slice(idx, idx + 300)
       assert.ok(/proceed_to_settings_for_hashtag_check/.test(nearby), '条件成立時の設定画面遷移ログが見つからない')
     },
   },
   {
     name: '【下書き保存の位置】下書き保存は画像処理の直後・ハッシュタグ確認より前に実行される',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const iconDoneIdx = bg.indexOf("log('icon_attach_done', iconResult)")
-      const saveIdx = bg.indexOf("log('save_button_found', { text: visibleText(saveBtn), stage: 'editor' })")
-      const hashtagCheckIdx = bg.indexOf('let appliedTagCount = countAppliedHashtags(expectedTagsNoHash)')
+      const inj = injSrc()
+      const iconDoneIdx = inj.indexOf("log('icon_attach_done', iconResult)")
+      const saveIdx = inj.indexOf("log('save_button_found', { text: visibleText(saveBtn), stage: 'editor' })")
+      const hashtagCheckIdx = inj.indexOf('let appliedTagCount = countAppliedHashtags(expectedTagsNoHash)')
       assert.ok(iconDoneIdx >= 0 && saveIdx >= 0 && hashtagCheckIdx >= 0, '画像処理・保存・ハッシュタグ確認いずれかの位置が特定できない')
       assert.ok(iconDoneIdx < saveIdx, '画像処理が下書き保存より後になっている')
       assert.ok(saveIdx < hashtagCheckIdx, '下書き保存がハッシュタグ確認より後になっている')
@@ -648,7 +819,7 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
     // 呼ばないことを確認する。
     name: '【重要】tabs.reload禁止——preferredUrl完全一致タブはreloadせずそのまま再利用する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       const start = bg.indexOf('if (preferredUrl) {')
       const end = bg.indexOf("logToServer('preferred_url_tab_not_found_opening_directly'")
       assert.ok(start >= 0 && end > start, 'preferredUrl分岐の範囲を特定できない')
@@ -664,7 +835,7 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
     // 実構造を確認できるようにする。
     name: '【診断ログ配線】success応答でもiconDebugをサーバーへ転送し、result_debug_snapshotとして記録される',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/iconDebug:\s*result\.iconResult\?\.debug/.test(bg), "success応答にiconDebug: result.iconResult?.debug が含まれていない")
 
       const server = readFileSync(SERVER_SRC, 'utf8')
@@ -681,15 +852,15 @@ const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
     // チューザーには「画像をアップロード」「記事にあう画像を選ぶ」の2択が
     // あり、実際のfile inputは「画像をアップロード」をさらにクリックして
     // 初めて出現する2段階のUIだった。「記事にあう画像を選ぶ」（note提案の
-    // ストック／関連画像）には無断代替禁止の原則から絶対に触れないこと。
+    // ストック／関連画像）には無断代替禁止の原則から絶対にクリックしないこと。
     name: '【無断代替禁止】findUploadOptionButtonは「画像をアップロード」のみに一致し「記事にあう画像を選ぶ」には一致しない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findUploadOptionButton/.test(bg), 'findUploadOptionButtonが見つからない')
-      const start = bg.indexOf('function findUploadOptionButton')
-      const end = bg.indexOf('async function revealAndFindFileInput')
+      const inj = injSrc()
+      assert.ok(/function findUploadOptionButton/.test(inj), 'findUploadOptionButtonが見つからない')
+      const start = inj.indexOf('function findUploadOptionButton')
+      const end = inj.indexOf('async function revealAndFindFileInput')
       assert.ok(start >= 0 && end > start, 'findUploadOptionButtonの範囲を特定できない')
-      const body = bg.slice(start, end)
+      const body = inj.slice(start, end)
       assert.ok(/if\s*\(\s*\/記事にあう画像を選ぶ\/\.test\(t\)\)\s*return\s*false/.test(body), '「記事にあう画像を選ぶ」の除外ガードが見つからない')
       assert.ok(/\/画像をアップロード\//.test(body), '「画像をアップロード」への一致条件が見つからない')
     },
@@ -697,11 +868,11 @@ const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
   {
     name: '【2段階UI対応】revealAndFindFileInputは1回目のクリックでfile inputが出現しない場合、findUploadOptionButtonを追加でクリックして再探索する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const start = bg.indexOf('async function revealAndFindFileInput')
-      const end = bg.indexOf('function findSaveDraftButton')
+      const inj = injSrc()
+      const start = inj.indexOf('async function revealAndFindFileInput')
+      const end = inj.indexOf('function findSaveDraftButton')
       assert.ok(start >= 0 && end > start, 'revealAndFindFileInputの範囲を特定できない')
-      const body = bg.slice(start, end)
+      const body = inj.slice(start, end)
       assert.ok(/const uploadOption = findUploadOptionButton\(\)/.test(body), '2段階目のfindUploadOptionButton呼び出しが見つからない')
       assert.ok(/clickElement\(uploadOption\)/.test(body), '2段階目のクリックが見つからない')
       assert.ok(/image_upload_option_click/.test(body), '2段階目クリックのログが見つからない')
@@ -714,7 +885,7 @@ const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
     // のたびに画面を奪わないことを確認する。
     name: '【前面表示】ハッシュタグ・画像とも完了した場合のみ既存タブをアクティブ化し、新規タブは作らない',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const bg = bgSrc()
       assert.ok(/chrome\.tabs\.update\(tabId,\s*\{\s*active:\s*true\s*\}\)/.test(bg), 'chrome.tabs.updateによるタブのアクティブ化が見つからない')
       const idx = bg.indexOf('chrome.tabs.update(tabId, { active: true })')
       assert.ok(idx >= 0, 'chrome.tabs.update呼び出し箇所が見つからない')
@@ -738,11 +909,11 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
     // ことを確認する。
     name: '【誤検出防止】countAppliedHashtagsは「件」を含む文言（サジェストの統計表示）を候補から除外する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const start = bg.indexOf('function countAppliedHashtags(expectedTagsNoHash, scopeEl)')
+      const inj = injSrc()
+      const start = inj.indexOf('function countAppliedHashtags(expectedTagsNoHash, scopeEl)')
       assert.ok(start >= 0, 'countAppliedHashtags(scopeEl対応版)が見つからない')
-      const end = bg.indexOf('function findHashtagScopeContainer')
-      const body = bg.slice(start, end)
+      const end = inj.indexOf('function findHashtagScopeContainer')
+      const body = inj.slice(start, end)
       assert.ok(/!\s*\/件\/\.test\(t\)/.test(body), '「件」を含む文言の除外条件が見つからない')
       assert.ok(/scopeEl \|\| document/.test(body), 'scopeElが渡された場合にそのスコープ内だけを検索する実装が見つからない')
     },
@@ -750,11 +921,11 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
   {
     name: '【選択済みタグ領域】findHashtagScopeContainerは祖先の可視テキストに「件」が現れ始める手前で境界を止める',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findHashtagScopeContainer/.test(bg), 'findHashtagScopeContainerが見つからない')
-      const start = bg.indexOf('function findHashtagScopeContainer')
-      const end = bg.indexOf('function findWrongHashtagChips')
-      const body = bg.slice(start, end)
+      const inj = injSrc()
+      assert.ok(/function findHashtagScopeContainer/.test(inj), 'findHashtagScopeContainerが見つからない')
+      const start = inj.indexOf('function findHashtagScopeContainer')
+      const end = inj.indexOf('function findWrongHashtagChips')
+      const body = inj.slice(start, end)
       assert.ok(/if\s*\(\s*\/件\/\.test\(visibleText\(node\)\)\)\s*break/.test(body), '「件」出現時に遡りを停止する境界判定が見つからない')
     },
   },
@@ -762,11 +933,11 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
     // マロン指示：「誤ったタグがあれば削除し」。
     name: '【誤ったタグの削除】findWrongHashtagChipsは期待タグに含まれない「#」始まりの要素のみを対象にする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findWrongHashtagChips/.test(bg), 'findWrongHashtagChipsが見つからない')
-      const start = bg.indexOf('function findWrongHashtagChips')
-      const end = bg.indexOf('function findChipRemoveButton')
-      const body = bg.slice(start, end)
+      const inj = injSrc()
+      assert.ok(/function findWrongHashtagChips/.test(inj), 'findWrongHashtagChipsが見つからない')
+      const start = inj.indexOf('function findWrongHashtagChips')
+      const end = inj.indexOf('function findChipRemoveButton')
+      const body = inj.slice(start, end)
       assert.ok(/if\s*\(!\/\^#\/\.test\(t\)\)\s*return\s*false/.test(body), '「#」始まりのみを対象にする条件が見つからない')
       assert.ok(/!expectedTagsNoHash\.some/.test(body), '期待タグに含まれるものを除外する条件が見つからない')
     },
@@ -774,22 +945,22 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
   {
     name: '【推測クリック禁止】findChipRemoveButtonは削除ボタンが見つからない場合nullを返し、呼び出し側はその場合削除をスキップする',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      assert.ok(/function findChipRemoveButton/.test(bg), 'findChipRemoveButtonが見つからない')
-      assert.ok(/hashtag_wrong_chip_remove_button_not_found/.test(bg), '削除ボタン未検出時のログが見つからない（推測での代替クリックをしていないことの確認）')
-      const idx = bg.indexOf('const removeBtn = findChipRemoveButton(chip)')
+      const inj = injSrc()
+      assert.ok(/function findChipRemoveButton/.test(inj), 'findChipRemoveButtonが見つからない')
+      assert.ok(/hashtag_wrong_chip_remove_button_not_found/.test(inj), '削除ボタン未検出時のログが見つからない（推測での代替クリックをしていないことの確認）')
+      const idx = inj.indexOf('const removeBtn = findChipRemoveButton(chip)')
       assert.ok(idx >= 0, 'removeBtn取得箇所が見つからない')
-      const nearby = bg.slice(idx, idx + 400)
+      const nearby = inj.slice(idx, idx + 400)
       assert.ok(/if\s*\(removeBtn\)\s*\{/.test(nearby), 'removeBtnが見つかった場合のみ削除処理へ進む分岐が見つからない')
     },
   },
   {
     name: '【不足タグの追加】scope限定で未検出のタグのみをsetNativeValue+pressEnterで追加する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const idx = bg.indexOf('const missingTags = expectedTagsNoHash.filter(')
+      const inj = injSrc()
+      const idx = inj.indexOf('const missingTags = expectedTagsNoHash.filter(')
       assert.ok(idx >= 0, 'missingTags算出箇所が見つからない')
-      const nearby = bg.slice(idx, idx + 500)
+      const nearby = inj.slice(idx, idx + 500)
       assert.ok(/setNativeValue\(hashtagInputEl, tag\)/.test(nearby), '不足タグの入力（setNativeValue）が見つからない')
       assert.ok(/pressEnter\(hashtagInputEl\)/.test(nearby), '不足タグ入力後のEnter送信が見つからない')
     },
@@ -797,9 +968,9 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
   {
     name: '【読み戻し】タグの追加・削除後、appliedTagCountをscope限定で再計算してから読み戻す',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const inj = injSrc()
       assert.ok(
-        /appliedTagCount = countAppliedHashtags\(expectedTagsNoHash, hashtagScope\)/.test(bg),
+        /appliedTagCount = countAppliedHashtags\(expectedTagsNoHash, hashtagScope\)/.test(inj),
         '補正後の再計算（hashtagScope指定）が見つからない',
       )
     },
@@ -807,10 +978,10 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
   {
     name: '【再保存】タグを追加または削除した場合のみ、編集画面へ戻ってから下書きを再保存する',
     fn: () => {
-      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
-      const idx = bg.indexOf("stage: 'after_hashtag_correction'")
+      const inj = injSrc()
+      const idx = inj.indexOf("stage: 'after_hashtag_correction'")
       assert.ok(idx >= 0, 'タグ補正後の再保存ログが見つからない')
-      const before = bg.slice(Math.max(0, idx - 400), idx)
+      const before = inj.slice(Math.max(0, idx - 400), idx)
       assert.ok(
         /if\s*\(missingTags\.length > 0 \|\| removedWrongCount > 0\)\s*\{/.test(before),
         'タグの追加・削除があった場合のみ再保存する条件が見つからない（無変更時に余計な保存をしていないか）',
