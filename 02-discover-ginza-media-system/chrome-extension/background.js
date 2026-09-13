@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br14-2026-09-14-image-upload-2step-tabfocus'
+const BUILD_REVISION = 'br15-2026-09-14-hashtag-scope-fix'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -437,17 +437,73 @@ function injectedNoteTransfer(item) {
       })
     }
     /** 指定したハッシュタグ（#なし正規化済み）が、画面上に「#タグ名」チップ等
-     * として実際に反映されているかを数える（読み戻し検証用）。 */
-    function countAppliedHashtags(expectedTagsNoHash) {
-      const texts = deepQuerySelectorAll('span, div, li, button, a, p')
+     * として実際に反映されているかを数える（読み戻し検証用）。
+     * 2026-09-14続き25（マロン指示：「公開設定画面のサジェスト候補を選択済み
+     * タグとして数えないでください」）：公開設定画面には、実際に選択・保存
+     * 済みのタグとは別に、フォロワー数・投稿数（「件」を含む文言）付きの
+     * サジェスト候補一覧が同居しており、文言一致だけでは誤検出する
+     * （実機で確認：「#松屋銀座」「#銀座」に加え、サジェストの
+     * 「#出店」「#15日」「#確認」が一致してしまい2/4という誤った結果に
+     * なっていた）。scopeElを渡した場合はその祖先要素配下のみを対象にし、
+     * 「件」を含む文言（統計・カウント表示）は常に除外する。 */
+    function countAppliedHashtags(expectedTagsNoHash, scopeEl) {
+      const texts = deepQuerySelectorAll('span, div, li, button, a, p', scopeEl || document)
         .filter(isVisible)
         .map(visibleText)
-        .filter((t) => t && t.length < 40)
+        .filter((t) => t && t.length < 40 && !/件/.test(t))
       let count = 0
       for (const tag of expectedTagsNoHash) {
         if (texts.some((t) => t === `#${tag}` || t === tag)) count++
       }
       return count
+    }
+    /** ハッシュタグ入力欄を含む「選択済みタグ領域」の祖先要素を推定する。
+     * 入力欄の祖先を、その祖先の可視テキストに統計文言「件」が現れ始める
+     * 直前まで遡る——サジェスト候補一覧（「件」付き）はこの領域の外側に
+     * 位置すると想定し、選択済みタグ領域だけを対象にスコープする境界とする。 */
+    function findHashtagScopeContainer(inputEl) {
+      if (!inputEl) return null
+      let node = inputEl.parentElement
+      let candidate = inputEl.parentElement
+      for (let i = 0; i < 6 && node; i++) {
+        if (/件/.test(visibleText(node))) break
+        candidate = node
+        node = node.parentElement
+      }
+      return candidate
+    }
+    /** スコープ内で「#」始まり・可視・40文字未満・「件」を含まない要素のうち、
+     * expectedTagsNoHashに含まれないものを「誤って適用されたタグ候補」として
+     * 返す（マロン指示：「誤ったタグがあれば削除し」）。 */
+    function findWrongHashtagChips(expectedTagsNoHash, scopeEl) {
+      return deepQuerySelectorAll('span, div, li, button, a', scopeEl || document).filter((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t || t.length >= 40 || /件/.test(t)) return false
+        if (!/^#/.test(t)) return false
+        return !expectedTagsNoHash.some((tag) => t === `#${tag}`)
+      })
+    }
+    /** タグチップの削除（×・閉じる等）ボタンを、チップ自身の内部→チップの
+     * 兄弟要素の順に探す。見つからなければnull（推測で無関係な要素を
+     * クリックしない——マロン指示・Editorial Trust Layerの「推測しない」
+     * 原則の踏襲）。 */
+    function findChipRemoveButton(chipEl) {
+      const REMOVE_RE = /削除|閉じる|remove|close|^×$|^✕$|^✖$/i
+      const withinChip = deepQuerySelectorAll('button, [role="button"], [aria-label]', chipEl).find((el) => {
+        const label = (el.getAttribute('aria-label') || el.getAttribute('title') || visibleText(el) || '').trim()
+        return REMOVE_RE.test(label)
+      })
+      if (withinChip) return withinChip
+      const parent = chipEl.parentElement
+      if (!parent) return null
+      return (
+        Array.from(parent.children).find((el) => {
+          if (el === chipEl) return false
+          const label = (el.getAttribute('aria-label') || el.getAttribute('title') || visibleText(el) || '').trim()
+          return REMOVE_RE.test(label)
+        }) || null
+      )
     }
     /** アイキャッチ／カテゴリー画像が実際に反映されたっぽい img 要素
      * （blob:／data: のsrc、またはファイル名を含むsrc）が存在するかを確認する。 */
@@ -798,9 +854,11 @@ function injectedNoteTransfer(item) {
     clickElement(saveBtn)
     await sleep(2000)
 
-    // --- ③ ハッシュタグの確認（既に保存済みのはず。編集画面上で確認できな
-    // ければ「確認のためだけに」公開設定画面へ進む——画像のためには一切
-    // 進まない。再入力はせず、既存の反映状況を読み取るのみ） ---
+    // --- ③ ハッシュタグの確認・補正（既に保存済みのはず。編集画面上で確認
+    // できなければ公開設定画面へ進む——画像のためには一切進まない。
+    // 2026-09-14続き25（マロン指示）：「サジェスト候補を選択済みタグとして
+    // 数えない」「選択済みタグ領域だけを読み取り」「誤ったタグがあれば削除し」
+    // 「不足分を追加」「4個をDOMから読み戻す」に対応する。 ---
     const expectedTagsNoHash = (item.hashtags || []).map((t) => t.replace(/^#/, ''))
     let appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
     let navigatedToSettings = false
@@ -812,11 +870,53 @@ function injectedNoteTransfer(item) {
         log('proceed_to_settings_for_hashtag_check', { text: visibleText(proceedBtn) })
         clickElement(proceedBtn)
         navigatedToSettings = true
-        await waitFor(() => countAppliedHashtags(expectedTagsNoHash) > 0 || findHashtagInput() !== null, 8000)
+        await waitFor(() => findHashtagInput() !== null, 8000)
         await sleep(500)
         log('settings_screen_snapshot', domDebugSnapshot())
-        appliedTagCount = countAppliedHashtags(expectedTagsNoHash)
-        hashtagResult = { checkedOn: 'settings', appliedTagCount, expectedCount: expectedTagsNoHash.length }
+
+        const hashtagInputEl = findHashtagInput()
+        const hashtagScope = findHashtagScopeContainer(hashtagInputEl)
+        log('hashtag_scope_resolved', { scopeFound: !!hashtagScope, inputFound: !!hashtagInputEl })
+
+        // 誤って適用されているタグ（期待4個に含まれない「#」始まりの
+        // チップ）を、削除ボタンが見つかった場合のみ削除する。
+        const wrongChips = findWrongHashtagChips(expectedTagsNoHash, hashtagScope)
+        let removedWrongCount = 0
+        for (const chip of wrongChips) {
+          const removeBtn = findChipRemoveButton(chip)
+          if (removeBtn) {
+            log('hashtag_wrong_chip_removed', { text: visibleText(chip) })
+            clickElement(removeBtn)
+            await sleep(200)
+            removedWrongCount++
+          } else {
+            log('hashtag_wrong_chip_remove_button_not_found', { text: visibleText(chip) })
+          }
+        }
+
+        // 不足しているタグ（scope限定で未検出のもの）だけを追加入力する
+        // ——既存の適用済みタグへの重複入力はしない。
+        const currentTexts = deepQuerySelectorAll('span, div, li, button, a, p', hashtagScope || document)
+          .filter(isVisible)
+          .map(visibleText)
+          .filter((t) => t && t.length < 40 && !/件/.test(t))
+        const missingTags = expectedTagsNoHash.filter((tag) => !currentTexts.some((t) => t === `#${tag}` || t === tag))
+        if (missingTags.length > 0 && hashtagInputEl) {
+          for (const tag of missingTags) {
+            setNativeValue(hashtagInputEl, tag)
+            pressEnter(hashtagInputEl)
+            await sleep(200)
+          }
+        }
+
+        appliedTagCount = countAppliedHashtags(expectedTagsNoHash, hashtagScope)
+        hashtagResult = {
+          checkedOn: 'settings',
+          appliedTagCount,
+          expectedCount: expectedTagsNoHash.length,
+          removedWrongCount,
+          typedMissingCount: missingTags.length,
+        }
         log('hashtags_verified', hashtagResult)
 
         // --- ④ キャンセル経由で編集画面へ戻る（最終公開には一切触れない） ---
@@ -828,6 +928,17 @@ function injectedNoteTransfer(item) {
         } else {
           document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
           await sleep(500)
+        }
+
+        // タグを追加・削除した場合のみ、編集画面へ戻ってから念のため
+        // 再保存する（何も変更していなければ余計な保存操作を増やさない）。
+        if (missingTags.length > 0 || removedWrongCount > 0) {
+          const saveBtnAfterTags = await waitFor(() => findSaveDraftButton(), 4000)
+          if (saveBtnAfterTags) {
+            log('save_button_found', { text: visibleText(saveBtnAfterTags), stage: 'after_hashtag_correction' })
+            clickElement(saveBtnAfterTags)
+            await sleep(2000)
+          }
         }
       } else {
         log('proceed_to_settings_not_found_for_hashtag_check', {})

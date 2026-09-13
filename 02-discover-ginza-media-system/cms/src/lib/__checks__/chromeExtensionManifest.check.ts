@@ -729,6 +729,97 @@ const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
 ]
 cases.push(...IMAGE_UPLOAD_TWO_STEP_TEST_CASES)
 
+const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き25（マロン指示）：「公開設定画面のサジェスト候補を選択済み
+    // タグとして数えないでください」。実機で「#松屋銀座」「#銀座」の他に
+    // サジェスト候補「#出店」「#15日」「#確認」が一致し2/4という誤った結果に
+    // なっていた——countAppliedHashtagsが統計文言「件」を含む要素を除外する
+    // ことを確認する。
+    name: '【誤検出防止】countAppliedHashtagsは「件」を含む文言（サジェストの統計表示）を候補から除外する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('function countAppliedHashtags(expectedTagsNoHash, scopeEl)')
+      assert.ok(start >= 0, 'countAppliedHashtags(scopeEl対応版)が見つからない')
+      const end = bg.indexOf('function findHashtagScopeContainer')
+      const body = bg.slice(start, end)
+      assert.ok(/!\s*\/件\/\.test\(t\)/.test(body), '「件」を含む文言の除外条件が見つからない')
+      assert.ok(/scopeEl \|\| document/.test(body), 'scopeElが渡された場合にそのスコープ内だけを検索する実装が見つからない')
+    },
+  },
+  {
+    name: '【選択済みタグ領域】findHashtagScopeContainerは祖先の可視テキストに「件」が現れ始める手前で境界を止める',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findHashtagScopeContainer/.test(bg), 'findHashtagScopeContainerが見つからない')
+      const start = bg.indexOf('function findHashtagScopeContainer')
+      const end = bg.indexOf('function findWrongHashtagChips')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(\s*\/件\/\.test\(visibleText\(node\)\)\)\s*break/.test(body), '「件」出現時に遡りを停止する境界判定が見つからない')
+    },
+  },
+  {
+    // マロン指示：「誤ったタグがあれば削除し」。
+    name: '【誤ったタグの削除】findWrongHashtagChipsは期待タグに含まれない「#」始まりの要素のみを対象にする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findWrongHashtagChips/.test(bg), 'findWrongHashtagChipsが見つからない')
+      const start = bg.indexOf('function findWrongHashtagChips')
+      const end = bg.indexOf('function findChipRemoveButton')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(!\/\^#\/\.test\(t\)\)\s*return\s*false/.test(body), '「#」始まりのみを対象にする条件が見つからない')
+      assert.ok(/!expectedTagsNoHash\.some/.test(body), '期待タグに含まれるものを除外する条件が見つからない')
+    },
+  },
+  {
+    name: '【推測クリック禁止】findChipRemoveButtonは削除ボタンが見つからない場合nullを返し、呼び出し側はその場合削除をスキップする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findChipRemoveButton/.test(bg), 'findChipRemoveButtonが見つからない')
+      assert.ok(/hashtag_wrong_chip_remove_button_not_found/.test(bg), '削除ボタン未検出時のログが見つからない（推測での代替クリックをしていないことの確認）')
+      const idx = bg.indexOf('const removeBtn = findChipRemoveButton(chip)')
+      assert.ok(idx >= 0, 'removeBtn取得箇所が見つからない')
+      const nearby = bg.slice(idx, idx + 400)
+      assert.ok(/if\s*\(removeBtn\)\s*\{/.test(nearby), 'removeBtnが見つかった場合のみ削除処理へ進む分岐が見つからない')
+    },
+  },
+  {
+    name: '【不足タグの追加】scope限定で未検出のタグのみをsetNativeValue+pressEnterで追加する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const idx = bg.indexOf('const missingTags = expectedTagsNoHash.filter(')
+      assert.ok(idx >= 0, 'missingTags算出箇所が見つからない')
+      const nearby = bg.slice(idx, idx + 500)
+      assert.ok(/setNativeValue\(hashtagInputEl, tag\)/.test(nearby), '不足タグの入力（setNativeValue）が見つからない')
+      assert.ok(/pressEnter\(hashtagInputEl\)/.test(nearby), '不足タグ入力後のEnter送信が見つからない')
+    },
+  },
+  {
+    name: '【読み戻し】タグの追加・削除後、appliedTagCountをscope限定で再計算してから読み戻す',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(
+        /appliedTagCount = countAppliedHashtags\(expectedTagsNoHash, hashtagScope\)/.test(bg),
+        '補正後の再計算（hashtagScope指定）が見つからない',
+      )
+    },
+  },
+  {
+    name: '【再保存】タグを追加または削除した場合のみ、編集画面へ戻ってから下書きを再保存する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const idx = bg.indexOf("stage: 'after_hashtag_correction'")
+      assert.ok(idx >= 0, 'タグ補正後の再保存ログが見つからない')
+      const before = bg.slice(Math.max(0, idx - 400), idx)
+      assert.ok(
+        /if\s*\(missingTags\.length > 0 \|\| removedWrongCount > 0\)\s*\{/.test(before),
+        'タグの追加・削除があった場合のみ再保存する条件が見つからない（無変更時に余計な保存をしていないか）',
+      )
+    },
+  },
+]
+cases.push(...HASHTAG_SCOPE_TEST_CASES)
+
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 
 if (import.meta.url === `file://${process.argv[1]}`) {
