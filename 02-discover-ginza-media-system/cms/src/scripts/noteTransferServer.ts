@@ -46,6 +46,7 @@ import {
   MAX_TRANSFER_ATTEMPTS,
   type TransferState,
 } from '../lib/night/noteTransferState'
+import { resolveImageAsset as resolveImageAssetPure } from '../lib/night/resolveImageAsset'
 
 const ROOT = resolve(process.cwd(), '..')
 const argv = process.argv.slice(2)
@@ -56,6 +57,14 @@ const QUEUE_DIR = resolve(ROOT, '.devlogs', 'night', 'queue')
 const STATE_PATH = resolve(ROOT, '.devlogs', 'night', 'transfer-state.json')
 const ICON_DIR = resolve(ROOT, 'media', 'discover-ginza-category-icons')
 const DIAGNOSTIC_LOG_PATH = resolve(ROOT, '.devlogs', 'night', 'note-transfer-diagnostic.jsonl')
+
+// 2026-09-14続き11（マロン指示）：completion-onlyペイロードへ「画像ファイルが
+// 実在すること」を検証済みの状態で渡すための解決処理は、単体テスト可能な純粋
+// モジュール（resolveImageAsset.ts）へ切り出した。ここではICON_DIR・PORTを
+// 埋め込むだけの薄いラッパーとして呼び出す。
+function resolveImageAsset(fileName: string | undefined | null) {
+  return resolveImageAssetPure(fileName, ICON_DIR, `http://localhost:${PORT}`)
+}
 
 // 2026-09-14続き（実機検証失敗の調査）：実ブラウザでの1回目の実機検証が
 // 「拡張再読み込み後も0文字・transfer-stateは空のまま」で失敗し、原因調査に
@@ -217,6 +226,20 @@ async function main() {
 
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
           const iconFile: string | undefined = draft?.masthead?.categoryIcon?.iconFile
+          // 2026-09-14続き11：実画像ファイルの存在を検証したうえで、MIME type・
+          // ファイル名・SHA-256・配信URLをcompletion-onlyペイロードへ必須項目
+          // として渡す。存在しなければnull（＋理由）——他画像への無断代替はしない。
+          const resolvedIcon = resolveImageAsset(iconFile)
+          appendDiagnosticLog({
+            source: 'server',
+            event: 'image_asset_resolved',
+            articleId: pending.articleId,
+            iconFile: iconFile ?? null,
+            resolved: !!resolvedIcon,
+            sha256: resolvedIcon?.sha256 ?? null,
+            sizeBytes: resolvedIcon?.sizeBytes ?? null,
+          })
+          const heroNote = (draft.images ?? []).find((im: any) => im.role === 'hero')
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(
             JSON.stringify({
@@ -228,18 +251,35 @@ async function main() {
                 title: draft.title,
                 body: draft.body,
                 hashtags: draft.noteMeta?.hashtags ?? [],
-                categoryIcon: iconFile
+                // categoryIcon＝実際にアップロード可能な画像ファイル（存在確認済み）。
+                // 存在しない場合はnull＋imageUnavailableReasonを明示し、拡張側は
+                // これを見て「使用すべき画像ファイルがない」ことを報告する
+                // （他画像への無断代替は禁止）。
+                categoryIcon: resolvedIcon
                   ? {
-                      url: `http://localhost:${PORT}/assets/${encodeURIComponent(iconFile)}`,
+                      url: resolvedIcon.url,
+                      fileName: resolvedIcon.fileName,
+                      mimeType: resolvedIcon.mimeType,
+                      sha256: resolvedIcon.sha256,
+                      sizeBytes: resolvedIcon.sizeBytes,
                       caption: draft.noteMeta?.illustrationCaption ?? null,
                       labelJa: draft.noteMeta?.categoryIcon?.labelJa ?? null,
                     }
                   : null,
+                categoryIconUnavailableReason: resolvedIcon
+                  ? null
+                  : iconFile
+                    ? `カテゴリーアイコンのファイル（${iconFile}）が存在しないか読み取れません`
+                    : 'カテゴリーアイコンが未解決（deriveProvisionalCategoryが確定できていない）',
+                // heroImage＝「アイキャッチ」用の独自生成画像。現時点では構図ブリーフ
+                // のみでファイル自体が生成されていない——available:falseを明示し、
+                // categoryIconとの代替は行わない。
                 heroImage: {
                   available: false,
-                  brief:
-                    (draft.images ?? []).find((im: any) => im.role === 'hero')?.note ?? null,
-                  caption: (draft.images ?? []).find((im: any) => im.role === 'hero')?.caption ?? null,
+                  reason: '画像ファイルは生成されておらず存在しない（構図ブリーフのみ保持、実ファイルなし）',
+                  url: null,
+                  brief: heroNote?.note ?? null,
+                  caption: heroNote?.caption ?? null,
                 },
                 attempt: prevAttempts + 1,
                 maxAttempts: MAX_ATTEMPTS,

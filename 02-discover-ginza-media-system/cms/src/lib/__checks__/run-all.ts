@@ -52,6 +52,7 @@ import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
+import { suite as resolveImageAsset } from './resolveImageAsset.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -101,6 +102,7 @@ const results: SuiteResult[] = [
   chromeExtensionManifest(),
   noteTransferUrlMatch(),
   noteTransferState(),
+  resolveImageAsset(),
 ]
 
 void (async () => {

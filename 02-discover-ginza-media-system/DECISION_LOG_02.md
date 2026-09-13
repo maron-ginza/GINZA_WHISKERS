@@ -14,6 +14,100 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き21（🖼 **note下書き自動転記——画像供給側の「無断代替
+    禁止」パイプラインを実装（実ファイル存在確認＋SHA-256整合性検証＋
+    プレビュー出現確認）。ハッシュタグ4個・タイトル本文無変更・カテゴリー
+    画像・設定画面からの復帰・公開未実施のすべてをコードレベルで検証
+    可能な状態にした（Project 02 commit・push あり／DB更新なし／note
+    公開なし・Article #67は未検証のまま次回実機テスト待ち）**）:
+
+    マロン指示：「実機結果：ハッシュタグ4個は設定成功／タイトル・本文は
+    無変更／アイキャッチ画像URLが転記payloadに存在せず未設定／設定画面
+    から下書きへ戻る処理も未反映。Article #67のnote下書きパッケージに
+    ついて、実画像ファイルの存在を確認し、画像ファイル・MIME type・
+    ファイル名・SHA-256・localhost配信用URLをcompletion-only payloadへ
+    必須項目として追加してください。画像が存在しない場合は、成功扱いや
+    代替画像への無断変更を禁止し、使用すべき画像ファイルがないことを
+    明示してください。」
+
+    **根本原因**：続き20の`/pending`レスポンスは`categoryIcon`に`url`
+    しか含めず、`url`の実体（`ICON_DIR`配下のファイル）が本当に存在
+    するかをサーバー側で一度も確認していなかった。ブラウザ側も
+    「fetchが成功すればOK」という前提で、取得したバイト列が意図した
+    画像そのものかを検証していなかった——実装上「画像が存在しない」と
+    「別の画像を誤って使う」を区別する仕組みが無かった。
+
+    **修正（サーバー側）**：新規 純粋モジュール
+    `cms/src/lib/night/resolveImageAsset.ts`（`resolveImageAsset`／
+    `mimeTypeForExt`）を新設。`iconDir`配下に実ファイルが存在し読み取れる
+    場合のみ、ファイル名・MIME type・**ファイル内容から実際に計算した
+    SHA-256**・サイズ・配信URLを返す。存在しない／0バイト／パス
+    トラバーサル（`/`・`..`を含む）のいずれでも**必ずnullを返し、他の
+    画像へは無断代替しない**。`noteTransferServer.ts`の`/pending`
+    ハンドラをこの純粋関数を呼ぶ薄いラッパーに置き換え、レスポンスの
+    `categoryIcon`へ`fileName`・`mimeType`・`sha256`・`sizeBytes`を
+    `url`と併せて必須項目として追加。解決できない場合は
+    `categoryIcon:null`＋`categoryIconUnavailableReason`（ファイル不在／
+    カテゴリー未確定のいずれかを明示）を返す。`heroImage`も
+    `available:false`＋理由（画像ファイル自体が生成されておらず存在し
+    ない旨）を明示する構造に整理した。
+
+    **修正（ブラウザ側）**：`background.js`の`injectedNoteTransfer`内
+    アイコン処理を全面書き換え。①`categoryIcon`の必須4項目
+    （url/fileName/mimeType/sha256）が揃っていない場合は
+    `noUsableImageFile:true`＋理由を記録し、それ以上進まない（フォールバック
+    画像への差し替えをしない）。②ファイル入力欄が見つかった場合のみ、
+    localhostサーバーから`fetch`→`arrayBuffer`→`crypto.subtle.digest
+    ('SHA-256', ...)`でブラウザ側が独自に再計算したSHA-256と、
+    サーバーが返したSHA-256を突合（`image_sha256_verify`ログ）。
+    **不一致なら`stage=image_integrity_mismatch`として失敗**とし、
+    アップロードを行わない。③一致した場合のみ`Blob`→`File`
+    （`DataTransfer`経由で`fileInput.files`へ設定）を実行。④`blob:`URLは
+    ファイル名を含まない不透明な値であるため、アップロード**前**に既存の
+    `blob:`画像srcの集合を記録し、アップロード**後**に新規出現した
+    `blob:`srcの有無をポーリング確認する方式（タイミング差分による
+    プレビュー出現検証）へ変更——`iconResult.attached`はこの実測結果
+    のみで決定する（続き20までの、ファイル名ヒントとの緩い一致に依存する
+    旧`checkIconApplied`は、`blob:`URLがファイル名を含まないため実質
+    死んだコードで誤検出の懸念があったため、この判定経路からは完全に
+    切り離した）。⑤画像調整確認ボタン（`findConfirmLikeButton`）が
+    出現すればクリックして確定する処理も維持。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.11.0`→
+    `1.12.0`へ、`BUILD_REVISION`を
+    `br12-2026-09-14-imageasset-sha256-preview`へ更新した。
+
+    **回帰テスト新規10件**：①`resolveImageAsset.check.ts`（新規6件）——
+    実在ファイルのSHA-256実計算一致、存在しないファイル名／null・
+    undefined／0バイトファイルがすべてnullを返すこと（無断代替禁止の
+    直接検証）、ディレクトリトラバーサル対策、`mimeTypeForExt`の既知・
+    未知拡張子判定。②`chromeExtensionManifest.check.ts`へ画像検証
+    ロジックのテスト4件追加——必須4項目の充足判定、SHA-256不一致時の
+    失敗処理、プレビュー出現有無による`attached`判定、`iconDone`が
+    `iconResult.attached`のみに依存する構造になっていること。
+    `run-all.ts` **590 passed 0 failed**（580→590）。`tsc --noEmit`
+    0エラー、`node -c`／JSON妥当性を確認。
+
+    **サーバー側の実データ確認**：`noteTransferServer.ts`を再起動
+    （コード変更はNode再起動のみで反映、ブラウザ再読み込み不要）の上で
+    `/pending`を実際にcurlし、Article #67のカテゴリーアイコン
+    （`01_gourmet.jpg`・スウィーツ）について、実ファイルの実SHA-256
+    （`c9492c37…`）が`categoryIcon.sha256`としてレスポンスに正しく
+    含まれることを確認した。確認後、curlが`claimInProgress`で書き換えた
+    `transfer-state.json`を元の事実（`status:'success',
+    needsCompletion:true, completionAttempts:0`）へ復元した。
+
+    **申し送り**：ハッシュタグ4個・タイトル本文無変更は続き20で実機確認
+    済み。今回の画像パイプライン（実ファイル確認・SHA-256整合性・
+    プレビュー出現検証・無断代替禁止）と、続き20で実装済みのキャンセル
+    ボタン経由の設定画面復帰は、いずれもコードレベルではテスト済みだが
+    **実ブラウザでの動作は未検証**——マロンへ新たなChrome操作は
+    要求していない（条件が揃うまで求めない、という直近指示のとおり）。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き20（🚀 **note下書き自動転記——実機でハッシュタグ4個の
     実際の反映を初めて確認（`appliedTagCount:4/expectedTagCount:4`）。
     公開設定画面から編集画面へ戻れず`下書き保存`に到達できていなかった

@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br11-2026-09-14-cancelbutton-imgsnapshot'
+const BUILD_REVISION = 'br12-2026-09-14-imageasset-sha256-preview'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -713,35 +713,74 @@ function injectedNoteTransfer(item) {
     }
     log('hashtags_done', hashtagResult)
 
+    // 2026-09-14続き11（マロン指示）：画像ファイルは
+    // {url, fileName, mimeType, sha256} が「すべて」揃っている場合のみ実在する
+    // ものとして扱う。1つでも欠けていれば、他画像への無断代替はせず
+    // 「使用すべき画像ファイルがない」ことを明示して終える（成功扱いにしない）。
+    const img = item.categoryIcon
+    const imageAvailable = !!(img && img.url && img.fileName && img.mimeType && img.sha256)
+
     let iconResult
-    if (fileInput && item.categoryIcon && item.categoryIcon.url) {
-      try {
-        const res = await fetch(item.categoryIcon.url)
-        const blob = await res.blob()
-        const fileName = item.categoryIcon.url.split('/').pop() || 'category-icon.jpg'
-        const file = new File([blob], fileName, { type: blob.type || 'image/jpeg' })
-        const dt = new DataTransfer()
-        dt.items.add(file)
-        fileInput.files = dt.files
-        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-        await sleep(800)
-        // 画像調整（クロップ等）画面が出た場合は確定操作を自動で行う
-        // （マロン指示：「画像調整画面が出た場合は確定まで自動処理」）。
-        const confirmBtn = await waitFor(() => findConfirmLikeButton(), 4000)
-        if (confirmBtn) {
-          log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
-          clickElement(confirmBtn)
-          await sleep(500)
-        }
-        iconResult = { attached: true, revealed: iconRevealed, triggerLabel: iconTriggerLabel, navigatedToSettings, fileName }
-      } catch (e) {
-        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed, navigatedToSettings }
-      }
-    } else {
+    if (!imageAvailable) {
       iconResult = {
         attached: false,
-        reason: !item.categoryIcon?.url ? 'カテゴリーアイコン情報なし' : iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
+        noUsableImageFile: true,
+        reason: item?.categoryIconUnavailableReason || 'カテゴリーアイコン情報が不完全（url/fileName/mimeType/sha256のいずれかが欠落）',
+      }
+      log('no_usable_image_file', { reason: iconResult.reason })
+    } else if (!fileInput) {
+      iconResult = {
+        attached: false,
+        reason: iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
         navigatedToSettings,
+      }
+    } else {
+      try {
+        const res = await fetch(img.url)
+        const buf = await res.arrayBuffer()
+        const hashBuf = await crypto.subtle.digest('SHA-256', buf)
+        const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+        log('image_sha256_verify', { expected: img.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === img.sha256 })
+        if (actualSha256 !== img.sha256) {
+          iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）`, navigatedToSettings }
+        } else {
+          const blob = new Blob([buf], { type: img.mimeType })
+          const file = new File([blob], img.fileName, { type: img.mimeType })
+          const beforePreviewImgs = new Set(deepQuerySelectorAll('img').map((el) => el.getAttribute('src')).filter((s) => s && s.startsWith('blob:')))
+          const dt = new DataTransfer()
+          dt.items.add(file)
+          fileInput.files = dt.files
+          fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+          await sleep(800)
+          // 画像調整（クロップ等）画面が出た場合は確定操作を自動で行う
+          // （マロン指示：「画像調整画面が出た場合は確定まで自動処理」）。
+          const confirmBtn = await waitFor(() => findConfirmLikeButton(), 4000)
+          if (confirmBtn) {
+            log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
+            clickElement(confirmBtn)
+            await sleep(500)
+          }
+          // プレビュー画像（新しいblob:srcの<img>）の出現を読み戻して確認する
+          // （マロン指示：「プレビュー画像のsrc出現とアップロード完了を読み戻す」）。
+          const previewAppeared = await waitFor(() => {
+            const current = deepQuerySelectorAll('img')
+              .map((el) => el.getAttribute('src'))
+              .filter((s) => s && s.startsWith('blob:') && !beforePreviewImgs.has(s))
+            return current.length > 0 ? true : null
+          }, 5000)
+          log('image_preview_verify', { previewAppeared: !!previewAppeared })
+          iconResult = {
+            attached: !!previewAppeared,
+            reason: previewAppeared ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
+            revealed: iconRevealed,
+            triggerLabel: iconTriggerLabel,
+            navigatedToSettings,
+            fileName: img.fileName,
+            sha256Verified: true,
+          }
+        }
+      } catch (e) {
+        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed, navigatedToSettings }
       }
     }
     log('icon_attach_done', iconResult)
@@ -826,7 +865,12 @@ function injectedNoteTransfer(item) {
     }
 
     const hashtagsDone = appliedTagCount >= expectedTagsNoHash.length && expectedTagsNoHash.length > 0
-    const iconDone = iconResult.attached === true && iconApplied === true
+    // 2026-09-14続き11：checkIconApplied単体は「ページ上にblob:/data:のimgが
+    // 存在するか」という緩い判定で、blob: URLはファイル名を含まない不透明な
+    // 識別子のため、無関係な既存画像（アバター等）を誤検出しうる。iconDoneは
+    // 「アップロード直後に新たに出現したblob:画像」という時系列差分で判定した
+    // iconResult.attached（image_preview_verifyで検証済み）を正とする。
+    const iconDone = iconResult.attached === true
 
     return {
       status: 'success',

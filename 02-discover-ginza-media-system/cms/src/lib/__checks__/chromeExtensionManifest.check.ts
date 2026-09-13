@@ -539,6 +539,51 @@ const CANCEL_TEST_CASES: CheckCase[] = [
 ]
 cases.push(...CANCEL_TEST_CASES)
 
+const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き11（マロン指示）：画像ファイル・MIME type・ファイル名・
+    // SHA-256・配信URLが「すべて」揃っている場合のみ実在するものとして扱い、
+    // 1つでも欠けていれば他画像への無断代替をせず「使用すべき画像ファイルが
+    // ない」ことを明示すること。
+    name: '【画像なし明示】categoryIconの必須項目が1つでも欠けていれば無断代替せずno_usable_image_fileを報告する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/no_usable_image_file/.test(bg), 'no_usable_image_fileステージが見つからない')
+      assert.ok(/noUsableImageFile:\s*true/.test(bg), 'noUsableImageFileフラグが見つからない')
+      const idx = bg.indexOf('const imageAvailable =')
+      assert.ok(idx >= 0, 'imageAvailable判定が見つからない')
+      const nearby = bg.slice(idx, idx + 300)
+      assert.ok(/img\.url/.test(nearby) && /img\.fileName/.test(nearby) && /img\.mimeType/.test(nearby) && /img\.sha256/.test(nearby), 'url/fileName/mimeType/sha256のすべてを必須項目として確認していない')
+    },
+  },
+  {
+    name: '【画像整合性検証】取得した画像の実SHA-256をペイロードのsha256と比較し、不一致なら添付しない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/image_sha256_verify/.test(bg), 'image_sha256_verifyログが見つからない')
+      assert.ok(/actualSha256 !== img\.sha256/.test(bg), 'SHA-256不一致時のガードが見つからない')
+      assert.ok(/image_integrity_mismatch/.test(bg), '不一致時の失敗ステージ名が見つからない')
+    },
+  },
+  {
+    name: '【プレビュー読み戻し】アップロード後に新しいblob:プレビュー画像が出現したことを確認してからattachedとする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/beforePreviewImgs/.test(bg), 'アップロード前のblob:画像一覧の記録が見つからない')
+      assert.ok(/image_preview_verify/.test(bg), 'image_preview_verifyログが見つからない')
+      assert.ok(/attached:\s*!!previewAppeared/.test(bg), 'previewAppearedに基づくattached判定が見つからない')
+    },
+  },
+  {
+    name: '【iconDoneの正確性】iconDoneは緩いcheckIconAppliedではなく検証済みのiconResult.attachedのみで判定する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/const iconDone = iconResult\.attached === true$/m.test(bg), 'iconDoneがiconResult.attachedのみで判定されていない（checkIconAppliedとのAND条件が残っている可能性）')
+    },
+  },
+]
+cases.push(...IMAGE_ASSET_TEST_CASES)
+
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 
 if (import.meta.url === `file://${process.argv[1]}`) {

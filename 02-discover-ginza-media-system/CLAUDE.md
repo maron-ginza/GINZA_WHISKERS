@@ -1072,6 +1072,26 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   **580 passed 0 failed**。Article #67はタイトル・本文・保存は完成、
   `needsCompletion:true`で維持。マロンへ新たなChrome操作は要求して
   いない。詳細は`DECISION_LOG_02.md` 2026-09-13 続き20参照。
+- 2026-09-13: 🖼 **note下書き自動転記——画像供給側に「無断代替禁止」の
+  検証パイプラインを実装（実ファイル存在確認＋SHA-256整合性検証＋
+  プレビュー出現確認、Project 02 commit・push あり／DB更新なし）**——
+  サーバー側：新規純粋モジュール`resolveImageAsset.ts`が`iconDir`配下の
+  実ファイル存在を確認した場合のみファイル名・MIME type・実計算
+  SHA-256・サイズ・配信URLを返し、存在しない／0バイト／パス
+  トラバーサルはすべてnull（他画像への無断代替をしない）。`/pending`
+  レスポンスの`categoryIcon`へ`fileName`/`mimeType`/`sha256`/
+  `sizeBytes`を必須項目として追加、解決不能時は`categoryIcon:null`＋
+  理由を明示。ブラウザ側：`background.js`が画像取得後
+  `crypto.subtle.digest('SHA-256',...)`で独自再計算しサーバー値と突合
+  （不一致は`image_integrity_mismatch`で失敗）、アップロード前後の
+  `blob:`src集合差分でプレビュー出現を実測確認してから`iconResult.
+  attached`を決定（ファイル名ヒント依存の旧判定は廃止）。
+  `manifest.json`のversionを`1.12.0`へ、`BUILD_REVISION`を`br12-...`へ
+  更新。回帰テスト新規10件、`run-all.ts` **590 passed 0 failed**。
+  サーバー実再起動後`/pending`を実curlしArticle #67の実ファイルSHA-256が
+  正しく返ることを確認、`transfer-state.json`は事実へ復元済み。実
+  ブラウザでの動作はまだ未検証のため、マロンへ新たなChrome操作は要求して
+  いない。詳細は`DECISION_LOG_02.md` 2026-09-13 続き21参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
