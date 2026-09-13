@@ -39,6 +39,14 @@ export interface SweetsCandidateInput {
   facilityCount7d?: number
   /** 2026-09-14追加：出典確認日（DiscoveredContent.lastCheckedAt等、ISO日時）。表示用。 */
   verifiedAt?: string | null
+  /**
+   * 2026-09-14追加：編集ゲート（sweetsNewsworthiness.ts）の分類。
+   * 'administrative' は候補から除外、'evergreen' は「定番候補」として別枠へ、
+   * 'timely'（または未指定＝後方互換）は通常の朝刊候補として扱う。
+   */
+  newsworthiness?: 'timely' | 'evergreen' | 'administrative'
+  /** 2026-09-14追加：編集ゲートの判定理由（「今取り上げる理由」の元になる一言）。 */
+  newsworthinessReason?: string | null
 }
 
 export interface RankedSweetsCandidate {
@@ -61,10 +69,17 @@ export interface RankedSweetsCandidate {
   }
   seasonalNote: string
   reason: string
+  /** 2026-09-14追加：「今取り上げる理由」を公式事実だけで1行（sweetsNewsworthiness由来）。 */
+  whyNow: string
 }
 
 export interface SweetsSelectionResult {
   candidates: RankedSweetsCandidate[]
+  /**
+   * 2026-09-14追加：「定番候補」（公開日不明・新規性語なしの常設商品）を別枠に保存する。
+   * 朝刊候補（candidates）には混ぜない。
+   */
+  evergreenCandidates: RankedSweetsCandidate[]
   /** 3件に満たなかったか */
   shortfall: boolean
   shortfallReason: string | null
@@ -80,6 +95,10 @@ export interface SweetsSelectionResult {
     excludedFacilityCap: number
     /** 2026-09-13 追加：固定要件による施設除外（例：本日限定でGINZA SIXを除外） */
     excludedFixedRule: number
+    /** 2026-09-14追加：事務告知として除外した件数 */
+    excludedAdministrative: number
+    /** 2026-09-14追加：定番候補（別枠）へ振り分けた件数 */
+    evergreenCount: number
   }
 }
 
@@ -188,6 +207,7 @@ export function selectSweetsCandidates(
   let excludedIncomplete = 0
   let excludedFacilityCap = 0
   let excludedFixedRule = 0
+  let excludedAdministrative = 0
 
   const sweetsOnly = inputs.filter((c) => (c.category ?? '').toUpperCase() === 'SWEETS')
   const rawSweetsCount = sweetsOnly.length
@@ -202,6 +222,17 @@ export function selectSweetsCandidates(
         reason: `${excludeReasonLabel}（施設: ${c.facilityLabel ?? c.facilityKey}）`,
       })
       excludedFixedRule++
+      continue
+    }
+    // 2026-09-14追加：事務告知（消費期限シール変更・価格改定・休業案内等）は
+    // 編集候補から完全に除外する（マロン確定の編集ゲート）。
+    if (c.newsworthiness === 'administrative') {
+      excluded.push({
+        dcId: c.dcId,
+        title: c.displayTitle ?? c.title,
+        reason: c.newsworthinessReason ?? '事務告知のため候補としない',
+      })
+      excludedAdministrative++
       continue
     }
     if (c.alreadyPublished) {
@@ -233,37 +264,55 @@ export function selectSweetsCandidates(
     })
   }
 
-  // 同一施設は原則1候補まで（施設分散）：施設キーごとに最良スコアの1件だけ残す
+  // 2026-09-14追加：「定番候補」（公開日不明・新規性語なしの常設商品）は別枠へ分離し、
+  // 朝刊候補（timely）とは独立に施設分散・順位づけを行う（別枠を朝刊候補の穴埋めに使わない）。
   pool.sort((a, b) => b.score - a.score)
-  const seenFacility = new Set<string>()
-  const afterFacilityCap: typeof pool = []
-  for (const c of pool) {
-    const fk = c.facilityKey ?? `title:${c.title}`
-    if (seenFacility.has(fk)) {
-      excluded.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, reason: `施設「${c.facilityLabel ?? fk}」から既に1件採用済み（同一施設は原則1候補まで）` })
-      excludedFacilityCap++
-      continue
+  const timelyRaw = pool.filter((c) => c.newsworthiness !== 'evergreen')
+  const evergreenRaw = pool.filter((c) => c.newsworthiness === 'evergreen')
+
+  function toRanked(c: (typeof pool)[number]): RankedSweetsCandidate {
+    return {
+      dcId: c.dcId,
+      title: c.displayTitle ?? c.title,
+      facilityLabel: c.facilityLabel ?? null,
+      sourceName: c.sourceName,
+      sourceUrl: c.sourceUrl,
+      eventPeriod: c.eventPeriod ?? null,
+      daysUntilEnd: c.daysUntilEnd ?? null,
+      officialCompletenessScore: c.officialCompletenessScore ?? null,
+      targetFit: c.targetFit ?? null,
+      score: c.score,
+      scoreParts: c.scoreParts,
+      seasonalNote: c.seasonalNote,
+      reason: `score ${c.score.toFixed(2)}（終了緊急度 ${c.scoreParts.endUrgency.toFixed(2)} / 季節性 ${c.scoreParts.seasonal.toFixed(2)} / 公式完全度 ${c.scoreParts.official.toFixed(2)} / 女性適合 ${c.scoreParts.targetFit.toFixed(2)} / 施設分散 ${c.scoreParts.facilityDiversity.toFixed(2)}）`,
+      whyNow: c.newsworthinessReason ?? '（編集ゲート未評価）',
     }
-    seenFacility.add(fk)
-    afterFacilityCap.push(c)
   }
 
+  // 同一施設は原則1候補まで（施設分散）：施設キーごとに最良スコアの1件だけ残す。
+  // timely／evergreenは別枠なので施設キャップも独立に適用する。
+  function applyFacilityCap(list: typeof pool): typeof pool {
+    const seenFacility = new Set<string>()
+    const kept: typeof pool = []
+    for (const c of list) {
+      const fk = c.facilityKey ?? `title:${c.title}`
+      if (seenFacility.has(fk)) {
+        excluded.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, reason: `施設「${c.facilityLabel ?? fk}」から既に1件採用済み（同一施設は原則1候補まで）` })
+        excludedFacilityCap++
+        continue
+      }
+      seenFacility.add(fk)
+      kept.push(c)
+    }
+    return kept
+  }
+
+  const afterFacilityCap = applyFacilityCap(timelyRaw)
+  const afterFacilityCapEvergreen = applyFacilityCap(evergreenRaw)
+
   const top = afterFacilityCap.slice(0, max)
-  const candidates: RankedSweetsCandidate[] = top.map((c) => ({
-    dcId: c.dcId,
-    title: c.displayTitle ?? c.title,
-    facilityLabel: c.facilityLabel ?? null,
-    sourceName: c.sourceName,
-    sourceUrl: c.sourceUrl,
-    eventPeriod: c.eventPeriod ?? null,
-    daysUntilEnd: c.daysUntilEnd ?? null,
-    officialCompletenessScore: c.officialCompletenessScore ?? null,
-    targetFit: c.targetFit ?? null,
-    score: c.score,
-    scoreParts: c.scoreParts,
-    seasonalNote: c.seasonalNote,
-    reason: `score ${c.score.toFixed(2)}（終了緊急度 ${c.scoreParts.endUrgency.toFixed(2)} / 季節性 ${c.scoreParts.seasonal.toFixed(2)} / 公式完全度 ${c.scoreParts.official.toFixed(2)} / 女性適合 ${c.scoreParts.targetFit.toFixed(2)} / 施設分散 ${c.scoreParts.facilityDiversity.toFixed(2)}）`,
-  }))
+  const candidates: RankedSweetsCandidate[] = top.map(toRanked)
+  const evergreenCandidates: RankedSweetsCandidate[] = afterFacilityCapEvergreen.slice(0, max).map(toRanked)
 
   const shortfall = candidates.length < max
   let shortfallReason: string | null = null
@@ -272,8 +321,9 @@ export function selectSweetsCandidates(
     shortfallReason =
       `SWEETS分類の生候補 ${rawSweetsCount} 件のうち、既公開重複 ${excludedPublished} 件・` +
       `公式情報不完全 ${excludedIncomplete} 件・施設偏り(同一施設2件目以降) ${excludedFacilityCap} 件・` +
-      `固定要件による除外 ${excludedFixedRule} 件を除外した結果、` +
-      `確認候補は ${candidates.length} 件（目標${max}件）にとどまった。`
+      `固定要件による除外 ${excludedFixedRule} 件・事務告知 ${excludedAdministrative} 件・` +
+      `定番候補（別枠） ${evergreenRaw.length} 件を除いた結果、` +
+      `旬の確認候補は ${candidates.length} 件（目標${max}件）にとどまった。`
     const coveredTypes = new Set(
       sweetsOnly.map((c) => classifySweetsSourceFacilityType(c.sourceName)).filter((t): t is SweetsSourceFacilityType => t != null),
     )
@@ -283,11 +333,20 @@ export function selectSweetsCandidates(
 
   return {
     candidates,
+    evergreenCandidates,
     shortfall,
     shortfallReason,
     nextSourceTypesToExplore,
     excluded,
-    summary: { rawSweetsCount, excludedPublished, excludedIncomplete, excludedFacilityCap, excludedFixedRule },
+    summary: {
+      rawSweetsCount,
+      excludedPublished,
+      excludedIncomplete,
+      excludedFacilityCap,
+      excludedFixedRule,
+      excludedAdministrative,
+      evergreenCount: evergreenCandidates.length,
+    },
   }
 }
 

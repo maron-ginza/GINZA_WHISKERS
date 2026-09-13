@@ -40,6 +40,7 @@ import { resolveFacilityKey } from '../lib/curation/facilityKey'
 import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
 import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
 import { evaluateSweetsEligibility } from '../lib/curation/sweetsEligibility'
+import { evaluateSweetsNewsworthiness } from '../lib/curation/sweetsNewsworthiness'
 import { selectSweetsCandidates, evaluateSweetsGate, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
 import { assembleBriefFacts, type BriefCandidateInput } from '../lib/pipeline/morningBriefSelect'
 
@@ -101,6 +102,13 @@ async function main() {
       )
       const yearFails = yearCheck.ok ? [] : [yearCheck.reason!]
       const gateOk = sweetsGate.eligible && yearCheck.ok
+      // 2026-09-14追加：編集ゲート（新規性・話題性）。技術的に取得できたことと
+      // 編集候補として旬であることは別軸——事務告知は完全除外、常設商品は
+      // 「定番候補」として別枠へ（朝刊候補には混ぜない）。
+      const newsworthiness = evaluateSweetsNewsworthiness(
+        { title: c.displayTitle ?? c.title, excerpt: c.excerpt ?? null },
+        { now },
+      )
       return {
         dcId: c.discoveredContentId,
         title: c.title,
@@ -122,6 +130,8 @@ async function main() {
         alreadyPublished,
         publishedReason: pub.match ? pub.reason : alreadyDraftedAll.has(c.discoveredContentId) ? '既に Article／note下書き 化済み（重複）' : null,
         facilityCount7d: fk.key ? (assessed.history.facilityKeyCounts[fk.key] ?? 0) : 0,
+        newsworthiness: newsworthiness.category,
+        newsworthinessReason: newsworthiness.reason,
         verifiedAt: c.verifiedAt ?? null,
       }
     })
@@ -180,6 +190,7 @@ async function main() {
     conditions: string
     sourceUrl: string
     verifiedAt: string
+    whyNow: string
   }
 
   const rows: DisplayRow[] = selection.candidates.map((sc) => {
@@ -232,8 +243,18 @@ async function main() {
       conditions: facts12['購入／参加条件'],
       sourceUrl: sc.sourceUrl,
       verifiedAt: facts12.出典確認日,
+      whyNow: sc.whyNow,
     }
   })
+
+  // 2026-09-14追加：「定番候補」（別枠、朝刊候補には混ぜない）の表示行
+  const evergreenRows = selection.evergreenCandidates.map((sc) => ({
+    dcId: sc.dcId,
+    title: sc.title,
+    facility: sc.facilityLabel ?? '不明',
+    sourceUrl: sc.sourceUrl,
+    reason: sc.whyNow,
+  }))
 
   // ─────────────── 出力 ───────────────
   const lines: string[] = []
@@ -243,14 +264,18 @@ async function main() {
   if (EXCLUDE_FACILITY_KEYS.length) L(`固定要件による施設除外: ${EXCLUDE_FACILITY_KEYS.join(', ')}（除外 ${selection.summary.excludedFixedRule} 件）`)
   L(
     `除外内訳: 既公開・既下書き重複 ${selection.summary.excludedPublished} 件 ／ 公式情報不完全 ${selection.summary.excludedIncomplete} 件 ／ ` +
-      `施設分散（同一施設2件目以降）${selection.summary.excludedFacilityCap} 件`,
+      `施設分散（同一施設2件目以降）${selection.summary.excludedFacilityCap} 件 ／ 事務告知 ${selection.summary.excludedAdministrative} 件 ／ ` +
+      `定番候補（別枠へ） ${selection.summary.evergreenCount} 件`,
   )
   L('────────────────────────────────────────────')
 
   if (!gate.passed) {
     L('')
-    L('🛑 GATE FAILED：本日の最優先カテゴリー（スイーツ・和菓子）が候補上位を占めていません')
+    L('🛑 旬のスウィーツ候補：0件')
     L(`   ${gate.reason}`)
+    if (selection.evergreenCandidates.length > 0) {
+      L(`   （定番候補は別枠に ${selection.evergreenCandidates.length} 件ありますが、朝刊候補の穴埋めには使いません）`)
+    }
     L('')
     if (selection.excluded.length) {
       L('（除外された候補の内訳）')
@@ -270,6 +295,7 @@ async function main() {
       L(`   購入条件      : ${r.conditions}`)
       L(`   公式URL       : ${r.sourceUrl}`)
       L(`   出典確認日    : ${r.verifiedAt}`)
+      L(`   今取り上げる理由: ${r.whyNow}`)
     }
     if (selection.shortfall) {
       L('')
@@ -277,6 +303,18 @@ async function main() {
       if (selection.nextSourceTypesToExplore?.length) {
         L(`  → 次回優先して探索する情報源種別: ${selection.nextSourceTypesToExplore.join(' / ')}`)
       }
+    }
+  }
+
+  L('')
+  L('────────────────────────────────────────────')
+  L(`■ 定番候補（別枠・朝刊候補には含めない） ${evergreenRows.length}件`)
+  if (evergreenRows.length === 0) {
+    L('   該当なし')
+  } else {
+    for (const e of evergreenRows) {
+      L(`   ・DC #${e.dcId}「${e.title}」／施設: ${e.facility}／${e.sourceUrl}`)
+      L(`     ${e.reason}`)
     }
   }
 
@@ -293,11 +331,13 @@ async function main() {
   writeFileSync(resolve(outDir, `${DATE}.txt`), text)
   writeFileSync(
     resolve(outDir, `${DATE}.json`),
-    JSON.stringify({ date: DATE, excludeFacilityKeys: EXCLUDE_FACILITY_KEYS, gate, selection, rows }, null, 2) + '\n',
+    JSON.stringify({ date: DATE, excludeFacilityKeys: EXCLUDE_FACILITY_KEYS, gate, selection, rows, evergreenRows }, null, 2) + '\n',
   )
 
   if (JSON_OUT) {
-    console.log(JSON.stringify({ date: DATE, gate, rows, excludeFacilityKeys: EXCLUDE_FACILITY_KEYS, summary: selection.summary }))
+    console.log(
+      JSON.stringify({ date: DATE, gate, rows, evergreenRows, excludeFacilityKeys: EXCLUDE_FACILITY_KEYS, summary: selection.summary }),
+    )
   } else {
     console.log(text)
     console.log(`保存: .devlogs/morning/sweets-today/${DATE}.txt / .json`)

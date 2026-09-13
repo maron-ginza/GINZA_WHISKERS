@@ -32,6 +32,7 @@ import { selectSweetsCandidates, evaluateSweetsGate, type SweetsCandidateInput }
 import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
 import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
 import { evaluateSweetsEligibility } from '../lib/curation/sweetsEligibility'
+import { evaluateSweetsNewsworthiness } from '../lib/curation/sweetsNewsworthiness'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -125,6 +126,12 @@ async function main() {
       )
       const yearFails = yearCheck.ok ? [] : [yearCheck.reason!]
       const gateOk = sweetsGate.eligible && yearCheck.ok
+      // 2026-09-14追加：編集ゲート（新規性・話題性）。事務告知は完全除外、
+      // 常設商品は「定番候補」として別枠へ（朝刊候補には混ぜない）。
+      const newsworthiness = evaluateSweetsNewsworthiness(
+        { title: c.displayTitle ?? c.title, excerpt: c.excerpt ?? null },
+        { now },
+      )
       return {
         dcId: c.discoveredContentId,
         title: c.title,
@@ -148,6 +155,8 @@ async function main() {
         // 2026-09-13追加：直近7日間の同一施設からの採用件数（施設偏重を防ぐsource diversity制御）
         facilityCount7d: fk.key ? (assessed.history.facilityKeyCounts[fk.key] ?? 0) : 0,
         verifiedAt: c.verifiedAt ?? null,
+        newsworthiness: newsworthiness.category,
+        newsworthinessReason: newsworthiness.reason,
       }
     })
     .filter((x): x is SweetsCandidateInput => x != null)
@@ -331,12 +340,17 @@ async function main() {
     L(`   ${i + 1}. DC #${sc.dcId}「${sc.title}」`)
     L(`      施設: ${sc.facilityLabel ?? '不明'}／情報源: ${sc.sourceName}／会期: ${sc.eventPeriod ?? '確認できません'}`)
     L(`      ${sc.reason}／${sc.seasonalNote}`)
+    L(`      今取り上げる理由: ${sc.whyNow}`)
   }
   if (sweetsSelection.shortfall) {
     L(`   ⚠ ${sweetsSelection.shortfallReason}`)
     if (sweetsSelection.nextSourceTypesToExplore?.length) {
       L(`   → 次回優先して探索する情報源種別: ${sweetsSelection.nextSourceTypesToExplore.join(' / ')}`)
     }
+  }
+  L(`   定番候補（別枠・朝刊候補には含めない）: ${sweetsSelection.evergreenCandidates.length}件`)
+  for (const ec of sweetsSelection.evergreenCandidates) {
+    L(`     ・DC #${ec.dcId}「${ec.title}」／施設: ${ec.facilityLabel ?? '不明'}`)
   }
   L('')
   L('────────────────────────────────────────────')
@@ -396,6 +410,7 @@ async function main() {
         warnings: brief.warnings,
         sweetsCandidates: {
           candidates: sweetsSelection.candidates,
+          evergreenCandidates: sweetsSelection.evergreenCandidates,
           shortfall: sweetsSelection.shortfall,
           shortfallReason: sweetsSelection.shortfallReason,
           nextSourceTypesToExplore: sweetsSelection.nextSourceTypesToExplore,

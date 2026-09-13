@@ -198,6 +198,53 @@ const cases: CheckCase[] = [
       assert(gate.passed === true && gate.reason === null, JSON.stringify(gate))
     },
   },
+  {
+    // 2026-09-14：編集ゲート（sweetsNewsworthiness）の分類をselectSweetsCandidatesが
+    // どう扱うかの回帰。administrativeは完全除外、evergreenは別枠（candidatesに混ぜない）。
+    name: 'newsworthiness=administrative は候補から完全に除外される',
+    fn: () => {
+      const list = [
+        mk({ dcId: 1, newsworthiness: 'administrative', newsworthinessReason: '事務告知のため候補としない（価格改定の告知）' }),
+        mk({ dcId: 2 }),
+      ]
+      const r = selectSweetsCandidates(list, { now: NOW })
+      const ids = r.candidates.map((c) => c.dcId)
+      assert(!ids.includes(1) && ids.includes(2), `ids=${ids}`)
+      assert(r.summary.excludedAdministrative === 1, `excludedAdministrative=${r.summary.excludedAdministrative}`)
+      assert(r.excluded.some((e) => e.dcId === 1 && e.reason.includes('価格改定')), JSON.stringify(r.excluded))
+    },
+  },
+  {
+    name: 'newsworthiness=evergreen は朝刊候補(candidates)に混ぜず、evergreenCandidatesへ別枠保存される',
+    fn: () => {
+      const list = [
+        mk({ dcId: 1, newsworthiness: 'evergreen', newsworthinessReason: '新規性語なし・公開日不明の常設商品のため「定番候補」として別枠に保存する' }),
+        mk({ dcId: 2, newsworthiness: 'timely', newsworthinessReason: '新規性語を確認（フェア）' }),
+      ]
+      const r = selectSweetsCandidates(list, { now: NOW })
+      const candidateIds = r.candidates.map((c) => c.dcId)
+      const evergreenIds = r.evergreenCandidates.map((c) => c.dcId)
+      assert(!candidateIds.includes(1), `evergreen候補がcandidatesに混入: ${candidateIds}`)
+      assert(candidateIds.includes(2), `timely候補がcandidatesに無い: ${candidateIds}`)
+      assert(evergreenIds.includes(1), `evergreenCandidatesにdcId1が無い: ${evergreenIds}`)
+      assert(r.summary.evergreenCount === 1, `evergreenCount=${r.summary.evergreenCount}`)
+      assert(r.candidates.find((c) => c.dcId === 2)!.whyNow.includes('フェア'), 'whyNowにnewsworthinessReasonが反映されていない')
+    },
+  },
+  {
+    name: 'timely・evergreenそれぞれ独立に施設キャップ（同一施設1件まで）が適用される',
+    fn: () => {
+      const list = [
+        mk({ dcId: 1, facilityKey: 'shop-a', newsworthiness: 'timely', targetFit: 60 }),
+        mk({ dcId: 2, facilityKey: 'shop-a', newsworthiness: 'timely', targetFit: 10 }), // 同一施設・timely側で弾かれる
+        mk({ dcId: 3, facilityKey: 'shop-a', newsworthiness: 'evergreen' }), // evergreen側は別枠なので独立に1件残る
+      ]
+      const r = selectSweetsCandidates(list, { now: NOW })
+      assert(r.candidates.map((c) => c.dcId).includes(1), 'timelyの高スコア候補が残るはず')
+      assert(!r.candidates.map((c) => c.dcId).includes(2), 'timelyの同一施設2件目は除外されるはず')
+      assert(r.evergreenCandidates.map((c) => c.dcId).includes(3), 'evergreen側は独立の施設キャップなので残るはず')
+    },
+  },
 ]
 
 export const suite = () => runSuite('sweetsCandidateSelect', cases)
