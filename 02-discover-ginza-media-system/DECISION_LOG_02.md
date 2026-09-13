@@ -14,6 +14,107 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き13（🐛 **note下書き自動転記——実機検証1回目失敗の根本原因を
+    特定・修正：inFlightフラグにタイムアウトが無く放棄された試行が永久に
+    checkPending()をブロックしていた。診断ログ経路・書き込み読み戻し検証・
+    段階別失敗記録を新設（Project 02 commit・push あり／DB更新なし／note公開
+    なし・Article #67は転記待ちのまま維持）**）:
+
+    マロン報告：実ブラウザ検証は失敗——URL
+    `https://editor.note.com/notes/n12d7568d8bd2/edit/`、拡張再読み込み後も
+    タイトル「記事タイトル」の空欄・本文も0文字のまま、Article #67は
+    approvedのまま。推測で完了扱いにせず、transfer-state・ローカルサーバー
+    ログ・content.jsの起動〜保存の各段階を調査し原因特定・修正すること。
+
+    **調査結果**：`transfer-state.json`が実機検証後も空`{}`のまま——これは
+    「/api/note-transfer/pendingが一度も呼ばれなかった（もしくは呼ばれても
+    itemを得られなかった）」ことを意味する（pending取得成功時は必ず
+    `claimInProgress`でstateが書き換わる設計のため）。当時サーバーには
+    アクセスログが無く、拡張が実際にリクエストを送ったかどうか自体を
+    確認する手段が無かった。ロジックを精査した結果、**根本原因は
+    `inFlightArticleId`（同一記事の多重処理防止フラグ）にタイムスタンプ・
+    タイムアウトが存在しなかったこと**と判明した：続き12の
+    editor.note.com対応「前」の拡張が最初にArticle #67を`/pending`から
+    取得しinFlightへ記録した時点では、旧manifestがeditor.note.comを
+    対象に含んでおらずcontent.jsが注入されなかったため、
+    `note-transfer:ready`も`note-transfer:result`も一度も送られず、
+    `setInFlight(null)`が永久に呼ばれないまま`inFlightArticleId=67`が
+    `chrome.storage.local`に残り続けた。`chrome.storage.local`は拡張の
+    「再読み込み」では消えないため、続き12のURL修正を適用して再読み込み
+    した後も`checkPending()`冒頭の`getInFlight()`が非nullを返し続け、
+    **fetchすら発生させずに即座にreturnしていた**——これは「タイトル・
+    本文とも0文字」「transfer-stateが空のまま」「アクセスログに/pending
+    へのリクエストが記録されない」という観測事実のすべてと整合する。
+
+    **修正内容**：①`inFlight`記録に`startedAt`（開始時刻）を持たせ、
+    `INFLIGHT_TIMEOUT_MS`（既定2分）を超えたら「放棄された試行」とみなし
+    `getInFlight()`が自動的にクリアしてnullを返すようにした（タイムアウト
+    による自己修復）。②`chrome.runtime.onInstalled`（拡張の再読み込み・
+    更新）時に明示的に`setInFlight(null)`を呼び、開発者が意図的に再起動
+    した時点の古いinFlight記録は無条件に破棄する（再発防止の主対応）。
+    ③対象タブが結果報告前に閉じられた場合（`chrome.tabs.onRemoved`）も
+    inFlightをクリアし失敗報告してリトライへ進める後始末を追加した。
+
+    **診断ログ経路の新設**（ブラウザのDevTools console.logはこの開発環境
+    から見えず、「拡張が実際に何をしたか」を確認する手段が無かった反省を
+    踏まえた恒久対応）：新規`POST /api/note-transfer/log`エンドポイント
+    （`.devlogs/night/note-transfer-diagnostic.jsonl`へ追記）＋サーバーの
+    全リクエストへのアクセスログ（`console.log`、`./p2 note-transfer serve`
+    の標準出力）。`background.js`は主要ステップ（inFlightスキップ・
+    pending取得・タブ検索/再読み込み/新規作成・ready受信・タブ強制終了）
+    をすべてこの経路へ送信する。`content.js`も`logStage()`を新設し、
+    起動直後・DOM読み込み完了・**成否によらず必ず1回のDOMスナップショット**
+    （可視ボタンのテキスト・contenteditable要素の位置とサイズ・textarea/
+    inputのplaceholder一覧）・タイトル/本文の要素発見結果・書き込み後の
+    読み戻し文字数・保存ボタン発見・保存後の最終確認、を送信する——次回
+    以降は実ブラウザに触れなくても`.devlogs/night/`の中身だけで拡張の
+    挙動を追跡できる。
+
+    **書き込み読み戻し検証（マロン指示の中核）**：`content.js`は
+    タイトル・本文いずれも、書き込み後に実際の値を読み戻し（Reactの
+    再描画を待つため最大2秒・200ms間隔でポーリング）、**文字数が0の場合は
+    `success`を報告せず、`stage=title_write_not_verified`／
+    `stage=body_write_not_verified`として`failure`扱いにする**——0文字の
+    まま成功と誤認することを構造的に禁止した。「下書き保存」ボタン押下後
+    にも、タイトル・本文が再度0文字に戻っていないか最終確認し
+    （`stage=post_save_verify_failed`）、通過して初めて`success`を報告する。
+    要素探索自体も強化：placeholder／aria-label／data-placeholder／
+    `role="textbox"`を横断し、Shadow DOM（`el.shadowRoot`）内も再帰的に
+    探索する`deepQuerySelectorAll`を新設（editor.note.comの実DOM構造が
+    カスタム要素・Shadow DOMベースである可能性に備えた保険）。
+    contenteditableへの書き込みは`execCommand`に加え
+    `beforeinput`/`input`/`change`イベントも明示的に発火する。
+
+    **回帰テスト新規9件**：`chromeExtensionManifest.check.ts`へ
+    追加——0文字成功禁止（`titleReadback.length===0`/
+    `bodyReadback.length===0`/`finalTitle.length===0||finalBody.length===0`
+    の各ガード存在とコード順の確認）、`logStage`による主要ステージ記録の
+    存在、`inFlight`のタイムアウト定数・`startedAt`・`onInstalled`時の
+    クリア処理の存在、`note-transfer:log`メッセージ経路とサーバー側
+    `/api/note-transfer/log`エンドポイントの存在。`run-all.ts` **556
+    passed 0 failed**（551→556、+5個体テスト＋既存アサーション強化）。
+    `tsc --noEmit`0エラー、3ファイルの構文（`node -c`）を確認。
+
+    **検証**：サーバーを`/log`エンドポイント込みで再起動しcurlで
+    再確認——`/pending`が正しくArticle #67を返す・2回目は`null`
+    （dedup）・`/log`がJSONLへ正しく追記される・アクセスログに
+    リクエストが記録される、をすべて確認。テスト用の状態・診断ログは
+    都度削除・リセットし、Article #67の実転記待ち状態を復元した。
+
+    **未完了（次回への申し送り）**：今回の修正は「なぜ一度も試行されな
+    かったか」の根本原因（inFlight永久ブロック）の解消と、次回失敗時に
+    実際のDOM構造を手がかりに即座に修正できる診断基盤の整備が中心。
+    editor.note.comの実DOMに対する要素探索ロジック自体が実際に正しく
+    動作するかは、**この修正を適用した拡張での次回の実機試行結果
+    （特に`dom_snapshot`診断ログの内容）を見るまで未確定**——0文字のまま
+    再度失敗した場合でも、今回とは異なり具体的なDOM構造情報が
+    `.devlogs/night/note-transfer-diagnostic.jsonl`に残るため、
+    次の修正はそれを見て的確に行える。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き12（🔧 **note下書き自動転記——実際の編集画面URL
     `https://editor.note.com/notes/{noteId}/edit/` へ正式対応、旧URLとの互換性を
     維持（Project 02 commit・push あり／DB更新なし／note公開なし・Article #67は

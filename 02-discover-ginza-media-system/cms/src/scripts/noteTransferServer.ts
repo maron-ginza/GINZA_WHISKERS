@@ -33,7 +33,7 @@
 
 import { getPayload, type Payload } from 'payload'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, extname } from 'node:path'
 
 import config from '../payload.config'
@@ -54,6 +54,24 @@ const MAX_ATTEMPTS = MAX_TRANSFER_ATTEMPTS
 const QUEUE_DIR = resolve(ROOT, '.devlogs', 'night', 'queue')
 const STATE_PATH = resolve(ROOT, '.devlogs', 'night', 'transfer-state.json')
 const ICON_DIR = resolve(ROOT, 'media', 'discover-ginza-category-icons')
+const DIAGNOSTIC_LOG_PATH = resolve(ROOT, '.devlogs', 'night', 'note-transfer-diagnostic.jsonl')
+
+// 2026-09-14続き（実機検証失敗の調査）：実ブラウザでの1回目の実機検証が
+// 「拡張再読み込み後も0文字・transfer-stateは空のまま」で失敗し、原因調査に
+// あたって「拡張側で何が起きたか」を見る手段が無かった（Service Worker・
+// content scriptのconsole.logはブラウザのDevTools側にしか出ず、この開発環境
+// からは見えない）。そこで、①全HTTPリクエストをアクセスログとして記録し、
+// ②拡張（background.js／content.js）が能動的に送ってくる段階別診断ログを
+// 受け取るエンドポイントを追加し、次回以降は実ブラウザに触れなくても
+// .devlogs/night/ の中身だけで「拡張が実際に何をしたか」を追跡できるようにする。
+function appendDiagnosticLog(entry: Record<string, unknown>): void {
+  try {
+    mkdirSync(resolve(ROOT, '.devlogs', 'night'), { recursive: true })
+    appendFileSync(DIAGNOSTIC_LOG_PATH, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n', 'utf8')
+  } catch {
+    // 診断ログの書き込み失敗自体でサーバーを止めない。
+  }
+}
 
 function loadState(): TransferState {
   if (!existsSync(STATE_PATH)) return {}
@@ -154,6 +172,10 @@ async function main() {
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     withCors(res)
+    // 全リクエストのアクセスログ（拡張が実際にこのサーバーへ到達しているか自体を
+    // 追跡するため。実機検証1回目失敗の原因調査で「拡張からのリクエストが
+    // そもそも来ていたか」が分からなかった反省を踏まえた恒久対応）。
+    console.log(`[note-transfer] ${new Date().toISOString()} ${req.method} ${req.url}`)
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
       res.end()
@@ -165,6 +187,7 @@ async function main() {
       void (async () => {
         try {
           const pending = await findPendingTransfer(payload)
+          appendDiagnosticLog({ source: 'server', event: 'pending_queried', articleId: pending?.articleId ?? null })
           if (!pending) {
             res.writeHead(200, { 'content-type': 'application/json' })
             res.end(JSON.stringify({ ok: true, item: null }))
@@ -221,6 +244,7 @@ async function main() {
             res.end(JSON.stringify({ ok: false, error: 'articleId が不正です' }))
             return
           }
+          appendDiagnosticLog({ source: 'server', event: 'result_received', articleId, status: body.status, error: body.error, draftUrl: body.draftUrl })
           const state = loadState()
 
           if (body.status === 'success') {
@@ -251,6 +275,24 @@ async function main() {
           res.end(JSON.stringify({ ok: true, exhausted, attempts }))
         } catch (e) {
           res.writeHead(500, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }))
+        }
+      })()
+      return
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/note-transfer/log') {
+      // 拡張（background.js／content.js）からの段階別診断ログを受け取り、
+      // .devlogs/night/note-transfer-diagnostic.jsonl へ追記するだけの
+      // 読み取り専用寄りエンドポイント（state（成否判定）には一切影響しない）。
+      void (async () => {
+        try {
+          const body = await jsonBody(req)
+          appendDiagnosticLog({ source: 'extension', ...body })
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }))
         }
       })()

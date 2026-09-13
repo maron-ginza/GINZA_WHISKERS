@@ -911,6 +911,23 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   failed**（+18）。note.com上での実際の保存成功は引き続き拡張再読み込み
   （Chrome仕様上自動化不可）待ちのまま未検証、Article #67は転記待ちを維持。
   詳細は`DECISION_LOG_02.md` 2026-09-13 続き12参照。
+- 2026-09-13: 🐛 **note下書き自動転記——実機検証1回目失敗の根本原因を特定・
+  修正（Project 02 commit・push あり／DB更新なし）**——原因は
+  `inFlightArticleId`（多重処理防止フラグ）にタイムアウトが無く、URL対応前の
+  試行で結果報告が一度も送られなかったため`chrome.storage.local`に永久に
+  残り、再読み込み後も`checkPending()`が`/pending`すら呼ばずに即return
+  していたこと（transfer-stateが空のまま・タイトル本文0文字という観測事実と
+  すべて整合）。①inFlightへタイムスタンプ＋タイムアウト（既定2分）②拡張
+  再読み込み（`onInstalled`）時に無条件クリア③タブが結果報告前に閉じられた
+  場合の後始末、を追加。あわせて新規`POST /api/note-transfer/log`＋
+  サーバーアクセスログで拡張の挙動を`.devlogs/night/`から追跡できるように
+  し、`content.js`はタイトル・本文の書き込み後に実際の値を読み戻して
+  **0文字なら`success`を報告しない**構造的ガードを新設（保存操作後の最終
+  確認込み）、要素探索もShadow DOM対応の`deepQuerySelectorAll`へ強化。
+  回帰テスト新規、`run-all.ts` **556 passed 0 failed**。editor.note.comの
+  実DOMへの要素探索ロジック自体の成否は次回実機試行の診断ログ待ち。
+  Article #67は転記待ちを維持。詳細は`DECISION_LOG_02.md` 2026-09-13
+  続き13参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

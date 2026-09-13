@@ -19,6 +19,7 @@ import { runSuite, type CheckCase } from './_harness'
 
 const ROOT = resolve(process.cwd(), '..')
 const EXT_DIR = resolve(ROOT, 'chrome-extension')
+const SERVER_SRC = resolve(ROOT, 'cms', 'src', 'scripts', 'noteTransferServer.ts')
 
 /** chrome.<namespace>.… の名前空間ごとに、MV3で明示的な permissions 宣言が必要なもの。
  * chrome.runtime はいかなる場合も暗黙的に使え、permissions 宣言は不要。 */
@@ -188,6 +189,79 @@ const cases: CheckCase[] = [
         /if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(content),
         '「公開」を含むボタンを除外するガードが見つからない（下書き保存ボタン探索ロジックの安全境界）',
       )
+    },
+  },
+  {
+    // 2026-09-14続き2：実機検証1回目失敗——タイトル・本文とも0文字のまま
+    // 「成功」が報告されることは無かった（transfer-stateは空のまま）が、
+    // 二度と「書き込めていないのに成功扱いにする」ことが起きないよう、
+    // 読み戻し検証を経ないと success を報告できない構造になっていることを
+    // 静的に確認する。
+    name: '【0文字成功禁止】content.jsはタイトル・本文の読み戻し文字数が0の場合にreport(...,\'success\',...)を呼ばない',
+    fn: () => {
+      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      assert.ok(
+        /titleReadback\.length\s*===\s*0/.test(content),
+        'タイトルの読み戻し文字数0を検知するガードが見つからない',
+      )
+      assert.ok(
+        /bodyReadback\.length\s*===\s*0/.test(content),
+        '本文の読み戻し文字数0を検知するガードが見つからない',
+      )
+      assert.ok(
+        /finalTitle\.length\s*===\s*0\s*\|\|\s*finalBody\.length\s*===\s*0/.test(content),
+        '保存操作後の最終確認（0文字なら失敗扱い）が見つからない',
+      )
+      // 0文字ガードのreturn文より後にしかsuccess報告が無いことを簡易確認
+      // （0文字チェックをすり抜けてsuccessへ到達する経路が無いことの目安）。
+      const successIdx = content.lastIndexOf(`report(item.articleId, 'success'`)
+      const titleGuardIdx = content.indexOf('titleReadback.length === 0')
+      const bodyGuardIdx = content.indexOf('bodyReadback.length === 0')
+      assert.ok(successIdx > titleGuardIdx && successIdx > bodyGuardIdx, 'success報告が0文字ガードより前のコード順に存在する（すり抜けの恐れ）')
+    },
+  },
+  {
+    name: '【診断ログ】content.jsが主要ステージをlogStageで記録している',
+    fn: () => {
+      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      for (const stage of ['content_script_loaded', 'dom_snapshot', 'title_write_verify', 'body_write_verify']) {
+        assert.ok(content.includes(`'${stage}'`), `logStage('${stage}', ...) が見つからない`)
+      }
+    },
+  },
+  {
+    // 2026-09-14続き2：実機検証1回目失敗の根本原因——inFlightフラグにタイムスタンプが
+    // 無く、放棄された試行が永久にcheckPending()をブロックしていた。再発防止の
+    // 静的検証。
+    name: '【多重防止の永久ブロック再発防止】background.jsのinFlightにタイムアウトがあり、拡張再読み込み時にクリアされる',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/INFLIGHT_TIMEOUT_MS/.test(bg), 'inFlightのタイムアウト定数が見つからない')
+      assert.ok(/startedAt/.test(bg), 'inFlight記録に開始時刻(startedAt)が含まれていない')
+      const onInstalledIdx = bg.indexOf('onInstalled.addListener')
+      assert.ok(onInstalledIdx >= 0, 'chrome.runtime.onInstalled.addListener が見つからない')
+      const nextListenerIdx = bg.indexOf('onStartup.addListener', onInstalledIdx)
+      const onInstalledBody = bg.slice(onInstalledIdx, nextListenerIdx > 0 ? nextListenerIdx : onInstalledIdx + 1500)
+      assert.ok(
+        onInstalledBody.includes('setInFlight(null)'),
+        'onInstalled（拡張再読み込み）時にinFlightをクリアする処理が見つからない',
+      )
+    },
+  },
+  {
+    name: '【診断ログ配線】background.jsがnote-transfer:logメッセージをサーバーへ転送する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/note-transfer:log/.test(bg), 'note-transfer:log メッセージのハンドラが見つからない')
+      assert.ok(/\/api\/note-transfer\/log/.test(bg), '/api/note-transfer/log への送信が見つからない')
+    },
+  },
+  {
+    name: '【診断ログ配線】noteTransferServer.tsが/api/note-transfer/logエンドポイントを実装している',
+    fn: () => {
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(server.includes('/api/note-transfer/log'), '/api/note-transfer/log ルートが見つからない')
+      assert.ok(server.includes('appendDiagnosticLog'), '診断ログ書き込み関数が見つからない')
     },
   },
 ]
