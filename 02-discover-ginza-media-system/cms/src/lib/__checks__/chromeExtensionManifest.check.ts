@@ -444,6 +444,42 @@ const cases: CheckCase[] = [
       assert.ok(/stages,?\s*\}/.test(afterCatch), 'catch節の戻り値にstagesが含まれていない')
     },
   },
+  {
+    // 2026-09-14続き8：try/catch修正で初めて実際の例外が判明した——
+    // 「trigger.click is not a function」（aria-label付きsvgアイコン等、
+    // .clickを持たない要素をクリックしようとしていた）。実際にクリック可能な
+    // 祖先を解決するnearestClickable/clickElementが存在し、trigger.click()等の
+    // 直接呼び出しが残っていないことを確認する。
+    name: '【重大バグ再発防止】trigger.click直接呼び出しが無く、clickElement（祖先解決）を経由する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function nearestClickable/.test(bg), 'nearestClickableが見つからない')
+      assert.ok(/function clickElement/.test(bg), 'clickElementが見つからない')
+      // コメント文中の言及を除外し、実コードで trigger.click()／proceedBtn.click()／
+      // confirmBtn.click()／saveBtn.click() を直接呼んでいる行が無いことを確認する。
+      const codeLines = bg.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      const directCallRe = /\b(trigger|proceedBtn|confirmBtn|saveBtn)\.click\(\)/
+      const offendingLine = codeLines.find((line) => directCallRe.test(line))
+      assert.equal(offendingLine, undefined, `直接.click()呼び出しが残っている: ${offendingLine}`)
+    },
+  },
+  {
+    // 2026-09-14続き8：実機で発見した重大バグ——preferredUrl（completion-only
+    // ジョブの対象記事の既存下書きURL）と完全一致するタブが無いとき、
+    // 「他の適当なnote編集タブ（マロンが別記事のために手動で開いた無関係な
+    // 新規下書き等）」へ誤ってフォールバックしていた。preferredUrl指定時は
+    // 完全一致が無ければ他candidateへフォールバックせず直接開くことを確認する。
+    name: '【重大バグ再発防止】preferredUrl指定時、完全一致タブが無ければ他のnoteタブへフォールバックせずpreferredUrlを直接開く',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('async function findOrOpenNoteEditorTab')
+      const end = bg.indexOf('function injectedNoteTransfer')
+      assert.ok(start >= 0 && end > start, 'findOrOpenNoteEditorTabの範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(preferredUrl\)\s*\{/.test(body), 'preferredUrl分岐が見つからない')
+      assert.ok(/\}\s*else if\s*\(candidates\.length > 0\)/.test(body), 'preferredUrl指定時に他candidateへのフォールバック分岐と分離されていない（elseで排他になっていない）')
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)

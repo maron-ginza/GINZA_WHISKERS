@@ -161,20 +161,26 @@ async function findOrOpenNoteEditorTab(preferredUrl) {
     const tabs = await chrome.tabs.query({})
     const candidates = tabs.filter((t) => isNoteEditorTargetUrl(t.url))
     logToServer('tabs_queried', { totalTabs: tabs.length, candidateCount: candidates.length, candidateUrls: candidates.map((t) => t.url), preferredUrl: preferredUrl ?? null })
-    if (candidates.length > 0) {
-      // 2026-09-14続き5：completion-onlyジョブ（既存の下書きへ戻ってハッシュタグ・
-      // アイコンだけ追加する）の場合、preferredUrl（既存のdraftUrl）と完全一致する
-      // タブを最優先する——同時に複数のnote編集タブが開いていても、別記事の
-      // タブを誤って再利用しないため。
-      if (preferredUrl) {
-        const exact = candidates.find((t) => t.url === preferredUrl)
-        if (exact) {
-          await chrome.tabs.reload(exact.id)
-          logToServer('existing_tab_reloaded', { tabId: exact.id, url: exact.url, matchedPreferredUrl: true })
-          return exact
-        }
+
+    if (preferredUrl) {
+      // 2026-09-14続き5・続き8：completion-onlyジョブ（既存の下書きへ戻って
+      // ハッシュタグ・アイコンだけ追加する）の場合、preferredUrl（既存の
+      // draftUrl）と完全一致するタブだけを再利用する。**実機で発見した
+      // バグ**：完全一致タブが無いとき、以前は「他の適当なnote編集タブ
+      // （マロンが別記事のために手動で開いた無関係な新規下書き等）」へ
+      // フォールバックしてしまい、対象記事とは無関係なタブを操作していた。
+      // 完全一致が無ければ（他のnoteタブの有無に関わらず）必ず
+      // preferredUrlを直接開く——別記事のタブを誤って使わない。
+      const exact = candidates.find((t) => t.url === preferredUrl)
+      if (exact) {
+        await chrome.tabs.reload(exact.id)
+        logToServer('existing_tab_reloaded', { tabId: exact.id, url: exact.url, matchedPreferredUrl: true })
+        return exact
       }
-      // editor.note.com（実際の編集画面）を優先し、note.com/notes/new（入口）は次点。
+      logToServer('preferred_url_tab_not_found_opening_directly', { preferredUrl, otherCandidateUrls: candidates.map((t) => t.url) })
+    } else if (candidates.length > 0) {
+      // preferredUrl指定なし（'full'モード＝新規下書き作成）の場合のみ、
+      // 既存のnote編集タブ（どの記事のものでもよい）を再利用する。
       candidates.sort((a, b) => {
         const score = (t) => (new URL(t.url).hostname === 'editor.note.com' ? 0 : 1)
         return score(a) - score(b)
@@ -345,15 +351,47 @@ function injectedNoteTransfer(item) {
      * SVGアイコンボタン等 [aria-label] を持つ任意要素も対象にする）。
      * 2026-09-14続き5新設：ハッシュタグ・画像UIが最初のDOMに存在せず、ボタンを
      * クリックして初めて出現する可能性に対応するため。 */
+    /** 実機で発見した重大バグの修正（2026-09-14続き8）：aria-label付き要素が
+     * `<svg aria-label="画像を追加">`のようなアイコン自体の場合、
+     * `.click()`メソッドを持たず`trigger.click is not a function`で
+     * 例外になっていた（try/catch修正により初めて実際のエラーが判明した）。
+     * SVG/aria-label要素からDOMツリーを遡り、実際に`.click()`を持つ
+     * 最も近い祖先（button/a/role=button等）を返す。 */
+    function nearestClickable(el) {
+      let node = el
+      while (node) {
+        if (typeof node.click === 'function') return node
+        node = node.parentElement
+      }
+      return null
+    }
+    /** どんな要素でも安全にクリックする（.clickが無ければMouseEventで代替）。 */
+    function clickElement(el) {
+      const target = nearestClickable(el) || el
+      if (target && typeof target.click === 'function') {
+        target.click()
+        return true
+      }
+      try {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+        return true
+      } catch {
+        return false
+      }
+    }
     function findClickableByLabel(patterns) {
       const candidates = deepQuerySelectorAll('button, [role="button"], a, [aria-label], [title]')
-      return candidates.find((el) => {
+      const matched = candidates.find((el) => {
         if (!isVisible(el)) return false
         const label = (el.getAttribute('aria-label') || el.getAttribute('title') || visibleText(el) || '').trim()
         if (!label) return false
         if (/公開/.test(label)) return false // 絶対除外
         return patterns.some((p) => p.test(label))
       })
+      // マッチした要素自体（例：aria-label付きのsvgアイコン）が.clickを持たない
+      // 場合、実際にクリック可能な祖先（button等）を返す——findClickableByLabel
+      // の戻り値は常に「clickElementで安全に押せる要素」であることを保証する。
+      return matched ? nearestClickable(matched) || matched : undefined
     }
     // 2026-09-14続き6：ハッシュタグ・カテゴリー画像の入力欄は編集画面ではなく
     // 「公開に進む」の次画面（公開設定）で初めて現れると判明（マロン指示）。
@@ -426,7 +464,7 @@ function injectedNoteTransfer(item) {
       if (input) return { input, revealed: false }
       const trigger = findClickableByLabel([/タグ/i, /ハッシュタグ/i, /tag/i])
       if (!trigger) return { input: null, revealed: false, triggerFound: false }
-      trigger.click()
+      clickElement(trigger)
       await sleep(600)
       input = findHashtagInput()
       return { input, revealed: !!input, triggerFound: true, triggerLabel: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) }
@@ -439,7 +477,7 @@ function injectedNoteTransfer(item) {
       if (fi) return { fi, revealed: false }
       const trigger = findClickableByLabel([/画像/i, /サムネイル/i, /アイキャッチ/i, /カバー/i, /image/i])
       if (!trigger) return { fi: null, revealed: false, triggerFound: false }
-      trigger.click()
+      clickElement(trigger)
       await sleep(600)
       fi = deepQuerySelectorAll('input[type="file"]')[0]
       return { fi, revealed: !!fi, triggerFound: true, triggerLabel: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) }
@@ -612,7 +650,7 @@ function injectedNoteTransfer(item) {
       const proceedBtn = findProceedToPublishButton()
       if (proceedBtn) {
         log('proceed_to_settings_click', { text: visibleText(proceedBtn) })
-        proceedBtn.click()
+        clickElement(proceedBtn)
         navigatedToSettings = true
         await waitFor(() => findHashtagInput() || deepQuerySelectorAll('input[type="file"]').length > 0, 8000)
         await sleep(500)
@@ -666,7 +704,7 @@ function injectedNoteTransfer(item) {
         const confirmBtn = await waitFor(() => findConfirmLikeButton(), 4000)
         if (confirmBtn) {
           log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
-          confirmBtn.click()
+          clickElement(confirmBtn)
           await sleep(500)
         }
         iconResult = { attached: true, revealed: iconRevealed, triggerLabel: iconTriggerLabel, navigatedToSettings, fileName }
@@ -712,7 +750,7 @@ function injectedNoteTransfer(item) {
       }
     }
     log('save_button_found', { text: visibleText(saveBtn) })
-    saveBtn.click()
+    clickElement(saveBtn)
     await sleep(2000)
 
     if (mode === 'full') {

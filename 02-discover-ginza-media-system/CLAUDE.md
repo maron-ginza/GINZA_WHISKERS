@@ -1003,6 +1003,33 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   保存は完成のまま、`needsCompletion:true`で維持。次回、真の例外原因が
   ログに残る見込み。マロンへ新たなChrome操作は要求していない。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き17参照。
+- 2026-09-13: 🎯 **note下書き自動転記——try/catch修正で初めて実際の例外内容が
+  判明：2件の実バグを特定・修正（Project 02 commit・push あり／DB更新
+  なし）**——18:34の拡張再読み込み後もnote編集画面が自動で開かなかった
+  ことを調査。最初の停止地点は`/pending`が`transfer-state.json`の
+  `status:'failed'`（続き17直後・reload反映前に旧コードが1回余分に
+  ポーリングして終端状態に達していた）により毎回nullを返していたこと——
+  state復元後は実際に`checkPending`→`findOrOpenNoteEditorTab`→
+  `executeScript`まで到達することを確認した。その先で捕捉した実際の
+  例外：①`TypeError: trigger.click is not a function`——
+  `findClickableByLabel`が`aria-label="画像を追加"`を持つ`<svg>`要素
+  自体をマッチさせ`.click()`しようとしていた（SVGElementは`.click()`を
+  持たない場合がある）。②同じ実行で`tabs_queried`が別記事の無関係な
+  タブ（マロンが別件で開いていた新規下書き）を返し、`preferredUrl`と
+  完全一致しないにもかかわらずそれを採用していた——
+  `findOrOpenNoteEditorTab`が完全一致タブが無い場合に他candidateへ
+  フォールバックしてから新規オープンに進む設計だったため。①は
+  `nearestClickable`／`clickElement`（実際にクリック可能な祖先を解決）
+  を新設し全直接`.click()`呼び出しを置き換え、②は`preferredUrl`指定時と
+  非指定時を`if`/`else if`で排他分岐させ、対象記事の下書きが見つからない
+  場合は他のnoteタブを使わず直接そのURLを開くよう修正。回帰テスト新規
+  2件、`run-all.ts` **577 passed 0 failed**。サーバー再起動・state復元後、
+  実機の拡張（旧コードのまま、本コミット未反映）が同じ2つのバグで
+  再度失敗することをログで確認——コードは正しいがブラウザへの反映は
+  次回の拡張再読み込み後になる。Article #67はタイトル・本文・保存は
+  完成のまま、`needsCompletion:true`で維持。マロンへ新たなChrome操作は
+  要求していない（指示のとおり再試行は求めていない）。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き18参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

@@ -14,6 +14,89 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き18（🎯 **note下書き自動転記——try/catch修正で初めて実際の
+    例外内容が判明：①「aria-label付きsvgアイコンに`.click()`が無い」②
+    「対象記事の下書きが見つからない時に別記事の無関係なタブへ誤って
+    フォールバックしていた」の2件の実バグを特定・修正
+    （Project 02 commit・push あり／DB更新なし／note公開なし・Article #67は
+    タイトル・本文・保存は完成のまま、ハッシュタグ・アイコンは自動完了待ち）**）:
+
+    マロン報告：18:34に拡張を再読み込みしたが、note編集画面は自動で開かな
+    かった。Chrome操作の再試行は禁止。18:34以降の実ログから最初の停止地点を
+    確定し、タブが存在しない場合は保存済みの編集URLを自動で開いて残り2項目
+    だけ実行するよう修正すること、との指示。
+
+    **調査結果（最初の停止地点の確定）**：18:34以降のログを追うと、
+    `/pending`が一貫して`articleId: null`を返し続けていた。原因は
+    `transfer-state.json`の記事67が、続き17のcommit直後・実際の拡張再
+    読み込み（`on_installed reason:'update'` 09:37:48Z）が反映される
+    **前**に、旧コードの拡張が1回だけ余分にポーリングして
+    `execute_script_no_result`で3回目の失敗を積み、`status:'failed'`
+    （終端状態）に達していたためだった——`selectNextPendingArticleId`は
+    `failed`を恒久的に除外する設計であり、これ自体は正しい挙動。「note
+    編集画面が自動で開かなかった」のは、`findOrOpenNoteEditorTab`の
+    自動オープン機能（続き12で実装済み）に到達する**前**の`/pending`
+    段階で毎回nullが返っていたため。stateを正しい事実
+    （`status:'success', needsCompletion:true`）へ復元したところ、
+    次のポーリングで実際に`/pending`が`mode:'completion'`を返し、
+    `checkPending`→`findOrOpenNoteEditorTab`→`executeScript`まで
+    到達することを確認した。
+
+    **真の実行時エラー（続き17のtry/catch修正で初めて捕捉できた）**：
+    ```
+    TypeError: trigger.click is not a function
+        at revealAndFindFileInput (<anonymous>:226:15)
+    ```
+    `dom_snapshot`の`labeled`配列（続き5で追加した診断項目）が
+    `{ariaLabel:'画像を追加', tag:'svg'}`を捉えており、
+    `findClickableByLabel`が「画像を追加」というaria-labelを持つ
+    **`<svg>`要素自体**をマッチさせ、それへ直接`.click()`しようとして
+    例外になっていたと判明した（SVGElementは実行環境によって
+    `.click()`を持たない）。
+
+    **もう1件、同じログから発見**：この同じ試行の`tabs_queried`が
+    `candidateUrls:['https://editor.note.com/notes/n36ebd1addb27/edit/']`
+    （マロンが別件で手動で開いていた無関係な新規下書き）を返し、
+    `existing_tab_reloaded`が`matchedPreferredUrl:false`のままこのタブを
+    採用していた——`findOrOpenNoteEditorTab`は、`preferredUrl`
+    （記事67の既存下書きURL）と完全一致するタブが無いとき、**他の
+    無関係なnote編集タブへフォールバックしてから**でないと新規オープンに
+    進まない設計になっていた。これは要求（「保存済みの編集URLを自動で
+    開く」）に反する動作であり、実際に別記事のタブを操作してしまう
+    リスクがあった。
+
+    **修正**：①`nearestClickable(el)`（`.click`を持つ最も近い祖先を
+    辿って返す）＋`clickElement(el)`（それでも無ければMouseEventで代替）
+    を新設し、`findClickableByLabel`の戻り値・`trigger.click()`／
+    `proceedBtn.click()`／`confirmBtn.click()`／`saveBtn.click()`の
+    直接呼び出しをすべて`clickElement(...)`経由に置き換えた。②
+    `findOrOpenNoteEditorTab`を、`preferredUrl`指定時は「完全一致タブ→
+    （無ければ）他candidateへフォールバックせず直接`preferredUrl`を
+    開く」、`preferredUrl`未指定時のみ「既存の任意のnoteタブを再利用」と
+    明確に排他分岐させた——別記事のタブを誤って使う経路を構造的に無くした。
+
+    **回帰テスト新規2件**：①`trigger.click()`等の直接呼び出しがコード中に
+    残っていないこと・`nearestClickable`/`clickElement`の存在を確認
+    （コメント文中の言及は除外）②`findOrOpenNoteEditorTab`が
+    `preferredUrl`指定時とそれ以外を`if`/`else if`で排他分岐している
+    ことを確認。`run-all.ts` **577 passed 0 failed**（575→577）。
+    `tsc --noEmit`0エラー、`node -c`で構文確認。
+
+    **検証**：サーバー再起動・state復元後、実機の拡張（旧コードのまま、
+    本コミット未反映）が引き続き自動ポーリングしていることをアクセス
+    ログ・診断ログで継続観察した。
+
+    **現在の状態・申し送り**：Article #67は`status:'success'`
+    （タイトル・本文・保存は完成・恒久）・`needsCompletion:true`
+    （ハッシュタグ・アイコンは未完了）を維持。本コミットのコードは
+    まだ拡張へ反映されていない（前回同様、コード変更は拡張の再読み込み
+    後にのみ有効になる制約のため）。マロンへ新たなChrome操作は
+    要求していない——ご指示のとおり再試行は求めていない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き17（🐛 **note下書き自動転記——「executeScriptから結果が
     返らない」障害の真因を特定・修正：injectedNoteTransfer全体に
     try/catchが無く、関数内の未捕捉例外でPromiseがreject→診断情報が
