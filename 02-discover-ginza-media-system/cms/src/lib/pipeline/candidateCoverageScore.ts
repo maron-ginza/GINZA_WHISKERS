@@ -152,14 +152,32 @@ export interface OfficialCompletenessInput {
   excerpt?: string | null
   /** product_news（販売）で会期がなく「発売中」等のときは期間の代わりに販売開始日を見る */
   saleStartAt?: string | null
+  /** 2026-09-13追加：商品名・企画名（必須。title/displayTitle/ArticleFacts.eventName等） */
+  productOrCampaignName?: string | null
+  /** 2026-09-13追加：出典確認日（必須。DiscoveredContent.lastCheckedAt等、ISO日時） */
+  verifiedAt?: string | null
 }
 
 export interface OfficialCompletenessResult {
-  /** 4項目（URL・期間・場所・内容）のうち確認できた割合 0-1 */
+  /** 確認できた項目数の割合 0-1（必須5＋任意1＝6項目中。任意項目も分母に含め情報量として見せる） */
   score: number
+  /** 確認できた項目（必須・任意問わず全項目） */
   have: string[]
+  /**
+   * 未確認の項目（必須・任意問わず全項目。任意項目〈開催・販売期間〉が含まれていても
+   * finalEligible には影響しない——監査・「公式記載なし」表示用の完全なリスト）。
+   */
   missing: string[]
-  /** 4項目すべて確認できたか。false のものは「最終候補に上げない」対象 */
+  /**
+   * 2026-09-13追加：必須5項目のうち未確認のもの（finalEligible の判定根拠そのもの）。
+   */
+  requiredMissing: string[]
+  /**
+   * 必須5項目（商品名・企画名／公式URL／銀座での場所／内容／出典確認日）がすべて
+   * 確認できたか。2026-09-13改訂——固定運用原則との矛盾を解消するため、開催・販売期間・
+   * 価格・購入条件は必須から除外した（公式に記載が無ければ「公式記載なし」として保存し
+   * 候補化を妨げない。マロン指示）。
+   */
   finalEligible: boolean
 }
 
@@ -169,15 +187,47 @@ function hasHttpUrl(u: string | null | undefined): boolean {
   return typeof u === 'string' && /^https?:\/\/\S+/.test(u.trim())
 }
 
+/**
+ * 公式情報の完全度判定（2026-09-13改訂）。
+ *
+ * 【候補化に必須】商品名・企画名／銀座での販売・提供場所／内容を確認できる公式URL
+ * （＝公式URL・内容の両方）／出典確認日／終了済みでないこと（終了判定は
+ * evaluateSafetyGate の expired が別途担う——本関数は完全度のみを見る）。
+ *
+ * 【公式記載がなくても候補化可能】開催・販売期間（価格・購入条件は本関数の対象外＝
+ * ArticleFacts側の任意項目として別途「公式記載なし」表示）。
+ */
 export function officialCompleteness(input: OfficialCompletenessInput): OfficialCompletenessResult {
   const have: string[] = []
   const missing: string[] = []
+  const requiredMissing: string[] = []
 
-  // ① 公式URL
-  if (hasHttpUrl(input.sourceUrl)) have.push('公式URL')
-  else missing.push('公式URL')
+  const req = (label: string, ok: boolean) => {
+    if (ok) have.push(label)
+    else {
+      missing.push(label)
+      requiredMissing.push(label)
+    }
+  }
 
-  // ② 開催・販売期間（機械日付 or 期間テキストに数字）
+  // ① 商品名・企画名（必須）
+  req('商品名・企画名', (input.productOrCampaignName ?? '').trim().length > 0)
+
+  // ② 公式URL（必須）
+  req('公式URL', hasHttpUrl(input.sourceUrl))
+
+  // ③ 銀座での場所（必須。会場テキスト or 施設キー解決）
+  req('場所', (input.venue ?? '').trim().length > 0 || input.facilityResolved === true)
+
+  // ④ 内容（必須。whatHappens or 抜粋40字以上）
+  const wh = (input.whatHappens ?? '').trim()
+  const ex = (input.excerpt ?? '').trim()
+  req('内容', wh.length >= 8 || ex.length >= 40)
+
+  // ⑤ 出典確認日（必須）
+  req('出典確認日', hasIso(input.verifiedAt))
+
+  // ⑥ 開催・販売期間（任意。公式記載が無くても除外しない——finalEligible に含めない）
   const periodText = (input.eventPeriod ?? '').trim()
   const hasPeriod =
     hasIso(input.eventStartAt) ||
@@ -187,20 +237,8 @@ export function officialCompleteness(input: OfficialCompletenessInput): Official
   if (hasPeriod) have.push('開催・販売期間')
   else missing.push('開催・販売期間')
 
-  // ③ 場所（会場テキスト or 施設キー解決）
-  const hasPlace = (input.venue ?? '').trim().length > 0 || input.facilityResolved === true
-  if (hasPlace) have.push('場所')
-  else missing.push('場所')
-
-  // ④ 内容（whatHappens or 抜粋40字以上）
-  const wh = (input.whatHappens ?? '').trim()
-  const ex = (input.excerpt ?? '').trim()
-  const hasContent = wh.length >= 8 || ex.length >= 40
-  if (hasContent) have.push('内容')
-  else missing.push('内容')
-
-  const score = have.length / 4
-  return { score, have, missing, finalEligible: missing.length === 0 }
+  const score = have.length / 6
+  return { score, have, missing, requiredMissing, finalEligible: requiredMissing.length === 0 }
 }
 
 function hasIso(v: string | null | undefined): boolean {
@@ -313,7 +351,7 @@ export function computeCandidateCoverage(input: CandidateCoverageInput): Candida
   if (facPenalty < -0.001) bits.push(`施設集中 ${facPenalty.toFixed(2)}`)
   if (due.tier === 'ending_soon') bits.push(`終了間近（あと${due.days}日）`)
   else if (due.tier === 'expired') bits.push('終了済み')
-  if (!official.finalEligible) bits.push(`公式未確認: ${official.missing.join('・')}`)
+  if (!official.finalEligible) bits.push(`公式未確認: ${official.requiredMissing.join('・')}`)
 
   return {
     adjust,

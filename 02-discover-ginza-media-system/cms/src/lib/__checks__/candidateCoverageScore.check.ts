@@ -49,34 +49,64 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '公式完全度：URL・期間・場所・内容の4項目。全部揃うと finalEligible',
+    // 2026-09-13改訂：固定運用原則との矛盾を解消——必須は商品名・企画名／公式URL／
+    // 銀座での場所／内容／出典確認日の5項目。開催・販売期間は任意（無くても除外しない）。
+    name: '公式完全度（2026-09-13改訂）：必須5項目が揃えば期間が無くても finalEligible',
     fn: () => {
       const full = officialCompleteness({
+        productOrCampaignName: 'アイガトー',
         sourceUrl: 'https://example.com/x',
         eventPeriod: '2026年9月9日〜9月14日',
         venue: 'KOGEI Art Gallery 銀座の金沢',
         whatHappens: '九谷焼の個展。上絵付けの実演あり。',
+        verifiedAt: '2026-09-11T00:00:00+09:00',
       })
       assert(full.finalEligible && full.score === 1, JSON.stringify(full))
 
+      // 期間が無くても、他の必須5項目が揃っていれば finalEligible（今回の主眼）
       const noPeriod = officialCompleteness({
+        productOrCampaignName: '新作フレグランス',
         sourceUrl: 'https://example.com/x',
         venue: '銀座三越',
         whatHappens: '新作フレグランスの先行販売。',
+        verifiedAt: '2026-09-11T00:00:00+09:00',
       })
-      assert(!noPeriod.finalEligible && noPeriod.missing.includes('開催・販売期間'), JSON.stringify(noPeriod))
+      assert(noPeriod.finalEligible, JSON.stringify(noPeriod))
+      assert(noPeriod.missing.includes('開催・販売期間'), '期間はmissingに記録されるが除外理由にはならない')
+      assert(noPeriod.requiredMissing.length === 0, JSON.stringify(noPeriod))
 
       // 会場テキストが空でも facilityResolved:true なら場所ありとみなす
       const bySource = officialCompleteness({
+        productOrCampaignName: '新商品',
         sourceUrl: 'https://ginza6.tokyo/news/1',
         eventStartAt: '2026-09-20',
         facilityResolved: true,
         excerpt: 'これは40文字以上ある本文抜粋のダミーテキストで、内容の確認シグナルの代わりとして十分な長さを持たせてある。',
+        verifiedAt: '2026-09-11T00:00:00+09:00',
       })
       assert(bySource.finalEligible, JSON.stringify(bySource))
 
+      // 商品名・企画名が無ければ除外（必須）
+      const noName = officialCompleteness({
+        sourceUrl: 'https://example.com/x',
+        venue: '銀座三越',
+        whatHappens: '新作の先行販売。',
+        verifiedAt: '2026-09-11T00:00:00+09:00',
+      })
+      assert(!noName.finalEligible && noName.requiredMissing.includes('商品名・企画名'), JSON.stringify(noName))
+
+      // 出典確認日が無ければ除外（必須）
+      const noVerifiedAt = officialCompleteness({
+        productOrCampaignName: '新作フレグランス',
+        sourceUrl: 'https://example.com/x',
+        venue: '銀座三越',
+        whatHappens: '新作フレグランスの先行販売。',
+      })
+      assert(!noVerifiedAt.finalEligible && noVerifiedAt.requiredMissing.includes('出典確認日'), JSON.stringify(noVerifiedAt))
+
       const empty = officialCompleteness({})
-      assert(empty.score === 0 && empty.missing.length === 4, JSON.stringify(empty))
+      assert(empty.score === 0 && empty.requiredMissing.length === 5, JSON.stringify(empty))
+      assert(empty.missing.length === 6, '期間も含め6項目すべて未確認のはず')
     },
   },
   {
@@ -108,7 +138,14 @@ const cases: CheckCase[] = [
         facilityKey: 'gekkoso-ginza',
         categoryCounts7d: {},
         facilityCounts7d: {},
-        official: { sourceUrl: 'https://x.com/a', eventPeriod: '9月10日〜20日', venue: '月光荘', whatHappens: '月光荘での小さな展示です。' },
+        official: {
+          sourceUrl: 'https://x.com/a',
+          eventPeriod: '9月10日〜20日',
+          venue: '月光荘',
+          whatHappens: '月光荘での小さな展示です。',
+          productOrCampaignName: '小さな展示',
+          verifiedAt: '2026-09-10T00:00:00+09:00',
+        },
         targetFit: 60,
         eventEndAt: '2026-09-13',
         now: NOW,
@@ -128,6 +165,27 @@ const cases: CheckCase[] = [
       })
       assert(weak.adjust < 0, `weak.adjust ${weak.adjust}`)
       assert(!weak.official.finalEligible, 'weak は公式未確認')
+
+      // 2026-09-13：期間だけが無い候補は除外しない（固定運用原則との矛盾解消）
+      const periodMissingOnly = computeCandidateCoverage({
+        category: 'SWEETS',
+        facilityKey: 'kitchoan',
+        categoryCounts7d: {},
+        facilityCounts7d: {},
+        official: {
+          sourceUrl: 'https://x.com/kitchoan',
+          venue: '宗家源吉兆庵 銀座本店',
+          whatHappens: '季節限定の生菓子コラボレーション。',
+          productOrCampaignName: '季節限定コラボ生菓子',
+          verifiedAt: '2026-09-10T00:00:00+09:00',
+          // eventPeriod/eventStartAt/eventEndAt 未指定＝期間のみ無い状態
+        },
+        targetFit: 40,
+        eventEndAt: null,
+        now: NOW,
+      })
+      assert(periodMissingOnly.official.finalEligible, JSON.stringify(periodMissingOnly.official))
+      assert(periodMissingOnly.official.missing.includes('開催・販売期間'), JSON.stringify(periodMissingOnly.official))
     },
   },
   {

@@ -599,13 +599,18 @@ export async function assessInboxPool(
             facilityResolved: fk.key != null,
             whatHappens: (factsDoc?.whatHappens as string | null) ?? null,
             excerpt: c.excerpt,
+            // 2026-09-13追加：商品名・企画名／出典確認日を必須項目として渡す
+            productOrCampaignName: c.displayTitle ?? c.title ?? null,
+            verifiedAt: c.verifiedAt ?? null,
           },
           targetFit: tf.score,
           eventEndAt: c.eventEndAt,
           now,
         })
         c.officialCompletenessScore = cov.official.score
-        c.officialMissing = cov.official.missing
+        // 2026-09-13：finalEligibleの判定根拠と同じ「必須項目のみ」に揃える
+        // （開催・販売期間は任意項目のため、除外理由の表示から外す）
+        c.officialMissing = cov.official.requiredMissing
         c.finalEligible = cov.official.finalEligible
         c.daysUntilEnd = cov.daysUntilEnd.days
         c.daysUntilEndTier = cov.daysUntilEnd.tier
