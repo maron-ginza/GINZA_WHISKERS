@@ -253,10 +253,23 @@ document.querySelectorAll('.actions').forEach(el => {
 
 // ─────────────────────────── action handler ───────────────────────────
 
+// DiscoveredContent.beforeChangeの人間承認ゲート（curationStatus=approved／rejectedへの
+// 遷移にはreq.userが必須。overrideAccess:trueはアクセス制御をバイパスするだけで
+// このフック自体は素通りしない）を満たすため、実在の管理ユーザーを取得する。
+// このハンドラ自体がマロンのブラウザ操作（承認／却下ボタンのクリック）を起点に
+// 呼ばれるため、本人の操作としてuserを付与する（Articles.tsの既存gateと同じ設計）。
+async function getAdminUser(payload: Payload): Promise<{ id: number | string }> {
+  const res = await payload.find({ collection: 'users', limit: 1, depth: 0, overrideAccess: true })
+  const user = res.docs[0]
+  if (!user) throw new Error('承認可能な管理ユーザーが見つかりません（usersコレクションが空）')
+  return user as { id: number | string }
+}
+
 async function handleApprove(payload: Payload, date: string, dcId: number, bucketKey: string): Promise<DecisionEntry> {
   const entry: DecisionEntry = { dcId, bucketKey, action: 'approved', at: new Date().toISOString() }
   try {
-    await payload.update({ collection: 'discovered-content', id: dcId, overrideAccess: true, data: { curationStatus: 'approved' } })
+    const user = await getAdminUser(payload)
+    await payload.update({ collection: 'discovered-content', id: dcId, overrideAccess: true, user, data: { curationStatus: 'approved' } })
 
     const existing = await payload.find({
       collection: 'articles',
@@ -314,7 +327,8 @@ async function main() {
             if (parsed.action === 'approve') {
               entry = await handleApprove(payload, date, parsed.dcId, parsed.bucketKey)
             } else if (parsed.action === 'reject') {
-              await payload.update({ collection: 'discovered-content', id: parsed.dcId, overrideAccess: true, data: { curationStatus: 'rejected' } })
+              const user = await getAdminUser(payload)
+              await payload.update({ collection: 'discovered-content', id: parsed.dcId, overrideAccess: true, user, data: { curationStatus: 'rejected' } })
               entry = { dcId: parsed.dcId, bucketKey: parsed.bucketKey, action: 'rejected', at: new Date().toISOString() }
             } else {
               entry = { dcId: parsed.dcId, bucketKey: parsed.bucketKey, action: 'held', at: new Date().toISOString() }
