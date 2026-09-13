@@ -14,6 +14,64 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き3（🛠 **マロンの公式情報最終照合に基づきArticle #64・#65の
+    事実誤りを修正＋再発防止の自動チェックを新設（Project 02 コミット・push
+    あり／DB更新あり＝Article #64・#65本文修正2件／note転記パッケージ
+    上書き保存2件、公開・note転記は未実施）**）:
+
+    マロンが note 転記直前の最終確認画面（続き2で生成した Article #64・#65
+    の完成稿）を公式ページと突き合わせ、Article #64 に事実誤りを発見。
+    「追加確認なしで」との明示指示のもと、以下を修正した。
+
+    **Article #64「ISHIYA G アイガトー」**：GINZA SIX ニュースの掲載日
+    （2026年8月17日）以外に日付の記載がないにもかかわらず、AI生成時に
+    「2026年8月29日から9月16日まで」という具体的な販売期間を本文・
+    WHY NOW・`editorialProvenance`（factType:'date', verificationStatus:
+    'confirmed'）へ記録していた——出典に無い情報を「確認済み」として
+    保存していた事故。本文・WHYNOW から当該期間を削除し「販売期間・在庫
+    状況は公式記載なし。現在販売中とは断定できないため、購入を検討する
+    場合は事前に店舗で取扱状況をご確認いただきたい」へ置換、タイトル
+    「夏季販売」を公式表現に沿う「暑い季節の手土産に」へ変更、
+    `editorialProvenance` の該当ファクトを「販売開始日・終了日の記載は
+    公式ページになし（公式記載なし）」へ修正、出典確認日を全ファクトで
+    2026-09-13へ更新。
+
+    **Article #65「八代目市川染五郎写真展」**：マロン指示の2点（開催時間
+    「10:30〜21:00」・「終了日は変更になる場合がある」旨の注記）は、
+    Claude が `store.tsite.jp` の公式ページを直接 WebFetch で再確認し
+    実在を確認したうえで追加した（Article #64 側は `ginza6.tokyo` が
+    WebFetch で403を返し独立検証はできなかったため、公式情報との最終
+    照合はマロン自身の確認に基づき、指示どおり追加確認なしで反映した）。
+    本文に両情報を追加、`editorialProvenance` に開催時間の新規ファクトを
+    追加、出典確認日を2026-09-13へ更新。
+
+    両記事とも `reviewStatus=draft` を維持したまま `payload.update` で
+    本文・タイトル・`editorialProvenance` を更新し、`buildNoteDraftPackage`
+    で note 転記パッケージを再生成（続き2で適用済みの手動補正——Article
+    #64 の SWEETS カテゴリーアイコン・両記事のハッシュタグ4個目
+    `#GINZAWHISKERS`——を再適用したうえで `.devlogs/night/queue/2026-09-13/
+    {64,65}/` へ上書き保存）。再生成後の `validation` はいずれも
+    blockers=0・warnings=0。
+
+    **再発防止の自動チェック新設**：本文中の具体的な日付レンジ表現
+    （「〜月〜日から〜月〜日まで」）を検出し、開始日・終了日それぞれが
+    出典テキスト（DiscoveredContent の title/excerpt/venue）に literal に
+    含まれているかを確認する決定的ガード `unsourcedPeriodClaimGate.ts`
+    を新設（AI呼び出しなし・既存 `unsourcedClaimGate.ts` と同じ設計、
+    既定WARNING記録のみ）。`generateMultiAngleArticleDrafts.ts` の
+    `coreGuards` ブロック（`enableCoreGuards:true` 時、CORE角度の日次
+    「旬の銀座」生成パイプラインで有効。`candidateReviewServer.ts` の
+    承認処理もこの経路を通るため今回のバグの再発を今後は自動検出できる）
+    へ組み込んだ。回帰テスト新規7件（Article #64 の実データ再現ケース・
+    Article #65 のような裏付けありケースの非検出確認を含む）を
+    `run-all.ts` へ登録。
+
+    **検証**：`tsc --noEmit`（cms）0エラー、`run-all.ts` **477 passed
+    0 failed**（新規7件含む）。使い捨てスクリプト（本文置換・パッケージ
+    再生成・検証用）はすべて実行後に削除。**DB更新はArticle #64・#65の
+    本文・タイトル・editorialProvenanceのみ（reviewStatus不変）。
+    note転記・外部公開・Chrome操作は一切行っていない。**
+
   - 2026-09-13 続き2（🐛 **候補レビュー画面の承認ボタンが人間承認ゲートで失敗するバグを
     発見・修正——マロンの承認指示に応じてDC#141・DC#388を実際に承認しArticle #64・#65
     を生成、note下書きまで進めた（Project 02 コミット・push あり／DB更新あり＝
