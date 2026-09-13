@@ -742,7 +742,12 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
       const inj = injSrc()
       assert.ok(/beforePreviewImgs/.test(inj), 'アップロード前のblob:画像一覧の記録が見つからない')
       assert.ok(/image_preview_verify/.test(inj), 'image_preview_verifyログが見つからない')
-      assert.ok(/attached:\s*!!previewAppeared/.test(inj), 'previewAppearedに基づくattached判定が見つからない')
+      // 2026-09-14続き29：previewAppeared自体がraceWithTimeoutの結果
+      // （タイムアウト時は{__timedOut:true}）になったため、previewOk
+      // （タイムアウトなら強制的にfalse、それ以外はprevewAppearedの真偽）を
+      // 経由してattachedを判定するよう変更した。
+      assert.ok(/const previewOk = previewTimedOut \? false : !!previewAppeared/.test(inj), 'previewAppeared（タイムアウト考慮済み）からprevewOkを算出する判定が見つからない')
+      assert.ok(/attached:\s*previewOk,/.test(inj), 'previewOkに基づくattached判定が見つからない')
     },
   },
   {
@@ -873,7 +878,9 @@ const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
       const end = inj.indexOf('function findSaveDraftButton')
       assert.ok(start >= 0 && end > start, 'revealAndFindFileInputの範囲を特定できない')
       const body = inj.slice(start, end)
-      assert.ok(/const uploadOption = findUploadOptionButton\(\)/.test(body), '2段階目のfindUploadOptionButton呼び出しが見つからない')
+      // 2026-09-14続き29：findUploadOptionButtonの呼び出しをraceWithTimeout
+      // （個別5秒上限）で包むよう変更したため、呼び出し自体の存在で検証する。
+      assert.ok(/findUploadOptionButton\(\)/.test(body), '2段階目のfindUploadOptionButton呼び出しが見つからない')
       assert.ok(/clickElement\(uploadOption\)/.test(body), '2段階目のクリックが見つからない')
       assert.ok(/image_upload_option_click/.test(body), '2段階目クリックのログが見つからない')
     },
@@ -990,6 +997,139 @@ const HASHTAG_SCOPE_TEST_CASES: CheckCase[] = [
   },
 ]
 cases.push(...HASHTAG_SCOPE_TEST_CASES)
+
+const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き29（マロン必須修正③）：v1.16.0実機検証で
+    // 「content_hash_before送信直後からrevealAndFindFileInput開始前」の
+    // 区間で約90秒間無応答になる現象が再現し、shadow DOMを再帰的に辿る
+    // deepQuerySelectorAllが原因である可能性が高いと判断した。探索
+    // ノード数・深さ・経過時間の3つの上限と、循環参照防止（visited）を
+    // 備えていることを確認する。
+    name: '【DOM探索の無限ループ防止】deepQuerySelectorAllは探索ノード数・深さ・経過時間の上限と循環参照防止を持つ',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('function deepQuerySelectorAll(selector, root = document, opts)')
+      assert.ok(start >= 0, 'deepQuerySelectorAll(opts対応版)が見つからない')
+      const end = inj.indexOf('function placeholderLike')
+      assert.ok(end > start, 'deepQuerySelectorAllの範囲を特定できない')
+      const body = inj.slice(start, end)
+      assert.ok(/maxDepth/.test(body), '深さ上限（maxDepth）が見つからない')
+      assert.ok(/maxNodes/.test(body), 'ノード数上限（maxNodes）が見つからない')
+      assert.ok(/budgetMs/.test(body), '経過時間上限（budgetMs）が見つからない')
+      assert.ok(/new WeakSet\(\)/.test(body), '循環参照防止用のvisitedセットが見つからない')
+      assert.ok(/if\s*\(visited\.has\(node\)\)\s*return/.test(body), '訪問済みノードの再訪問を防ぐガードが見つからない')
+      assert.ok(/if\s*\(depth > maxDepth\)\s*\{/.test(body), '深さ上限を超えた際の打ち切りが見つからない')
+      assert.ok(/if\s*\(Date\.now\(\) - start > budgetMs\)/.test(body), '経過時間上限を超えた際の打ち切りが見つからない')
+    },
+  },
+  {
+    name: '【DOM探索の無限ループ防止】deepQuerySelectorAllの既定budgetMsは5秒（マロン指示の個別上限と一致）',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/const budgetMs = \(opts && opts\.budgetMs\) \|\| 5000/.test(inj), '既定budgetMsが5000msになっていない')
+    },
+  },
+  {
+    // 2026-09-14続き29（マロン必須修正②）：任意のPromiseへ個別5秒上限を
+    // 設けるraceWithTimeoutユーティリティが存在し、タイムアウト時は例外を
+    // 投げず{__timedOut:true}を返す（呼び出し側が型で判定できる）ことを
+    // 確認する。
+    name: '【単発5秒上限】raceWithTimeoutはPromiseへ個別タイムアウトを設け、タイムアウト時は__timedOutを返す（例外を投げない）',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/function raceWithTimeout\(promise, ms, label\)/.test(inj), 'raceWithTimeoutの定義が見つからない')
+      const start = inj.indexOf('function raceWithTimeout(promise, ms, label)')
+      const end = inj.indexOf('async function waitForPageLoad')
+      const body = inj.slice(start, end)
+      assert.ok(/__timedOut:\s*true/.test(body), 'タイムアウト時に__timedOut:trueを返す実装が見つからない')
+      assert.ok(/Promise\.race\(\[Promise\.resolve\(promise\), timeout\]\)/.test(body), 'Promise.raceによる単発タイムアウトの実装が見つからない')
+    },
+  },
+  {
+    name: '【個別5秒上限の適用範囲】revealAndFindFileInput・画像取得(fetch/arrayBuffer/SHA-256)・DataTransfer後待機・プレビュー確認がすべてraceWithTimeoutで包まれている',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('async function revealAndFindFileInput()')
+      const end = inj.indexOf('function findSaveDraftButton')
+      const body = inj.slice(start, end)
+      const raceCount = (body.match(/raceWithTimeout\(/g) || []).length
+      assert.ok(raceCount >= 6, `revealAndFindFileInput内のraceWithTimeout呼び出しが少なすぎる（${raceCount}件）——全Promiseへの個別上限が徹底されていない可能性`)
+
+      const imgStart = inj.indexOf('async function runImageSection()')
+      const imgEnd = inj.indexOf('return { iconResult }')
+      assert.ok(imgStart >= 0 && imgEnd > imgStart, 'runImageSectionの範囲を特定できない')
+      const imgBody = inj.slice(imgStart, imgEnd)
+      assert.ok(/raceWithTimeout\(fetch\(img\.url\), 5000, 'image_fetch'\)/.test(imgBody), '画像fetchへの5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(res\.arrayBuffer\(\), 5000, 'image_array_buffer'\)/.test(imgBody), 'arrayBuffer読み取りへの5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(crypto\.subtle\.digest\('SHA-256', buf\), 5000, 'image_sha256_digest'\)/.test(imgBody), 'SHA-256計算への5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(sleep\(800\), 5000, 'post_datatransfer_wait'\)/.test(imgBody), 'DataTransfer後待機への5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(\s*waitFor\(\(\) => \{/.test(imgBody), 'プレビュー確認waitForへの5秒上限が見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き29（マロン必須修正④：「「画像を追加」クリック前後、
+    // 「画像をアップロード」クリック前後、file input探索前後を別stageに
+    // する」）。各ステージが開始・終了で対になっていることを確認する。
+    name: '【連番stageログ】「画像を追加」クリック・「画像をアップロード」クリック・file input探索がそれぞれ開始・終了ログの対になっている',
+    fn: () => {
+      const inj = injSrc()
+      const pairs: [string, string][] = [
+        ['image_add_trigger_search_start', 'image_add_trigger_search_done'],
+        ['image_add_click_start', 'image_add_click_done'],
+        ['image_file_input_search_after_add_click_start', 'image_file_input_search_after_add_click_done'],
+        ['image_upload_option_search_start', 'image_upload_option_search_done'],
+        ['image_upload_option_click_start', 'image_upload_option_click_done'],
+        ['image_file_input_search_after_upload_click_start', 'image_file_input_search_after_upload_click_done'],
+      ]
+      for (const [startEvent, doneEvent] of pairs) {
+        assert.ok(inj.includes(`'${startEvent}'`), `${startEvent} ログが見つからない`)
+        assert.ok(inj.includes(`'${doneEvent}'`), `${doneEvent} ログが見つからない`)
+      }
+    },
+  },
+  {
+    name: '【連番stageログ】画像処理区間（content_hash_beforeの直後〜画像処理終了）全体にimage_section_start/endログがある',
+    fn: () => {
+      const inj = injSrc()
+      const hashBeforeIdx = inj.indexOf("log('content_hash_before'")
+      const sectionStartIdx = inj.indexOf("log('image_section_start', {})")
+      const sectionEndIdx = inj.indexOf("log('image_section_end', {})")
+      assert.ok(hashBeforeIdx >= 0 && sectionStartIdx > hashBeforeIdx, 'image_section_startがcontent_hash_beforeより後に無い')
+      assert.ok(sectionEndIdx > sectionStartIdx, 'image_section_endがimage_section_startより後に無い')
+    },
+  },
+  {
+    // 2026-09-14続き29（マロン必須修正⑤：「要素が見つからない場合は待ち
+    // 続けず、5秒以内に{status:'failed', error, stack, stages,
+    // domSnapshot, buildRevision}を必ず返す」）：画像処理区間全体を45秒の
+    // 外側raceWithTimeoutで包み、タイムアウト時は指定された構造で
+    // 即座に返すことを確認する（buildRevisionはhandleRun側で合成される）。
+    name: '【最終防波堤】画像処理区間全体が外側raceWithTimeoutで包まれ、タイムアウト時はstatus:failed・error・stack・stages・domSnapshotを返す',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/raceWithTimeout\(runImageSection\(\), 45000, 'image_section_overall'\)/.test(inj), '画像処理区間全体への外側raceWithTimeoutが見つからない')
+      const idx = inj.indexOf("if (imageSection && imageSection.__timedOut) {")
+      assert.ok(idx >= 0, '画像処理区間タイムアウト時の分岐が見つからない')
+      const body = inj.slice(idx, idx + 500)
+      assert.ok(/status:\s*'failed'/.test(body), "status:'failed'が見つからない")
+      assert.ok(/error:/.test(body) && /stack:/.test(body) && /stages,/.test(body) && /domSnapshot,/.test(body), 'error/stack/stages/domSnapshotのいずれかが見つからない')
+    },
+  },
+  {
+    name: '【維持確認】画像処理区間の全面書き換え後も、タイトル・本文再入力禁止・新規タブ禁止・reload禁止・「投稿する」絶対禁止の安全境界は維持されている',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/const PUBLISH_FINAL_RE = /.test(inj), 'PUBLISH_FINAL_REが見つからない（安全境界の消失）')
+      assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(inj), '「公開」除外ガードが見つからない')
+      const completionIdx = inj.indexOf("if (mode === 'completion') {")
+      const imageSectionIdx = inj.indexOf("log('image_section_start', {})")
+      assert.ok(completionIdx >= 0 && imageSectionIdx > completionIdx, 'completion分岐と画像処理区間の位置関係を特定できない')
+      assert.ok(!/setContentEditableParagraphs/.test(inj.slice(completionIdx, imageSectionIdx)), 'completion経路上でタイトル・本文の書き込み関数が呼ばれている（再入力禁止の再発）')
+    },
+  },
+]
+cases.push(...TIMEOUT_HARDENING_TEST_CASES)
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 

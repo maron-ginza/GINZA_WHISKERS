@@ -1231,6 +1231,29 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   一度も発生しなかった（isRunningガードの実機検証成功）。マロン指示どおり
   以後の自動再試行を手動で停止。推測でのコード変更はせず実測報告のみ。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き28参照。
+- 2026-09-13: 🛠 **note下書き自動転記——続き28で絞り込んだ停止範囲
+  「content_hash_before送信直後〜revealAndFindFileInput開始前」を根本修正
+  （Project 02 commit・push あり／DB更新なし。今回は実ブラウザ実行を行わず
+  コード修正のみ）**——根本原因の再評価：`deepQuerySelectorAll`がshadow DOM
+  を上限なしで完全同期的に再帰する実装だったため、複雑なDOM構造下で著しく
+  長時間かかり、同期処理中はイベントループが戻らずログ送信も見かけ上停止
+  する、という具体的で検証可能な仮説に対応した。`deepQuerySelectorAll`へ
+  `maxDepth`(12)・`maxNodes`(20000)・`budgetMs`(既定5000ms)の3上限と
+  `WeakSet`による循環参照防止を追加。新規`raceWithTimeout`ユーティリティで
+  `revealAndFindFileInput`・画像取得（fetch/arrayBuffer/SHA-256/
+  DataTransfer後待機/確認ボタン/プレビュー確認）の全Promiseに個別5秒上限を
+  適用（例外を投げず`__timedOut`で判定）。「画像を追加」「画像をアップ
+  ロード」クリック・file input探索をそれぞれ開始/終了の連番stageログへ分解、
+  `content_hash_before`直後に`image_section_start`・画像処理終了に
+  `image_section_end`を追加。画像処理区間全体を45秒の外側raceWithTimeoutで
+  包む最終防波堤を新設し、超過時は`{status:'failed', error, stack, stages,
+  domSnapshot}`を返す（画像未検出自体は引き続き非致命的、45秒超過時のみ
+  区間を打ち切る）。タイトル本文再入力禁止・新規タブ禁止・tabs.reload禁止・
+  「投稿する」絶対禁止は無変更。`manifest.json`のversionを`1.17.0`へ、
+  `BUILD_REVISION`を`br17-...`へ更新。回帰テスト新規8件＋既存2件更新、
+  `run-all.ts` **628 passed 0 failed**。`transfer-state.json`は前回の
+  一時停止状態のまま変更せず、実機検証は今回行っていない。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き29参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

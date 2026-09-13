@@ -14,6 +14,122 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き29（🛠 **note下書き自動転記——続き28で絞り込んだ停止
+    範囲「content_hash_before送信直後からrevealAndFindFileInput開始前」を
+    根本修正。DOM探索（`deepQuerySelectorAll`）へ探索ノード数・深さ・
+    経過時間の上限と循環参照防止を追加、画像処理区間の全Promiseへ個別
+    5秒上限、各手順を連番stageログ化、区間全体の45秒最終防波堤を新設
+    （Project 02 commit・push あり／DB更新なし／note公開なし。**マロン
+    指示どおり今回は実ブラウザ実行を行わず、コード修正のみ**）**）:
+
+    マロン指示：「v1.16.0の実機結果を踏まえ、停止範囲
+    『content_hash_before送信直後からrevealAndFindFileInput開始前』を
+    根本修正してください。推測報告だけで終了せず、該当コードを実際に
+    修正してください。」——必須対応10項目（①連番stageログ②全Promise・
+    MutationObserver・DOM探索・Shadow DOM探索・クリック後待機に個別5秒
+    上限③DOM探索のノード数・深さ・経過時間制限＋循環参照防止④「画像を
+    追加」「画像をアップロード」クリック前後・file input探索前後を別
+    stageに⑤見つからない場合は5秒以内に必ず{status:'failed', error,
+    stack, stages, domSnapshot, buildRevision}を返す⑥診断ログは本処理を
+    ブロックしない⑦タイトル本文再入力・新規タブ・tabs.reload・公開禁止
+    ⑧自動再試行禁止⑨テスト・tsc・version更新・commit・push⑩今回は実
+    ブラウザ実行なし、変更内容・テスト数・新version・commitのみ報告）。
+
+    **根本原因の再評価**：続き28の実機ログでは、`content_hash_before`の
+    直後で完全に停止し、`revealAndFindFileInput`内の最初の同期処理
+    （`deepQuerySelectorAll('input[type="file"]')`）以降のログが一切
+    届かなかった。`deepQuerySelectorAll`はshadow DOMを**完全に同期的に
+    再帰する**実装で、上限が一切無かった——note.comのエディタが多数の
+    custom element・shadow DOMで構成されている場合、この同期的な再帰が
+    著しく長時間（あるいは実質的に終わらないほど）かかる可能性があり、
+    かつ完全に同期処理である以上、実行中はイベントループへ制御が戻らず
+    **watchdog（SW側のsetTimeout）以外の一切のログ送信・非同期処理が
+    見かけ上停止する**——続き28で観測した現象と整合する、最も具体的で
+    検証可能な仮説として対応した。
+
+    **修正**：
+
+    1. **`deepQuerySelectorAll`へ3つの上限＋循環参照防止を追加**：
+       `maxDepth`（既定12、shadow root再帰の深さ）・`maxNodes`
+       （既定20000、訪問するshadow host総数）・`budgetMs`（既定5000、
+       関数呼び出し1回あたりの経過時間、マロン指示の「個別5秒」と統一）。
+       `WeakSet`による`visited`で同一ノードの再訪問を防ぎ、shadow DOM
+       構造上ありえないはずの循環参照が万一存在しても無限ループに
+       ならないようにした。上限到達時は例外を投げず`truncated`扱いで
+       収集済みの結果をそのまま返す（探索ロジックを壊さない）。
+    2. **新規`raceWithTimeout(promise, ms, label)`**：任意のPromiseへ
+       単発タイムアウトを付与し、タイムアウト時は例外を投げず
+       `{__timedOut:true, label}`を返す（型で判定できる設計）。
+       `revealAndFindFileInput`内の全ステップ（初回file input探索・
+       「画像を追加」トリガー探索・クリック後待機・クリック後の
+       file input再探索・「画像をアップロード」探索・そのクリック後
+       待機・再探索）と、画像取得ブロック（`fetch`・`arrayBuffer`・
+       `crypto.subtle.digest`・DataTransfer設定後の待機・画像調整
+       確認ボタン探索・そのクリック後待機・プレビュー出現確認）の
+       **全Promiseに個別5秒上限**を適用した。MutationObserverは本
+       ファイルのどこでも使用していない（該当なし）。
+    3. **連番stageログの追加**：「画像を追加」クリック（探索開始→
+       発見→クリック開始→クリック完了）・「画像をアップロード」
+       クリック（同様）・各段階でのfile input探索（開始→完了）を、
+       すべて開始／完了で対になるログイベントへ分解した
+       （`image_add_trigger_search_start/done`・
+       `image_add_click_start/done`・`image_file_input_search_after_
+       add_click_start/done`・`image_upload_option_search_start/done`・
+       `image_upload_option_click_start/done`・`image_file_input_
+       search_after_upload_click_start/done`等）。画像取得ブロックも
+       同様に`image_fetch_start/done`・`image_array_buffer_done`・
+       `image_datatransfer_set_start/done`・`image_adjust_confirm_
+       search_start/done`・`image_preview_verify_start/done`等へ分解。
+       `content_hash_before`の直後に`image_section_start`、画像処理
+       全体の終わりに`image_section_end`を追加し、区間全体の開始・
+       終了も明示した。
+    4. **画像処理区間全体を45秒の外側`raceWithTimeout`で包む最終
+       防波堤**：個別5秒上限を持つステップが約9段階あるため、それらが
+       全て上限いっぱいまでかかっても収まる余裕を見て45秒とした。
+       超過時は`{status:'failed', error, stack:'', stages, domSnapshot}`
+       を即座に返す（`buildRevision`は`handleRun`側で結果へ合成される
+       ため`runTransfer`内では扱わない）——マロン指示の返却構造を
+       文字どおり満たしつつ、`stages`・`domSnapshot`により次回の
+       原因特定に使える情報を確実に残す設計とした。
+    5. **維持**：個々の画像トリガーが見つからない場合の扱い（タイムアウト
+       扱いも含め）は**非致命的**のまま——続き23以降の設計どおり、画像が
+       無くてもハッシュタグ確認・下書き保存の工程は継続する（45秒の
+       最終防波堤に達した場合のみ、区間全体を打ち切って`status:'failed'`
+       で早期returnする）。タイトル・本文の再入力禁止・新規タブ禁止・
+       `tabs.reload`禁止・「投稿する」絶対禁止はいずれも無変更のまま。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.16.0`→`1.17.0`
+    へ、`BUILD_REVISION`を
+    `br17-2026-09-14-bounded-dom-search-image-timeouts`へ更新した。
+
+    **回帰テスト新規8件**：①`deepQuerySelectorAll`が深さ・ノード数・
+    経過時間の3上限と循環参照防止（`WeakSet`）を持つこと②既定
+    `budgetMs`が5000msであること③`raceWithTimeout`が例外を投げず
+    `__timedOut`を返すこと④`revealAndFindFileInput`・画像取得ブロックの
+    主要Promiseがすべて`raceWithTimeout`で包まれていること（fetch・
+    arrayBuffer・SHA-256・DataTransfer後待機・プレビュー確認を個別に
+    検証）⑤「画像を追加」「画像をアップロード」クリック・file input
+    探索がそれぞれ開始・終了ログの対になっていること⑥
+    `content_hash_before`の直後に`image_section_start`、画像処理終了に
+    `image_section_end`があること⑦画像処理区間全体が45秒の外側
+    `raceWithTimeout`で包まれ、タイムアウト時に指定構造を返すこと⑧
+    書き換え後もタイトル・本文再入力禁止等の安全境界が維持されている
+    こと。既存2件（プレビュー判定・2段階UI探索）は新しいコード構造に
+    合わせて参照パターンを更新。`run-all.ts` **628 passed 0 failed**
+    （620→628）。`tsc --noEmit`0エラー、`node -c`
+    （background.js・injected-transfer.js）・`manifest.json`妥当性を
+    確認。
+
+    **state**：`transfer-state.json`は前回終了時点
+    （`status:'success', needsCompletion:false, completionAttempts:3`）
+    のまま**変更していない**——マロン必須修正⑩「今回は実ブラウザ実行を
+    行わず、変更内容・テスト数・新version・commitだけ報告する」に従い、
+    サーバー側の再アーム・実機での検証は一切行っていない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き28（🎉 **note下書き自動転記——1.16.0実機再アームで
     ブレークスルー：`injected_file_top_level_start`・`injected_transfer_
     started`が初めて実機で発火し、単発watchdog（90秒）・実行中スクリプト

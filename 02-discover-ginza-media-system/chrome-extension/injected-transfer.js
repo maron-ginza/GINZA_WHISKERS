@@ -168,6 +168,24 @@
       }
       return null
     }
+    /**
+     * 2026-09-14続き29（マロン必須修正②：「revealAndFindFileInput内の全
+     * Promise…に個別5秒の上限を設ける」）：任意のPromiseへ単発のタイムアウト
+     * を付与する。タイムアウトした場合は`{ __timedOut: true, label }`を
+     * 返す（例外を投げない——呼び出し側が結果の型で判定できるようにする）。
+     * 元のPromiseが後から解決/棄却されても、既にタイムアウト分岐へ進んだ
+     * 後続処理には一切影響しない（Promise.raceの標準的な性質）。
+     */
+    function raceWithTimeout(promise, ms, label) {
+      let timer
+      const timeout = new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ __timedOut: true, label }), ms)
+      })
+      return Promise.race([Promise.resolve(promise), timeout]).then((r) => {
+        clearTimeout(timer)
+        return r
+      })
+    }
     async function waitForPageLoad(timeoutMs = 15000) {
       if (document.readyState === 'complete') return true
       return new Promise((resolvePromise) => {
@@ -191,17 +209,67 @@
       const style = window.getComputedStyle(el)
       return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
     }
-    function deepQuerySelectorAll(selector, root = document) {
+    /**
+     * 2026-09-14続き29（マロン必須修正③：「DOM探索は探索ノード数・深さ・
+     * 経過時間を制限し、循環参照や無限探索を防止する」）：v1.16.0の実機
+     * 検証で「content_hash_before送信直後からrevealAndFindFileInput開始前」
+     * の区間で約90秒間無応答になる現象が再現し、その直前・直後に位置する
+     * 本関数（shadow DOMを再帰的に辿る）が原因である可能性が高いと判断した
+     * ——本関数は完全に同期処理のため、途中でハングすればイベントループへ
+     * 制御が戻らず、以後のログ送信・watchdog双方が（watchdogはSW側の
+     * setTimeoutのため実際には発火するが、ページ側の処理自体は）事実上
+     * 停止して見える。以下の3つの上限を追加し、同期処理としての最大実行
+     * 時間そのものを構造的に有限化する：
+     *   - maxDepth：shadow root再帰の深さ上限（既定12）
+     *   - maxNodes：訪問するshadow host（shadowRootを持つ要素）の総数上限
+     *     （既定20000）
+     *   - budgetMs：本関数呼び出し1回あたりの経過時間上限（既定5000ms、
+     *     マロン指示の「個別5秒の上限」と揃える）
+     * さらに`visited`（WeakSet）で同一ノードの再訪問を防ぎ、shadow DOMの
+     * 構造上ありえないはずの循環参照が万一存在しても無限ループにならない
+     * ようにする。上限に達した場合は`truncated:true`で打ち切り、収集済みの
+     * 結果をそのまま返す（例外は投げない——呼び出し側の探索ロジックを壊さ
+     * ない）。
+     */
+    function deepQuerySelectorAll(selector, root = document, opts) {
+      const maxDepth = (opts && opts.maxDepth) || 12
+      const maxNodes = (opts && opts.maxNodes) || 20000
+      const budgetMs = (opts && opts.budgetMs) || 5000
+      const start = Date.now()
       const out = []
-      const walk = (node) => {
-        if (!node) return
-        if (typeof node.querySelectorAll === 'function') out.push(...node.querySelectorAll(selector))
-        const all = typeof node.querySelectorAll === 'function' ? node.querySelectorAll('*') : []
+      const visited = new WeakSet()
+      let visitedCount = 0
+      let truncated = false
+      const walk = (node, depth) => {
+        if (!node || truncated) return
+        if (typeof node !== 'object') return
+        if (visited.has(node)) return // 循環参照防止（shadow DOM構造上は通常ありえないが念のため）。
+        visited.add(node)
+        if (depth > maxDepth) {
+          truncated = true
+          return
+        }
+        if (Date.now() - start > budgetMs) {
+          truncated = true
+          return
+        }
+        if (typeof node.querySelectorAll !== 'function') return
+        out.push(...node.querySelectorAll(selector))
+        const all = node.querySelectorAll('*')
         for (const el of all) {
-          if (el.shadowRoot) walk(el.shadowRoot)
+          visitedCount++
+          if (visitedCount > maxNodes) {
+            truncated = true
+            break
+          }
+          if (Date.now() - start > budgetMs) {
+            truncated = true
+            break
+          }
+          if (el.shadowRoot) walk(el.shadowRoot, depth + 1)
         }
       }
-      walk(root)
+      walk(root, 0)
       return out
     }
     function placeholderLike(el) {
@@ -379,22 +447,81 @@
         return /画像をアップロード/.test(t)
       })
     }
+    /**
+     * 2026-09-14続き29（マロン必須修正①・②・④：連番stageログ・全Promiseへの
+     * 個別5秒上限・「画像を追加」クリック前後／「画像をアップロード」
+     * クリック前後／file input探索前後をそれぞれ別stageにする）。
+     * MutationObserverはこの関数（本ファイル全体）で一切使用していない
+     * （該当箇所なし・追加もしていない）。
+     */
     async function revealAndFindFileInput() {
-      let fi = deepQuerySelectorAll('input[type="file"]')[0]
+      log('image_file_input_initial_search_start', {})
+      const initial = await raceWithTimeout(
+        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        5000,
+        'initial_file_input_search',
+      )
+      const initialTimedOut = !!(initial && initial.__timedOut)
+      let fi = initialTimedOut ? undefined : initial
+      log('image_file_input_initial_search_done', { found: !!fi, timedOut: initialTimedOut })
       if (fi) return { fi, revealed: false }
-      const trigger = findClickableByLabel([/画像/i, /サムネイル/i, /アイキャッチ/i, /カバー/i, /image/i])
-      if (!trigger) return { fi: null, revealed: false, triggerFound: false }
+
+      log('image_add_trigger_search_start', {})
+      const triggerResult = await raceWithTimeout(
+        Promise.resolve().then(() => findClickableByLabel([/画像/i, /サムネイル/i, /アイキャッチ/i, /カバー/i, /image/i])),
+        5000,
+        'find_image_add_trigger',
+      )
+      const triggerTimedOut = !!(triggerResult && triggerResult.__timedOut)
+      const trigger = triggerTimedOut ? undefined : triggerResult
+      log('image_add_trigger_search_done', { found: !!trigger, timedOut: triggerTimedOut })
+      if (!trigger) return { fi: null, revealed: false, triggerFound: false, timedOut: triggerTimedOut ? 'trigger_search' : undefined }
+
+      log('image_add_click_start', { label: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) })
       clickElement(trigger)
-      await sleep(600)
-      fi = deepQuerySelectorAll('input[type="file"]')[0]
+      log('image_add_click_done', {})
+
+      await raceWithTimeout(sleep(600), 5000, 'post_image_add_click_wait')
+
+      log('image_file_input_search_after_add_click_start', {})
+      fi = await raceWithTimeout(
+        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        5000,
+        'file_input_search_after_add_click',
+      )
+      const afterAddClickTimedOut = !!(fi && fi.__timedOut)
+      if (afterAddClickTimedOut) fi = undefined
+      log('image_file_input_search_after_add_click_done', { found: !!fi, timedOut: afterAddClickTimedOut })
+
       const triggerLabel = (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30)
       if (fi) return { fi, revealed: true, triggerFound: true, triggerLabel }
-      const uploadOption = findUploadOptionButton()
-      if (!uploadOption) return { fi: null, revealed: true, triggerFound: true, triggerLabel, uploadOptionFound: false }
-      log('image_upload_option_click', { text: visibleText(uploadOption) })
+
+      log('image_upload_option_search_start', {})
+      const uploadOptionResult = await raceWithTimeout(Promise.resolve().then(() => findUploadOptionButton()), 5000, 'find_upload_option')
+      const uploadOptionTimedOut = !!(uploadOptionResult && uploadOptionResult.__timedOut)
+      const uploadOption = uploadOptionTimedOut ? undefined : uploadOptionResult
+      log('image_upload_option_search_done', { found: !!uploadOption, timedOut: uploadOptionTimedOut })
+      if (!uploadOption) {
+        return { fi: null, revealed: true, triggerFound: true, triggerLabel, uploadOptionFound: false, timedOut: uploadOptionTimedOut ? 'upload_option_search' : undefined }
+      }
+
+      log('image_upload_option_click_start', { text: visibleText(uploadOption) })
+      log('image_upload_option_click', { text: visibleText(uploadOption) }) // 既存ログ名（互換維持）。
       clickElement(uploadOption)
-      await sleep(600)
-      fi = deepQuerySelectorAll('input[type="file"]')[0]
+      log('image_upload_option_click_done', {})
+
+      await raceWithTimeout(sleep(600), 5000, 'post_upload_option_click_wait')
+
+      log('image_file_input_search_after_upload_click_start', {})
+      fi = await raceWithTimeout(
+        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        5000,
+        'file_input_search_after_upload_click',
+      )
+      const afterUploadClickTimedOut = !!(fi && fi.__timedOut)
+      if (afterUploadClickTimedOut) fi = undefined
+      log('image_file_input_search_after_upload_click_done', { found: !!fi, timedOut: afterUploadClickTimedOut })
+
       return { fi, revealed: !!fi, triggerFound: true, triggerLabel, uploadOptionFound: true, uploadOptionClicked: true }
     }
     function findSaveDraftButton() {
@@ -563,77 +690,137 @@
     }
 
     // --- ① カテゴリー画像（編集画面上部の「画像＋」ボタンのみを対象とする） ---
-    let { fi: fileInput, revealed: iconRevealed, triggerFound: iconTriggerFound, triggerLabel: iconTriggerLabel } =
-      await revealAndFindFileInput()
-    let imageNotFoundSnapshot = null
-    if (!fileInput) {
-      imageNotFoundSnapshot = domDebugSnapshot()
-      log('image_trigger_not_found_on_editor', imageNotFoundSnapshot)
-    }
-
-    const img = item.categoryIcon
-    const imageAvailable = !!(img && img.url && img.fileName && img.mimeType && img.sha256)
-
-    let iconResult
-    if (!imageAvailable) {
-      iconResult = {
-        attached: false,
-        noUsableImageFile: true,
-        reason: item?.categoryIconUnavailableReason || 'カテゴリーアイコン情報が不完全（url/fileName/mimeType/sha256のいずれかが欠落）',
-      }
-      log('no_usable_image_file', { reason: iconResult.reason })
-    } else if (!fileInput) {
-      iconResult = {
-        attached: false,
-        reason: iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった（編集画面上）' : '編集画面上に画像トリガー（「画像を追加」等）が見つからない',
-        debug: imageNotFoundSnapshot,
-      }
-    } else {
-      try {
-        const res = await fetch(img.url)
-        const buf = await res.arrayBuffer()
-        const hashBuf = await crypto.subtle.digest('SHA-256', buf)
-        const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
-        log('image_sha256_verify', { expected: img.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === img.sha256 })
-        if (actualSha256 !== img.sha256) {
-          iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）` }
-        } else {
-          const blob = new Blob([buf], { type: img.mimeType })
-          const file = new File([blob], img.fileName, { type: img.mimeType })
-          const beforePreviewImgs = new Set(deepQuerySelectorAll('img').map((el) => el.getAttribute('src')).filter((s) => s && s.startsWith('blob:')))
-          const dt = new DataTransfer()
-          dt.items.add(file)
-          fileInput.files = dt.files
-          fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-          await sleep(800)
-          const confirmBtn = await waitFor(() => findConfirmLikeButton(), 4000)
-          if (confirmBtn) {
-            log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
-            clickElement(confirmBtn)
-            await sleep(500)
-          }
-          const previewAppeared = await waitFor(() => {
-            const current = deepQuerySelectorAll('img')
-              .map((el) => el.getAttribute('src'))
-              .filter((s) => s && s.startsWith('blob:') && !beforePreviewImgs.has(s))
-            return current.length > 0 ? true : null
-          }, 5000)
-          log('image_preview_verify', { previewAppeared: !!previewAppeared })
-          iconResult = {
-            attached: !!previewAppeared,
-            reason: previewAppeared ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
-            revealed: iconRevealed,
-            triggerLabel: iconTriggerLabel,
-            fileName: img.fileName,
-            sha256Verified: true,
-          }
-        }
-      } catch (e) {
-        iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed }
+    // 2026-09-14続き29（マロン必須修正①：「content_hash_beforeの直後から
+    // 画像処理終了まで、各命令の前後に連番stageログを追加する」）：
+    // v1.16.0実機検証でこの区間の直後（revealAndFindFileInput開始前後）で
+    // 約90秒間無応答になる現象が再現したため、この区間全体に開始・終了
+    // ログを追加し、次回失敗時に停止箇所をより精密に特定できるようにする。
+    // マロン必須修正⑤（「要素が見つからない場合は待ち続けず、5秒以内に
+    // 必ず結果を返す」）：区間内の各Promiseは個別5秒上限を持つが、それでも
+    // 万一この区間全体が想定外に長引いた場合の最終防波堤として、区間全体を
+    // さらに外側から45秒（内部の5秒上限付きステップを10段階弱こなせる
+    // 余裕を見た値）でraceWithTimeoutし、超過時は
+    // {status:'failed', error, stack, stages, domSnapshot, buildRevision}
+    // を確実に返す（buildRevisionはhandleRun側で結果へ合成される）。
+    log('image_section_start', {})
+    const imageSection = await raceWithTimeout(runImageSection(), 45000, 'image_section_overall')
+    if (imageSection && imageSection.__timedOut) {
+      const domSnapshot = domDebugSnapshot()
+      log('image_section_overall_timeout', domSnapshot)
+      return {
+        status: 'failed',
+        error: 'stage=image_section_overall_timeout: 画像処理区間が45秒以内に完了しませんでした',
+        stack: '',
+        stages,
+        domSnapshot,
       }
     }
+    const iconResult = imageSection.iconResult
     log('icon_attach_done', iconResult)
+    log('image_section_end', {})
     await sleep(300)
+
+    async function runImageSection() {
+      let { fi: fileInput, revealed: iconRevealed, triggerFound: iconTriggerFound, triggerLabel: iconTriggerLabel } =
+        await revealAndFindFileInput()
+      log('image_reveal_and_find_file_input_done', { found: !!fileInput, triggerFound: iconTriggerFound })
+      let imageNotFoundSnapshot = null
+      if (!fileInput) {
+        imageNotFoundSnapshot = domDebugSnapshot()
+        log('image_trigger_not_found_on_editor', imageNotFoundSnapshot)
+      }
+
+      const img = item.categoryIcon
+      const imageAvailable = !!(img && img.url && img.fileName && img.mimeType && img.sha256)
+
+      let iconResult
+      if (!imageAvailable) {
+        iconResult = {
+          attached: false,
+          noUsableImageFile: true,
+          reason: item?.categoryIconUnavailableReason || 'カテゴリーアイコン情報が不完全（url/fileName/mimeType/sha256のいずれかが欠落）',
+        }
+        log('no_usable_image_file', { reason: iconResult.reason })
+      } else if (!fileInput) {
+        iconResult = {
+          attached: false,
+          reason: iconTriggerFound ? 'クリックしても画像入力欄が出現しなかった（編集画面上）' : '編集画面上に画像トリガー（「画像を追加」等）が見つからない',
+          debug: imageNotFoundSnapshot,
+        }
+      } else {
+        try {
+          log('image_fetch_start', { url: img.url })
+          const res = await raceWithTimeout(fetch(img.url), 5000, 'image_fetch')
+          if (res && res.__timedOut) {
+            throw new Error('stage=image_fetch_timeout: 画像取得が5秒以内に完了しませんでした')
+          }
+          log('image_fetch_done', { ok: res.ok, status: res.status })
+          const buf = await raceWithTimeout(res.arrayBuffer(), 5000, 'image_array_buffer')
+          if (buf && buf.__timedOut) {
+            throw new Error('stage=image_array_buffer_timeout: 画像データの読み取りが5秒以内に完了しませんでした')
+          }
+          log('image_array_buffer_done', { byteLength: buf.byteLength })
+          const hashBuf = await raceWithTimeout(crypto.subtle.digest('SHA-256', buf), 5000, 'image_sha256_digest')
+          if (hashBuf && hashBuf.__timedOut) {
+            throw new Error('stage=image_sha256_digest_timeout: SHA-256計算が5秒以内に完了しませんでした')
+          }
+          const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+          log('image_sha256_verify', { expected: img.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === img.sha256 })
+          if (actualSha256 !== img.sha256) {
+            iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）` }
+          } else {
+            log('image_datatransfer_set_start', {})
+            const blob = new Blob([buf], { type: img.mimeType })
+            const file = new File([blob], img.fileName, { type: img.mimeType })
+            const beforePreviewImgs = new Set(
+              deepQuerySelectorAll('img', document, { budgetMs: 5000 }).map((el) => el.getAttribute('src')).filter((s) => s && s.startsWith('blob:')),
+            )
+            const dt = new DataTransfer()
+            dt.items.add(file)
+            fileInput.files = dt.files
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+            log('image_datatransfer_set_done', {})
+            await raceWithTimeout(sleep(800), 5000, 'post_datatransfer_wait')
+
+            log('image_adjust_confirm_search_start', {})
+            const confirmBtn = await raceWithTimeout(waitFor(() => findConfirmLikeButton(), 4000), 5000, 'find_confirm_button')
+            const confirmTimedOut = !!(confirmBtn && confirmBtn.__timedOut)
+            log('image_adjust_confirm_search_done', { found: !!(confirmBtn && !confirmTimedOut), timedOut: confirmTimedOut })
+            if (confirmBtn && !confirmTimedOut) {
+              log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
+              clickElement(confirmBtn)
+              await raceWithTimeout(sleep(500), 5000, 'post_confirm_click_wait')
+            }
+
+            log('image_preview_verify_start', {})
+            const previewAppeared = await raceWithTimeout(
+              waitFor(() => {
+                const current = deepQuerySelectorAll('img', document, { budgetMs: 5000 })
+                  .map((el) => el.getAttribute('src'))
+                  .filter((s) => s && s.startsWith('blob:') && !beforePreviewImgs.has(s))
+                return current.length > 0 ? true : null
+              }, 5000),
+              5000,
+              'image_preview_verify',
+            )
+            const previewTimedOut = !!(previewAppeared && previewAppeared.__timedOut)
+            const previewOk = previewTimedOut ? false : !!previewAppeared
+            log('image_preview_verify_done', { previewAppeared: previewOk, timedOut: previewTimedOut })
+            iconResult = {
+              attached: previewOk,
+              reason: previewOk ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
+              revealed: iconRevealed,
+              triggerLabel: iconTriggerLabel,
+              fileName: img.fileName,
+              sha256Verified: true,
+            }
+          }
+        } catch (e) {
+          iconResult = { attached: false, reason: String(e?.message ?? e), revealed: iconRevealed }
+        }
+      }
+      return { iconResult }
+    }
 
     // --- ② 下書き保存（編集画面上で直接） ---
     let saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
