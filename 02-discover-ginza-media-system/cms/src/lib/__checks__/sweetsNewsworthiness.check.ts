@@ -56,6 +56,34 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-09-14追加：松屋銀座「今週のGINZAスイート」実データで発見——個別商品説明に
+    // 「期間限定」等の語が無くても、公式に確認できる開催期間が会期中であればtimely扱いする。
+    name: '新規性語・公開日プレフィックスが無くても、確認できる開催期間が会期中なら timely',
+    fn: () => {
+      const r = evaluateSweetsNewsworthiness(
+        {
+          title: '松屋銀座 GINZAスイート｜西洋菓子 しろたえ レアチーズケーキ',
+          excerpt: 'サクサクのサブレとチーズがとてもバランスよく、おいしいチーズケーキです。 341円',
+          eventStartAt: '2026-09-09T00:00:00.000Z',
+          eventEndAt: '2026-09-15T00:00:00.000Z',
+        },
+        { now: NOW },
+      )
+      assert.equal(r.category, 'timely', JSON.stringify(r))
+      assert.ok(r.reason.includes('会期中'), r.reason)
+    },
+  },
+  {
+    name: '開催期間が既に終了していれば会期中ボーナスは適用しない（evergreenへ、上位のexpired判定は別レイヤーが担う）',
+    fn: () => {
+      const r = evaluateSweetsNewsworthiness(
+        { title: '常設商品名', excerpt: '説明', eventStartAt: '2026-01-01T00:00:00.000Z', eventEndAt: '2026-01-10T00:00:00.000Z' },
+        { now: NOW },
+      )
+      assert.equal(r.category, 'evergreen', JSON.stringify(r))
+    },
+  },
+  {
     name: '新規性語なし・公開日不明の常設商品は evergreen（定番候補、朝刊候補に混ぜない）',
     fn: () => {
       const r = evaluateSweetsNewsworthiness({ title: 'トリュフケーキ＆ガトー・オ・マロン', excerpt: '通年販売のケーキです。' }, { now: NOW })

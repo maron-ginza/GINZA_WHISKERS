@@ -833,6 +833,31 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-13: 🚀 **Project 02全体の根本改善18項目——松屋銀座のJSレンダリング取得を
+  実装し稼働確認、期間表記の抽出漏れ・ハッシュタグ4個統一を修正、承認→記事生成→
+  事実検証→note下書きパッケージ保存の一気通貫を実データ（Article #66・非公開）で
+  検証（Project 02 commit・push あり／DB更新はDiscoveredContent新規4件＋
+  Article #66生成〈draft維持〉／実AI呼び出し1回）**——松屋銀座（matsuyaginza.com）
+  はReact SPAでHTTP取得では中身が取れないと確認済みだったが、新規
+  `fetchJsRenderedPage.ts`（playwright-core経由でこの端末のGoogle Chromeを
+  直接起動、新規ブラウザバイナリ不要、Chrome非導入環境では自動スキップ）で
+  解決。新規`extractMatsuyaSweetsWeekly.ts`が実データをフィクスチャにした
+  テストで店舗・商品・価格・共通開催期間を抽出し、`./p2 matsuya-sweets-fetch`
+  として`morningAutoRun.sh`の朝刊自動化チェーンへ恒久統合（翌日以降も自動
+  再現）。銀座三越（mistore.jp）は実ブラウザでも接続不可を再確認——ネット
+  ワーク層の問題でJSレンダリングでは解決不能という技術的結論に達し、
+  「未完了」のまま明示維持。副次的に発見・修正：①`extractExplicitPeriod.ts`
+  が終端月省略の日本語表記（松屋銀座実データ）を抽出できず誤って「終了済み」
+  判定になるバグ②`sweetsNewsworthiness.ts`が新規性語の無い会期中の催事を
+  誤って「定番候補」に分類するバグ③noteハッシュタグが4個未満で生成される
+  ケースへの恒久パディング（`padNoteHashtagsTo4`）。既存の候補レビュー
+  サーバー（`candidateReviewServer.ts`）へ実際にPOSTし、DC#1153の承認→
+  Article #66の実AI生成→note下書きパッケージ保存という一気通貫が既存実装
+  のまま正しく動作することを実データで初検証（`reviewStatus=draft`維持・
+  note転記や外部公開は未実施）。回帰テスト新規12件、`run-all.ts` 516
+  passed 0 failed、`tsc --noEmit` 0エラー。18項目の受入条件詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き9参照（固有名詞捏造検出専用ゲートの
+  不在のみ△として残課題明示）。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

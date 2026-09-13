@@ -15,6 +15,7 @@ import {
   bodySourceUrls,
   DEFAULT_ILLUSTRATION_CAPTION,
   HERO_IMAGE_CAPTION,
+  padNoteHashtagsTo4,
 } from '../night/buildNoteDraftPackage'
 import { composeNoteBodyWithMasthead } from '../note/noteMasthead'
 
@@ -162,6 +163,29 @@ const cases: CheckCase[] = [
       assert(urls[0] === 'https://www.motoji.co.jp/blogs/events/sarasa202609', `1件目: ${urls[0]}`)
       assert(urls[1] === 'https://www.motoji.co.jp/pages/shops', `2件目: ${urls[1]}`)
       assert(!urls.some((u) => u.includes('gallery.shiseido.com')), 'unconfirmed の 資生堂ギャラリー URL が除外されている')
+    },
+  },
+  {
+    // 2026-09-14追加：note用ハッシュタグは4個へ統一する（Editorial Style Engine・
+    // マロン確定運用）。実データ（Article #66「松屋銀座しろたえ」）で生成時3個
+    // だったケースの再発防止。
+    name: 'padNoteHashtagsTo4：4個未満は汎用タグで補い、5個以上は先頭4個へ絞る',
+    fn: () => {
+      const three = padNoteHashtagsTo4(['#松屋銀座', '#しろたえ', '#レアチーズケーキ'])
+      assert(three.length === 4, JSON.stringify(three))
+      assert(three[3] === '#銀座', JSON.stringify(three))
+
+      const four = padNoteHashtagsTo4(['#a', '#b', '#c', '#d'])
+      assert(four.length === 4 && four.join(',') === '#a,#b,#c,#d', JSON.stringify(four))
+
+      const five = padNoteHashtagsTo4(['#a', '#b', '#c', '#d', '#e'])
+      assert(five.length === 4 && five.join(',') === '#a,#b,#c,#d', JSON.stringify(five))
+
+      const zero = padNoteHashtagsTo4([])
+      assert(zero.length === 2 && zero[0] === '#銀座' && zero[1] === '#GINZAWHISKERS', JSON.stringify(zero))
+
+      const alreadyHasBrand = padNoteHashtagsTo4(['#GINZAWHISKERS'])
+      assert(alreadyHasBrand.length === 2 && alreadyHasBrand[0] === '#GINZAWHISKERS' && alreadyHasBrand[1] === '#銀座', JSON.stringify(alreadyHasBrand))
     },
   },
 ]

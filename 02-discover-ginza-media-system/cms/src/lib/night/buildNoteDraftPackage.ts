@@ -70,6 +70,23 @@ function nodeText(n: unknown): string {
   return ''
 }
 
+/**
+ * note用ハッシュタグを4個へ統一する（2026-09-14追加、Editorial Style Engine・
+ * マロン確定運用）。5個以上なら上位4個に絞る。4個未満なら不足分を汎用タグ
+ * （#銀座 → #GINZAWHISKERS の順、重複は追加しない）で補う——本文・出典に無い
+ * 固有名詞のハッシュタグを新規に作らない（推測しない）。
+ */
+export function padNoteHashtagsTo4(tags: string[]): string[] {
+  if (tags.length >= 4) return tags.slice(0, 4)
+  const FALLBACK_TAGS = ['#銀座', '#GINZAWHISKERS']
+  const padded = [...tags]
+  for (const tag of FALLBACK_TAGS) {
+    if (padded.length >= 4) break
+    if (!padded.includes(tag)) padded.push(tag)
+  }
+  return padded
+}
+
 export interface BuildNoteDraftPackageOptions {
   /** 見出しごとに images[] へ section 画像スロットを記録する（既定 true）。 */
   sectionImageMarkers?: boolean
@@ -167,7 +184,8 @@ export async function buildNoteDraftPackage(
   )
   const sc = article.socialCopy ?? {}
   const noteHashtags = extractHashtags(sc.note)
-  const finalNoteHashtags = noteHashtags.length > 0 ? noteHashtags : bodyHashtags
+  const rawNoteHashtags = noteHashtags.length > 0 ? noteHashtags : bodyHashtags
+  const finalNoteHashtags = padNoteHashtagsTo4(rawNoteHashtags)
 
   // 挿絵注釈（記事固有 → 無ければ既定。汎用文へは巻き戻さない）
   const illustrationCaption = extractIllustrationCaption(rawUnits) ?? DEFAULT_ILLUSTRATION_CAPTION

@@ -7,6 +7,8 @@
 #   ① Docker/PostgreSQL 起動確認（既存 wait_docker/start_db と同じ方式・自動再試行込み）
 #   ② ./p2 crawl              … 公式情報源の巡回＋一覧ページ発見＋個別ページ取得
 #   ③ ./p2 sweets-detail-fetch … crawl共有予算切れで未取得のまま残った候補の追加取得
+#   ③.5 ./p2 matsuya-sweets-fetch … 松屋銀座（JSレンダリングが必要なSPA、2026-09-14新設）
+#        の週替わりGINZAスイート催事を取得。Chromeが無い環境では自動スキップ（失敗にしない）。
 #   ④ ./p2 am-run --fetch --register-facts --write-facts
 #        … 公開済み重複除外・ArticleFacts抽出・登録（enrichmentStatus:draftのみ、
 #          ready化は引き続き人間が行う）
@@ -136,6 +138,7 @@ fi
 # ①〜④は個別に失敗しても後続フェーズを試す（1件失敗で全体を止めない、既存方針を踏襲）。
 run_phase "crawl" ./p2 crawl
 run_phase "sweets_detail_fetch" ./p2 sweets-detail-fetch
+run_phase "matsuya_sweets_fetch" ./p2 matsuya-sweets-fetch
 run_phase "am_run" ./p2 am-run --fetch --register-facts --write-facts
 run_phase "morning_brief" ./p2 morning-brief --json
 

@@ -54,6 +54,9 @@ export interface SweetsNewsworthinessInput {
   excerpt?: string | null
   /** DiscoveredContent.publishedAt または contentUpdatedAt（ISO日時、公式に確認できるもの） */
   publishedOrUpdatedAt?: string | null
+  /** 2026-09-14追加：公式に確認できる開催・販売期間（会期中なら新規性語と同様にtimely扱いする） */
+  eventStartAt?: string | null
+  eventEndAt?: string | null
 }
 
 export interface SweetsNewsworthinessResult {
@@ -66,6 +69,11 @@ export interface SweetsNewsworthinessResult {
   withinPreferredWindow: boolean | null
   /** 監査・表示用の一言 */
   reason: string
+}
+
+function hasIso(v: string | null | undefined): boolean {
+  if (!v) return false
+  return Number.isFinite(Date.parse(v))
 }
 
 /** タイトル先頭の「YYYY.MM.DD」「YYYY-MM-DD」「YYYY/MM/DD」表記から日付を拾う（推測しない・明記のみ）。 */
@@ -141,6 +149,26 @@ export function evaluateSweetsNewsworthiness(
       reason: withinPreferredWindow
         ? `公開・更新日を確認（${daysSincePublished}日前、30日以内）`
         : `公開・更新日を確認（${daysSincePublished}日前、30日超のため優先度は下がる）`,
+    }
+  }
+
+  // 2026-09-14追加：タイトル・抜粋に新規性語が無くても、公式に確認できる開催・
+  // 販売期間が「現在進行中」であれば、期間限定の催事として timely 扱いする
+  // （松屋銀座「今週のGINZAスイート」等、催事ページの個別商品説明に必ずしも
+  // 「期間限定」等の語が明記されていないケースへの対応）。
+  if (hasIso(input.eventStartAt) && hasIso(input.eventEndAt)) {
+    const startT = Date.parse(input.eventStartAt!)
+    const endT = Date.parse(input.eventEndAt!)
+    const nowT = now.getTime()
+    if (startT <= nowT && nowT <= endT) {
+      return {
+        category: 'timely',
+        matchedAdministrative: [],
+        matchedNovelty: [],
+        daysSincePublished: null,
+        withinPreferredWindow: null,
+        reason: '公式に確認できる開催期間内（会期中の催事）のため候補とする',
+      }
     }
   }
 

@@ -106,7 +106,12 @@ async function main() {
       // 編集候補として旬であることは別軸——事務告知は完全除外、常設商品は
       // 「定番候補」として別枠へ（朝刊候補には混ぜない）。
       const newsworthiness = evaluateSweetsNewsworthiness(
-        { title: c.displayTitle ?? c.title, excerpt: c.excerpt ?? null },
+        {
+          title: c.displayTitle ?? c.title,
+          excerpt: c.excerpt ?? null,
+          eventStartAt: (c.eventStartAt as string | null) ?? null,
+          eventEndAt: (c.eventEndAt as string | null) ?? null,
+        },
         { now },
       )
       return {
