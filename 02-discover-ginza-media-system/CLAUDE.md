@@ -1092,6 +1092,30 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   正しく返ることを確認、`transfer-state.json`は事実へ復元済み。実
   ブラウザでの動作はまだ未検証のため、マロンへ新たなChrome操作は要求して
   いない。詳細は`DECISION_LOG_02.md` 2026-09-13 続き21参照。
+- 2026-09-13: 🔬 **note下書き自動転記——ハッシュタグ4個・タイトル本文
+  無変更・下書き保存の3点を実機2回で追加確認、カテゴリー画像は
+  「トリガー要素見つからない」で継続失敗。ブラウザ側処理が結果報告なしに
+  消滅するとサーバー側in_progressクレームが永久に残る重大バグを発見・
+  修正（Project 02 commit・push あり／DB更新なし）**——自動ポーリングが
+  実際に拾い、既存タブ（新規タブなし）を再利用して2回自動実行。両回とも
+  ハッシュタグ4/4・タイトル本文ハッシュ一致（無変更）・下書き保存成功
+  （続き20のキャンセルボタン修正が実機で機能することを確認）まで到達したが、
+  画像アップロードUIへのトリガーが公開設定画面上に見つからず画像設定のみ
+  失敗。3回目の自動試行はタブreload後7分以上通信途絶——調査の結果
+  `claimInProgress`にタイムアウトが無く、ブラウザ側処理が消滅すると
+  サーバー側`in_progress`が永久に残る構造的欠陥と判明（続き5のinFlight
+  永久ブロックと同種）。`claimedAt`＋`STALE_IN_PROGRESS_MS`（150秒）を
+  新設しstale in_progressを再選出可能にし、あわせてfull/completionモード
+  判定をstatusでなくdraftUrlの有無で行う`determineTransferMode`へ切り出し
+  修正（stale再選出時にstatusがin_progressのままfullへ誤後退する問題を
+  合わせて解消）。失敗時のdomDebugSnapshot（`<img>`捕捉）を
+  `result_debug_snapshot`として診断ログへ記録するよう追加（次回失敗時に
+  画像UI構造を確認できる見込み）。回帰テスト新規5件、`run-all.ts`
+  **595 passed 0 failed**。Article #67は`status:success,
+  completionAttempts:2, needsCompletion:false`（タイトル・本文・保存は
+  確定事実、画像UI発見という根本課題が未解決のため最後の1回は意図的に
+  一時停止）。マロンへ新たなChrome操作は要求していない。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き22参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

@@ -14,6 +14,117 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き22（🔬 **note下書き自動転記——実機でハッシュタグ4個・
+    タイトル本文無変更・下書き保存の3点を追加で2回再確認、カテゴリー画像は
+    「ファイル入力要素・トリガー要素とも見つからない」で引き続き失敗を確認。
+    さらに実ログから、ブラウザ側処理が結果報告なしに消滅すると
+    サーバー側のin_progressクレームが永久に残る重大バグを新たに発見・
+    修正（Project 02 commit・push あり／DB更新なし／note公開なし）**）:
+
+    マロン指示：「Chromeで正しい拡張version 1.12.0を読み込み、ONで30秒
+    待機しましたが、note画面は自動表示されませんでした。最新時刻以降の
+    実ログを確認し、上部に残っている既存のnoteタブで処理済みなら実測結果を、
+    未処理なら最初の停止地点を特定し、同一URLの既存タブ1枚だけを再利用して
+    完了させてください。新規タブ作成は禁止、公開は禁止、マロンへのChrome
+    操作要求も禁止です。」
+
+    **実ログ調査で判明した事実**：続き21終了時点での実失敗（10:24〜10:25、
+    `escape_back_to_editor_attempted`という旧イベント名を使用）は、続き20の
+    キャンセルボタン修正が読み込まれる**前**の旧コードによるもので、
+    3回のcompletion試行を使い切り`needsCompletion:false`で停止していた。
+    真の1.12.0再読み込みは`service_worker_evaluated buildRevision:'br12-…'`
+    として10:36:24に記録されていた——マロンの報告どおり、この再読み込み
+    **後**は一切の自動転記が起きていなかった。
+
+    **対応**：`transfer-state.json`のarticle 67を`needsCompletion:true,
+    completionAttempts:0`へ再アーム（新規タブは作らず、既存の
+    `findOrOpenNoteEditorTab`の完全一致ロジックに委ねた）。自動ポーリング
+    （既に起動中の拡張、20秒間隔）が実際に拾い、`existing_tab_reloaded`で
+    既存タブ（tabId 407140016、完全一致URL）を**新規タブを作らず**再利用
+    したことを実ログで確認。
+
+    **実測結果（自動実行2回、いずれもマロンの操作なし）**：①10:44:26
+    ②10:45:51 の2回とも——**ハッシュタグ4個は`appliedTagCount:4/
+    expectedTagCount:4`で反映を確認**（累計3回目・4回目の実機確認）。
+    **タイトル・本文は無変更**（`content_hash_after integrityOk:true`、
+    本文706文字・タイトル48文字のハッシュ一致、2回とも）。**下書き保存も
+    成功**（`cancel_button_click`→`back_to_editor_attempted
+    saveBtnFoundAfter:true`→`save_button_found`——続き20のキャンセル
+    ボタン修正が実際に機能することを初めて実機で確認）。**カテゴリー画像は
+    2回とも失敗**（`icon_attach_done attached:false reason:'ファイル入力
+    要素・トリガー要素とも見つからない'`）——続き21のSHA-256/プレビュー
+    検証パイプライン自体はコード上正しく実装されているが、画像アップロード
+    UIへのトリガー（`findClickableByLabel`が`/画像/ /サムネイル/
+    /アイキャッチ/ /カバー/`のaria-label/titleで探索）が公開設定画面上に
+    一件も見つからず、そこへ到達する前で止まっている。
+
+    **新たに発見した重大バグ（3回目の自動試行が7分以上完全に停止）**：
+    2回目失敗後、自動的に3回目（最後の許容試行）が10:46:04に開始され、
+    `existing_tab_reloaded`まで実行されたが、**それ以降サーバーへの通信が
+    一切途絶えた**（`tab_load_wait_done`すら出ない。アクセスログでも
+    10:46:04.709を最後に8分以上リクエスト0件）。原因調査の結果、
+    `claimInProgress`（サーバー側の多重取得防止クレーム）に**タイムアウトが
+    一切実装されていない**構造的欠陥と判明——ブラウザ側処理がService
+    Worker終了等により結果報告なしに消滅すると、サーバー側の
+    `status:'in_progress'`が永久に残り、`selectNextPendingArticleId`が
+    以後恒久的にその記事を除外し続ける（続き5のinFlight永久ブロック・
+    recordCompletionAttempt固着バグと同一クラスの再発）。
+
+    **修正**：`noteTransferState.ts`へ`claimedAt`（claim時刻）フィールドと
+    `STALE_IN_PROGRESS_MS`（150秒、ブラウザ側inFlightタイムアウト120秒より
+    余裕を持たせた値）を新設。`selectNextPendingArticleId`は`nowMs`を渡した
+    場合のみ、claimedAtから`STALE_IN_PROGRESS_MS`以上経過した`in_progress`を
+    再選出可能にする（`nowMs`省略時は既存呼び出し・既存テストと完全互換で
+    従来どおり常にスキップ）。`noteTransferServer.ts`は`claimInProgress`・
+    `selectNextPendingArticleId`双方へ実時刻を渡すよう変更。あわせて、
+    stale再選出時は`entry.status`が`'in_progress'`のまま（`'success'`に
+    戻らない）ため、従来の`existingEntry?.status === 'success'`という
+    full/completionモード判定が誤ってfullモード（タイトル・本文の再入力）
+    へ後退してしまう問題も発見——新規純粋関数`determineTransferMode`
+    （`draftUrl`の有無で判定、statusに依存しない）へ切り出して修正した。
+
+    **なお本ラウンドで確定できなかった項目**：画像アップロードUIの実際の
+    DOM構造（サムネイル要素がaria-label/titleを持たない`<img>`プレース
+    ホルダーである可能性——続き20の仮説はまだ実診断データで確認できて
+    いない）。続き21で`/pending`結果失敗時のみ`debug`ペイロード
+    （`domDebugSnapshot`の`<img>`捕捉込み）をサーバーへ送信していたが、
+    診断ログへ記録していなかったため一度も確認できていなかった——新規
+    `result_debug_snapshot`イベントとして必ず記録するよう
+    `noteTransferServer.ts`を修正した（次回失敗時に画像UIの実構造が
+    診断できる）。ただし今回の2回の完了試行はいずれも最終的に
+    `save_button_found`（success応答）へ到達しており、`domDebugSnapshot`
+    自体が呼ばれる`save_button_not_found`の失敗経路を通らなかったため、
+    今回はこの新ログにも画像UI情報は記録されなかった。
+
+    **回帰テスト新規5件**：stale in_progressのしきい値前後での再選出可否、
+    `nowMs`省略時の後方互換、`claimedAt`欠落時の安全側スキップ、
+    `determineTransferMode`がstatusでなくdraftUrlで判定することの直接
+    検証、`draftUrl`無しentryはfullと判定されること。`run-all.ts`
+    **595 passed 0 failed**（590→595）。`tsc --noEmit`0エラー。
+
+    **state復元**：article 67を実測どおりの事実
+    （`status:'success', completionAttempts:2, needsCompletion:false`）へ
+    復元した——タイトル・本文・下書き保存は確定済みの事実として維持しつつ、
+    画像UI発見という未解決の根本課題を解決しないまま最後の1回
+    （3回中3回目）の試行を自動的に消費させないよう、意図的に
+    `needsCompletion:false`で一時停止した（3回中2回は実際に消費済みで、
+    3回目は上記の停止バグにより結果不明のまま——安全側で「まだ1回残って
+    いる」として扱わず、次の具体的な画像UI診断データが得られてから
+    再開する判断とした）。
+
+    **申し送り**：ハッシュタグ4個・タイトル本文無変更・下書き保存の3点は
+    今回2回連続で実機確認済み（累計3〜4回目）。カテゴリー画像のみ
+    未解決——原因はSHA-256/プレビュー検証パイプライン自体ではなく、
+    その手前のUI要素発見ロジックが公開設定画面上に画像アップロード
+    トリガーを見つけられないこと。次に失敗すれば`result_debug_snapshot`
+    イベントで`<img>`要素の実構造が確認できる見込みだが、今回の2回とも
+    画像以外は成功してしまったため確認できなかった。マロンへ新たな
+    Chrome操作は要求していない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き21（🖼 **note下書き自動転記——画像供給側の「無断代替
     禁止」パイプラインを実装（実ファイル存在確認＋SHA-256整合性検証＋
     プレビュー出現確認）。ハッシュタグ4個・タイトル本文無変更・カテゴリー

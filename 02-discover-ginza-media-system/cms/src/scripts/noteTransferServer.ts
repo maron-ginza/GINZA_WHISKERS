@@ -43,6 +43,7 @@ import {
   recordSuccess,
   recordFailure,
   recordCompletionAttempt,
+  determineTransferMode,
   MAX_TRANSFER_ATTEMPTS,
   type TransferState,
 } from '../lib/night/noteTransferState'
@@ -134,7 +135,9 @@ async function findPendingTransfer(
   let cursor = 0
   while (cursor < dedupedIds.length) {
     const remaining = dedupedIds.slice(cursor)
-    const candidateId = selectNextPendingArticleId(state, remaining)
+    // 2026-09-14続き22：nowMsを渡し、claimedAtから150秒以上経過したin_progress
+    // （ブラウザ側が結果報告なしに消滅したケース、実機で発見）を再選出可能にする。
+    const candidateId = selectNextPendingArticleId(state, remaining, Date.now())
     if (candidateId == null) return null
     cursor = dedupedIds.indexOf(candidateId) + 1
 
@@ -158,8 +161,14 @@ async function findPendingTransfer(
     // アイコンが未完了）のcompletion-onlyジョブである（selectNextPendingArticleId
     // の仕様）。この場合はタイトル・本文の再入力をせず、既存の下書きURLへ
     // 直接遷移してハッシュタグ・アイコンの付与と再保存だけを行う。
+    // 2026-09-14続き22：判定を status==='success' から draftUrl の有無へ変更。
+    // stale in_progress（claimInProgress直後にブラウザ側が消滅したケース）を
+    // 再選出した場合、entry.statusは'in_progress'のまま（claimInProgressが
+    // 上書きするため）で'success'ではなくなるが、draftUrlはprev値を保持している
+    // ため、この判定なら正しくcompletion-onlyと分かる——誤ってタイトル・本文を
+    // 再入力するfullモードへ後退させない。
     const existingEntry = state[String(candidateId)]
-    const mode: 'full' | 'completion' = existingEntry?.status === 'success' ? 'completion' : 'full'
+    const mode: 'full' | 'completion' = determineTransferMode(existingEntry)
     return {
       articleId: candidateId,
       draftPath: pathByArticleId.get(candidateId)!,
@@ -222,7 +231,7 @@ async function main() {
           // カウントする（表示用フィールドの正確性のみに影響、実際のリトライ
           // 上限判定はnoteTransferState.tsの純粋関数が別途担う）。
           const prevAttempts = pending.mode === 'completion' ? existing?.completionAttempts ?? 0 : existing?.attempts ?? 0
-          saveState(claimInProgress(state, pending.articleId))
+          saveState(claimInProgress(state, pending.articleId, new Date().toISOString()))
 
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
           const iconFile: string | undefined = draft?.masthead?.categoryIcon?.iconFile
@@ -315,6 +324,19 @@ async function main() {
             hashtagsDone: body.hashtagsDone,
             iconDone: body.iconDone,
           })
+          // 2026-09-14続き22：failure時のdomDebugSnapshot（<img>捕捉含む）を
+          // これまで受信していたが診断ログへ記録していなかったため、サムネイル
+          // UIの実構造が一度も確認できていなかった。次回失敗時に原因特定できる
+          // よう、debugペイロードを別イベントとして必ず記録する。
+          if (body.status === 'failure' && body.debug) {
+            appendDiagnosticLog({
+              source: 'server',
+              event: 'result_debug_snapshot',
+              articleId,
+              mode: body.mode,
+              debug: body.debug,
+            })
+          }
           const state = loadState()
 
           if (body.mode === 'completion') {

@@ -21,11 +21,22 @@ export interface TransferStateEntry {
    * アイコンの追加試行と再保存だけを行う想定。 */
   needsCompletion?: boolean
   completionAttempts?: number
+  /** 2026-09-14続き22：claimInProgressでin_progress化された時刻（ISO8601、
+   * 呼び出し側がnowIsoを渡した場合のみ記録）。ブラウザ側の処理が結果報告なしに
+   * 消滅した場合（Service Worker停止・タブの想定外遷移等、実機で発見）でも
+   * サーバー側のin_progressクレームには従来タイムアウトが無く永久に残って
+   * しまっていた——staleInProgressMsを超えて経過していれば再選出可能にする
+   * ための基準時刻。 */
+  claimedAt?: string
 }
 
 export type TransferState = Record<string, TransferStateEntry>
 
 export const MAX_TRANSFER_ATTEMPTS = 3
+
+/** ブラウザ側 inFlightArticleId のタイムアウト（120000ms）より余裕を持たせた
+ * サーバー側 in_progress のstale判定しきい値（2026-09-14続き22）。 */
+export const STALE_IN_PROGRESS_MS = 150000
 
 /**
  * 候補articleId一覧（新しい順等、呼び出し側が決めた優先順）から、次に転記対象と
@@ -34,12 +45,28 @@ export const MAX_TRANSFER_ATTEMPTS = 3
  * ロジック。ただし success かつ needsCompletion=true かつ completionAttempts が
  * 上限未満のものは「completion-only」候補として再度選出できる
  * （呼び出し側が entry.status==='success' を見て completion-only モードと判断する）。
+ *
+ * 2026-09-14続き22：nowMs（＋staleInProgressMs）を渡した場合、claimedAtから
+ * 十分な時間が経過したin_progress候補は「ブラウザ側が結果報告なしに消滅した
+ * （＝以後永久にブロックされ続ける）」とみなし再選出可能にする。nowMsを渡さない
+ * 呼び出し（既存テスト等）は従来どおりin_progressを常にスキップする。
  */
-export function selectNextPendingArticleId(state: TransferState, candidateIds: number[]): number | null {
+export function selectNextPendingArticleId(
+  state: TransferState,
+  candidateIds: number[],
+  nowMs?: number,
+  staleInProgressMs: number = STALE_IN_PROGRESS_MS,
+): number | null {
   for (const id of candidateIds) {
     const entry = state[String(id)]
     if (!entry) return id
-    if (entry.status === 'in_progress') continue
+    if (entry.status === 'in_progress') {
+      if (nowMs != null && entry.claimedAt) {
+        const age = nowMs - Date.parse(entry.claimedAt)
+        if (Number.isFinite(age) && age >= staleInProgressMs) return id
+      }
+      continue
+    }
     if (entry.status === 'failed') continue
     if (entry.status === 'success') {
       const needsCompletion = entry.needsCompletion === true
@@ -56,8 +83,9 @@ export function selectNextPendingArticleId(state: TransferState, candidateIds: n
  * これにより、この直後に同じarticleIdへ再度 pending 取得が来ても
  * selectNextPendingArticleId が弾く（多重タブ・多重取得の防止）。completion-only
  * ジョブを in_progress 化する場合も、既存の needsCompletion/completionAttempts は
- * 保持する（成功記録は上書きしない——タイトル/本文が既に確定済みという事実を失わない）。 */
-export function claimInProgress(state: TransferState, articleId: number): TransferState {
+ * 保持する（成功記録は上書きしない——タイトル/本文が既に確定済みという事実を失わない）。
+ * nowIsoを渡すとclaimedAtとして記録し、staleな放置クレームの再選出判定に使われる。 */
+export function claimInProgress(state: TransferState, articleId: number, nowIso?: string): TransferState {
   const key = String(articleId)
   const prev = state[key]
   return {
@@ -68,9 +96,22 @@ export function claimInProgress(state: TransferState, articleId: number): Transf
       attempts: prev?.attempts ?? 0,
       needsCompletion: prev?.needsCompletion,
       completionAttempts: prev?.completionAttempts,
+      claimedAt: nowIso,
       draftUrl: prev?.draftUrl,
     },
   }
+}
+
+/** 選出されたarticleIdについて、既存のstate entry（in_progress化される前の
+ * 値、またはstale再選出時点でのin_progress値）から full／completion のどちら
+ * のジョブとして扱うべきかを決める（2026-09-14続き22で status==='success' 判定
+ * から独立させた純粋関数）。draftUrlが記録されている＝タイトル・本文・初回
+ * 保存は過去に成功済みという事実であり、entry.statusが現在'in_progress'
+ * （stale再選出）であろうと'success'であろうと変わらない——draftUrlの有無だけで
+ * 判定することで、stale in_progressを誤ってfullモード（タイトル・本文の
+ * 再入力）へ後退させない。 */
+export function determineTransferMode(entry: TransferStateEntry | undefined): 'full' | 'completion' {
+  return entry?.draftUrl ? 'completion' : 'full'
 }
 
 /** 転記成功を記録する。needsCompletion=true の場合（ハッシュタグ・アイコンが

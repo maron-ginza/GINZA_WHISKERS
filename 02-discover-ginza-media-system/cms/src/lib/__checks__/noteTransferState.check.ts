@@ -10,7 +10,9 @@ import {
   recordSuccess,
   recordFailure,
   recordCompletionAttempt,
+  determineTransferMode,
   MAX_TRANSFER_ATTEMPTS,
+  STALE_IN_PROGRESS_MS,
   type TransferState,
 } from '../night/noteTransferState'
 import { runSuite, type CheckCase } from './_harness'
@@ -155,6 +157,72 @@ const cases: CheckCase[] = [
       assert.equal(state['67'].completionAttempts, MAX_TRANSFER_ATTEMPTS)
       assert.equal(selectNextPendingArticleId(state, [67]), null, '3回失敗後はcompletion-onlyとしても再選出されない')
       assert.equal(state['67'].status, 'success', '初回の成功記録（タイトル・本文・保存）はcompletion失敗によって覆らない')
+    },
+  },
+  {
+    // 2026-09-14続き22：実機で発見した重大バグ——claimInProgressで
+    // in_progress化された後、ブラウザ側（Service Worker）が結果報告なしに
+    // 消滅すると（実機で観測：既存タブreload後、7分以上一切の通信が途絶）、
+    // サーバー側のin_progressクレームには従来タイムアウトが無く永久に
+    // 残ってしまい、以後その記事は二度と選出されなくなっていた
+    // （inFlight永久ブロック・recordCompletionAttempt固着と同種のバグ）。
+    name: '【重要バグ再発防止】nowMsを渡した場合、claimedAtからstaleInProgressMs以上経過したin_progressは再選出される',
+    fn: () => {
+      let state: TransferState = {}
+      state = claimInProgress(state, 67, '2026-09-14T00:00:00.000Z')
+      assert.equal(state['67'].status, 'in_progress')
+      const justBeforeStale = Date.parse('2026-09-14T00:00:00.000Z') + STALE_IN_PROGRESS_MS - 1
+      assert.equal(
+        selectNextPendingArticleId(state, [67], justBeforeStale),
+        null,
+        'しきい値未満ならまだ再選出されない（実行中の可能性を尊重）',
+      )
+      const justAfterStale = Date.parse('2026-09-14T00:00:00.000Z') + STALE_IN_PROGRESS_MS
+      assert.equal(
+        selectNextPendingArticleId(state, [67], justAfterStale),
+        67,
+        'しきい値を超えたら再選出される（永久ブロックの再発防止）',
+      )
+    },
+  },
+  {
+    name: 'nowMsを渡さない場合（既存呼び出し）は従来どおりin_progressを常にスキップする',
+    fn: () => {
+      const state = claimInProgress({}, 67, '2020-01-01T00:00:00.000Z') // 十分に古い時刻
+      assert.equal(selectNextPendingArticleId(state, [67]), null, 'nowMs省略時は staleness 判定をしない')
+    },
+  },
+  {
+    name: 'claimedAtが記録されていないin_progress（nowIso省略で claim された場合）はnowMsを渡してもstale判定できず安全側でスキップされ続ける',
+    fn: () => {
+      const state = claimInProgress({}, 67) // nowIso省略
+      assert.equal(selectNextPendingArticleId(state, [67], Date.now() + STALE_IN_PROGRESS_MS * 10), null)
+    },
+  },
+  {
+    // 2026-09-14続き22：stale in_progressの再選出（上記テスト）と組み合わせて
+    // 使われる。entry.statusはclaimInProgressにより'in_progress'のまま
+    // （'success'ではない）だが、draftUrlは前回のfull転記成功時点から保持
+    // されているため、determineTransferModeは正しく'completion'を返す
+    // ——誤ってタイトル・本文を再入力するfullモードへ後退しない。
+    name: '【重要バグ再発防止】determineTransferModeはstatusではなくdraftUrlの有無で判定するため、stale再選出後のin_progressエントリでもcompletionと判定される',
+    fn: () => {
+      let state: TransferState = {}
+      state = recordSuccess(state, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      state = claimInProgress(state, 67, '2026-09-14T00:01:00.000Z') // completion-onlyジョブとしてin_progress化
+      assert.equal(state['67'].status, 'in_progress', '前提：statusはin_progressのまま')
+      assert.equal(
+        determineTransferMode(state['67']),
+        'completion',
+        'statusがin_progressでもdraftUrlがあればcompletionと判定されること',
+      )
+    },
+  },
+  {
+    name: 'determineTransferModeはdraftUrlが無いentry（初回のfull転記）はfullと判定する',
+    fn: () => {
+      assert.equal(determineTransferMode(undefined), 'full')
+      assert.equal(determineTransferMode({ articleId: 67, status: 'pending', attempts: 0 }), 'full')
     },
   },
 ]
