@@ -10,6 +10,9 @@ import { evaluateSocialCopyGate } from '../curation/socialCopyGate'
 import { checkEventTimingClaims } from '../curation/eventTimingClaimGate'
 import type { EventTiming } from '../curation/eventTiming'
 import { checkUnsourcedClaims } from '../curation/unsourcedClaimGate'
+// 再発防止 #5（2026-09-13 Article #64 期間誤記載）：公式ページに明記されて
+// いない販売・開催期間を生成しない
+import { checkUnsourcedPeriodClaims } from '../curation/unsourcedPeriodClaimGate'
 import { detectBasementFloorDrop } from '../crawler/normalizeVenueText'
 import { normalizeSocialCopy, type SocialCopyCaps } from './normalizeSocialCopy'
 import { blocksToLexicalState } from './lexical'
@@ -700,17 +703,20 @@ export async function generateMultiAngleArticleDrafts({
 
         const timing = checkEventTimingClaims(bodyForGate, coreGuards.eventTiming)
         const claims = checkUnsourcedClaims([bodyForGate], coreGuards.backingTexts) // 既定 mode:'warn'
+        const periodClaims = checkUnsourcedPeriodClaims(bodyForGate, coreGuards.backingTexts)
         const floor = detectBasementFloorDrop(bodyForGate, coreGuards.backingTexts)
 
         const guardCodes: string[] = [
           ...timing.hits.map((h) => h.code),
           ...claims.hits.map((h) => `unsourced_${h.category}`),
+          ...periodClaims.hits.map((h) => h.code),
           ...(floor.dropped ? ['basementFloorPrefixDropped'] : []),
         ]
         if (guardCodes.length > 0) {
           const guardDetails: Record<string, string> = {}
           for (const h of timing.hits) guardDetails[h.code] = `「${h.phrase}」 ${h.detail}`
           for (const h of claims.hits) guardDetails[`unsourced_${h.category}`] = `「${h.phrase}」（出典に裏付けなし）`
+          for (const h of periodClaims.hits) guardDetails[`${h.code}:${h.phrase}`] = h.detail
           if (floor.dropped) {
             guardDetails.basementFloorPrefixDropped = floor.floors
               .map((f) => `出典 ${f.source} → 本文 ${f.body}`)

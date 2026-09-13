@@ -11,6 +11,7 @@ import { suite as normalizeVenueText } from './normalizeVenueText.check'
 import { suite as htmlEntities } from './htmlEntities.check'
 import { suite as slugify } from './slugify.check'
 import { suite as unsourcedClaimGate } from './unsourcedClaimGate.check'
+import { suite as unsourcedPeriodClaimGate } from './unsourcedPeriodClaimGate.check'
 import { suite as classifySourcePageType } from './classifySourcePageType.check'
 import { suite as urlGranularity } from './urlGranularity.check'
 import { suite as extractExplicitPeriod } from './extractExplicitPeriod.check'
@@ -50,6 +51,7 @@ const results: SuiteResult[] = [
   htmlEntities(),
   slugify(),
   unsourcedClaimGate(),
+  unsourcedPeriodClaimGate(),
   classifySourcePageType(),
   urlGranularity(),
   extractExplicitPeriod(),
