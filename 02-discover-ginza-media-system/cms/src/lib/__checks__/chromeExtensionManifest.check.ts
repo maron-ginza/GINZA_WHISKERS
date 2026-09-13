@@ -506,6 +506,39 @@ const cases: CheckCase[] = [
   },
 ]
 
+const CANCEL_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き10：実機ログで「公開に進む」が実際のページ遷移
+    // （URLが/publish/へ変わる）であり、Escapeキーでは編集画面へ戻れないと
+    // 判明した。「キャンセル」ボタンで戻る経路が新設され、「公開」を含む
+    // 文言には一致しないことを確認する。
+    name: '【設定画面からの復帰】findCancelButtonは「キャンセル」に一致し「公開」を含む文言には一致しない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findCancelButton/.test(bg), 'findCancelButtonが見つからない')
+      const start = bg.indexOf('function findCancelButton')
+      const end = bg.indexOf("log('injected_transfer_started'")
+      assert.ok(start >= 0 && end > start, 'findCancelButtonの範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(body), 'findCancelButton内に「公開」除外ガードが見つからない')
+      assert.ok(/\^キャンセル\$/.test(body), '「キャンセル」への一致条件が見つからない')
+    },
+  },
+  {
+    name: '【設定画面からの復帰】下書き保存ボタンが見つからない場合、まずキャンセルボタンを試し、無ければEscapeへフォールバックする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/cancel_button_click/.test(bg), 'cancel_button_clickログが見つからない')
+      assert.ok(/findCancelButton\(\)/.test(bg), 'findCancelButtonの呼び出しが見つからない')
+      const idx = bg.indexOf('const cancelBtn = findCancelButton()')
+      assert.ok(idx >= 0, 'cancelBtn取得箇所が見つからない')
+      const nearby = bg.slice(idx, idx + 400)
+      assert.ok(/Escape/.test(nearby), 'Escapeへのフォールバックが見つからない')
+    },
+  },
+]
+cases.push(...CANCEL_TEST_CASES)
+
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 
 if (import.meta.url === `file://${process.argv[1]}`) {

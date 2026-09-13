@@ -14,6 +14,79 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き20（🚀 **note下書き自動転記——実機でハッシュタグ4個の
+    実際の反映を初めて確認（`appliedTagCount:4/expectedTagCount:4`）。
+    公開設定画面から編集画面へ戻れず`下書き保存`に到達できていなかった
+    箇所を「キャンセル」ボタン経由で修正、サムネイル画像UI特定のための
+    診断（`<img>`captureを追加（Project 02 commit・push あり／DB更新
+    なし／note公開なし・Article #67はタイトル・本文・保存は完成のまま、
+    ハッシュタグ・アイコンは自動完了待ち）**）:
+
+    続き19のcommit・state復元後、実機の拡張が新コード（続き18の
+    クリック安全化・タブ選択修正）で初めて実際に動作し、以下が実ログで
+    確認できた：
+
+    **確認できた成功**：①`preferred_url_tab_not_found_opening_directly`
+    →`new_tab_created`でArticle #67の正しい編集URL
+    （`n12d7568d8bd2/edit/`）を直接開けた（続き18のタブ選択修正が
+    正しく機能）。②タイトル・本文のサニティ確認
+    （`completion_sanity_check bodyLength:706, titleLength:48`）が
+    期待値と一致——本文は一切書き換えていない。③編集画面でタグ入力欄・
+    ファイル入力欄が見つからなかったため`proceed_to_settings_click
+    text:'公開に進む'`で設定画面へ遷移（マロン許可の範囲内）。④設定画面の
+    ハッシュタグ入力欄（`placeholder:'ハッシュタグを追加する'`）へ4個
+    すべてを入力し、**読み戻し検証で`appliedTagCount:4,
+    expectedTagCount:4`と一致を確認**——ハッシュタグ4個は実際に
+    画面へ反映された。
+
+    **新たに判明した2つの障害**：①`icon_attach_done attached:false
+    reason:'ファイル入力要素・トリガー要素とも見つからない'`——設定画面の
+    `dom_snapshot`（`labeled`/`buttons`）に「画像」「サムネイル」
+    「アイキャッチ」「カバー」に一致する要素が無かった。サムネイル設定UIは
+    aria-label／titleを持たない画像プレースホルダー（`<img>`要素そのもの）
+    である可能性が高いと判断した。②`save_button_not_found`
+    →`escape_back_to_editor_attempted saveBtnFoundAfter:false`——
+    「公開に進む」は実際のページ遷移（URLが`.../publish/`へ変わる）で
+    あり、モーダルではないためEscapeキーでは編集画面へ戻れなかった。
+    設定画面の`buttons`一覧には`"キャンセル"`が実在しており、これを使う
+    べきだったと判明した。
+
+    **修正**：①新規`findCancelButton`（「キャンセル」「戻る」にのみ
+    一致、「公開」を含む文言は除外）を新設し、下書き保存ボタンが
+    見つからない場合はまずこれをクリックして編集画面へ戻り、それでも
+    見つからなければEscapeへフォールバックする2段構えにした。②
+    `domDebugSnapshot`へ`<img>`要素（src・alt）のキャプチャを追加——
+    次回の設定画面訪問時に、サムネイルUIの実際の構造（aria-label無しの
+    画像プレースホルダーか否か）を診断できるようにした（今回はこの
+    診断結果を見てから画像UIの特定ロジックを実装する判断とし、根拠の
+    無い当て推量でのクリック処理は追加しなかった）。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.10.0`→
+    `1.11.0`へ、`BUILD_REVISION`を
+    `br11-2026-09-14-cancelbutton-imgsnapshot`へ、修正内容と対応させて
+    更新した。
+
+    **回帰テスト新規2件**：`findCancelButton`が「公開」を含む文言を
+    除外し「キャンセル」にのみ一致すること、下書き保存ボタン未検出時に
+    まずキャンセルボタンを試しEscapeへフォールバックする構造になって
+    いることを確認。`run-all.ts` **580 passed 0 failed**
+    （578→580）。`tsc --noEmit`0エラー、`node -c`／JSON妥当性を確認。
+
+    **state復元**：`transfer-state.json`の記事67を正しい事実
+    （`status:'success', needsCompletion:true, completionAttempts:0`）
+    へ復元した。次回の`/pending`ポーリングで本コミットの修正
+    （キャンセルボタン経由の復帰）が反映された状態で試行される。
+
+    **申し送り**：ハッシュタグ4個は実機で実際に反映されることを確認済み。
+    残るはサムネイル画像UIの特定（次回の`<img>`診断ログ待ち）と、
+    キャンセルボタン経由での編集画面復帰→下書き保存への到達
+    （本コミットで修正・未検証）。マロンへ新たなChrome操作は要求して
+    いない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き19（🔬 **note下書き自動転記——「拡張再読み込み後も何も
     起きない」の最初の停止地点を実ログで確定：completion-onlyジョブが
     修正commit反映**前**に旧コードで3回失敗し`needsCompletion:false`

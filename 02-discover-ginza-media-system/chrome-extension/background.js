@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br10-2026-09-14-tabfix-clickfix'
+const BUILD_REVISION = 'br11-2026-09-14-cancelbutton-imgsnapshot'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -572,7 +572,26 @@ function injectedNoteTransfer(item) {
         .map((el) => ({ tag: el.tagName.toLowerCase(), ariaLabel: el.getAttribute('aria-label'), title: el.getAttribute('title') }))
         .filter((x) => x.ariaLabel || x.title)
         .slice(0, 40)
-      return { buttons, editableSummary, textareas, inputs, labeled, title: document.title, bodyChildCount: document.body ? document.body.children.length : 0 }
+      // 2026-09-14続き10：公開設定画面でサムネイル／アイキャッチ画像のUIが
+      // aria-label／titleを持たない画像プレースホルダー（<img>タグそのもの）
+      // である可能性が実機ログから疑われたため追加した診断項目。
+      const images = deepQuerySelectorAll('img')
+        .filter(isVisible)
+        .map((el) => ({ src: (el.getAttribute('src') || '').slice(0, 80), alt: el.getAttribute('alt') }))
+        .slice(0, 20)
+      return { buttons, editableSummary, textareas, inputs, labeled, images, title: document.title, bodyChildCount: document.body ? document.body.children.length : 0 }
+    }
+    /** 公開設定画面から編集画面へ戻るための「キャンセル」ボタン。
+     * 2026-09-14続き10：Escapeキーでは戻れず、URLが/publish/のまま
+     * 取り残されると実機ログで判明したため新設。「公開」を含む文言は対象外。 */
+    function findCancelButton() {
+      return deepQuerySelectorAll('button, [role="button"]').find((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t) return false
+        if (/公開/.test(t)) return false
+        return /^キャンセル$|^戻る$/.test(t)
+      })
     }
 
     log('injected_transfer_started', { url: location.href, readyState: document.readyState, mode })
@@ -735,14 +754,26 @@ function injectedNoteTransfer(item) {
     const iconApplied = checkIconApplied(iconResult.fileName)
     log('hashtag_icon_readback', { appliedTagCount, expectedTagCount: expectedTagsNoHash.length, iconApplied })
 
-    // --- 下書き保存（設定画面にいる場合はまずこの画面で探し、無ければEscで
-    // 編集画面へ戻ってから探す。「公開する」等の最終公開ボタンには一切触れない） ---
+    // --- 下書き保存（設定画面にいる場合はまずこの画面で探し、無ければ
+    // 「キャンセル」ボタンで編集画面へ戻ってから探す。「公開する」等の
+    // 最終公開ボタンには一切触れない） ---
+    // 2026-09-14続き10：実機ログで「公開に進む」がモーダルではなく実際の
+    // ページ遷移（URLが/publish/へ変わる）であり、Escapeキーでは戻れないと
+    // 判明した。設定画面には「キャンセル」ボタンが実在するため、まずこれを
+    // 使う（Escapeはそれでも見つからない場合の保険として残す）。
     let saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
     if (!saveBtn && navigatedToSettings) {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
-      await sleep(500)
+      const cancelBtn = findCancelButton()
+      if (cancelBtn) {
+        log('cancel_button_click', { text: visibleText(cancelBtn) })
+        clickElement(cancelBtn)
+        await sleep(800)
+      } else {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }))
+        await sleep(500)
+      }
       saveBtn = await waitFor(() => findSaveDraftButton(), 4000)
-      log('escape_back_to_editor_attempted', { saveBtnFoundAfter: !!saveBtn })
+      log('back_to_editor_attempted', { usedCancelButton: !!cancelBtn, saveBtnFoundAfter: !!saveBtn })
     }
     if (!saveBtn) {
       return {
