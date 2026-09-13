@@ -14,6 +14,110 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き30（🏆 **note下書き自動転記——1.17.0実機で3回連続、
+    ハッシュタグ4/4・タイトル本文無変更（ハッシュ一致）・下書き保存を
+    実測確認。90秒の無応答は完全に解消し、続き29の5秒タイムアウト設計が
+    実機で正しく機能した。残る唯一の課題はカテゴリー画像——
+    `fetch(img.url)`が5秒でタイムアウトし、**サーバーアクセスログに
+    該当リクエストが一切記録されていない**ことから、ブラウザ側（おそらく
+    editor.note.comのCSP）でリクエスト自体がブロックされている可能性が
+    高いと判明（Project 02 commit・push あり／DB更新なし／note公開なし）**）:
+
+    マロン指示：「Chrome拡張を1回だけ再読み込みしversion 1.17.0を確認
+    した。Article #67をサーバー側から1回だけ再アームし、既存の正確な
+    note編集タブでcompletion-only処理を実行してください。最大60秒だけ
+    監視し、stageログを時系列で確認し、成功時はハッシュタグ4/4・画像
+    1/1・下書き保存成功・タイトル本文変更なし・公開0回を、失敗時は
+    error・stack・stages・domSnapshotから停止した正確なstageを報告して
+    ください。」
+
+    **実測（時系列、1回目の自動試行 12:31:32開始）**：①`service_worker_
+    evaluated`で`buildRevision:'br17-...', manifestVersion:'1.17.0'`を
+    12:30:32.785に確認。②サーバー側で1回だけ再アーム。③自動ポーリングが
+    既存タブ（新規タブなし・reloadなし、tabId 407140016）を再利用し、
+    `injected_file_injected`→`injected_file_top_level_start`→
+    `injected_transfer_started`→`page_load_state`→`dom_snapshot`→
+    `completion_sanity_check`（title48/body706）→`content_hash_before`
+    （titleHash:a2c5bb7654a3, bodyHash:5db63dec4c44）まで**1.5秒以内**に
+    到達（続き28では同じ区間の到達確認だけで精一杯だったのに対し、続き29
+    の修正後は速やかに通過）。④`image_section_start`→
+    `image_file_input_initial_search_start`→`image_file_input_initial_
+    search_done found:true`——**続き28までは一度も届かなかったこの先の
+    ログが今回初めて実機で確認できた**。file inputは既にDOM上に存在して
+    おり（`revealAndFindFileInput`の最初の分岐で即発見）、トリガー
+    クリックの手順自体には到達しなかった。⑤`image_fetch_start`
+    （url:`http://localhost:4601/assets/01_gourmet.jpg`）→**ちょうど
+    5秒後**（12:31:34.317→12:31:40.313）に`icon_attach_done
+    attached:false reason:'stage=image_fetch_timeout: 画像取得が5秒
+    以内に完了しませんでした'`——続き29で新設した個別5秒
+    `raceWithTimeout`が設計どおり実機で発火し、**90秒間の無応答は完全に
+    解消された**。⑥`image_section_end`→`save_button_found stage:
+    'editor'`（下書き保存、1回目）→`proceed_to_settings_for_hashtag_
+    check`→`settings_screen_snapshot`→`hashtag_scope_resolved
+    scopeFound:true, inputFound:true`→`hashtag_wrong_chip_remove_
+    button_not_found`が5回（後述）→`hashtags_verified checkedOn:
+    'settings', appliedTagCount:4, expectedCount:4, removedWrongCount:
+    0, typedMissingCount:2`——**ハッシュタグ4/4を実測確認**（#松屋銀座・
+    #銀座は既存、#しろたえ・#GINZAWHISKERSの2個を新規入力）。⑦
+    `cancel_button_click`→`save_button_found stage:'after_hashtag_
+    correction'`（下書き保存、2回目、タグ補正があったため）→
+    `hashtag_icon_readback appliedTagCount:4, expectedTagCount:4,
+    iconApplied:false`→`content_hash_after titleHash:a2c5bb7654a3,
+    bodyHash:5db63dec4c44, integrityOk:true`——**content_hash_beforeと
+    完全一致、タイトル・本文の無変更を実測確認**。⑧`result_received
+    status:'success', hashtagsDone:true, iconDone:false`。**この一連の
+    流れ（12:31:32開始〜12:32:43完了、約71秒）が、2回目（12:32:52〜
+    12:33:52付近）・3回目（12:33:52〜12:34:43）でも寸分違わず再現した**
+    ——3回とも同一の停止点（画像fetch）・同一のハッシュタグ4/4・同一の
+    整合性確認結果。
+
+    **`hashtag_wrong_chip_remove_button_not_found`が5回出た点について**：
+    `findWrongHashtagChips`が公開設定画面のサジェスト候補一覧
+    （#出店・#15日・#確認等、統計文言「件」を含まない別要素として存在）を
+    「誤って適用されたタグ」候補として検出したが、削除ボタンが見つからず
+    実際には何も削除しなかった（無害）。それでも`countAppliedHashtags`
+    （scope限定・「件」除外）は正しく4/4を返しており、最終的な読み戻し
+    結果には影響していない——ただし`findWrongHashtagChips`のscope
+    絞り込みが完全ではない可能性（サジェスト一覧の一部が意図せずscope内に
+    含まれている）を示す手がかりとして記録しておく。
+
+    **画像の停止点＝新たな具体的原因の手がかり**：サーバーの実アクセス
+    ログ（`/tmp/note-transfer-server.log`）を`image_fetch_start`〜
+    `icon_attach_done`の時間帯（12:31:34.317〜12:31:40.313）で確認した
+    ところ、**`/assets/01_gourmet.jpg`へのGETリクエスト・OPTIONSプリ
+    フライトのいずれも一切記録されていなかった**——CORSヘッダーの不足に
+    よる拒否（この場合は通常サーバー側にOPTIONSやGETが届いた上で
+    レスポンスが拒否される）ではなく、**リクエストがブラウザから一度も
+    送出されていない**ことを意味する。`noteTransferServer.ts`は
+    `Access-Control-Allow-Origin: '*'`を含むCORSヘッダーを`/assets/`
+    ルートにも適用済みで、サーバー側の設定に不備は見当たらない。この
+    パターンは、editor.note.comページ自身のContent-Security-Policy
+    （`connect-src`にlocalhost等が含まれていない場合）によるブロックで
+    最も典型的に起きる——ただしこれは**未確認の仮説**であり、今回は
+    推測でのコード変更は行わず、実測できた事実（リクエストが一度も
+    サーバーに届いていない）のみを報告する。
+
+    **完了項目のまとめ（マロン指示の項目別）**：
+    - ハッシュタグ4/4：✅ **実測確認**（3回とも）
+    - icon_food/01_gourmet.jpg 画像1/1：❌ **未達**——停止stage＝
+      `image_fetch_timeout`（`fetch(img.url)`が5秒でタイムアウト、
+      リクエスト自体がサーバーへ到達していない）
+    - 下書き保存成功：✅ **実測確認**（`save_button_found`を2回、
+      画像処理直後とハッシュタグ補正後の両方で確認。3回とも）
+    - タイトル・本文変更なし：✅ **実測確認**（`content_hash_before`／
+      `content_hash_after`が完全一致、`integrityOk:true`。3回とも）
+    - 公開：✅ **0回**（コード上どの経路からも一切触れていない）
+
+    **対応**：3回自動実行された後、`completionAttempts`が上限
+    （3）に達し`needsCompletion:false`へ自然に遷移した（自動再試行は
+    以後停止）ことを、その後の`pending_queried articleId:null`連続で
+    確認した。今回は推測でのコード修正は行わず、実測結果の記録のみ
+    行った。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。コード変更は無し（本エントリはログ記録のみ）。
+
   - 2026-09-13 続き29（🛠 **note下書き自動転記——続き28で絞り込んだ停止
     範囲「content_hash_before送信直後からrevealAndFindFileInput開始前」を
     根本修正。DOM探索（`deepQuerySelectorAll`）へ探索ノード数・深さ・

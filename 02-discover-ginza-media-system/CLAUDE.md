@@ -1254,6 +1254,24 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   `run-all.ts` **628 passed 0 failed**。`transfer-state.json`は前回の
   一時停止状態のまま変更せず、実機検証は今回行っていない。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き29参照。
+- 2026-09-13: 🏆 **note下書き自動転記——1.17.0実機で3回連続、ハッシュタグ4/4・
+  タイトル本文無変更（ハッシュ一致）・下書き保存を実測確認。90秒の無応答は
+  完全に解消。残る唯一の課題はカテゴリー画像——fetch(img.url)が5秒でタイム
+  アウトし、サーバーアクセスログに該当リクエストが一切記録されていないことから
+  ブラウザ側（おそらくeditor.note.comのCSP）でブロックされている可能性が高いと
+  判明（Project 02 commit・push あり／DB更新なし。コード変更は無し・ログ記録
+  のみ）**——3回とも同一パターンで再現：content_hash_beforeまで1.5秒以内に
+  到達→image_section_start→file input即発見→image_fetch_start→ちょうど5秒後
+  にimage_fetch_timeoutで打ち切り（続き29の個別5秒raceWithTimeoutが設計どおり
+  発火、90秒間の無応答は解消）→下書き保存（1回目）→ハッシュタグ4/4を実測確認
+  （#松屋銀座・#銀座は既存、#しろたえ・#GINZAWHISKERSを新規入力）→下書き保存
+  （2回目、補正後）→content_hash_after integrityOk:true（before/after完全一致）
+  →result success（hashtagsDone:true, iconDone:false）。画像fetchのリクエスト
+  自体がサーバーの実アクセスログに一切記録されておらず（CORSは`/assets/`に
+  設定済み・サーバー側の不備ではない）、editor.note.com側のCSP等によるブロックが
+  最有力仮説だが未確認のまま推測でのコード変更はしていない。3回の自動実行後
+  completionAttemptsが上限に達しneedsCompletion:falseへ自然遷移、以後の自動
+  再試行なしを確認。詳細は`DECISION_LOG_02.md` 2026-09-13 続き30参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
