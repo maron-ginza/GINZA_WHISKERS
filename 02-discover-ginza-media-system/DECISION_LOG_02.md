@@ -14,6 +14,104 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き28（🎉 **note下書き自動転記——1.16.0実機再アームで
+    ブレークスルー：`injected_file_top_level_start`・`injected_transfer_
+    started`が初めて実機で発火し、単発watchdog（90秒）・実行中スクリプト
+    との重複防止（isRunning）の両方が設計どおり実機で機能することを確認。
+    真の停止地点が「`content_hash_before`以降・画像処理より前」まで
+    絞り込めた（Project 02 commit・push あり／DB更新なし／note公開なし。
+    **ハッシュタグ・画像・保存はいずれも未達のまま**）**）:
+
+    マロン指示：「Chrome拡張を1回だけ再読み込みしversion 1.16.0を確認した。
+    Article #67のcompletion-only処理をサーバー側から1回だけ再アームし、
+    既存タブのみ使用（新規タブ作成・tabs.reload・タイトル本文再入力は
+    禁止）、自動ポーリングによる実行結果を最大90秒だけ監視し実ログで報告
+    すること。90秒で結果が返らない場合はfailedを1回だけ記録し自動再試行
+    せず停止すること。」
+
+    **実測（1回目の自動試行、12:10:07開始）**：①`service_worker_
+    evaluated`で`buildRevision:'br16-...', manifestVersion:'1.16.0'`を
+    12:09:07.711に確認（1.16.0起動を実測）。②サーバー側で1回だけ再アーム
+    （`needsCompletion:true, completionAttempts:0`）。③自動ポーリングが
+    実際に拾い、`existing_tab_reused_no_reload`（新規タブなし・reloadなし、
+    tabId 407140016・`.../n12d7568d8bd2/edit/`）で既存タブを再利用。
+    ④**`injected_file_injected`（files:注入成功）→`injected_file_top_
+    level_start`（トップレベルIIFE到達）→`injected_transfer_started`
+    （tabs.sendMessage受信・handleRun開始）が初めて実機で発火**——続き26
+    までの3回はここまで一切届いていなかった。func:方式の直列化・
+    再構築ステップを疑って構成変更した判断が的中したことを実測で確認。
+    ⑤続けて`page_load_state`→`dom_snapshot`（buttons:["閉じる","下書き
+    保存","公開に進む"]、images:[]）→`completion_sanity_check`
+    （titleLength:48, bodyLength:706）→`content_hash_before`
+    （タイトル・本文とも読み戻し成功・無変更確認）まで到達。**しかし
+    ここで停止**——以降、画像処理（`revealAndFindFileInput`／
+    `image_trigger_not_found_on_editor`／`icon_attach_done`）以降の
+    ログが一切届かないまま経過。
+
+    **単発watchdogが設計どおり実機で機能**：12:11:37.762
+    （`execute_script_attempt`の12:10:07.751から**ちょうど90000ms後**）に
+    `injected_run_watchdog_timeout`が発火し、`stage=injected_run_
+    watchdog_timeout: 90000ms以内に応答がありませんでした`として
+    **1回だけ**失敗報告した。本関数自身から`executeScript`を再度呼ぶ
+    処理は無く、想定どおり単発で終わった。
+
+    **重複防止（isRunning）も設計どおり実機で機能**：watchdog失敗報告の
+    直後、既存の3回リトライ上限機構（`recordCompletionAttempt`、続き27
+    より前から存在する別レイヤー）により自動的に2回目・3回目の試行が
+    実行された（12:11:47・12:12:07）。**いずれも新規実行を開始せず、
+    `injected_run_already_in_progress`（既に実行中のため新しい実行を
+    開始しませんでした＝同一DOMへの並行操作防止）を即座に返した**——
+    1回目の実行がタブ内でまだ生きている（`isRunning=true`のまま応答
+    できずにいる）状態で、2つ目・3つ目の`note-transfer:run`メッセージが
+    届いても、続き27で新設した`isRunning`ガードが正しく機能し、
+    **同一DOMへの重複操作は一度も発生しなかった**（続き26で懸念した
+    「複数の並行実行」リスクを実機で解消できたことを確認）。3回とも
+    タイトル・本文の再入力なし・新規タブ作成なし・tabs.reloadなし。
+
+    **対応**：3回目の`injected_run_already_in_progress`失敗で
+    `completionAttempts`が3（上限）に達し`needsCompletion:false`へ
+    自動遷移したが、マロン指示「failedを1回だけ記録し自動再試行せず
+    停止」を確実に満たすため、2回目の自動試行が始まった直後に
+    `transfer-state.json`を手動で`needsCompletion:false`へ設定し、
+    以後の自動再試行を明示的に停止した（3回目は上記の自然な上限到達と
+    ほぼ同時に発生済みだったが、以降の4回目以降が発生しないことを
+    12:12:27以降の`pending_queried articleId:null`で確認済み）。
+
+    **実測値まとめ（マロン指示の項目別）**：
+    - BUILD_REVISION br16：確認済み
+    - injected-transfer.js注入結果：**成功**（`injected_file_injected`・
+      `injected_file_top_level_start`とも確認）
+    - tabs.sendMessage受信：**成功**（`injected_transfer_started`確認、
+      これが実機で確認できたのは今回が初めて）
+    - 各stage：`injected_transfer_started`→`page_load_state`→
+      `dom_snapshot`→`completion_sanity_check`→`content_hash_before`
+      まで到達し**そこで停止**（画像処理以降のログなし）
+    - ハッシュタグ4/4：**未達**（工程に到達せず）
+    - 画像1/1：**未達**（工程に到達せず）
+    - 下書き保存：**未達**（工程に到達せず）
+    - 公開：**0回**（確認済み・コード上どの経路からも触れていない）
+
+    **新たに絞り込めた停止地点**：真の停止地点は
+    「`content_hash_before`のログ出力直後から、`revealAndFindFileInput`
+    （画像トリガー探索）の間のどこか」まで特定できた——続き26までは
+    「注入自体が始まっているかどうかさえ分からない」状態だったのに対し、
+    大きく前進した。この区間には`revealAndFindFileInput`（`input[type=
+    file]`探索→`findClickableByLabel`によるトリガークリック→`sleep
+    (600)`→再探索、見つからなければ`findUploadOptionButton`探索→
+    クリック→`sleep(600)`→再探索）が含まれる——次回、この区間の途中経過
+    ログ（例えば`revealAndFindFileInput`呼び出し直前後）を追加すれば
+    より精密に切り分けられる可能性がある。**今回は推測でのコード変更は
+    行わず、実測報告のみに留めた**（マロン指示のとおり）。
+
+    **申し送り**：`transfer-state.json`は`status:'success',
+    needsCompletion:false, completionAttempts:3`（一時停止）。タイトル・
+    本文・下書き保存という既知の確定事実（続き20時点で確認済み）は
+    今回のstate操作でも失っていない。マロンへの新たな操作要求はしていない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。コード変更は無し（本エントリはログ記録のみ）。
+
   - 2026-09-13 続き27（🏗 **note下書き自動転記——実機で3回連続再現した
     「executeScriptが最初の1行のログすら送らないまま約140秒間無応答」現象
     （続き26、Service Worker Console赤エラー0件をマロンが実機確認）を受け、

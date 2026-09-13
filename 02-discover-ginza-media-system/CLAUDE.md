@@ -1215,6 +1215,22 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   `transfer-state.json`は前回の一時停止状態（`needsCompletion:false`）のまま
   変更せず、サーバー側再アーム・実機検証は今回行っていない。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き27参照。
+- 2026-09-13: 🎉 **note下書き自動転記——1.16.0実機再アームでブレークスルー：
+  injected_file_top_level_start・injected_transfer_startedが初めて実機で発火し、
+  単発watchdog（90秒）・実行中スクリプトとの重複防止（isRunning）の両方が
+  実機で設計どおり機能することを確認。真の停止地点をcontent_hash_before以降・
+  画像処理より前まで絞り込めた（Project 02 commit・push あり／DB更新なし。
+  ハッシュタグ・画像・保存はいずれも未達）**——サーバー側から1回再アームした
+  ところ、自動ポーリングが既存タブを再利用（新規タブ・reloadなし）し、
+  files:注入→トップレベルIIFE到達→tabs.sendMessage受信・handleRun開始が
+  続き26までの3回とは違い初めて実機で確認できた。続けてdom_snapshot→
+  completion_sanity_check（title48/body706）→content_hash_beforeまで到達し
+  そこで停止（画像処理以降のログなし）。90秒後にinjected_run_watchdog_timeout
+  が設計どおり1回だけ発火し失敗報告。直後に自動発生した2回目・3回目の試行は
+  いずれもinjected_run_already_in_progressで即座に弾かれ、同一DOMへの重複操作は
+  一度も発生しなかった（isRunningガードの実機検証成功）。マロン指示どおり
+  以後の自動再試行を手動で停止。推測でのコード変更はせず実測報告のみ。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き28参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
