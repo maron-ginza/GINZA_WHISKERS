@@ -37,6 +37,8 @@ export interface SweetsCandidateInput {
   publishedReason?: string | null
   /** 過去7日間にこの施設からいくつ採用されたか（history.facilityKeyCounts 等） */
   facilityCount7d?: number
+  /** 2026-09-14追加：出典確認日（DiscoveredContent.lastCheckedAt等、ISO日時）。表示用。 */
+  verifiedAt?: string | null
 }
 
 export interface RankedSweetsCandidate {

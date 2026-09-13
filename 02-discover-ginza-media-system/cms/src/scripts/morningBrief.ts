@@ -31,6 +31,7 @@ import { resolveFacilityKey } from '../lib/curation/facilityKey'
 import { selectSweetsCandidates, evaluateSweetsGate, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
 import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
 import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
+import { evaluateSweetsEligibility } from '../lib/curation/sweetsEligibility'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -52,13 +53,17 @@ const limArg = argv.find((a) => a.startsWith('--limit='))
 // （承諾前プール全件評価等）への設計変更を検討する。
 const LIMIT = limArg ? Math.max(20, Number(limArg.split('=')[1]) || 1000) : 1000
 const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
-// 2026-09-13追加：固定要件による施設の一時除外（例：本日はGINZA SIX・銀座 蔦屋書店を除外）。
-// 既定は空＝従来どおり全施設を対象とする（恒久的な偏りにしない。都度の明示指定のみ）。
-const excludeFacilityArg = argv.find((a) => a.startsWith('--exclude-facility='))?.split('=')[1] ?? process.env.SWEETS_EXCLUDE_FACILITY_KEYS ?? ''
-const EXCLUDE_FACILITY_KEYS = excludeFacilityArg
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean)
+// 2026-09-13追加・2026-09-14恒久化：SWEETS候補選定でのGINZA SIX・銀座 蔦屋書店の
+// 除外。施設偏重（GINZA SIXが唯一の完全情報候補になりやすい）が繰り返し確認された
+// ため、2026-09-14の受入条件で既定を「常時除外」へ変更した——翌日以降の通常朝刊
+// コマンド（本コマンド）でも自動的に同じ除外が再現される。CLI引数／環境変数を
+// 明示指定すれば上書きできる（空文字指定で除外なしに戻すことも可能）。
+const DEFAULT_SWEETS_EXCLUDE_FACILITY_KEYS = ['ginza-six', 'ginza-tsutaya']
+const excludeFacilityArg = argv.find((a) => a.startsWith('--exclude-facility='))?.split('=')[1] ?? process.env.SWEETS_EXCLUDE_FACILITY_KEYS
+const EXCLUDE_FACILITY_KEYS =
+  excludeFacilityArg != null
+    ? excludeFacilityArg.split(',').map((s) => s.trim()).filter(Boolean)
+    : DEFAULT_SWEETS_EXCLUDE_FACILITY_KEYS
 
 async function main() {
   const payload = await getPayload({ config })
@@ -101,9 +106,17 @@ async function main() {
         publishedThemes,
       )
       const alreadyPublished = pub.match || c.duplicate === true || alreadyDraftedAll.has(c.discoveredContentId)
-      // 安全性 gate（verdict/期限切れ/銀座関連性/出典/種別/タイトル）に落ちる候補は
-      // 公式情報不完全と同様に扱い、最終候補に上げない（推測で救わない）。
-      const safetyFails = evaluateSafetyGate(c, cfg)
+      // 2026-09-14改訂：SWEETS候補は受入条件（マロン確定）どおり「終了済み・
+      // 既投稿・既下書き・銀座での販売未確認」の4種類のみで除外する——generalな
+      // evaluateSafetyGate（verdict_c/unknown_type/unknown_factkind/no_title等、
+      // 記事生成テンプレート判別を前提にした基準）はSWEETSには適用しない
+      // （実在する単独施設・商品ページが「テンプレート種別不明」という受入条件に
+      // 無い理由で除外されていた問題の恒久修正）。商品名・企画名の確認は
+      // officialCompleteness側の必須項目として別途担保する。
+      const sweetsGate = evaluateSweetsEligibility(
+        { expired: c.expired, ginzaRelevant: c.ginzaRelevant, duplicate: c.duplicate },
+        { requiredMissing: c.officialMissing ?? [] },
+      )
       // 2026-09-13追加：毎年開催の定例イベント（銀茶会等）が前年情報のまま今年の
       // 候補として扱われることを防ぐ（推測で年を補完しない）。
       const yearCheck = checkRecurringEventYearClaim(
@@ -111,7 +124,7 @@ async function main() {
         { now },
       )
       const yearFails = yearCheck.ok ? [] : [yearCheck.reason!]
-      const gateOk = safetyFails.length === 0 && yearCheck.ok
+      const gateOk = sweetsGate.eligible && yearCheck.ok
       return {
         dcId: c.discoveredContentId,
         title: c.title,
@@ -126,14 +139,15 @@ async function main() {
         eventStartAt: (c.eventStartAt as string | null) ?? null,
         eventEndAt: (c.eventEndAt as string | null) ?? null,
         officialCompletenessScore: c.officialCompletenessScore ?? null,
-        officialMissing: gateOk ? (c.officialMissing ?? null) : [...(c.officialMissing ?? []), ...safetyFails, ...yearFails],
-        finalEligible: gateOk && c.finalEligible !== false,
+        officialMissing: gateOk ? null : [...sweetsGate.reasons, ...yearFails],
+        finalEligible: gateOk,
         daysUntilEnd: c.daysUntilEnd ?? null,
         targetFit: c.targetFit ?? null,
         alreadyPublished,
         publishedReason: pub.match ? pub.reason : alreadyDraftedAll.has(c.discoveredContentId) ? '既に Article 化済み' : null,
         // 2026-09-13追加：直近7日間の同一施設からの採用件数（施設偏重を防ぐsource diversity制御）
         facilityCount7d: fk.key ? (assessed.history.facilityKeyCounts[fk.key] ?? 0) : 0,
+        verifiedAt: c.verifiedAt ?? null,
       }
     })
     .filter((x): x is SweetsCandidateInput => x != null)

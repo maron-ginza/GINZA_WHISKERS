@@ -833,6 +833,27 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-13: ✅ **「9月14日改善完了の受入条件」10項目を実装・実データで達成——
+  GINZA SIX・銀座 蔦屋書店を除外しても独立スウィーツ専門店から候補5件を確認
+  （Project 02 commit・push あり／DB更新はDC#631・#1132の詳細ページ内容
+  バックフィルのみ）**——根本原因：SWEETS候補にも多カテゴリー汎用の
+  `evaluateSafetyGate`（verdict_c/unknown_type等、記事生成テンプレート判別
+  前提の基準）が適用され、実在するCAFE PAULISTA等の単独施設商品ページが
+  受入条件に無い理由で除外されていた。新設`sweetsEligibility.ts`
+  （`evaluateSweetsEligibility`）でSWEETS専用の除外理由を「終了済み・銀座での
+  販売未確認・重複・完全度未確認項目」の4種類に限定。GINZA SIX・銀座 蔦屋書店
+  の除外を`morningBrief.ts`・新規`sweetsTodayCandidates.ts`双方の既定値として
+  恒久化（CLIフラグ不要で翌日以降も自動再現）。出典確認日の表示バグ
+  （verifiedAtハードコードnull）も修正。回帰テスト新規7件、`run-all.ts`
+  494 passed 0 failed。**技術的制約**：銀座三越（mistore.jp）はネットワーク
+  層で接続不可（Akamai起因の可能性、コード側で解決不能）／松屋銀座
+  （matsuyaginza.com）はReact SPAで実コンテンツがStoryblok CMS APIから
+  クライアントサイド取得される構造のためHTML取得では中身を得られない
+  （両サイトともSOURCE_LEDGER登録は維持）。既存DC2件（ピエス・モンテ／
+  木挽町よしや）を既存の詳細取得関数で個別バックフィルし、最終的に
+  独立スウィーツ専門店5件（ブールミッシュ・CAFE PAULISTA・piecemontee・
+  木挽町よしや・教文館）で受入条件7番の最低3件を上回る5件を達成。受入条件
+  10項目すべて○。詳細は`DECISION_LOG_02.md` 2026-09-13 続き7。
 - 2026-09-13: 🔧 **公式情報の完全度判定を恒久修正——必須は商品名・企画名／銀座での
   場所／内容を確認できる公式URL／出典確認日／終了済みでないことの5項目へ限定し、
   価格・販売期間・購入条件は「公式記載なし」で候補化を妨げない方式へ改訂

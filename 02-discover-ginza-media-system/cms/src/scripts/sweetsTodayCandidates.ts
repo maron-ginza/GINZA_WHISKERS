@@ -8,15 +8,19 @@
 // 主目的とし、非0の終了コードで停止する点が morning-brief〈4領域を毎日通す運用〉とは
 // 異なる）。
 //
-// 固定要件（2026-09-13、マロン指示）：
+// 固定要件（2026-09-13策定・2026-09-14受入条件で恒久化）：
 //   1. 本日の最優先カテゴリー＝スイーツ・和菓子（CORE_DAILY_BUCKETSで既に最優先）
-//   2. 除外施設は --exclude-facility で指定（既定は空＝除外なし。恒久的な偏りにしない）
+//   2. GINZA SIX・銀座 蔦屋書店の除外は既定で常時有効（DEFAULT_EXCLUDE_FACILITY_KEYS）。
+//      --exclude-facility= を明示指定すれば上書き可能。
 //   3. 既投稿・既承認・既下書き・過去に提示済みの候補は除外（既存 alreadyDrafted /
 //      publishedThemes の仕組みをそのまま利用）
 //   4/5. デパ地下出店ブランド・独立店・専門店の横断収集は SOURCE_LEDGER 登録内容に依存
 //        （銀座三越・松屋銀座・資生堂パーラー等は既に登録済み。収集自体は ./p2 crawl が担う）
 //   6. 同一施設は最大1件（selectSweetsCandidatesの施設キャップ）
-//   7/8/9. 公式情報の完全度チェック（finalEligible）・「公式記載なし」表記は既存ロジックのまま
+//   7/8/9. 公式情報の完全度チェック（finalEligible）・「公式記載なし」表記は既存ロジックのまま。
+//      2026-09-14改訂：SWEETS候補の除外理由は「終了済み・既投稿・既下書き・銀座での
+//      販売未確認」の4種類のみ（evaluateSweetsEligibility、generalなevaluateSafetyGate
+//      のverdict_c/unknown_type等は適用しない）。
 //   10. 銀茶会等の定例イベントの前年情報流用を防ぐ（recurringEventYearGuard）
 //
 // **DB 書き込み・AI 呼び出し・課金・approve・記事生成・note/Chrome 操作は一切しない。**
@@ -27,7 +31,7 @@ import { resolve } from 'node:path'
 
 import config from '../payload.config'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
-import { selectRecommendedThemes, loadSelectThemesConfigFromEnv, evaluateSafetyGate } from '../lib/pipeline/selectRecommendedThemes'
+import { selectRecommendedThemes } from '../lib/pipeline/selectRecommendedThemes'
 import { resolveBusinessDate, tokyoStartOfDay } from '../lib/util/businessDate'
 import { loadPublishedThemes } from '../lib/publish/loadPublishedThemes'
 import { matchPublishedTheme } from '../lib/publish/publishedThemes'
@@ -35,13 +39,21 @@ import { deriveProvisionalCategory } from '../lib/pipeline/provisionalCategory'
 import { resolveFacilityKey } from '../lib/curation/facilityKey'
 import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
 import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
+import { evaluateSweetsEligibility } from '../lib/curation/sweetsEligibility'
 import { selectSweetsCandidates, evaluateSweetsGate, type SweetsCandidateInput } from '../lib/pipeline/sweetsCandidateSelect'
 import { assembleBriefFacts, type BriefCandidateInput } from '../lib/pipeline/morningBriefSelect'
 
+// 2026-09-14確定：GINZA SIX・銀座 蔦屋書店の除外は受入条件として恒久化した
+// （施設偏重が繰り返し確認されたため）。--exclude-facility= を明示指定すれば
+// 上書きできるが、既定値としてこの2施設を常に除外する——「翌日の通常朝刊
+// コマンドでも同じ収集が自動再現される」ことを担保する。
+const DEFAULT_EXCLUDE_FACILITY_KEYS = ['ginza-six', 'ginza-tsutaya']
+
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
-const excludeArg = argv.find((a) => a.startsWith('--exclude-facility='))?.split('=')[1] ?? ''
-const EXCLUDE_FACILITY_KEYS = excludeArg.split(',').map((s) => s.trim()).filter(Boolean)
+const excludeArg = argv.find((a) => a.startsWith('--exclude-facility='))?.split('=')[1]
+const EXCLUDE_FACILITY_KEYS =
+  excludeArg != null ? excludeArg.split(',').map((s) => s.trim()).filter(Boolean) : DEFAULT_EXCLUDE_FACILITY_KEYS
 const limArg = argv.find((a) => a.startsWith('--limit='))
 const MAX_CANDIDATES = limArg ? Math.max(1, Number(limArg.split('=')[1]) || 5) : 5
 const DATE = resolveBusinessDate((argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1])
@@ -51,9 +63,8 @@ async function main() {
   const now = tokyoStartOfDay(DATE)
 
   const assessed = await assessInboxPool(payload, { now, statuses: ['inbox', 'approved'], limit: 1000 })
-  const cfg = loadSelectThemesConfigFromEnv()
   // selectRecommendedThemes 自体は使わない（SWEETSは assessed.candidates 全体から
-  // 独立して評価する、既存 morningBrief.ts と同じ設計）。安全性gate関数のみ再利用。
+  // 独立して評価する、既存 morningBrief.ts と同じ設計）。
   void selectRecommendedThemes
 
   const allDcIds = assessed.candidates.map((c) => c.discoveredContentId)
@@ -77,13 +88,19 @@ async function main() {
         publishedThemes,
       )
       const alreadyPublished = pub.match || c.duplicate === true || alreadyDraftedAll.has(c.discoveredContentId)
-      const safetyFails = evaluateSafetyGate(c, cfg)
+      // 2026-09-14改訂：受入条件（マロン確定）どおり「終了済み・既投稿・既下書き・
+      // 銀座での販売未確認」の4種類のみで除外する（generalなevaluateSafetyGateの
+      // verdict_c/unknown_type/unknown_factkind/no_title等は適用しない）。
+      const sweetsGate = evaluateSweetsEligibility(
+        { expired: c.expired, ginzaRelevant: c.ginzaRelevant, duplicate: c.duplicate },
+        { requiredMissing: c.officialMissing ?? [] },
+      )
       const yearCheck = checkRecurringEventYearClaim(
         { sourceName: c.sourceName, sourceUrl: c.sourceUrl, title: c.displayTitle ?? c.title, eventPeriod: c.eventPeriod },
         { now },
       )
       const yearFails = yearCheck.ok ? [] : [yearCheck.reason!]
-      const gateOk = safetyFails.length === 0 && yearCheck.ok
+      const gateOk = sweetsGate.eligible && yearCheck.ok
       return {
         dcId: c.discoveredContentId,
         title: c.title,
@@ -98,13 +115,14 @@ async function main() {
         eventStartAt: (c.eventStartAt as string | null) ?? null,
         eventEndAt: (c.eventEndAt as string | null) ?? null,
         officialCompletenessScore: c.officialCompletenessScore ?? null,
-        officialMissing: gateOk ? (c.officialMissing ?? null) : [...(c.officialMissing ?? []), ...safetyFails, ...yearFails],
-        finalEligible: gateOk && c.finalEligible !== false,
+        officialMissing: gateOk ? null : [...sweetsGate.reasons, ...yearFails],
+        finalEligible: gateOk,
         daysUntilEnd: c.daysUntilEnd ?? null,
         targetFit: c.targetFit ?? null,
         alreadyPublished,
         publishedReason: pub.match ? pub.reason : alreadyDraftedAll.has(c.discoveredContentId) ? '既に Article／note下書き 化済み（重複）' : null,
         facilityCount7d: fk.key ? (assessed.history.facilityKeyCounts[fk.key] ?? 0) : 0,
+        verifiedAt: c.verifiedAt ?? null,
       }
     })
     .filter((x): x is SweetsCandidateInput => x != null)
@@ -182,7 +200,7 @@ async function main() {
       eventPeriod: sc.eventPeriod,
       eventStartAt: input.eventStartAt,
       eventEndAt: input.eventEndAt,
-      verifiedAt: null,
+      verifiedAt: input.verifiedAt ?? null,
       readiness: f ? 'ready' : 'missing',
       facts: f
         ? {
