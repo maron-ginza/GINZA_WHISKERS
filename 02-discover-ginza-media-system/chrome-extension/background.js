@@ -93,15 +93,22 @@ function logToServer(event, detail) {
   }
 }
 
-// 2026-09-14続き3：実機検証2回目も「拡張再読み込み後、サーバーに一切
-// リクエストが届かない」という1回目と同一の症状で失敗した。この
-// service_worker_evaluatedログは、他のどの処理より前に（importScriptsや
-// 関数定義より前に）実行される、最も原始的な「SWスクリプト自体が評価された
-// か」の証跡である。次回、これすらサーバーに届いていなければ、原因は
-// background.js内部のロジックではなく、拡張の再読み込みそのものが
-// SWの実行に反映されていない（Chrome側の問題、または別の拡張インスタンスを
-// 見ている等）と判断できる。
-logToServer('service_worker_evaluated', { ts: Date.now() })
+// 2026-09-14続き9（マロン指示）：「拡張を再読み込みしたのに何も起きない」
+// 事象が繰り返され、readmoteログだけでは「Chromeが実際に本コミットのコードを
+// 読み込んだのか」「別フォルダ／古いコードを見ているのか」を判別できなかった。
+// BUILD_REVISIONを手動採番の識別子として持ち、manifest.jsonのversionと
+// 対で必ずbumpする——マロンはchrome://extensionsに表示されるversionと、
+// このログに出るbuildRevisionが一致しているかどうかで「読み込ませるべき
+// コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
+// インストールID。別フォルダから読み込むと変わる）・manifest.version・
+// 拡張がインストールされたモード（unpacked等）も併記する。
+const BUILD_REVISION = 'br10-2026-09-14-tabfix-clickfix'
+logToServer('service_worker_evaluated', {
+  ts: Date.now(),
+  buildRevision: BUILD_REVISION,
+  manifestVersion: chrome.runtime.getManifest?.().version ?? null,
+  extensionId: chrome.runtime.id ?? null,
+})
 
 // --- chrome.storage が使えない場合のメモリ内フォールバック ---
 let memoryInFlight = null // { articleId, startedAt }
@@ -967,7 +974,7 @@ const alarmsAvailable = safeSetupAlarms()
 if (!alarmsAvailable) startFallbackPolling()
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  logToServer('on_installed', { reason: details?.reason })
+  logToServer('on_installed', { reason: details?.reason, buildRevision: BUILD_REVISION })
   // 拡張の再読み込み・更新は「開発者が意図的に再起動した」明確な合図であり、
   // その時点で残っている inFlight 記録は（SW再起動をまたいで処理が継続する
   // ケースは通常想定していないため）放棄された試行とみなして必ずクリアする

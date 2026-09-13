@@ -480,6 +480,30 @@ const cases: CheckCase[] = [
       assert.ok(/\}\s*else if\s*\(candidates\.length > 0\)/.test(body), 'preferredUrl指定時に他candidateへのフォールバック分岐と分離されていない（elseで排他になっていない）')
     },
   },
+  {
+    // 2026-09-14続き9（マロン指示）：「拡張を再読み込みしたのに何も起きない」
+    // 事象を切り分けるため、manifest.jsonのversionとbackground.jsの
+    // BUILD_REVISIONを対で必ずbumpし、起動ログへ記録することを要求された。
+    // versionが既定の"1.0.0"のまま放置されていないこと・BUILD_REVISIONが
+    // 定義されservice_worker_evaluated/on_installedログへ記録されている
+    // ことを確認する。
+    name: '【ビルド識別】manifest.jsonのversionが既定値から更新され、background.jsがBUILD_REVISIONを起動ログへ記録する',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      assert.ok(typeof manifest.version === 'string' && manifest.version !== '1.0.0', 'manifest.jsonのversionが既定値のまま更新されていない')
+
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/const BUILD_REVISION = /.test(bg), 'BUILD_REVISION定数が見つからない')
+      const evalIdx = bg.indexOf("logToServer('service_worker_evaluated'")
+      const nearby = bg.slice(evalIdx, evalIdx + 300)
+      assert.ok(/buildRevision:\s*BUILD_REVISION/.test(nearby), 'service_worker_evaluatedログにbuildRevisionが記録されていない')
+      assert.ok(/manifestVersion/.test(nearby), 'service_worker_evaluatedログにmanifestVersionが記録されていない')
+      assert.ok(/extensionId/.test(nearby), 'service_worker_evaluatedログにextensionIdが記録されていない（別フォルダ読み込みの切り分け用）')
+
+      const installedIdx = bg.indexOf("logToServer('on_installed'")
+      assert.ok(/buildRevision:\s*BUILD_REVISION/.test(bg.slice(installedIdx, installedIdx + 100)), 'on_installedログにbuildRevisionが記録されていない')
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)

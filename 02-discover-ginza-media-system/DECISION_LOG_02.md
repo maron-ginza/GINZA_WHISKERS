@@ -14,6 +14,83 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き19（🔬 **note下書き自動転記——「拡張再読み込み後も何も
+    起きない」の最初の停止地点を実ログで確定：completion-onlyジョブが
+    修正commit反映**前**に旧コードで3回失敗し`needsCompletion:false`
+    （恒久見送り）に達していたため。ビルド識別（BUILD_REVISION・
+    manifest version）を新設し「読み込まれているコードが最新か」を
+    今後確実に検証できるようにした（Project 02 commit・push あり／
+    DB更新なし／note公開なし・Article #67はタイトル・本文・保存は
+    完成のまま、ハッシュタグ・アイコンは自動完了待ち）**）:
+
+    マロン報告：拡張再読み込みと20秒待機を完了したが、noteには何も追加
+    転記されなかった。再読み込みの再要求は禁止。最新時刻以降の実ログから
+    「1.修正commitのコードが読み込まれたか 2.service_worker_evaluated
+    3.completion-onlyジョブ取得 4.保存URL取得 5.tabs.query/create
+    6.executeScript 7.ハッシュタグ処理 8.画像処理 9.下書き再保存」の
+    どこで停止したかを確定し、manifestのversion更新とbuildRevisionの
+    起動ログ記録も行うこと、との指示。
+
+    **実ログでの停止地点の確定**：マロンが報告した再読み込み・待機に対応する
+    `service_worker_evaluated`＋`on_installed reason:'update'`は
+    09:55:16.591-593Zに記録されていた（項目2は到達）。しかし直前の
+    09:52:11Zに、**まだ続き18のcommitが反映されていない旧コード**による
+    completion-onlyジョブの3回目の失敗（`trigger.click is not a
+    function`、続き18で既に特定済みの同一バグ）が記録されており、この
+    時点で`transfer-state.json`の記事67は`needsCompletion:false`
+    （3回失敗により恒久的に見送り）へ達していた。09:55:16の実際の
+    reload（続き18のcode修正を含む可能性がある）は、この**見送り
+    済みの状態**に対して行われたため、以後のすべての`/pending`が
+    `articleId:null`を返し続けた——**停止地点は項目3
+    「completion-onlyジョブ取得」**。tabs.query／executeScript等の
+    後続段階には一切到達していない（`pending_item_claimed`以降のログが
+    一切存在しない）。
+
+    **項目1（修正commitが読み込まれたか）の判定不能性**：09:55:16の
+    `service_worker_evaluated`ログには、当時コードのバージョン識別情報が
+    一切含まれておらず、「実際に続き18のcommitが読み込まれたのか、それ
+    より古いコードのままなのか」を事後的に判別する手段が無かった——これは
+    マロンが指摘した通りの、既存ログの構造的な欠落だった。
+
+    **対応**：①`manifest.json`の`version`を`1.0.0`から`1.10.0`へ更新
+    （以後、background.js／content.jsを修正するたびに必ず対で
+    バンプする運用とする）。②新規`BUILD_REVISION`定数
+    （`'br10-2026-09-14-tabfix-clickfix'`、手動採番——コミット前に
+    ハッシュを知る手段が無いため、日付・内容を含む読める識別子とした）を
+    `service_worker_evaluated`・`on_installed`の両ログへ記録し、
+    あわせて`chrome.runtime.getManifest().version`（manifestの
+    version）・`chrome.runtime.id`（拡張のインストールID——**別フォルダ
+    から読み込むとこの値が変わる**ため、「別フォルダを見ている」ケースの
+    切り分けにも使える）を記録するようにした。今後は、
+    `chrome://extensions`に表示される拡張のversionと、診断ログに記録
+    される`buildRevision`・`extensionId`を見比べることで、「読み込ませる
+    べきversion・buildRevision・拡張フォルダが一致しているか」を事前に
+    確認できる。
+
+    **state復元**：`transfer-state.json`の記事67を正しい事実
+    （`status:'success', needsCompletion:true, completionAttempts:0`）へ
+    復元した。次回の`/pending`ポーリングで、続き18＋本コミットの修正
+    （クリック安全化・タブ選択・ビルド識別）が実際に反映された状態で
+    初めてcompletion-onlyジョブが試行される。
+
+    **回帰テスト新規1件**：`manifest.json`の`version`が既定値`1.0.0`から
+    更新されていること、`BUILD_REVISION`定数が定義され
+    `service_worker_evaluated`・`on_installed`双方のログへ
+    `buildRevision`・`manifestVersion`・`extensionId`が記録されている
+    ことを確認。`run-all.ts` **578 passed 0 failed**（577→578）。
+    `tsc --noEmit`0エラー、`node -c`／JSON妥当性を確認。
+
+    **申し送り**：次にマロンへ操作を求めるのは、
+    「`chrome://extensions`に表示されるversionが`1.10.0`、かつ次の
+    reload後に`service_worker_evaluated`ログの`buildRevision`が
+    `br10-2026-09-14-tabfix-clickfix`と一致すると確認できたとき」に
+    限定する——現時点ではその確認ができていないため、今回はマロンへの
+    操作要求を行わない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き18（🎯 **note下書き自動転記——try/catch修正で初めて実際の
     例外内容が判明：①「aria-label付きsvgアイコンに`.click()`が無い」②
     「対象記事の下書きが見つからない時に別記事の無関係なタブへ誤って

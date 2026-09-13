@@ -1030,6 +1030,29 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   完成のまま、`needsCompletion:true`で維持。マロンへ新たなChrome操作は
   要求していない（指示のとおり再試行は求めていない）。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き18参照。
+- 2026-09-13: 🔬 **note下書き自動転記——「拡張再読み込み後も何も起きない」の
+  最初の停止地点を実ログで確定し、ビルド識別（BUILD_REVISION・manifest
+  version）を新設（Project 02 commit・push あり／DB更新なし）**——マロンの
+  最新reload+20秒待機に対応する`service_worker_evaluated`は記録されて
+  いたが、その**直前**（09:52:11Z）に、続き18のcommitがまだ反映されて
+  いない旧コードによるcompletion-onlyジョブの3回目の失敗
+  （`trigger.click is not a function`）が起き、`needsCompletion:false`
+  （3回失敗による恒久見送り）に達していた——**停止地点は
+  「completion-onlyジョブ取得」**（tabs.query／executeScript等の後続
+  段階には一切到達していない）。加えて、当時のログには「実際に修正
+  commitが読み込まれたか」を判別する情報が一切無かった。対応：
+  `manifest.json`の`version`を`1.0.0`→`1.10.0`へ更新、新規
+  `BUILD_REVISION`定数（手動採番）を`service_worker_evaluated`・
+  `on_installed`双方のログへ記録し、`chrome.runtime.id`（別フォルダ
+  読み込みで変わる拡張インストールID）・`manifest.version`も併記する
+  ようにした——以後、chrome://extensionsのversion表示と診断ログの
+  `buildRevision`／`extensionId`を見比べて「正しいコードが読み込まれて
+  いるか」を事前確認できる。回帰テスト新規1件、`run-all.ts` **578
+  passed 0 failed**。stateはArticle #67を正しい事実
+  （タイトル・本文・保存は完成、`needsCompletion:true`）へ復元。次に
+  マロンへ操作を求めるのは、version・buildRevision・拡張フォルダの
+  一致が確認できた後の最終1回のみに限定する方針とした。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き19参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
