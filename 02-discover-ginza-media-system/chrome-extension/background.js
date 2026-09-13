@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br13-2026-09-14-editor-image-button-noreload'
+const BUILD_REVISION = 'br14-2026-09-14-image-upload-2step-tabfocus'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -483,6 +483,17 @@ function injectedNoteTransfer(item) {
     /** ファイル入力（画像アップロード）が最初から見えていればそれを返す。無ければ
      * 「画像／サムネイル／アイキャッチ／カバー」関連のクリック可能要素をクリック
      * して出現を待ち、再探索する。 */
+    /** 「画像をアップロード」のみを対象とする（note提案のストック／関連画像
+     * 「記事にあう画像を選ぶ」は無断代替禁止の原則により絶対にクリックしない）。 */
+    function findUploadOptionButton() {
+      return deepQuerySelectorAll('button, [role="button"]').find((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t) return false
+        if (/記事にあう画像を選ぶ/.test(t)) return false
+        return /画像をアップロード/.test(t)
+      })
+    }
     async function revealAndFindFileInput() {
       let fi = deepQuerySelectorAll('input[type="file"]')[0]
       if (fi) return { fi, revealed: false }
@@ -491,7 +502,21 @@ function injectedNoteTransfer(item) {
       clickElement(trigger)
       await sleep(600)
       fi = deepQuerySelectorAll('input[type="file"]')[0]
-      return { fi, revealed: !!fi, triggerFound: true, triggerLabel: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) }
+      const triggerLabel = (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30)
+      if (fi) return { fi, revealed: true, triggerFound: true, triggerLabel }
+      // 2026-09-14続き24（実機ログで判明）：「画像を追加」クリックで開く
+      // チューザーには「画像をアップロード」「記事にあう画像を選ぶ」の
+      // 2択があり、実際のfile inputはさらに「画像をアップロード」を
+      // クリックして初めて出現する2段階のUIだった。「記事にあう画像を
+      // 選ぶ」（note提案のストック／関連画像）には無断代替禁止の原則から
+      // 絶対に触れない。
+      const uploadOption = findUploadOptionButton()
+      if (!uploadOption) return { fi: null, revealed: true, triggerFound: true, triggerLabel, uploadOptionFound: false }
+      log('image_upload_option_click', { text: visibleText(uploadOption) })
+      clickElement(uploadOption)
+      await sleep(600)
+      fi = deepQuerySelectorAll('input[type="file"]')[0]
+      return { fi, revealed: !!fi, triggerFound: true, triggerLabel, uploadOptionFound: true, uploadOptionClicked: true }
     }
     function findSaveDraftButton() {
       const candidates = deepQuerySelectorAll('button, [role="button"], a')
@@ -937,6 +962,19 @@ async function runTransferViaExecuteScript(tabId, item) {
         iconDone: result.iconDone,
         iconDebug: result.iconResult?.debug ?? null,
       })
+      // 2026-09-14続き24（マロン指示）：「既存の非表示タブで完了している
+      // 場合は、そのタブを新規作成せず前面表示する」——ハッシュタグ・画像とも
+      // 完全に完了した場合のみタブをアクティブ化する（マロンが手を止めて
+      // 見に来る必要がある「本当に完了した」瞬間だけに限定し、まだ途中の
+      // 自動再試行のたびに画面を奪わない）。
+      if (result.hashtagsDone === true && result.iconDone === true) {
+        try {
+          await chrome.tabs.update(tabId, { active: true })
+          logToServer('tab_focused_on_completion', { tabId })
+        } catch (e) {
+          logToServer('tab_focus_failed', { tabId, error: String(e?.message ?? e) })
+        }
+      }
     } else {
       await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug, mode: item.mode })
     }

@@ -675,6 +675,60 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
 ]
 cases.push(...EDITOR_IMAGE_BUTTON_TEST_CASES)
 
+const IMAGE_UPLOAD_TWO_STEP_TEST_CASES: CheckCase[] = [
+  {
+    // 2026-09-14続き24（実機ログで判明）：「画像を追加」クリックで開く
+    // チューザーには「画像をアップロード」「記事にあう画像を選ぶ」の2択が
+    // あり、実際のfile inputは「画像をアップロード」をさらにクリックして
+    // 初めて出現する2段階のUIだった。「記事にあう画像を選ぶ」（note提案の
+    // ストック／関連画像）には無断代替禁止の原則から絶対に触れないこと。
+    name: '【無断代替禁止】findUploadOptionButtonは「画像をアップロード」のみに一致し「記事にあう画像を選ぶ」には一致しない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findUploadOptionButton/.test(bg), 'findUploadOptionButtonが見つからない')
+      const start = bg.indexOf('function findUploadOptionButton')
+      const end = bg.indexOf('async function revealAndFindFileInput')
+      assert.ok(start >= 0 && end > start, 'findUploadOptionButtonの範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(\s*\/記事にあう画像を選ぶ\/\.test\(t\)\)\s*return\s*false/.test(body), '「記事にあう画像を選ぶ」の除外ガードが見つからない')
+      assert.ok(/\/画像をアップロード\//.test(body), '「画像をアップロード」への一致条件が見つからない')
+    },
+  },
+  {
+    name: '【2段階UI対応】revealAndFindFileInputは1回目のクリックでfile inputが出現しない場合、findUploadOptionButtonを追加でクリックして再探索する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('async function revealAndFindFileInput')
+      const end = bg.indexOf('function findSaveDraftButton')
+      assert.ok(start >= 0 && end > start, 'revealAndFindFileInputの範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/const uploadOption = findUploadOptionButton\(\)/.test(body), '2段階目のfindUploadOptionButton呼び出しが見つからない')
+      assert.ok(/clickElement\(uploadOption\)/.test(body), '2段階目のクリックが見つからない')
+      assert.ok(/image_upload_option_click/.test(body), '2段階目クリックのログが見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き24（マロン指示）：「既存の非表示タブで完了している場合
+    // は、そのタブを新規作成せず前面表示してください」。ハッシュタグ・画像
+    // とも完全に完了した場合のみタブをアクティブ化し、まだ途中の自動再試行
+    // のたびに画面を奪わないことを確認する。
+    name: '【前面表示】ハッシュタグ・画像とも完了した場合のみ既存タブをアクティブ化し、新規タブは作らない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/chrome\.tabs\.update\(tabId,\s*\{\s*active:\s*true\s*\}\)/.test(bg), 'chrome.tabs.updateによるタブのアクティブ化が見つからない')
+      const idx = bg.indexOf('chrome.tabs.update(tabId, { active: true })')
+      assert.ok(idx >= 0, 'chrome.tabs.update呼び出し箇所が見つからない')
+      const before = bg.slice(Math.max(0, idx - 400), idx)
+      assert.ok(
+        /result\.hashtagsDone === true && result\.iconDone === true/.test(before),
+        'hashtagsDone・iconDoneが両方trueの場合のみタブをアクティブ化する条件が見つからない',
+      )
+      assert.ok(!/chrome\.tabs\.create/.test(bg.slice(Math.max(0, idx - 400), idx + 400)), 'タブ前面表示の周辺で新規タブ作成が呼ばれている（禁止事項）')
+    },
+  },
+]
+cases.push(...IMAGE_UPLOAD_TWO_STEP_TEST_CASES)
+
 export const suite = () => runSuite('chromeExtensionManifest', cases)
 
 if (import.meta.url === `file://${process.argv[1]}`) {
