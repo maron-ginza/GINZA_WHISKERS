@@ -421,6 +421,29 @@ const cases: CheckCase[] = [
       assert.ok(/content_integrity_check_failed/.test(bg), 'ハッシュ不一致時の失敗ステージが見つからない')
     },
   },
+  {
+    // 2026-09-14続き7：実機で「executeScriptから結果が返らない」障害が繰り返し
+    // 発生したが、injectedNoteTransfer内で未捕捉例外が起きるとPromiseが
+    // rejectし、蓄積したstagesも含めて一切の診断情報が返らなかった
+    // （原因不明のまま3回失敗し恒久failed化していた）。関数全体を
+    // try/catchで包み、例外発生時も必ずstages＋例外情報を返す構造に
+    // なっていることを確認する。
+    name: '【重大バグ再発防止】injectedNoteTransferは未捕捉例外が起きても必ずstages付きの結果を返す（結果なし＝原因不明を構造的に無くす）',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('function injectedNoteTransfer(item) {')
+      assert.ok(start >= 0, 'injectedNoteTransferの定義が見つからない')
+      const nearby = bg.slice(start, start + 1200)
+      assert.ok(/try\s*\{/.test(nearby), 'injectedNoteTransfer冒頭にtry節が見つからない')
+      assert.ok(/await runInjectedTransfer\(\)/.test(nearby), 'runInjectedTransferの呼び出しが見つからない')
+      assert.ok(/catch\s*\(e\)\s*\{/.test(nearby), 'catch節が見つからない')
+      assert.ok(/uncaught_exception_in_injected_function/.test(nearby), '例外時のステージ名・エラーコードが見つからない')
+      // catch節がstagesを含む結果を返していることを確認する。
+      const catchIdx = nearby.indexOf('catch (e)')
+      const afterCatch = nearby.slice(catchIdx, catchIdx + 500)
+      assert.ok(/stages,?\s*\}/.test(afterCatch), 'catch節の戻り値にstagesが含まれていない')
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)

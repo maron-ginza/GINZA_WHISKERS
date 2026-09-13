@@ -215,9 +215,31 @@ async function findOrOpenNoteEditorTab(preferredUrl) {
  * コピーとして保持する）。
  */
 function injectedNoteTransfer(item) {
+  const stages = []
+  const log = (event, detail) => stages.push({ event, detail: detail ?? null, at: Date.now() })
+
+  // 2026-09-14続き7：実機で「executeScriptから結果が返らない」障害が繰り返し
+  // 発生し、原因を示す診断ログが一切残らなかった（=関数内のどこかで発生した
+  // 未捕捉例外により、Promise全体がrejectし、それまで蓄積したstagesも含めて
+  // 何も返せていなかったと判明）。以後同じ失敗が起きても必ず原因が分かるよう、
+  // 関数全体をtry/catchで包み、例外発生時も「その時点までのstages＋例外
+  // メッセージ・スタック」を必ず返すようにする（return値が無い＝原因不明、
+  // という事態を構造的になくす）。
   return (async () => {
-    const stages = []
-    const log = (event, detail) => stages.push({ event, detail: detail ?? null, at: Date.now() })
+    try {
+      return await runInjectedTransfer()
+    } catch (e) {
+      log('uncaught_exception_in_injected_function', { message: String(e?.message ?? e), stack: String(e?.stack ?? '').slice(0, 2000) })
+      return {
+        status: 'failure',
+        error: `stage=uncaught_exception_in_injected_function: ${String(e?.message ?? e)}`,
+        stack: String(e?.stack ?? '').slice(0, 2000),
+        stages,
+      }
+    }
+  })()
+
+  async function runInjectedTransfer() {
     const mode = item.mode === 'completion' ? 'completion' : 'full'
 
     function sleep(ms) {
@@ -743,7 +765,7 @@ function injectedNoteTransfer(item) {
       integrityOk,
       stages,
     }
-  })()
+  }
 }
 
 /** 対象タブがナビゲーション完了（status:'complete'）になるまで待つ。

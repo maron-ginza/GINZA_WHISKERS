@@ -14,6 +14,63 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き17（🐛 **note下書き自動転記——「executeScriptから結果が
+    返らない」障害の真因を特定・修正：injectedNoteTransfer全体に
+    try/catchが無く、関数内の未捕捉例外でPromiseがreject→診断情報が
+    一切残らない構造的欠陥だった（Project 02 commit・push あり／DB更新
+    なし／note公開なし・Article #67はタイトル・本文・保存は完成のまま、
+    ハッシュタグ・アイコンは自動完了待ち）**）:
+
+    続き16のcommit後もサーバー再起動直後に実機の拡張（旧コードのまま、
+    未リロード）が自動ポーリングし、同一の`execute_script_no_result`で
+    再度3回失敗・`status:'failed'`へ恒久固定されるのを確認した。
+    診断ログ（`.devlogs/night/note-transfer-diagnostic.jsonl`）を見ると、
+    失敗した試行のいずれにも`injected_transfer_started`はおろか
+    `dom_snapshot`すら一切記録されていない——`log(...)`は関数の**最初の
+    実行文**であり、これが1件も届かないのに`stages`だけが失われている
+    ことは、「関数の実行が始まってすぐに何かに失敗し、かつその失敗が
+    どこにも捕捉されず`return`に到達しないままPromiseがrejectしている」
+    ことを意味する。
+
+    **真因**：`injectedNoteTransfer`本体には**関数全体を囲むtry/catchが
+    存在しなかった**。`chrome.scripting.executeScript`は、注入した関数が
+    返すPromiseがrejectすると`results[0].result`を`undefined`のまま返す
+    （executeScript自体は例外を投げない）——このため、関数内のどこかで
+    発生した未捕捉例外（DOM構造の想定外の差異等、具体的な発生箇所は
+    まだ特定できていない）が、`stages`配列に何一つ記録を残さないまま
+    “結果なし”として観測される、という設計上の穴だった。
+
+    **修正**：`injectedNoteTransfer`を、①外側の薄いラッパー
+    （`stages`・`log`を保持しつつ`runInjectedTransfer()`を`try/catch`で
+    包んで呼ぶだけ）と②実処理本体`async function runInjectedTransfer()`
+    （関数宣言のホイスティングにより定義順は問題ない）に分離した。
+    catch節は`log('uncaught_exception_in_injected_function', {message,
+    stack})`のうえで`{status:'failure', error, stack, stages}`を必ず
+    返す——**「結果が返らない＝原因不明」という事態を構造的になくした**。
+    次回以降、同じ失敗が起きても`stages`に蓄積された途中経過と、
+    捕捉した例外のメッセージ・スタックトレースが必ずサーバーへ届く。
+
+    **回帰テスト新規1件**：`injectedNoteTransfer`定義直後にtry/catchが
+    存在し、catch節が`uncaught_exception_in_injected_function`ステージと
+    ともに`stages`を含む結果を返すことを静的に確認。`run-all.ts`
+    **575 passed 0 failed**（574→575）。`tsc --noEmit`0エラー、
+    `node -c`で構文確認。サーバー再起動後、実機の拡張（旧コードのまま）が
+    再度自動ポーリングし`status:'failed'`（3回失敗の累積、`attempts:3`）に
+    なっていたことをアクセスログ・診断ログで確認したうえで、Article #67の
+    stateを正しい事実（タイトル・本文・保存は完成、`needsCompletion:true`）
+    へ復元した。
+
+    **現在の状態・申し送り**：Article #67は`status:'success'`・
+    `needsCompletion:true`を維持。次回拡張が本コミットのコードで動作した
+    ときに初めて、未捕捉例外が起きた場合でも具体的な原因（メッセージ・
+    スタック・途中stages）がログに残る——真の原因（DOM構造上の何が例外を
+    起こしているか）は次回のログで判明する見込み。マロンへ新たなChrome
+    操作は要求していない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き16（🐛🔧 **note下書き自動転記——実機ログから重大バグを特定・
     修正（completion-onlyジョブが3回で恒久failed化）、ハッシュタグ・
     カテゴリー画像は「公開に進む」の次画面（公開設定）で扱う実装へ変更

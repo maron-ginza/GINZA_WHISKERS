@@ -986,6 +986,23 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   Article #67はタイトル・本文・保存は完成のまま、ハッシュタグ・アイコンは
   `needsCompletion:true`で自動完了待ち。マロンへ新たなChrome操作は
   要求していない。詳細は`DECISION_LOG_02.md` 2026-09-13 続き16参照。
+- 2026-09-13: 🐛 **note下書き自動転記——「executeScriptから結果が返らない」
+  障害の真因を特定・修正（Project 02 commit・push あり／DB更新なし）**——
+  続き16のcommit後もサーバー再起動直後に実機の拡張（旧コードのまま）が
+  自動ポーリングし、同一障害で再度3回失敗・恒久`failed`化するのを確認。
+  診断ログに`injected_transfer_started`すら1件も記録されていないことから、
+  **`injectedNoteTransfer`本体に関数全体を囲むtry/catchが存在せず、内部の
+  未捕捉例外でPromiseがrejectし、それまでの`stages`も含め一切の診断情報が
+  失われる構造的欠陥**と判明（`chrome.scripting.executeScript`は注入
+  関数のPromiseがrejectすると`results[0].result`を`undefined`のまま
+  返す）。関数を薄い外側ラッパー（try/catch）＋実処理本体
+  `runInjectedTransfer()`へ分離し、例外発生時も必ず
+  `{status:'failure', error, stack, stages}`を返すよう修正——「結果が
+  返らない＝原因不明」を構造的になくした。回帰テスト新規1件、
+  `run-all.ts` **575 passed 0 failed**。Article #67はタイトル・本文・
+  保存は完成のまま、`needsCompletion:true`で維持。次回、真の例外原因が
+  ログに残る見込み。マロンへ新たなChrome操作は要求していない。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き17参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
