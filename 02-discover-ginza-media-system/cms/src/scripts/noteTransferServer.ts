@@ -42,6 +42,7 @@ import {
   claimInProgress,
   recordSuccess,
   recordFailure,
+  recordCompletionAttempt,
   MAX_TRANSFER_ATTEMPTS,
   type TransferState,
 } from '../lib/night/noteTransferState'
@@ -106,7 +107,7 @@ function findNoteDraftFiles(): { articleId: number; path: string; date: string }
 
 async function findPendingTransfer(
   payload: Payload,
-): Promise<{ articleId: number; draftPath: string } | null> {
+): Promise<{ articleId: number; draftPath: string; mode: 'full' | 'completion'; existingDraftUrl?: string } | null> {
   const state = loadState()
   const files = findNoteDraftFiles()
   const seen = new Set<number>()
@@ -142,7 +143,20 @@ async function findPendingTransfer(
       continue
     }
     if (!article || article.reviewStatus !== 'approved') continue
-    return { articleId: candidateId, draftPath: pathByArticleId.get(candidateId)! }
+
+    // 2026-09-14続き5：既に status='success' な記事が選ばれた場合、それは
+    // needsCompletion=true（タイトル・本文・保存済みだがハッシュタグ／
+    // アイコンが未完了）のcompletion-onlyジョブである（selectNextPendingArticleId
+    // の仕様）。この場合はタイトル・本文の再入力をせず、既存の下書きURLへ
+    // 直接遷移してハッシュタグ・アイコンの付与と再保存だけを行う。
+    const existingEntry = state[String(candidateId)]
+    const mode: 'full' | 'completion' = existingEntry?.status === 'success' ? 'completion' : 'full'
+    return {
+      articleId: candidateId,
+      draftPath: pathByArticleId.get(candidateId)!,
+      mode,
+      existingDraftUrl: mode === 'completion' ? existingEntry?.draftUrl : undefined,
+    }
   }
   return null
 }
@@ -187,14 +201,18 @@ async function main() {
       void (async () => {
         try {
           const pending = await findPendingTransfer(payload)
-          appendDiagnosticLog({ source: 'server', event: 'pending_queried', articleId: pending?.articleId ?? null })
+          appendDiagnosticLog({ source: 'server', event: 'pending_queried', articleId: pending?.articleId ?? null, mode: pending?.mode })
           if (!pending) {
             res.writeHead(200, { 'content-type': 'application/json' })
             res.end(JSON.stringify({ ok: true, item: null }))
             return
           }
           const state = loadState()
-          const prevAttempts = state[String(pending.articleId)]?.attempts ?? 0
+          const existing = state[String(pending.articleId)]
+          // completion-onlyジョブはcompletionAttempts、通常ジョブはattemptsで
+          // カウントする（表示用フィールドの正確性のみに影響、実際のリトライ
+          // 上限判定はnoteTransferState.tsの純粋関数が別途担う）。
+          const prevAttempts = pending.mode === 'completion' ? existing?.completionAttempts ?? 0 : existing?.attempts ?? 0
           saveState(claimInProgress(state, pending.articleId))
 
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
@@ -205,6 +223,8 @@ async function main() {
               ok: true,
               item: {
                 articleId: pending.articleId,
+                mode: pending.mode,
+                existingDraftUrl: pending.existingDraftUrl ?? null,
                 title: draft.title,
                 body: draft.body,
                 hashtags: draft.noteMeta?.hashtags ?? [],
@@ -244,12 +264,36 @@ async function main() {
             res.end(JSON.stringify({ ok: false, error: 'articleId が不正です' }))
             return
           }
-          appendDiagnosticLog({ source: 'server', event: 'result_received', articleId, status: body.status, error: body.error, draftUrl: body.draftUrl })
+          appendDiagnosticLog({
+            source: 'server',
+            event: 'result_received',
+            articleId,
+            status: body.status,
+            error: body.error,
+            draftUrl: body.draftUrl,
+            mode: body.mode,
+            hashtagsDone: body.hashtagsDone,
+            iconDone: body.iconDone,
+          })
           const state = loadState()
+
+          if (body.mode === 'completion') {
+            // 2026-09-14続き5：completion-onlyジョブ（タイトル・本文・初回保存は
+            // 既に成功済み、ハッシュタグ・アイコンのみ再試行）の結果報告。
+            // status='success' かつ hashtagsDone・iconDone がともに真のときのみ
+            // 完了扱いにする——片方でも欠ければneedsCompletionを維持し、
+            // 次回また再試行できるようにする（3回失敗で以後停止）。
+            const succeeded = body.status === 'success' && body.hashtagsDone === true && body.iconDone === true
+            saveState(recordCompletionAttempt(state, articleId, succeeded))
+            res.writeHead(200, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, completionSucceeded: succeeded }))
+            return
+          }
 
           if (body.status === 'success') {
             const draftUrl = typeof body.draftUrl === 'string' ? body.draftUrl : undefined
-            saveState(recordSuccess(state, articleId, draftUrl, new Date().toISOString()))
+            const needsCompletion = !(body.hashtagsDone === true && body.iconDone === true)
+            saveState(recordSuccess(state, articleId, draftUrl, new Date().toISOString(), needsCompletion))
 
             // 注：Articles.publishHistory は書き換えない。既存の channel enum
             // （site/note/x/instagram/newsletter）は「実際の公開」を表す値のみで、
@@ -258,7 +302,7 @@ async function main() {
             // 転記済みの記録はこのサーバーのstate（transfer-state.json）を正とする。
 
             res.writeHead(200, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ ok: true }))
+            res.end(JSON.stringify({ ok: true, needsCompletion }))
             return
           }
 

@@ -9,6 +9,7 @@ import {
   claimInProgress,
   recordSuccess,
   recordFailure,
+  recordCompletionAttempt,
   MAX_TRANSFER_ATTEMPTS,
   type TransferState,
 } from '../night/noteTransferState'
@@ -97,6 +98,63 @@ const cases: CheckCase[] = [
       state = claimInProgress(state, 67)
       state = recordSuccess(state, 68, 'https://editor.note.com/notes/def/edit/', '2026-09-14T00:00:00.000Z')
       assert.equal(selectNextPendingArticleId(state, [67, 68, 69]), 69)
+    },
+  },
+  {
+    // 2026-09-14続き5：実機検証で実際に発生したケース——タイトル・本文・保存は
+    // 成功したがハッシュタグ・アイコンが未完了。needsCompletion=trueで記録した
+    // 場合、success状態のまま completion-only ジョブとして再選出できること。
+    name: '【completion-only】needsCompletion=trueのsuccessはcompletion-onlyジョブとして再選出される',
+    fn: () => {
+      const state = recordSuccess({}, 67, 'https://editor.note.com/notes/n12d7568d8bd2/edit/', '2026-09-14T00:00:00.000Z', true)
+      assert.equal(state['67'].status, 'success', 'タイトル・本文・保存の成功記録は維持される')
+      assert.equal(selectNextPendingArticleId(state, [67]), 67, 'needsCompletion=trueなら再選出される')
+    },
+  },
+  {
+    name: '【completion-only】needsCompletion=falseのsuccessは通常どおり再選出されない',
+    fn: () => {
+      const state = recordSuccess({}, 67, 'https://editor.note.com/notes/abc/edit/', '2026-09-14T00:00:00.000Z', false)
+      assert.equal(selectNextPendingArticleId(state, [67]), null)
+    },
+  },
+  {
+    name: '【completion-only】recordCompletionAttemptが成功すればneedsCompletion=falseになり以後再選出されない',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      assert.equal(selectNextPendingArticleId(state, [67]), 67)
+      state = recordCompletionAttempt(state, 67, true)
+      assert.equal(state['67'].needsCompletion, false)
+      assert.equal(state['67'].status, 'success', 'success状態・draftUrlは維持される')
+      assert.equal(state['67'].draftUrl, 'https://editor.note.com/notes/n1/edit/')
+      assert.equal(selectNextPendingArticleId(state, [67]), null, '完了後は再選出されない')
+    },
+  },
+  {
+    // 2026-09-14続き5で実機テスト中に発見したバグの再発防止：claimInProgressで
+    // status='in_progress'化された後、recordCompletionAttemptがstatusを
+    // 'success'へ戻さないと、以後selectNextPendingArticleIdが恒久的に
+    // in_progress判定で除外し続けてしまう（inFlight永久ブロックと同種のバグ）。
+    name: '【重要バグ再発防止】claimInProgress後のrecordCompletionAttemptはstatusをsuccessへ戻し、in_progressのまま固着させない',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      state = claimInProgress(state, 67) // /pending取得時と同じ操作
+      assert.equal(state['67'].status, 'in_progress')
+      state = recordCompletionAttempt(state, 67, false) // 失敗を報告
+      assert.equal(state['67'].status, 'success', 'in_progressのまま固着していないこと')
+      assert.equal(selectNextPendingArticleId(state, [67]), 67, '再試行対象として選出できること（in_progressのまま固着していれば選出されない）')
+    },
+  },
+  {
+    name: '【completion-only・3回上限】completion試行が3回失敗すると以後再選出されない',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      for (let i = 1; i <= MAX_TRANSFER_ATTEMPTS; i++) {
+        state = recordCompletionAttempt(state, 67, false)
+      }
+      assert.equal(state['67'].completionAttempts, MAX_TRANSFER_ATTEMPTS)
+      assert.equal(selectNextPendingArticleId(state, [67]), null, '3回失敗後はcompletion-onlyとしても再選出されない')
+      assert.equal(state['67'].status, 'success', '初回の成功記録（タイトル・本文・保存）はcompletion失敗によって覆らない')
     },
   },
 ]

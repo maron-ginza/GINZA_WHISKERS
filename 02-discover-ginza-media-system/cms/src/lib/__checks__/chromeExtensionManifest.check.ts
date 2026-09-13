@@ -315,6 +315,48 @@ const cases: CheckCase[] = [
       assert.ok(evalIdx < firstListenerIdx, 'service_worker_evaluated が他のリスナー登録より後ろにある（最初の証跡として機能しない）')
     },
   },
+  {
+    // 2026-09-14続き5：実機検証でタイトル・本文・保存は成功したがハッシュタグ・
+    // アイコンが未完了だった（タグ入力欄・ファイル入力欄が最初のDOMに存在
+    // しなかった）。クリックして出現させる「reveal」ロジックが実装されている
+    // ことを確認する。
+    name: '【ハッシュタグ・アイコンのreveal-click】background.jsが最初に見つからない場合にクリックして出現を試みる',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function findClickableByLabel/.test(bg), 'findClickableByLabel（ラベル一致のクリック対象探索）が見つからない')
+      assert.ok(/async function revealAndFindHashtagInput/.test(bg), 'revealAndFindHashtagInputが見つからない')
+      assert.ok(/async function revealAndFindFileInput/.test(bg), 'revealAndFindFileInputが見つからない')
+      // findClickableByLabel自体も「公開」を含む要素は除外すること（安全境界の踏襲）。
+      const start = bg.indexOf('function findClickableByLabel')
+      const end = bg.indexOf('async function revealAndFindHashtagInput')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(\s*\/公開\/\.test\(label\)\)\s*return\s*false/.test(body), 'findClickableByLabel内に「公開」除外ガードが見つからない')
+    },
+  },
+  {
+    name: '【completion-onlyモード】injectedNoteTransferがmode==="completion"でタイトル・本文の再入力をスキップする',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/mode === 'completion'/.test(bg), "mode==='completion' の分岐が見つからない")
+      assert.ok(/completion_sanity_check/.test(bg), 'completion-onlyモードでのタイトル/本文サニティチェックが見つからない')
+    },
+  },
+  {
+    name: '【completion-only配線】checkPendingがpreferredUrl（既存下書き）を優先してタブを探す',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/preferredUrl/.test(bg), 'preferredUrl（既存下書きURLの優先一致）が見つからない')
+      assert.ok(/existingDraftUrl/.test(bg), 'item.existingDraftUrl の参照が見つからない')
+    },
+  },
+  {
+    name: '【診断ログ配線】noteTransferServer.tsがcompletion-onlyジョブの記録関数を使用している',
+    fn: () => {
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(server.includes('recordCompletionAttempt'), 'recordCompletionAttemptの利用が見つからない')
+      assert.ok(server.includes("mode === 'completion'") || server.includes('mode==="completion"'), "mode==='completion' の分岐が見つからない")
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)

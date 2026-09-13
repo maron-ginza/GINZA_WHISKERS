@@ -156,12 +156,24 @@ async function setInFlight(articleId) {
  * 既に開いているタブへは自動的に再注入されないため（reloadで新しいnavigation
  * を発生させ、更新後のmatchesでcontent.jsを注入させる）。
  */
-async function findOrOpenNoteEditorTab() {
+async function findOrOpenNoteEditorTab(preferredUrl) {
   try {
     const tabs = await chrome.tabs.query({})
     const candidates = tabs.filter((t) => isNoteEditorTargetUrl(t.url))
-    logToServer('tabs_queried', { totalTabs: tabs.length, candidateCount: candidates.length, candidateUrls: candidates.map((t) => t.url) })
+    logToServer('tabs_queried', { totalTabs: tabs.length, candidateCount: candidates.length, candidateUrls: candidates.map((t) => t.url), preferredUrl: preferredUrl ?? null })
     if (candidates.length > 0) {
+      // 2026-09-14続き5：completion-onlyジョブ（既存の下書きへ戻ってハッシュタグ・
+      // アイコンだけ追加する）の場合、preferredUrl（既存のdraftUrl）と完全一致する
+      // タブを最優先する——同時に複数のnote編集タブが開いていても、別記事の
+      // タブを誤って再利用しないため。
+      if (preferredUrl) {
+        const exact = candidates.find((t) => t.url === preferredUrl)
+        if (exact) {
+          await chrome.tabs.reload(exact.id)
+          logToServer('existing_tab_reloaded', { tabId: exact.id, url: exact.url, matchedPreferredUrl: true })
+          return exact
+        }
+      }
       // editor.note.com（実際の編集画面）を優先し、note.com/notes/new（入口）は次点。
       candidates.sort((a, b) => {
         const score = (t) => (new URL(t.url).hostname === 'editor.note.com' ? 0 : 1)
@@ -169,15 +181,18 @@ async function findOrOpenNoteEditorTab() {
       })
       const target = candidates[0]
       await chrome.tabs.reload(target.id)
-      logToServer('existing_tab_reloaded', { tabId: target.id, url: target.url })
+      logToServer('existing_tab_reloaded', { tabId: target.id, url: target.url, matchedPreferredUrl: false })
       return target
     }
   } catch (e) {
     console.error('[note-transfer] 既存タブの検索に失敗、新規タブを開きます', e)
     logToServer('tab_query_failed', { error: String(e?.message ?? e) })
   }
-  const created = await chrome.tabs.create({ url: NOTE_NEW_DRAFT_URL, active: false })
-  logToServer('new_tab_created', { tabId: created.id, url: NOTE_NEW_DRAFT_URL })
+  // completion-onlyジョブで既存タブが見つからない場合は、preferredUrl（実在する
+  // 下書きの編集URL）を直接開く——新規下書きを作らない。
+  const openUrl = preferredUrl || NOTE_NEW_DRAFT_URL
+  const created = await chrome.tabs.create({ url: openUrl, active: false })
+  logToServer('new_tab_created', { tabId: created.id, url: openUrl })
   return created
 }
 
@@ -203,6 +218,7 @@ function injectedNoteTransfer(item) {
   return (async () => {
     const stages = []
     const log = (event, detail) => stages.push({ event, detail: detail ?? null, at: Date.now() })
+    const mode = item.mode === 'completion' ? 'completion' : 'full'
 
     function sleep(ms) {
       return new Promise((r) => setTimeout(r, ms))
@@ -291,9 +307,57 @@ function injectedNoteTransfer(item) {
       return { el: sorted[0], kind: fieldKind(sorted[0]) }
     }
     function findHashtagInput() {
-      return deepQuerySelectorAll('input[type="text"], input:not([type])').find(
+      // 2026-09-14続き5：実機検証で input[type=text] には見つからなかった
+      // （note.comの実DOMではタグ欄がinputではない可能性が高い）。
+      // contenteditable/role=textbox も対象に含めて広く探す。
+      const byInput = deepQuerySelectorAll('input[type="text"], input:not([type])').find(
         (el) => isVisible(el) && /タグ|ハッシュタグ|tag/i.test(placeholderLike(el)),
       )
+      if (byInput) return byInput
+      return deepQuerySelectorAll('[contenteditable="true"], [role="textbox"]').find(
+        (el) => isVisible(el) && /タグ|ハッシュタグ|tag/i.test(placeholderLike(el)),
+      )
+    }
+    /** 「公開」を含まない、可視のクリック可能要素を aria-label／title／表示テキストの
+     * いずれかがパターンに一致するもので探す（button/[role=button]/aだけでなく、
+     * SVGアイコンボタン等 [aria-label] を持つ任意要素も対象にする）。
+     * 2026-09-14続き5新設：ハッシュタグ・画像UIが最初のDOMに存在せず、ボタンを
+     * クリックして初めて出現する可能性に対応するため。 */
+    function findClickableByLabel(patterns) {
+      const candidates = deepQuerySelectorAll('button, [role="button"], a, [aria-label], [title]')
+      return candidates.find((el) => {
+        if (!isVisible(el)) return false
+        const label = (el.getAttribute('aria-label') || el.getAttribute('title') || visibleText(el) || '').trim()
+        if (!label) return false
+        if (/公開/.test(label)) return false // 絶対除外
+        return patterns.some((p) => p.test(label))
+      })
+    }
+    /** タグ入力欄が最初から見えていればそれを返す。無ければ「タグ」関連の
+     * クリック可能要素を1つクリックして出現を待ち、再探索する（見つからなければ
+     * null）。 */
+    async function revealAndFindHashtagInput() {
+      let input = findHashtagInput()
+      if (input) return { input, revealed: false }
+      const trigger = findClickableByLabel([/タグ/i, /ハッシュタグ/i, /tag/i])
+      if (!trigger) return { input: null, revealed: false, triggerFound: false }
+      trigger.click()
+      await sleep(600)
+      input = findHashtagInput()
+      return { input, revealed: !!input, triggerFound: true, triggerLabel: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) }
+    }
+    /** ファイル入力（画像アップロード）が最初から見えていればそれを返す。無ければ
+     * 「画像／サムネイル／アイキャッチ／カバー」関連のクリック可能要素をクリック
+     * して出現を待ち、再探索する。 */
+    async function revealAndFindFileInput() {
+      let fi = deepQuerySelectorAll('input[type="file"]')[0]
+      if (fi) return { fi, revealed: false }
+      const trigger = findClickableByLabel([/画像/i, /サムネイル/i, /アイキャッチ/i, /カバー/i, /image/i])
+      if (!trigger) return { fi: null, revealed: false, triggerFound: false }
+      trigger.click()
+      await sleep(600)
+      fi = deepQuerySelectorAll('input[type="file"]')[0]
+      return { fi, revealed: !!fi, triggerFound: true, triggerLabel: (trigger.getAttribute('aria-label') || visibleText(trigger) || '').slice(0, 30) }
     }
     function findSaveDraftButton() {
       const candidates = deepQuerySelectorAll('button, [role="button"], a')
@@ -362,8 +426,13 @@ function injectedNoteTransfer(item) {
     }
     async function attachCategoryIcon(iconInfo) {
       if (!iconInfo || !iconInfo.url) return { attached: false, reason: 'カテゴリーアイコン情報なし' }
-      const fileInput = deepQuerySelectorAll('input[type="file"]')[0]
-      if (!fileInput) return { attached: false, reason: 'ファイル入力要素が見つからない' }
+      const { fi: fileInput, revealed, triggerFound, triggerLabel } = await revealAndFindFileInput()
+      if (!fileInput) {
+        return {
+          attached: false,
+          reason: triggerFound ? 'クリックしても画像入力欄が出現しなかった' : 'ファイル入力要素・トリガー要素とも見つからない',
+        }
+      }
       try {
         const res = await fetch(iconInfo.url)
         const blob = await res.blob()
@@ -372,9 +441,9 @@ function injectedNoteTransfer(item) {
         dt.items.add(file)
         fileInput.files = dt.files
         fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-        return { attached: true }
+        return { attached: true, revealed, triggerLabel }
       } catch (e) {
-        return { attached: false, reason: String(e?.message ?? e) }
+        return { attached: false, reason: String(e?.message ?? e), revealed, triggerLabel }
       }
     }
     function domDebugSnapshot() {
@@ -388,10 +457,17 @@ function injectedNoteTransfer(item) {
       }))
       const textareas = deepQuerySelectorAll('textarea').filter(isVisible).map((el) => ({ placeholder: el.getAttribute('placeholder') }))
       const inputs = deepQuerySelectorAll('input').filter(isVisible).map((el) => ({ type: el.getAttribute('type'), placeholder: el.getAttribute('placeholder') }))
-      return { buttons, editableSummary, textareas, inputs, title: document.title, bodyChildCount: document.body ? document.body.children.length : 0 }
+      // 2026-09-14続き5：aria-label／title付きの全可視要素を追加記録する
+      // （ハッシュタグ・画像UIの実際のクリック対象を次回特定するための手がかり）。
+      const labeled = deepQuerySelectorAll('[aria-label], [title]')
+        .filter(isVisible)
+        .map((el) => ({ tag: el.tagName.toLowerCase(), ariaLabel: el.getAttribute('aria-label'), title: el.getAttribute('title') }))
+        .filter((x) => x.ariaLabel || x.title)
+        .slice(0, 40)
+      return { buttons, editableSummary, textareas, inputs, labeled, title: document.title, bodyChildCount: document.body ? document.body.children.length : 0 }
     }
 
-    log('injected_transfer_started', { url: location.href, readyState: document.readyState })
+    log('injected_transfer_started', { url: location.href, readyState: document.readyState, mode })
     await waitForPageLoad(15000)
     log('page_load_state', { readyState: document.readyState })
 
@@ -403,48 +479,63 @@ function injectedNoteTransfer(item) {
     }
     await sleep(500)
 
-    const titleField = findTitleField()
-    if (!titleField) {
-      return { status: 'failure', error: 'stage=title_field_not_found', debug: domDebugSnapshot(), stages }
-    }
-    log('title_field_found', { kind: titleField.kind, reason: titleField.reason, tag: titleField.el.tagName })
+    let titleField = findTitleField()
+    let bodyField = null
 
-    if (titleField.kind === 'textarea' || titleField.kind === 'input') {
-      setNativeValue(titleField.el, item.title)
+    if (mode === 'full') {
+      if (!titleField) {
+        return { status: 'failure', error: 'stage=title_field_not_found', debug: domDebugSnapshot(), stages }
+      }
+      log('title_field_found', { kind: titleField.kind, reason: titleField.reason, tag: titleField.el.tagName })
+
+      if (titleField.kind === 'textarea' || titleField.kind === 'input') {
+        setNativeValue(titleField.el, item.title)
+      } else {
+        titleField.el.focus()
+        document.execCommand('selectAll', false)
+        document.execCommand('insertText', false, item.title)
+        dispatchInputLikeEvents(titleField.el, item.title)
+      }
+      const titleReadback = await verifyWritten(titleField)
+      log('title_write_verify', { length: titleReadback.length, sample: titleReadback.slice(0, 30) })
+      if (titleReadback.length === 0) {
+        return { status: 'failure', error: 'stage=title_write_not_verified: タイトル欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
+      }
+
+      bodyField = findBodyField(titleField.el)
+      if (!bodyField) {
+        return { status: 'failure', error: 'stage=body_field_not_found', debug: domDebugSnapshot(), stages }
+      }
+      log('body_field_found', { kind: bodyField.kind, tag: bodyField.el.tagName })
+
+      await setContentEditableParagraphs(bodyField.el, item.body)
+      const bodyReadback = await verifyWritten(bodyField)
+      log('body_write_verify', { length: bodyReadback.length, sample: bodyReadback.slice(0, 30) })
+      if (bodyReadback.length === 0) {
+        return { status: 'failure', error: 'stage=body_write_not_verified: 本文欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
+      }
     } else {
-      titleField.el.focus()
-      document.execCommand('selectAll', false)
-      document.execCommand('insertText', false, item.title)
-      dispatchInputLikeEvents(titleField.el, item.title)
-    }
-    const titleReadback = await verifyWritten(titleField)
-    log('title_write_verify', { length: titleReadback.length, sample: titleReadback.slice(0, 30) })
-    if (titleReadback.length === 0) {
-      return { status: 'failure', error: 'stage=title_write_not_verified: タイトル欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
+      // completion-onlyジョブ：タイトル・本文は既に保存済みのはず——再入力せず、
+      // 既存の内容が0文字でないことだけ確認する（sanity check、書き換えない）。
+      bodyField = titleField ? findBodyField(titleField.el) : findBodyField(null)
+      const titleSanity = readBackText(titleField)
+      const bodySanity = readBackText(bodyField)
+      log('completion_sanity_check', { titleLength: titleSanity.length, bodyLength: bodySanity.length })
     }
 
-    const bodyField = findBodyField(titleField.el)
-    if (!bodyField) {
-      return { status: 'failure', error: 'stage=body_field_not_found', debug: domDebugSnapshot(), stages }
-    }
-    log('body_field_found', { kind: bodyField.kind, tag: bodyField.el.tagName })
-
-    await setContentEditableParagraphs(bodyField.el, item.body)
-    const bodyReadback = await verifyWritten(bodyField)
-    log('body_write_verify', { length: bodyReadback.length, sample: bodyReadback.slice(0, 30) })
-    if (bodyReadback.length === 0) {
-      return { status: 'failure', error: 'stage=body_write_not_verified: 本文欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
-    }
-
+    // --- ハッシュタグ（reveal-click対応） ---
     let hashtagResult = { attempted: false }
-    const hashtagInput = findHashtagInput()
+    const { input: hashtagInput, revealed: hashtagRevealed, triggerFound: hashtagTriggerFound, triggerLabel: hashtagTriggerLabel } =
+      await revealAndFindHashtagInput()
     if (hashtagInput) {
-      hashtagResult.attempted = true
+      hashtagResult = { attempted: true, revealed: hashtagRevealed, triggerLabel: hashtagTriggerLabel }
       for (const tag of item.hashtags || []) {
         setNativeValue(hashtagInput, tag.replace(/^#/, ''))
         pressEnter(hashtagInput)
         await sleep(200)
       }
+    } else {
+      hashtagResult = { attempted: false, revealed: false, triggerFound: hashtagTriggerFound === true }
     }
     log('hashtags_done', hashtagResult)
 
@@ -467,18 +558,23 @@ function injectedNoteTransfer(item) {
     saveBtn.click()
     await sleep(2000)
 
-    const finalTitle = readBackText(titleField)
-    const finalBody = readBackText(bodyField)
-    log('post_save_verify', { titleLength: finalTitle.length, bodyLength: finalBody.length })
-    if (finalTitle.length === 0 || finalBody.length === 0) {
-      return {
-        status: 'failure',
-        error: `stage=post_save_verify_failed: 保存操作後にタイトル(${finalTitle.length}文字)または本文(${finalBody.length}文字)が0文字になりました`,
-        stages,
+    const hashtagsDone = hashtagResult.attempted === true
+    const iconDone = iconResult.attached === true
+
+    if (mode === 'full') {
+      const finalTitle = readBackText(titleField)
+      const finalBody = readBackText(bodyField)
+      log('post_save_verify', { titleLength: finalTitle.length, bodyLength: finalBody.length })
+      if (finalTitle.length === 0 || finalBody.length === 0) {
+        return {
+          status: 'failure',
+          error: `stage=post_save_verify_failed: 保存操作後にタイトル(${finalTitle.length}文字)または本文(${finalBody.length}文字)が0文字になりました`,
+          stages,
+        }
       }
     }
 
-    return { status: 'success', draftUrl: location.href, hashtagResult, iconResult, stages }
+    return { status: 'success', draftUrl: location.href, hashtagResult, iconResult, hashtagsDone, iconDone, stages }
   })()
 }
 
@@ -527,9 +623,14 @@ async function runTransferViaExecuteScript(tabId, item) {
       logToServer(s.event, { ...s.detail, tabId, via: 'executeScript' })
     }
     if (result.status === 'success') {
-      await reportResult(item.articleId, 'success', { draftUrl: result.draftUrl })
+      await reportResult(item.articleId, 'success', {
+        draftUrl: result.draftUrl,
+        mode: item.mode,
+        hashtagsDone: result.hashtagsDone,
+        iconDone: result.iconDone,
+      })
     } else {
-      await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug })
+      await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug, mode: item.mode })
     }
   } catch (e) {
     logToServer('execute_script_error', { tabId, error: String(e?.message ?? e) })
@@ -568,10 +669,14 @@ async function checkPending() {
     if (!data.ok || !data.item) return
 
     const item = data.item
-    logToServer('pending_item_claimed', { articleId: item.articleId })
+    logToServer('pending_item_claimed', { articleId: item.articleId, mode: item.mode })
     await setInFlight(item.articleId)
 
-    const tab = await findOrOpenNoteEditorTab()
+    // 2026-09-14続き5：completion-onlyジョブ（既存の下書きのハッシュタグ・
+    // アイコンだけ追加する）の場合は、既存の下書きURLへ優先的に戻る
+    // （新規下書きを作らない・別記事のタブを誤って使わない）。
+    const preferredUrl = item.mode === 'completion' ? item.existingDraftUrl : undefined
+    const tab = await findOrOpenNoteEditorTab(preferredUrl)
     // 2026-09-14続き3：content_scriptsの宣言的注入（ready/startメッセージ往復）
     // だけに依存せず、chrome.scripting.executeScriptで対象タブへ確実に注入する
     // 経路を主経路とする（マロン指示）。DOM読み込み完了を待ってから注入する。

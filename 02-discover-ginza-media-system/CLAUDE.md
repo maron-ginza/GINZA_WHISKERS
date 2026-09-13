@@ -944,6 +944,28 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   ボタン除外ガードは維持）③`chrome.tabs.onUpdated`による独立トリガー経路を
   追加。回帰テスト新規4件、`run-all.ts` **560 passed 0 failed**。Article #67は
   転記待ちを維持。詳細は`DECISION_LOG_02.md` 2026-09-13 続き14参照。
+- 2026-09-13: 🎉 **note下書き自動転記——実機検証3回目でタイトル・本文の自動入力・
+  下書き保存に成功（executeScript経路）。ハッシュタグ・アイコンは未完了と
+  判明しcompletion-onlyジョブ機構を新設（Project 02 commit・push あり／
+  DB更新なし）**——実測ログでタイトル48文字・本文706文字・保存後URL
+  （`https://editor.note.com/notes/n12d7568d8bd2/edit/`）一致・二重防止も
+  確認。ハッシュタグ4個・カテゴリーアイコンは、UIが初期DOMに存在せず何らかの
+  クリックで初めて出現する構造のため未完了と判明——`findClickableByLabel`＋
+  `revealAndFindHashtagInput`／`revealAndFindFileInput`（「公開」除外は維持）
+  を新設。あわせて、既に成功済みの記事へ「ハッシュタグ・アイコンだけを
+  再試行する」completion-onlyジョブを`noteTransferState.ts`
+  （`needsCompletion`／`recordCompletionAttempt`）と
+  `noteTransferServer.ts`（`mode:'completion'`）へ実装。**実装中に
+  自ら発見・修正した重大バグ**：`recordCompletionAttempt`がstatusを
+  明示的に'success'へ戻さず、続き13の「inFlight永久ブロック」と同種の
+  恒久固着バグになっていた——専用回帰テストで再発防止済み。回帰テスト
+  新規9件、`run-all.ts` **569 passed 0 failed**。**現在**：Article #67は
+  タイトル・本文・保存は完成（恒久）、ハッシュタグ・アイコンは
+  `needsCompletion:true`で自動完了待ち——次回拡張が新コードで動作した際に
+  自動的に再試行される（新たなChrome操作は要求していない）。
+  **完成／未完成の報告：未完成**（ハッシュタグ4個・カテゴリーアイコンが
+  未完了のため）。公開操作は行っていない。詳細は`DECISION_LOG_02.md`
+  2026-09-13 続き15参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

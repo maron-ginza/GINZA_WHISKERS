@@ -14,6 +14,98 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き15（🎉 **note下書き自動転記——実機検証3回目でタイトル・本文の
+    自動入力・下書き保存に成功（executeScript経路）。実測ログでタイトル48文字・
+    本文706文字・保存後URL一致を確認。ハッシュタグ4個・カテゴリーアイコンは
+    未完了と判明し、reveal-click探索の強化とcompletion-onlyジョブ機構を新設
+    （Project 02 commit・push あり／DB更新なし／note公開なし・Article #67は
+    転記済み〈タイトル・本文・保存〉かつハッシュタグ・アイコンは自動完了待ち）**）:
+
+    マロン報告：実ブラウザでArticle #67のタイトルと本文655文字の自動入力を
+    確認。2026-09-13 17:50以降のtransfer-state・診断ログ・アクセスログを
+    実測値で10項目報告し、未完了があれば公開せず自動処理で完了させ、
+    Chrome再操作は求めないこと、との指示。
+
+    **実測結果（`.devlogs/night/note-transfer-diagnostic.jsonl`・
+    `transfer-state.json`・アクセスログより）**：
+
+    | # | 項目 | 実測結果 |
+    |---|---|---|
+    | 1 | service_worker起動 | ✅ `service_worker_evaluated` 08:52:50.628Z |
+    | 2 | /pending取得 | ✅ `pending_item_claimed articleId:67` 08:52:50.659Z |
+    | 3 | 注入経路 | ✅ executeScript経由（`injected_transfer_started via:executeScript`） |
+    | 4 | タイトル読み戻し | ✅ 48文字 |
+    | 5 | 本文読み戻し | ✅ 706文字 |
+    | 6 | 下書き保存ボタン実行 | ✅ クリック実行、`post_save_verify`で48／706文字を再確認 |
+    | 7 | 保存成功状態とURL | ✅ `https://editor.note.com/notes/n12d7568d8bd2/edit/`（マロン確認URLと一致） |
+    | 8 | ハッシュタグ4個 | ❌ 未完了（`hashtags_done attempted:false`） |
+    | 9 | カテゴリー設定 | ❌ 未完了（`icon_attach_done attached:false reason:'ファイル入力要素が見つからない'`） |
+    | 10 | 転記済み・重複防止 | ✅ `transfer-state.json`にsuccess記録、以後の全ポーリングで`/pending`はnullを返す |
+
+    `dom_snapshot`（保存前のDOM）は`textarea[placeholder="記事タイトル"]`・
+    `div[contenteditable]`・ボタン3つ（下書き保存／公開に進む／見出し）のみで、
+    タグ入力欄・画像ファイル入力欄はこの時点で存在しなかった。
+
+    **原因**：タグ・画像のUIはページ初期表示時のDOMに存在せず、何らかの
+    トリガー（アイコンクリック等）で初めて出現する構造とみられる。旧ロジックは
+    `input[type=text]`・`input[type=file]`を単純探索するだけで、この
+    「クリックして出現させる」操作を行っていなかった。
+
+    **修正内容**：①`findClickableByLabel`（aria-label／title／表示テキストが
+    「タグ」「画像」等のパターンに一致し「公開」を含まない可視要素を探す、
+    button/[role=button]/a以外のaria-label付き任意要素も対象）を新設。
+    ②`revealAndFindHashtagInput`／`revealAndFindFileInput`——まず単純探索、
+    見つからなければトリガー要素をクリックして再探索する2段構え。
+    `findHashtagInput`もcontenteditable/role=textboxまで対象を拡大。
+    ③`domDebugSnapshot`にaria-label／title付き全可視要素の一覧を追加
+    （次回失敗時の手がかりを増やす）。
+
+    **completion-onlyジョブ機構の新設**：タイトル・本文・保存が既に成功した
+    Article #67に対し、同じ`/pending`ポーリングの仕組みで「ハッシュタグ・
+    アイコンだけを再試行する」ジョブを自動生成できるようにした。
+    `noteTransferState.ts`の`TransferStateEntry`へ`needsCompletion`・
+    `completionAttempts`を追加、`selectNextPendingArticleId`はstatus='success'
+    でも`needsCompletion=true`かつ`completionAttempts<3`なら再選出する。
+    新規`recordCompletionAttempt`（成功時`needsCompletion=false`、失敗時
+    `completionAttempts`加算・3回で打ち止め）。`noteTransferServer.ts`の
+    `/pending`は該当記事を`mode:'completion'`＋既存`draftUrl`付きで返し、
+    `background.js`はこの場合タイトル・本文を再入力せず（`completion_sanity_check`
+    でサニティ確認のみ）、既存下書きURLへ優先的に戻ってハッシュタグ・
+    アイコンの追加と再保存だけを行う。`/result`はmode別に処理を分岐する。
+
+    **実装中に発見・修正した重大バグ（curlでの単体検証時に自ら発見）**：
+    `recordCompletionAttempt`が`{...prev, needsCompletion, completionAttempts}`と
+    スプレッドするだけで`status`を明示的に上書きしておらず、`claimInProgress`で
+    `'in_progress'`化された状態のまま**永久に固着する**——これは続き13で修正した
+    「inFlight永久ブロック」とまったく同種のバグだった。`status:'success'`を
+    明示的に設定するよう修正し、専用の再発防止回帰テストを追加した。
+
+    **回帰テスト新規9件**（`chromeExtensionManifest.check.ts`5件＋
+    `noteTransferState.check.ts`4件、うち1件は上記バグの再発防止）。
+    `run-all.ts` **569 passed 0 failed**（560→569）。`tsc --noEmit`0エラー、
+    `node -c`で構文確認。サーバーを再起動しcurlで
+    completion-onlyジョブのpending取得（`mode:'completion'`・既存draftUrl）・
+    失敗report→再試行対象への復帰・3回上限・完全成功後の非再選出を
+    すべて実データ相当のシナリオで再確認。
+
+    **現在の状態**：`transfer-state.json`のArticle #67は
+    `status:'success'`（タイトル・本文・保存は完了・恒久）・
+    `needsCompletion:true`（ハッシュタグ・アイコンは未完了）で維持。
+    次回、拡張が新しいコードで動作したときに自動的にcompletion-onlyジョブとして
+    再選出され、ハッシュタグ4個・カテゴリーアイコンの付与を試みる
+    （公開ボタンには一切触れない）。**マロンへ新たなChrome操作は要求していない**
+    ——完了の実行には拡張が新しいbackground.jsのコードで動作している必要が
+    あるが、これは「次にマロンが何らかの理由で拡張を再読み込みするとき」に
+    自然に反映される事実であり、今回このために追加の操作を依頼してはいない。
+
+    **完成／未完成の明確な報告**：**未完成**（タイトル・本文・下書き保存・
+    重複防止は完成、ハッシュタグ4個・カテゴリーアイコンは未完成のまま）。
+    公開操作は行っていない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き14（🔍 **note下書き自動転記——実機検証2回目失敗の調査：
     実ログ（アクセスログ・診断ログ）は拡張からのリクエストが「一件も届いて
     いない」ことを示し、SW起動自体が疑わしいと判定。content_scripts宣言的
