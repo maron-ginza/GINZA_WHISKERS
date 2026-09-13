@@ -435,6 +435,168 @@
         return src.startsWith('blob:') || src.startsWith('data:') || (fileNameHint && src.includes(fileNameHint))
       })
     }
+    /**
+     * 2026-09-14続き32（マロン指示）：「類似するfile inputが複数ある場合は、
+     * 画像アップロードUI配下かつaccept=imageの入力欄だけを使用してください」。
+     * 候補が1つならそれをそのまま使う。複数ある場合はaccept属性が画像を
+     * 示すものへ絞り込み、さらに祖先に画像アップロード関連のラベルを持つ
+     * ものを優先する（推測で無関係な入力欄を使わない）。
+     */
+    function findImageFileInput() {
+      const all = deepQuerySelectorAll('input[type="file"]')
+      if (all.length <= 1) return all[0] || null
+      const imageAccepting = all.filter((el) => {
+        const accept = (el.getAttribute('accept') || '').toLowerCase()
+        return accept === '' || accept.includes('image')
+      })
+      const candidates = imageAccepting.length > 0 ? imageAccepting : all
+      if (candidates.length === 1) return candidates[0]
+      const nearUploadUi = candidates.find((el) => {
+        let node = el.parentElement
+        for (let i = 0; i < 6 && node; i++) {
+          const label = ((node.getAttribute && node.getAttribute('aria-label')) || visibleText(node) || '').slice(0, 200)
+          if (/画像|サムネイル|アイキャッチ|カバー|image/i.test(label)) return true
+          node = node.parentElement
+        }
+        return false
+      })
+      return nearUploadUi || candidates[0]
+    }
+    /** 選択したfile input自体の診断情報（マロン指示：「使用したfile inputの
+     * accept・name・outerHTML・表示状態」「input.files.length」「files[0]の
+     * name・type・size」）。 */
+    function describeFileInput(el) {
+      if (!el) return null
+      const f0 = el.files && el.files.length > 0 ? el.files[0] : null
+      return {
+        accept: el.getAttribute('accept'),
+        name: el.getAttribute('name'),
+        outerHTML: (el.outerHTML || '').slice(0, 500),
+        visible: isVisible(el),
+        filesLength: el.files ? el.files.length : 0,
+        file0Name: f0 ? f0.name : null,
+        file0Type: f0 ? f0.type : null,
+        file0Size: f0 ? f0.size : null,
+      }
+    }
+    /** 指定ノード配下のDOM変化をMutationObserverで一定時間観測して要約する
+     * （マロン指示：「発火後のDOM Mutation」を記録）。失敗しても例外を
+     * 投げず、必ずms経過後に解決する（ハング防止）。 */
+    function observeMutationsFor(targetNode, ms) {
+      return new Promise((resolvePromise) => {
+        const collected = []
+        let observer
+        try {
+          observer = new MutationObserver((mutations) => {
+            for (const m of mutations) {
+              if (collected.length >= 50) break
+              collected.push({
+                type: m.type,
+                addedNodes: m.addedNodes.length,
+                removedNodes: m.removedNodes.length,
+                attributeName: m.attributeName || null,
+                targetTag: m.target && m.target.tagName ? m.target.tagName.toLowerCase() : null,
+              })
+            }
+          })
+          observer.observe(targetNode || document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['src', 'style'],
+          })
+        } catch (e) {
+          resolvePromise({ error: String(e?.message ?? e), mutations: [] })
+          return
+        }
+        setTimeout(() => {
+          try {
+            observer.disconnect()
+          } catch (e) {
+            // 何もできない。
+          }
+          resolvePromise({ mutations: collected })
+        }, ms)
+      })
+    }
+    /** 可視要素のCSS background-imageのうちblob:/data:を含むものを列挙する
+     * （マロン指示：「CSS background-image」も画像反映の判定材料にする）。 */
+    function collectBackgroundImageUrls() {
+      const out = []
+      const elements = deepQuerySelectorAll('*', document, { budgetMs: 3000 })
+      for (const el of elements) {
+        if (!isVisible(el)) continue
+        let bg = ''
+        try {
+          bg = window.getComputedStyle(el).backgroundImage
+        } catch (e) {
+          continue
+        }
+        if (bg && bg !== 'none' && (bg.includes('blob:') || bg.includes('data:'))) out.push(bg)
+      }
+      return out
+    }
+    /**
+     * 2026-09-14続き32（マロン指示）：「プレビュー判定を『新しいblob img』
+     * だけに限定せず、noteの実DOMに合わせてください」——新規blob/data画像
+     * （<img>のsrc）・新規CSS background-image（blob:/data:）・canvas要素数
+     * の増加・アップロード完了/エラーを示すテキスト、のいずれかを検出したら
+     * 「反映された」とみなす。最大15秒待機し、確認できなければタイムアウト
+     * として扱う（要素が見つからない場合も待ち続けない）。
+     */
+    async function verifyImageReflected(timeoutMs) {
+      const beforeImgSrcs = new Set(
+        deepQuerySelectorAll('img', document, { budgetMs: 5000 })
+          .map((el) => el.getAttribute('src'))
+          .filter((s) => s && (s.startsWith('blob:') || s.startsWith('data:'))),
+      )
+      const beforeBgUrls = new Set(collectBackgroundImageUrls())
+      const beforeCanvasCount = deepQuerySelectorAll('canvas').length
+
+      const mutationPromise = observeMutationsFor(document.body, timeoutMs)
+
+      const start = Date.now()
+      let matched = null
+      while (Date.now() - start < timeoutMs) {
+        const imgs = deepQuerySelectorAll('img', document, { budgetMs: 2000 })
+        const newImg = imgs.find((el) => {
+          const s = el.getAttribute('src')
+          return s && (s.startsWith('blob:') || s.startsWith('data:')) && !beforeImgSrcs.has(s)
+        })
+        if (newImg) {
+          matched = { kind: 'img', src: (newImg.getAttribute('src') || '').slice(0, 80) }
+          break
+        }
+
+        const newBg = collectBackgroundImageUrls().find((bg) => !beforeBgUrls.has(bg))
+        if (newBg) {
+          matched = { kind: 'background-image' }
+          break
+        }
+
+        const canvasCount = deepQuerySelectorAll('canvas').length
+        if (canvasCount > beforeCanvasCount) {
+          matched = { kind: 'canvas', count: canvasCount }
+          break
+        }
+
+        const texts = deepQuerySelectorAll('span, div, p', document, { budgetMs: 2000 }).filter(isVisible).map(visibleText)
+        const completionText = texts.find((t) => /アップロード完了|アップロードしました|画像を設定しました|設定完了/.test(t))
+        if (completionText) {
+          matched = { kind: 'completion_text', text: completionText.slice(0, 60) }
+          break
+        }
+        const errorText = texts.find((t) => /アップロードに失敗|エラーが発生|失敗しました/.test(t))
+        if (errorText) {
+          matched = { kind: 'error_text', text: errorText.slice(0, 60) }
+          break
+        }
+
+        await sleep(300)
+      }
+      const mutationSummary = await mutationPromise
+      return { matched, mutationSummary, timedOut: !matched }
+    }
     async function normalizedHash(text) {
       const normalized = (text || '').trim().replace(/\s+/g, ' ')
       const enc = new TextEncoder().encode(normalized)
@@ -460,7 +622,7 @@
     async function revealAndFindFileInput() {
       log('image_file_input_initial_search_start', {})
       const initial = await raceWithTimeout(
-        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        Promise.resolve().then(() => findImageFileInput()),
         5000,
         'initial_file_input_search',
       )
@@ -488,7 +650,7 @@
 
       log('image_file_input_search_after_add_click_start', {})
       fi = await raceWithTimeout(
-        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        Promise.resolve().then(() => findImageFileInput()),
         5000,
         'file_input_search_after_add_click',
       )
@@ -517,7 +679,7 @@
 
       log('image_file_input_search_after_upload_click_start', {})
       fi = await raceWithTimeout(
-        Promise.resolve().then(() => deepQuerySelectorAll('input[type="file"]', document, { budgetMs: 5000 })[0]),
+        Promise.resolve().then(() => findImageFileInput()),
         5000,
         'file_input_search_after_upload_click',
       )
@@ -699,14 +861,17 @@
     // 約90秒間無応答になる現象が再現したため、この区間全体に開始・終了
     // ログを追加し、次回失敗時に停止箇所をより精密に特定できるようにする。
     // マロン必須修正⑤（「要素が見つからない場合は待ち続けず、5秒以内に
-    // 必ず結果を返す」）：区間内の各Promiseは個別5秒上限を持つが、それでも
-    // 万一この区間全体が想定外に長引いた場合の最終防波堤として、区間全体を
-    // さらに外側から45秒（内部の5秒上限付きステップを10段階弱こなせる
-    // 余裕を見た値）でraceWithTimeoutし、超過時は
+    // 必ず結果を返す」）：区間内の各Promiseは個別5秒上限（画像反映確認のみ
+    // 続き32でマロン指示により15秒）を持つが、それでも万一この区間全体が
+    // 想定外に長引いた場合の最終防波堤として、区間全体をさらに外側から
+    // 90秒（revealAndFindFileInputの最大約30秒＋SHA-256等の約10秒＋確認
+    // ボタン探索5秒＋画像反映確認15秒を積み上げても収まる余裕を見た値、
+    // 続き32で反映確認を5秒→15秒へ拡張したのに合わせて45秒→90秒へ拡大）
+    // でraceWithTimeoutし、超過時は
     // {status:'failed', error, stack, stages, domSnapshot, buildRevision}
     // を確実に返す（buildRevisionはhandleRun側で結果へ合成される）。
     log('image_section_start', {})
-    const imageSection = await raceWithTimeout(runImageSection(), 45000, 'image_section_overall')
+    const imageSection = await raceWithTimeout(runImageSection(), 90000, 'image_section_overall')
     if (imageSection && imageSection.__timedOut) {
       const domSnapshot = domDebugSnapshot()
       log('image_section_overall_timeout', domSnapshot)
@@ -796,18 +961,29 @@
             iconResult = { attached: false, reason: 'stage=image_integrity_mismatch: 受信した画像データのSHA-256が一致しません（改変・破損の疑い）' }
           } else {
             log('image_file_construct_done', { byteLength: decoded.length })
-            log('image_datatransfer_set_start', {})
+
+            // 2026-09-14続き32（マロン必須修正①）：DataTransfer設定直後に、
+            // 使用したfile input自体の詳細（accept・name・outerHTML・表示
+            // 状態）を記録する——複数候補がある場合の切り分け・次回失敗時の
+            // 原因特定に使う。
+            log('image_file_input_selected', describeFileInput(fileInput))
+
             const blob = new Blob([decoded], { type: categoryIconAsset.mimeType })
             const file = new File([blob], categoryIconAsset.fileName, { type: categoryIconAsset.mimeType })
-            const beforePreviewImgs = new Set(
-              deepQuerySelectorAll('img', document, { budgetMs: 5000 }).map((el) => el.getAttribute('src')).filter((s) => s && s.startsWith('blob:')),
-            )
+
+            log('image_datatransfer_set_start', {})
             const dt = new DataTransfer()
             dt.items.add(file)
             fileInput.files = dt.files
-            fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-            log('image_datatransfer_set_done', {})
-            await raceWithTimeout(sleep(800), 5000, 'post_datatransfer_wait')
+            // マロン指示：「input/changeイベント発火結果」を記録する
+            // （dispatchEventの戻り値＝preventDefaultされなかったか）。
+            const inputEventResult = fileInput.dispatchEvent(new Event('input', { bubbles: true }))
+            const changeEventResult = fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+            log('image_datatransfer_set_done', {
+              filesLength: fileInput.files ? fileInput.files.length : 0,
+              inputEventDispatched: inputEventResult,
+              changeEventDispatched: changeEventResult,
+            })
 
             log('image_adjust_confirm_search_start', {})
             const confirmBtn = await raceWithTimeout(waitFor(() => findConfirmLikeButton(), 4000), 5000, 'find_confirm_button')
@@ -819,27 +995,34 @@
               await raceWithTimeout(sleep(500), 5000, 'post_confirm_click_wait')
             }
 
-            log('image_preview_verify_start', {})
-            const previewAppeared = await raceWithTimeout(
-              waitFor(() => {
-                const current = deepQuerySelectorAll('img', document, { budgetMs: 5000 })
-                  .map((el) => el.getAttribute('src'))
-                  .filter((s) => s && s.startsWith('blob:') && !beforePreviewImgs.has(s))
-                return current.length > 0 ? true : null
-              }, 5000),
-              5000,
-              'image_preview_verify',
-            )
-            const previewTimedOut = !!(previewAppeared && previewAppeared.__timedOut)
-            const previewOk = previewTimedOut ? false : !!previewAppeared
-            log('image_preview_verify_done', { previewAppeared: previewOk, timedOut: previewTimedOut })
+            // 2026-09-14続き32（マロン必須修正①）：プレビュー判定を「新しい
+            // blob img」だけに限定せず、CSS background-image・canvas・
+            // アップロード完了/エラー文言・DOM Mutationも合わせて確認する。
+            // 反映待機は最大15秒とし、確認できなければDOM snapshotと選択
+            // input情報を返す（推測で「反映された」とみなさない）。
+            log('image_reflection_check_start', { timeoutMs: 15000 })
+            const reflection = await verifyImageReflected(15000)
+            const previewOk = !!reflection.matched
+            log('image_reflection_check_done', {
+              matched: reflection.matched,
+              timedOut: reflection.timedOut,
+              mutationCount: (reflection.mutationSummary && reflection.mutationSummary.mutations && reflection.mutationSummary.mutations.length) || 0,
+            })
+            if (!previewOk) {
+              log('image_reflection_check_timeout_snapshot', {
+                selectedInput: describeFileInput(fileInput),
+                dom: domDebugSnapshot(),
+                mutationSummary: reflection.mutationSummary,
+              })
+            }
             iconResult = {
               attached: previewOk,
-              reason: previewOk ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
+              reason: previewOk ? undefined : `stage=image_reflection_not_verified: アップロード後の画像反映（img/background-image/canvas/完了文言のいずれも）が15秒以内に確認できませんでした`,
               revealed: iconRevealed,
               triggerLabel: iconTriggerLabel,
               fileName: categoryIconAsset.fileName,
               sha256Verified: true,
+              reflectionMatched: reflection.matched,
             }
           }
         } catch (e) {

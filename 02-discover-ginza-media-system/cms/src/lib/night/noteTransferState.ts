@@ -28,6 +28,18 @@ export interface TransferStateEntry {
    * しまっていた——staleInProgressMsを超えて経過していれば再選出可能にする
    * ための基準時刻。 */
   claimedAt?: string
+  /** 2026-09-14続き32（マロン指示：「runIdまたはattemptToken単位でサーバー
+   * 側を原子的に1回だけclaimし、同じcompletion-onlyジョブを再取得できない
+   * ようにする」）：completion-onlyジョブがclaimInProgressで最初にクレーム
+   * された時点で恒久的にtrueへセットされ、以後selectNextPendingArticleId
+   * から二度と選出されなくなる「一度きりのラッチ」。completionAttempts等の
+   * カウンタ値に依存しないため、カウンタの不整合（古いサーバープロセスが
+   * 更新前のロジックのまま動いていた等）があっても再取得を構造的に防げる。 */
+  completionClaimStarted?: boolean
+  /** claimInProgressが払い出す、このクレームだけに紐づく一意なトークン。
+   * /result（recordCompletionAttempt）が同じトークンを伴わない結果報告
+   * （古い/重複した報告等）を受け取った場合はstateを変更せず無視する。 */
+  activeRunToken?: string
 }
 
 export type TransferState = Record<string, TransferStateEntry>
@@ -79,8 +91,14 @@ export function selectNextPendingArticleId(
     if (entry.status === 'failed') continue
     if (entry.status === 'success') {
       const needsCompletion = entry.needsCompletion === true
+      // 2026-09-14続き32（マロン指示）：completionAttemptsのカウンタ判定
+      // だけに頼らず、completionClaimStarted（一度クレームしたら恒久的に
+      // true）を主たるゲートとする——「原子的に1回だけclaim」を、カウンタの
+      // 不整合（古いサーバープロセスが更新前ロジックのまま動作していた等）
+      // に依存せず構造的に保証する。
+      const alreadyClaimed = entry.completionClaimStarted === true
       const completionAttempts = entry.completionAttempts ?? 0
-      if (needsCompletion && completionAttempts < MAX_COMPLETION_ATTEMPTS) return id
+      if (needsCompletion && !alreadyClaimed && completionAttempts < MAX_COMPLETION_ATTEMPTS) return id
       continue
     }
     return id
@@ -93,10 +111,18 @@ export function selectNextPendingArticleId(
  * selectNextPendingArticleId が弾く（多重タブ・多重取得の防止）。completion-only
  * ジョブを in_progress 化する場合も、既存の needsCompletion/completionAttempts は
  * 保持する（成功記録は上書きしない——タイトル/本文が既に確定済みという事実を失わない）。
- * nowIsoを渡すとclaimedAtとして記録し、staleな放置クレームの再選出判定に使われる。 */
-export function claimInProgress(state: TransferState, articleId: number, nowIso?: string): TransferState {
+ * nowIsoを渡すとclaimedAtとして記録し、staleな放置クレームの再選出判定に使われる。
+ *
+ * 2026-09-14続き32（マロン指示：「runIdまたはattemptToken単位でサーバー側を
+ * 原子的に1回だけclaimする」）：runTokenを渡すとactiveRunTokenとして記録し、
+ * このクレームがcompletion-onlyジョブ（draftUrlが既にある＝determineTransferMode
+ * が'completion'）である場合はcompletionClaimStartedを恒久的にtrueへセットする
+ * ——以後selectNextPendingArticleIdは（completionAttemptsの値に関わらず）二度と
+ * このarticleIdをcompletion候補として選出しない。 */
+export function claimInProgress(state: TransferState, articleId: number, nowIso?: string, runToken?: string): TransferState {
   const key = String(articleId)
   const prev = state[key]
+  const isCompletionClaim = determineTransferMode(prev) === 'completion'
   return {
     ...state,
     [key]: {
@@ -107,6 +133,8 @@ export function claimInProgress(state: TransferState, articleId: number, nowIso?
       completionAttempts: prev?.completionAttempts,
       claimedAt: nowIso,
       draftUrl: prev?.draftUrl,
+      activeRunToken: runToken,
+      completionClaimStarted: isCompletionClaim ? true : prev?.completionClaimStarted,
     },
   }
 }
@@ -152,15 +180,25 @@ export function recordSuccess(
 
 /** completion-onlyジョブの試行を記録する（成功時はneedsCompletion=falseへ、
  * 失敗時はcompletionAttemptsを加算し上限で以後再試行しない）。success状態・
- * draftUrl・transferredAt（タイトル/本文/初回保存の成功記録）は変更しない。 */
+ * draftUrl・transferredAt（タイトル/本文/初回保存の成功記録）は変更しない。
+ *
+ * 2026-09-14続き32（マロン指示：「原子的に1回だけclaim」）：runTokenを渡した
+ * 場合、現在のactiveRunTokenと一致しない結果報告（古い/重複した報告、複数の
+ * サーバープロセスが同時に動いていた等）は無視し、stateを一切変更しない
+ * ——「同じcompletion-onlyジョブの結果報告で二重にstateを進めてしまう」こと
+ * を構造的に防ぐ。一致した場合はactiveRunTokenをクリアする（クレーム消費済み）。 */
 export function recordCompletionAttempt(
   state: TransferState,
   articleId: number,
   succeeded: boolean,
+  runToken?: string,
 ): TransferState {
   const key = String(articleId)
   const prev = state[key]
   if (!prev) return state
+  if (runToken != null && prev.activeRunToken != null && runToken !== prev.activeRunToken) {
+    return state
+  }
   const completionAttempts = (prev.completionAttempts ?? 0) + 1
   return {
     ...state,
@@ -174,6 +212,9 @@ export function recordCompletionAttempt(
       status: 'success',
       needsCompletion: succeeded ? false : completionAttempts < MAX_COMPLETION_ATTEMPTS,
       completionAttempts,
+      activeRunToken: undefined,
+      // completionClaimStartedは既にtrueのまま維持される（prevをspread
+      // しているため）——一度クレームしたら恒久的に選出対象から外れ続ける。
     },
   }
 }

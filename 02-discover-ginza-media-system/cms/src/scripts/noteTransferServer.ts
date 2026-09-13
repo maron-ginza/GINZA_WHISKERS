@@ -35,6 +35,7 @@ import { getPayload, type Payload } from 'payload'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, extname } from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 import config from '../payload.config'
 import {
@@ -232,7 +233,13 @@ async function main() {
           // カウントする（表示用フィールドの正確性のみに影響、実際のリトライ
           // 上限判定はnoteTransferState.tsの純粋関数が別途担う）。
           const prevAttempts = pending.mode === 'completion' ? existing?.completionAttempts ?? 0 : existing?.attempts ?? 0
-          saveState(claimInProgress(state, pending.articleId, new Date().toISOString()))
+          // 2026-09-14続き32（マロン指示：「runIdまたはattemptToken単位で
+          // サーバー側を原子的に1回だけclaimする」）：このクレーム固有の
+          // トークンを払い出し、stateへ記録するとともに応答へ含める。
+          // /resultでこのトークンと一致しない結果報告は無視される
+          // （recordCompletionAttemptのruntoken検証）。
+          const runToken = randomUUID()
+          saveState(claimInProgress(state, pending.articleId, new Date().toISOString(), runToken))
 
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
           const iconFile: string | undefined = draft?.masthead?.categoryIcon?.iconFile
@@ -257,6 +264,7 @@ async function main() {
               item: {
                 articleId: pending.articleId,
                 mode: pending.mode,
+                runToken,
                 existingDraftUrl: pending.existingDraftUrl ?? null,
                 title: draft.title,
                 body: draft.body,
@@ -357,9 +365,23 @@ async function main() {
             // 完了扱いにする——片方でも欠ければneedsCompletionを維持し、
             // 次回また再試行できるようにする（3回失敗で以後停止）。
             const succeeded = body.status === 'success' && body.hashtagsDone === true && body.iconDone === true
-            saveState(recordCompletionAttempt(state, articleId, succeeded))
+            // 2026-09-14続き32（マロン指示）：runTokenが一致しない結果報告
+            // （古い/重複した報告）はrecordCompletionAttempt内部で無視され
+            // stateは変更されない。
+            const beforeState = state[String(articleId)]
+            const nextState = recordCompletionAttempt(state, articleId, succeeded, body.runToken)
+            const tokenAccepted = nextState !== state && nextState[String(articleId)] !== beforeState
+            appendDiagnosticLog({
+              source: 'server',
+              event: 'completion_attempt_recorded',
+              articleId,
+              runToken: body.runToken ?? null,
+              tokenAccepted,
+              succeeded,
+            })
+            saveState(nextState)
             res.writeHead(200, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ ok: true, completionSucceeded: succeeded }))
+            res.end(JSON.stringify({ ok: true, completionSucceeded: succeeded, tokenAccepted }))
             return
           }
 

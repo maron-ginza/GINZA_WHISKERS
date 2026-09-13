@@ -14,6 +14,135 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き32（🩹 **note下書き自動転記——v1.18.0実機結果の残る3点
+    （画像反映判定の狭さ・watchdogの固定経過時間誤判定・completion-only
+    1回上限が実際には3回実行された問題）をコード修正。3点目は推測でなく
+    確定した原因を特定（Project 02 commit・push あり／DB更新なし／note
+    公開なし／**マロン指示どおり今回は実ブラウザを動かしていない**）**）：
+
+    マロン指示：「v1.18.0の実機結果から、残る3点を推測で終わらせずコード
+    修正してください」——①画像反映判定を「新しいblob img」だけに限定せず
+    noteの実DOMに合わせる（DataTransfer設定直後の詳細ログ・複数file input
+    対応・反映待機は最大15秒・確認できなければDOM snapshotと選択input情報
+    を返す）②watchdogの固定90秒判定を廃止しstage進行をheartbeatとして
+    扱う（処理継続中はtransfer-stateをfailedへ変更しない）③completion-only
+    1回上限（`MAX_COMPLETION_ATTEMPTS=1`）が効かず3回実行された実際の経路を
+    コードとログから特定し、runId/attemptToken単位でサーバー側を原子的に
+    1回だけclaimする。安全条件（タイトル・本文再入力禁止・新規タブ禁止・
+    tabs.reload禁止・公開禁止・自動実機再試行禁止）は全維持。
+
+    **① 画像反映判定の拡張**（`injected-transfer.js`）：新規
+    `findImageFileInput()`（候補が複数ある場合、accept属性が画像を示す
+    ものへ絞り込み、さらに祖先に「画像/サムネイル/アイキャッチ/カバー/
+    image」を含むラベルを持つものを優先——`revealAndFindFileInput()`内の
+    3箇所の探索すべてをこれ経由に統一）、`describeFileInput(el)`
+    （accept・name・outerHTML・表示状態・`files.length`・`files[0]`の
+    name/type/size）、`observeMutationsFor(targetNode, ms)`
+    （MutationObserverでDOM変化を最大50件収集、`ms`経過で必ず解決＝
+    ハングしない）、`collectBackgroundImageUrls()`（可視要素の
+    `computedStyle.backgroundImage`のうちblob:/data:を含むもの）、
+    `verifyImageReflected(timeoutMs)`（新規blob/data `<img>`・新規
+    background-image・canvas要素数の増加・アップロード完了/エラー文言の
+    いずれかを検出したら「反映された」と判定、最大15秒ポーリング＋並行して
+    `observeMutationsFor`でDOM変化も収集、確認できなければ`timedOut:true`）
+    を新設。DataTransfer設定の直前に`image_file_input_selected`
+    （`describeFileInput(fileInput)`）を記録し、設定後は`input`・
+    `change`両イベントを発火してその`dispatchEvent`戻り値を
+    `image_datatransfer_set_done`へ記録。プレビュー確認は
+    `verifyImageReflected(15000)`の結果（`reflection.matched`）で
+    `attached`を判定し、タイムアウト時は`image_reflection_check_timeout_
+    snapshot`として選択input情報（`describeFileInput`）とDOM snapshot
+    （`domDebugSnapshot()`）を記録する（推測で「反映された」とみなさない）。
+    画像処理区間全体の外側`raceWithTimeout`は45秒→**90秒**へ引き上げ
+    （反映確認の最大15秒を含む後続処理全体の頭上を確保するため）。
+
+    **② heartbeatベースのwatchdog**（`background.js`）：v1.18.0実機ログで、
+    固定90秒（開始からの経過時間のみ）のwatchdogが、実際には約225秒かけて
+    hashtags 4/4・content-hash一致まで含め正常に完走していた実行を「無応答」
+    と誤って失敗判定してしまう事象を確認した——これを受け、固定経過時間
+    判定を廃止し、注入スクリプトが送る各stageログ（`chrome.runtime.
+    sendMessage`経由の`note-transfer:log`）を「まだ生きて進行している」
+    heartbeatとして扱う方式へ変更。新規定数`HEARTBEAT_STALL_MS`
+    （20000ms、この時間stage更新が無ければ停止と判定）・
+    `HEARTBEAT_POLL_MS`（2000ms）・`HEARTBEAT_ABSOLUTE_CAP_MS`（10分、
+    heartbeat自体が永久に途絶えない異常事態への保険——通常はstall判定が
+    先に効く）と、tabIdごとの直近heartbeat時刻を保持する
+    `lastHeartbeatByTab`（Map）を新設。`note-transfer:log`受信時
+    （既存の`chrome.runtime.onMessage`ハンドラ）に`lastHeartbeatByTab`を
+    更新し、`runTransferViaExecuteScript`は`runPromise`と、
+    `setInterval`で`sinceHeartbeat`/`sinceStart`を監視する
+    `stallPromise`を`Promise.race`する構造へ変更。stall判定時は1回だけ
+    `reportResult(..., 'failure', {error:'stage=injected_run_
+    heartbeat_stall: ...', mode, runToken})`を報告し、本関数内で
+    `chrome.scripting.executeScript`を再度呼ばない（自動再試行しない）。
+    **処理が継続している間はtransfer-stateをfailedへ変更しない**——
+    stage更新が続く限りheartbeatが更新され続けstall判定に到達しない
+    構造で担保した。
+
+    **③ completion-only 1回上限を「原子的1回claim」化（確定原因つき）**：
+    まず**確定した原因**（推測ではなくプロセス状態・commit履歴から特定）
+    ——`noteTransferServer.ts`は`node --env-file=.env --import=tsx/esm`で
+    長時間起動するプロセスであり、TypeScriptはimport時にトランスパイル
+    されるがソース変更のホットリロードはしない。続き31で
+    `MAX_COMPLETION_ATTEMPTS=1`をcommitした後、稼働中のサーバープロセス
+    （マロンのv1.18.0実機テスト開始より前から起動していた）は**再起動
+    されておらず**、旧ロジックのまま動き続けていた——これがマロンの
+    v1.18.0実機テストでcompletion-onlyジョブが3回実行された直接の原因で
+    ある（観測結果と完全に整合）。このプロセス再起動漏れという原因自体は
+    運用上再発しうるため、根本対策として**原子的1回claim**を構造レベルで
+    実装した：`noteTransferState.ts`の`TransferStateEntry`へ
+    `completionClaimStarted?: boolean`（一度クレームしたら恒久的にtrueへ
+    セットされるラッチ、`completionAttempts`カウンタの値に関わらず
+    `selectNextPendingArticleId`が二度と選出しない）と
+    `activeRunToken?: string`（このクレーム固有の一意トークン）を追加。
+    `claimInProgress(state, articleId, nowIso?, runToken?)`はcompletion-only
+    クレーム（`determineTransferMode(prev)==='completion'`）の場合のみ
+    `completionClaimStarted`をtrueへセットし`activeRunToken`を記録、
+    `recordCompletionAttempt(state, articleId, succeeded, runToken?)`は
+    渡された`runToken`が`prev.activeRunToken`と一致しない場合はstateを
+    一切変更せず無視する（古い/重複した結果報告への耐性）——一致した場合は
+    `activeRunToken`をクリアする（クレーム消費済み）。`selectNextPending
+    ArticleId`のsuccess分岐は`completionClaimStarted`を主たるゲートとし、
+    カウンタの不整合（今回のような停止プロセス由来のもの）があっても
+    再取得を構造的に防ぐ。`noteTransferServer.ts`は`/pending`で
+    `randomUUID()`によりクレームごとに一意な`runToken`を発行し
+    `claimInProgress`へ渡すとともにレスポンス`item.runToken`として拡張へ
+    渡し、`/result`は`body.runToken`を`recordCompletionAttempt`へ渡して
+    診断ログ`completion_attempt_recorded`（`tokenAccepted`含む）へ記録する。
+    `background.js`は`item.runToken`を全5箇所の`reportResult`呼び出し
+    （stall報告・no-result・成功・一般失敗・catchブロックエラー）すべてに
+    含める。
+
+    **検証**：`tsc --noEmit`（cms）0エラー。`run-all.ts`
+    **642 passed 0 failed**（632→642、+10）——内訳：
+    `chromeExtensionManifest`（74→80、+6：heartbeat watchdogの機構・
+    stall判定値の比較を検証する2件を単発watchdogテストの置き換えとして
+    書き直し、findImageFileInputの複数候補絞り込み・describeFileInputの
+    戻り値フィールドとimage_file_input_selectedのタイミング・
+    input/changeイベント発火記録・サーバー側runToken発行とレスポンス
+    格納・`/result`のrunToken検証とcompletion_attempt_recordedログ・
+    background.js全reportResult呼び出しへのrunToken同梱、を新規追加。
+    プレビュー読み戻し・個別5秒上限・最終防波堤（45000→90000）の
+    既存3テストも新構造に合わせて更新）、`noteTransferState`
+    （18→22、+4：`completionClaimStarted`ラッチがカウンタ不整合下でも
+    再選出を防ぐこと・`activeRunToken`不一致の結果報告を無視しstateを
+    変更しないこと・`runToken`省略時の後方互換・fullモードの初回クレームは
+    `completionClaimStarted`をtrueにしないこと、を新規追加）。
+    `node -c background.js`・`node -c injected-transfer.js`いずれもOK。
+    manifest.jsonの`version`を`1.18.0`→**`1.19.0`**、`BUILD_REVISION`を
+    `br18-2026-09-14-sw-side-image-fetch`→
+    **`br19-2026-09-14-heartbeat-watchdog-atomic-claim`**へ更新。
+
+    **今回は実ブラウザを動かしていない**（マロン指示どおり）——
+    `.devlogs/night/transfer-state.json`のArticle #67の状態
+    （タイトル・本文・保存は完成、`completionAttempts:3`の記録は
+    残置——旧プロセスの挙動の記録として意図的に上書きしていない、
+    `needsCompletion:false`）は本セッションでは一切変更していない。
+    次回の実機検証では、サーバープロセスを新コードで確実に再起動した
+    うえで実施する必要がある（③の確定原因を踏まえた運用上の注意点、
+    ただし原子的1回claimの実装により仮に再起動漏れが再発しても
+    3回実行という結果には至らない設計になっている）。
+
   - 2026-09-13 続き31（🔧 **note下書き自動転記——続き30で確定した境界
     （editor.note.comページコンテキストからの画像fetchがサーバーへ一度も
     到達しない＝CSP等でブロックされている可能性）を受け、画像取得を

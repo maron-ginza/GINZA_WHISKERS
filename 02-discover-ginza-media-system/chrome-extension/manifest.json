@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GINZA WHISKERS Note Auto-Transfer",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Project 02: 承認済み記事をnote.comの下書きへ自動転記する（公開は絶対に行わない）。マロンのログイン済みブラウザセッションのみを使用し、パスワード等は一切扱わない。",
   "permissions": ["tabs", "scripting", "alarms", "storage"],
   "host_permissions": [

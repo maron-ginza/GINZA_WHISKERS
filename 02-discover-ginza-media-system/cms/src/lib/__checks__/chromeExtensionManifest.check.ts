@@ -569,34 +569,64 @@ const cases: CheckCase[] = [
 
 const WATCHDOG_DEDUP_TEST_CASES: CheckCase[] = [
   {
-    // 2026-09-14続き27（マロン必須修正④）：executeScript側に単発watchdogを
-    // 設け、タイムアウト後の自動再試行はしないことを確認する。
-    name: '【単発watchdog】background.jsはPromise.raceで単発タイムアウトを設け、タイムアウト時は1回だけ失敗報告して終わる（本関数内で自動的に再試行しない）',
+    // 2026-09-13続き32（マロン指示）：固定90秒watchdog（開始からの経過時間
+    // だけで判定）は、実際には約225秒かけて正常に完走していた実行を誤って
+    // 失敗判定してしまう事象を起こした。stage進行（note-transfer:logの
+    // 受信）をheartbeatとして扱い、直近heartbeatからHEARTBEAT_STALL_MS
+    // 以上新しいログが届かない場合にのみ停止と判定する方式へ変更した
+    // ことを確認する。停止判定時は1回だけ失敗報告し、本関数内で自動的に
+    // 再試行しないことも確認する。
+    name: '【heartbeat watchdog】固定経過時間ではなくstage更新の停止（stall）で判定し、停止時は1回だけ失敗報告して終わる（本関数内で自動的に再試行しない）',
     fn: () => {
       const bg = bgSrc()
-      assert.ok(/const INJECTED_RUN_TIMEOUT_MS = \d+/.test(bg), 'INJECTED_RUN_TIMEOUT_MS定数が見つからない')
-      assert.ok(/Promise\.race\(\[runPromise, watchdogPromise\]\)/.test(bg), 'Promise.raceによるwatchdogが見つからない')
-      const idx = bg.indexOf('if (result && result.__watchdogTimeout) {')
-      assert.ok(idx >= 0, 'watchdogタイムアウト時の分岐が見つからない')
+      assert.ok(/const HEARTBEAT_STALL_MS = \d+/.test(bg), 'HEARTBEAT_STALL_MS定数が見つからない')
+      assert.ok(/const HEARTBEAT_POLL_MS = \d+/.test(bg), 'HEARTBEAT_POLL_MS定数が見つからない')
+      assert.ok(/const HEARTBEAT_ABSOLUTE_CAP_MS = /.test(bg), 'HEARTBEAT_ABSOLUTE_CAP_MS定数が見つからない')
+      assert.ok(/const lastHeartbeatByTab = new Map\(\)/.test(bg), 'lastHeartbeatByTabの記録先Mapが見つからない')
+      assert.ok(/Promise\.race\(\[runPromise, stallPromise\]\)/.test(bg), 'Promise.raceによるstall判定が見つからない')
+      // 固定経過時間（sinceStart）だけで停止と判定していないこと——
+      // sinceHeartbeat（直近heartbeatからの経過）がstall判定の主条件で
+      // あることを確認する。
+      const stallPromiseIdx = bg.indexOf('const stallPromise = new Promise')
+      assert.ok(stallPromiseIdx >= 0, 'stallPromiseの定義が見つからない')
+      const stallBody = bg.slice(stallPromiseIdx, stallPromiseIdx + 700)
+      assert.ok(/sinceHeartbeat >= HEARTBEAT_STALL_MS/.test(stallBody), 'heartbeatの停止（sinceHeartbeat >= HEARTBEAT_STALL_MS）による判定が見つからない')
+      assert.ok(/sinceStart >= HEARTBEAT_ABSOLUTE_CAP_MS/.test(stallBody), '絶対上限（保険）による判定が見つからない')
+
+      const idx = bg.indexOf('if (result && result.__stalled) {')
+      assert.ok(idx >= 0, 'stall判定時の分岐が見つからない')
       const body = bg.slice(idx, idx + 600)
-      assert.ok(/injected_run_watchdog_timeout/.test(body), 'watchdogタイムアウトのログ・エラーステージ名が見つからない')
-      assert.ok(/await reportResult\(item\.articleId, 'failure'/.test(body), 'watchdogタイムアウト時に1回だけ失敗報告していることが確認できない')
-      // タイムアウト分岐内でchrome.scripting.executeScriptやcheckPendingを
+      assert.ok(/injected_run_heartbeat_stall/.test(body), 'stallのログ・エラーステージ名が見つからない')
+      assert.ok(/await reportResult\(item\.articleId, 'failure'/.test(body), 'stall判定時に1回だけ失敗報告していることが確認できない')
+      // stall分岐内でchrome.scripting.executeScriptやcheckPendingを
       // 再度呼んでいない（＝本関数が自分で再試行しない）ことを確認する。
-      assert.ok(!/chrome\.scripting\.executeScript/.test(body), 'watchdogタイムアウト分岐内でexecuteScriptを再度呼んでいる（自動再試行の再発）')
+      assert.ok(!/chrome\.scripting\.executeScript/.test(body), 'stall分岐内でexecuteScriptを再度呼んでいる（自動再試行の再発）')
+
+      // note-transfer:logの受信が実際にheartbeatを更新していること
+      // （＝処理継続中はstage更新のたびにstall判定がリセットされる）。
+      const logHandlerIdx = bg.indexOf("if (msg?.type === 'note-transfer:log') {")
+      assert.ok(logHandlerIdx >= 0, 'note-transfer:logハンドラが見つからない')
+      const logHandlerBody = bg.slice(logHandlerIdx, logHandlerIdx + 400)
+      assert.ok(/lastHeartbeatByTab\.set\(tabId, Date\.now\(\)\)/.test(logHandlerBody), 'note-transfer:log受信時にlastHeartbeatByTabを更新していない——処理継続中もstall判定が進んでしまう')
     },
   },
   {
-    name: '【単発watchdog】タイムアウト値はブラウザ側inFlightタイムアウト（120秒）より短く、サーバー側stale判定（150秒）より短い',
+    name: '【heartbeat watchdog】stall判定値（HEARTBEAT_STALL_MS）はブラウザ側inFlightタイムアウト（120秒）より短く、絶対上限（保険）はstall判定値以上',
     fn: () => {
       const bg = bgSrc()
-      const m = bg.match(/const INJECTED_RUN_TIMEOUT_MS = (\d+)/)
-      assert.ok(m, 'INJECTED_RUN_TIMEOUT_MSの値を取得できない')
-      const timeoutMs = Number(m![1])
+      const m = bg.match(/const HEARTBEAT_STALL_MS = (\d+)/)
+      assert.ok(m, 'HEARTBEAT_STALL_MSの値を取得できない')
+      const stallMs = Number(m![1])
       const inflightMatch = bg.match(/const INFLIGHT_TIMEOUT_MS = (\d+)/)
       assert.ok(inflightMatch, 'INFLIGHT_TIMEOUT_MSの値を取得できない')
       const inflightMs = Number(inflightMatch![1])
-      assert.ok(timeoutMs < inflightMs, `単発watchdog（${timeoutMs}ms）がブラウザ側inFlightタイムアウト（${inflightMs}ms）以上——watchdogが意味をなさない`)
+      assert.ok(stallMs < inflightMs, `heartbeat stall判定（${stallMs}ms）がブラウザ側inFlightタイムアウト（${inflightMs}ms）以上——stall判定が意味をなさない`)
+
+      const capMatch = bg.match(/const HEARTBEAT_ABSOLUTE_CAP_MS = ([^\n]+)/)
+      assert.ok(capMatch, 'HEARTBEAT_ABSOLUTE_CAP_MSの値を取得できない')
+      // eslint-disable-next-line no-eval
+      const capMs = Number(eval(capMatch![1].split('//')[0].trim().replace(/;$/, '')))
+      assert.ok(capMs >= stallMs, `絶対上限（保険、${capMs}ms）がstall判定値（${stallMs}ms）より短い——通常のstall判定より先に保険が発動してしまう`)
     },
   },
   {
@@ -672,6 +702,49 @@ const WATCHDOG_DEDUP_TEST_CASES: CheckCase[] = [
       // 検証済み。ここでは「公開する」自体を検索対象にする別ロジックが
       // 追加されていないことを確認する）。
       assert.ok(!/【投稿する】|findPublishButton|findSubmitButton/.test(inj), '最終公開ボタンを探す専用関数らしきものが見つかった（存在してはならない）')
+    },
+  },
+  {
+    // 2026-09-13続き32（マロン指示「同じcompletion-onlyジョブを再取得
+    // できないようにしてください」）：サーバー側/pendingがクレームのたびに
+    // 一意なrunTokenを払い出し（randomUUID）、claimInProgressへ渡して
+    // stateへ記録し、レスポンスのitemにも含めて拡張へ渡すことを確認する。
+    name: '【原子的1回claim】noteTransferServer.tsの/pendingはrandomUUIDでrunTokenを発行し、claimInProgressへ渡し、レスポンスitemに含める',
+    fn: () => {
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(/import\s*\{\s*randomUUID\s*\}\s*from\s*'node:crypto'/.test(server), "randomUUIDのimportが見つからない")
+      assert.ok(/const runToken = randomUUID\(\)/.test(server), 'runTokenの発行（randomUUID）が見つからない')
+      assert.ok(/claimInProgress\(state, pending\.articleId, new Date\(\)\.toISOString\(\), runToken\)/.test(server), 'claimInProgressへrunTokenを渡していない')
+      const itemIdx = server.indexOf('item: {')
+      assert.ok(itemIdx >= 0, 'レスポンスitemの構築箇所が見つからない')
+      const itemBody = server.slice(itemIdx, itemIdx + 200)
+      assert.ok(/runToken,/.test(itemBody), 'レスポンスitemにrunTokenが含まれていない——拡張側が結果報告時にトークンを返せない')
+    },
+  },
+  {
+    name: '【原子的1回claim】noteTransferServer.tsの/resultはbody.runTokenをrecordCompletionAttemptへ渡し、一致しなければstateを変更しない',
+    fn: () => {
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(/recordCompletionAttempt\(state, articleId, succeeded, body\.runToken\)/.test(server), '/resultがbody.runTokenをrecordCompletionAttemptへ渡していない')
+      assert.ok(/completion_attempt_recorded/.test(server), '完了試行の記録ログ（completion_attempt_recorded）が見つからない——tokenAccepted等の追跡ができない')
+      const idx = server.indexOf("event: 'completion_attempt_recorded'")
+      assert.ok(idx >= 0, 'completion_attempt_recordedログの構築箇所が見つからない')
+      const body = server.slice(idx, idx + 300)
+      assert.ok(/tokenAccepted/.test(body), 'completion_attempt_recordedログにtokenAcceptedが記録されていない')
+    },
+  },
+  {
+    // background.js側がstall報告・完了報告のいずれでもitem.runTokenを
+    // 欠かさず/resultへ渡すことを確認する——渡し忘れると、サーバー側の
+    // トークン検証がすべての結果報告を「不一致」として無視してしまう
+    // （2026-09-13続き31で実際に発生した「mode渡し忘れ」と同種の再発を防ぐ）。
+    name: '【原子的1回claim】background.jsのreportResult呼び出しはすべてrunToken: item.runTokenを含める',
+    fn: () => {
+      const bg = bgSrc()
+      const reportCallCount = (bg.match(/reportResult\(item\.articleId,/g) || []).length
+      const runTokenPassCount = (bg.match(/runToken:\s*item\.runToken\b/g) || []).length
+      assert.ok(reportCallCount >= 4, `reportResult呼び出しが想定より少ない（${reportCallCount}件）——検出漏れの可能性`)
+      assert.equal(runTokenPassCount, reportCallCount, `reportResult呼び出し（${reportCallCount}件）のうちrunTokenを渡しているのは${runTokenPassCount}件——渡し忘れがあるとサーバー側のトークン検証で結果報告がすべて無視される`)
     },
   },
 ]
@@ -763,17 +836,42 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
     },
   },
   {
-    name: '【プレビュー読み戻し】アップロード後に新しいblob:プレビュー画像が出現したことを確認してからattachedとする',
+    // 2026-09-13続き32（マロン指示）：「プレビュー判定を『新しいblob img』
+    // だけに限定せず、noteの実DOMに合わせてください」——新規blob/data画像
+    // （<img>のsrc）・新規CSS background-image・canvas要素数の増加・
+    // アップロード完了/エラー文言・DOM Mutationのいずれかで判定する
+    // verifyImageReflected()を経由してattachedを判定するよう変更した。
+    name: '【プレビュー読み戻し】アップロード後の画像反映をimg/background-image/canvas/完了文言/DOM Mutationの複数シグナルで確認してからattachedとする',
     fn: () => {
       const inj = injSrc()
-      assert.ok(/beforePreviewImgs/.test(inj), 'アップロード前のblob:画像一覧の記録が見つからない')
-      assert.ok(/image_preview_verify/.test(inj), 'image_preview_verifyログが見つからない')
-      // 2026-09-14続き29：previewAppeared自体がraceWithTimeoutの結果
-      // （タイムアウト時は{__timedOut:true}）になったため、previewOk
-      // （タイムアウトなら強制的にfalse、それ以外はprevewAppearedの真偽）を
-      // 経由してattachedを判定するよう変更した。
-      assert.ok(/const previewOk = previewTimedOut \? false : !!previewAppeared/.test(inj), 'previewAppeared（タイムアウト考慮済み）からprevewOkを算出する判定が見つからない')
+      assert.ok(/async function verifyImageReflected\(timeoutMs\)/.test(inj), 'verifyImageReflected関数が見つからない')
+      const vStart = inj.indexOf('async function verifyImageReflected(timeoutMs)')
+      const vEnd = inj.indexOf('async function normalizedHash')
+      assert.ok(vStart >= 0 && vEnd > vStart, 'verifyImageReflectedの範囲を特定できない')
+      const vBody = inj.slice(vStart, vEnd)
+      assert.ok(/beforeImgSrcs/.test(vBody), 'アップロード前のimg src一覧の記録が見つからない')
+      assert.ok(/beforeBgUrls/.test(vBody), 'アップロード前のbackground-image一覧の記録が見つからない')
+      assert.ok(/beforeCanvasCount/.test(vBody), 'アップロード前のcanvas要素数の記録が見つからない')
+      assert.ok(/kind:\s*'img'/.test(vBody), '新規blob/data imgによる判定が見つからない')
+      assert.ok(/kind:\s*'background-image'/.test(vBody), '新規background-imageによる判定が見つからない')
+      assert.ok(/kind:\s*'canvas'/.test(vBody), 'canvas要素数増加による判定が見つからない')
+      assert.ok(/kind:\s*'completion_text'/.test(vBody), 'アップロード完了文言による判定が見つからない')
+      assert.ok(/kind:\s*'error_text'/.test(vBody), 'アップロードエラー文言による判定が見つからない')
+      assert.ok(/observeMutationsFor\(document\.body, timeoutMs\)/.test(vBody), 'DOM Mutationの観測（observeMutationsFor）が見つからない')
+      assert.ok(/timedOut:\s*!matched/.test(vBody), 'timedOutの算出（matchedの否定）が見つからない')
+
+      assert.ok(/const reflection = await verifyImageReflected\(15000\)/.test(inj), 'verifyImageReflected(15000)の呼び出しが見つからない——反映待機は最大15秒')
+      assert.ok(/const previewOk = !!reflection\.matched/.test(inj), 'reflection.matchedからpreviewOkを算出する判定が見つからない')
       assert.ok(/attached:\s*previewOk,/.test(inj), 'previewOkに基づくattached判定が見つからない')
+
+      // タイムアウト時（反映確認できず）はDOM snapshotと選択input情報を
+      // 返す（マロン指示：「確認できなければDOM snapshotと選択input情報を
+      // 返してください」）。
+      const snapIdx = inj.indexOf("log('image_reflection_check_timeout_snapshot'")
+      assert.ok(snapIdx >= 0, 'image_reflection_check_timeout_snapshotログが見つからない')
+      const snapBody = inj.slice(snapIdx, snapIdx + 200)
+      assert.ok(/selectedInput:\s*describeFileInput\(fileInput\)/.test(snapBody), 'タイムアウト時に選択input情報（describeFileInput）を返していない')
+      assert.ok(/dom:\s*domDebugSnapshot\(\)/.test(snapBody), 'タイムアウト時にDOM snapshotを返していない')
     },
   },
   {
@@ -781,6 +879,70 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
     fn: () => {
       const inj = injSrc()
       assert.ok(/const iconDone = iconResult\.attached === true$/m.test(inj), 'iconDoneがiconResult.attachedのみで判定されていない（checkIconAppliedとのAND条件が残っている可能性）')
+    },
+  },
+  {
+    // 2026-09-13続き32（マロン指示「類似するfile inputが複数ある場合は、
+    // 画像アップロードUI配下かつaccept=imageの入力欄だけを使用してください」）：
+    // findImageFileInputが候補0/1件ではそのまま返し、複数件ではaccept属性を
+    // 画像向けに絞り込み、さらにアップロードUI関連ラベルを持つ祖先に近い
+    // ものを優先する構造になっていることを確認する。
+    name: '【複数file input対応】findImageFileInputはaccept=image絞り込み→アップロードUI近傍優先の順で単一のfile inputへ絞り込む',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('function findImageFileInput()')
+      const end = inj.indexOf('/** 選択したfile input自体の診断情報')
+      assert.ok(start >= 0 && end > start, 'findImageFileInputの範囲を特定できない')
+      const body = inj.slice(start, end)
+      assert.ok(/if \(all\.length <= 1\) return all\[0\] \|\| null/.test(body), '候補0/1件時にそのまま返す分岐が見つからない')
+      assert.ok(/accept\.includes\('image'\)/.test(body), 'accept属性による画像向け絞り込みが見つからない')
+      assert.ok(/画像|サムネイル|アイキャッチ|カバー|image/.test(body), 'アップロードUI近傍判定のラベル語彙が見つからない')
+
+      // 3つのfile input探索箇所（revealAndFindFileInput内）がすべて
+      // findImageFileInput経由になっていること（旧
+      // deepQuerySelectorAll('input[type="file"]',...)[0]への直接依存が
+      // 残っていないこと）を確認する。
+      const revealStart = inj.indexOf('async function revealAndFindFileInput()')
+      const revealEnd = inj.indexOf('function findSaveDraftButton')
+      const revealBody = inj.slice(revealStart, revealEnd)
+      const findImageFileInputCallCount = (revealBody.match(/findImageFileInput\(\)/g) || []).length
+      assert.equal(findImageFileInputCallCount, 3, `revealAndFindFileInput内のfindImageFileInput()呼び出しが3件でない（${findImageFileInputCallCount}件）——探索箇所ごとの絞り込みが徹底されていない可能性`)
+      assert.ok(!/deepQuerySelectorAll\('input\[type="file"\]', document, \{ budgetMs: 5000 \}\)\[0\]/.test(revealBody), '旧・絞り込みなしのfile input取得が残っている')
+    },
+  },
+  {
+    // マロン指示「使用したfile inputのaccept・name・outerHTML・表示状態」
+    // 「input.files.length」「files[0]のname・type・size」をDataTransfer
+    // 設定直後に記録すること。
+    name: '【診断情報】describeFileInputはaccept・name・outerHTML・表示状態・files情報を返し、DataTransfer設定直後にimage_file_input_selectedとして記録される',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('function describeFileInput(el)')
+      const end = inj.indexOf('/** 指定ノード配下のDOM変化')
+      assert.ok(start >= 0 && end > start, 'describeFileInputの範囲を特定できない')
+      const body = inj.slice(start, end)
+      for (const field of ['accept:', 'name:', 'outerHTML:', 'visible:', 'filesLength:', 'file0Name:', 'file0Type:', 'file0Size:']) {
+        assert.ok(body.includes(field), `describeFileInputの戻り値に${field}が無い`)
+      }
+      const logIdx = inj.indexOf("log('image_file_input_selected', describeFileInput(fileInput))")
+      assert.ok(logIdx >= 0, 'DataTransfer設定直前にimage_file_input_selectedログが記録されていない')
+      const dtStartIdx = inj.indexOf("log('image_datatransfer_set_start', {})")
+      assert.ok(dtStartIdx > logIdx, 'image_file_input_selectedがDataTransfer設定より後に記録されている（設定直後の実input情報を記録する意図に反する）')
+    },
+  },
+  {
+    // マロン指示「input/changeイベント発火結果」を記録すること。
+    name: '【診断情報】DataTransfer設定後にinput・change両イベントを発火し、dispatchEventの戻り値をimage_datatransfer_set_doneとして記録する',
+    fn: () => {
+      const inj = injSrc()
+      assert.ok(/const inputEventResult = fileInput\.dispatchEvent\(new Event\('input', \{ bubbles: true \}\)\)/.test(inj), 'inputイベント発火が見つからない')
+      assert.ok(/const changeEventResult = fileInput\.dispatchEvent\(new Event\('change', \{ bubbles: true \}\)\)/.test(inj), 'changeイベント発火が見つからない')
+      const idx = inj.indexOf("log('image_datatransfer_set_done', {")
+      assert.ok(idx >= 0, 'image_datatransfer_set_doneログが見つからない')
+      const body = inj.slice(idx, idx + 250)
+      assert.ok(/filesLength:/.test(body), 'image_datatransfer_set_doneにfilesLengthが記録されていない')
+      assert.ok(/inputEventDispatched:\s*inputEventResult/.test(body), 'image_datatransfer_set_doneにinputイベント発火結果が記録されていない')
+      assert.ok(/changeEventDispatched:\s*changeEventResult/.test(body), 'image_datatransfer_set_doneにchangeイベント発火結果が記録されていない')
     },
   },
 ]
@@ -1094,8 +1256,26 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       const imgBody = inj.slice(imgStart, imgEnd)
       assert.ok(/raceWithTimeout\(\s*Promise\.resolve\(\)\.then\(\(\) => \{\s*const binary = atob/.test(imgBody), 'base64デコードへの5秒上限が見つからない')
       assert.ok(/raceWithTimeout\(crypto\.subtle\.digest\('SHA-256', decoded\), 5000, 'image_sha256_digest'\)/.test(imgBody), 'SHA-256再検証への5秒上限が見つからない')
-      assert.ok(/raceWithTimeout\(sleep\(800\), 5000, 'post_datatransfer_wait'\)/.test(imgBody), 'DataTransfer後待機への5秒上限が見つからない')
-      assert.ok(/raceWithTimeout\(\s*waitFor\(\(\) => \{/.test(imgBody), 'プレビュー確認waitForへの5秒上限が見つからない')
+      // 2026-09-13続き32：DataTransfer設定直後の固定sleep(800)待機
+      // （post_datatransfer_wait）は廃止し、代わりにDataTransfer設定後は
+      // 「調整確定ボタン（あれば）を探して押す」→「反映確認
+      // （verifyImageReflected、最大15秒・内部でbounded）」という実DOMの
+      // 状態を見る判定へ置き換えた。確定ボタン探索とクリック後待機は
+      // それぞれ個別に5秒上限で包まれている。
+      assert.ok(/raceWithTimeout\(waitFor\(\(\) => findConfirmLikeButton\(\), 4000\), 5000, 'find_confirm_button'\)/.test(imgBody), '調整確定ボタン探索への5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(sleep\(500\), 5000, 'post_confirm_click_wait'\)/.test(imgBody), '確定ボタンクリック後待機への5秒上限が見つからない')
+      // verifyImageReflected自体はraceWithTimeoutで外側から包まれてはいない
+      // が、呼び出し時に明示的なtimeoutMs（15000）を受け取り、内部の
+      // ポーリングループ（while (Date.now() - start < timeoutMs)）と
+      // observeMutationsFor（setTimeoutで必ずms後に解決）の両方が
+      // 有限時間で必ず解決する構造になっている——ハングしない設計であること
+      // を確認する。
+      assert.ok(/const reflection = await verifyImageReflected\(15000\)/.test(imgBody), 'プレビュー確認（verifyImageReflected）への15秒上限指定が見つからない')
+      const vStart = inj.indexOf('async function verifyImageReflected(timeoutMs)')
+      const vEnd = inj.indexOf('async function normalizedHash')
+      const vBody = inj.slice(vStart, vEnd)
+      assert.ok(/while \(Date\.now\(\) - start < timeoutMs\)/.test(vBody), 'verifyImageReflectedのポーリングループがtimeoutMsで有限時間に収まっていない')
+      assert.ok(/observeMutationsFor\(document\.body, timeoutMs\)/.test(vBody), 'verifyImageReflected内でobserveMutationsFor（setTimeoutで必ず有限時間に解決するMutationObserver観測）を使っていない')
     },
   },
   {
@@ -1183,13 +1363,17 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
   {
     // 2026-09-14続き29（マロン必須修正⑤：「要素が見つからない場合は待ち
     // 続けず、5秒以内に{status:'failed', error, stack, stages,
-    // domSnapshot, buildRevision}を必ず返す」）：画像処理区間全体を45秒の
-    // 外側raceWithTimeoutで包み、タイムアウト時は指定された構造で
-    // 即座に返すことを確認する（buildRevisionはhandleRun側で合成される）。
+    // domSnapshot, buildRevision}を必ず返す」）：画像処理区間全体を外側
+    // raceWithTimeoutで包み、タイムアウト時は指定された構造で即座に返す
+    // ことを確認する（buildRevisionはhandleRun側で合成される）。
+    // 2026-09-13続き32：verifyImageReflectedの反映待機が最大15秒に
+    // なったため（マロン指示）、45秒では反映確認の後続処理（確定ボタン
+    // 探索・クリック後待機・SHA-256計算等）を含めた全体の頭上が不足する
+    // 余地があり、90秒へ引き上げた。
     name: '【最終防波堤】画像処理区間全体が外側raceWithTimeoutで包まれ、タイムアウト時はstatus:failed・error・stack・stages・domSnapshotを返す',
     fn: () => {
       const inj = injSrc()
-      assert.ok(/raceWithTimeout\(runImageSection\(\), 45000, 'image_section_overall'\)/.test(inj), '画像処理区間全体への外側raceWithTimeoutが見つからない')
+      assert.ok(/raceWithTimeout\(runImageSection\(\), 90000, 'image_section_overall'\)/.test(inj), '画像処理区間全体への外側raceWithTimeout（90秒）が見つからない')
       const idx = inj.indexOf("if (imageSection && imageSection.__timedOut) {")
       assert.ok(idx >= 0, '画像処理区間タイムアウト時の分岐が見つからない')
       const body = inj.slice(idx, idx + 500)

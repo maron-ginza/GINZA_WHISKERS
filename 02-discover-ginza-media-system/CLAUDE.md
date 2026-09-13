@@ -1293,6 +1293,33 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   **632 passed 0 failed**。`transfer-state.json`は前回の一時停止状態のまま
   変更せず、実機検証は今回行っていない。詳細は`DECISION_LOG_02.md`
   2026-09-13 続き31参照。
+- 2026-09-13: 🩹 **note下書き自動転記——v1.18.0実機結果の残る3点（画像反映
+  判定の狭さ・watchdogの固定経過時間誤判定・completion-only1回上限が実際
+  には3回実行された問題）をコード修正。3点目は推測でなく確定した原因を
+  特定（Project 02 commit・push あり／DB更新なし／今回は実ブラウザ実行
+  なし・コード修正のみ）**——①画像反映判定を新規`findImageFileInput`
+  （複数file inputはaccept=image＋アップロードUI近傍で絞り込み）・
+  `describeFileInput`・`observeMutationsFor`・`collectBackgroundImageUrls`・
+  `verifyImageReflected`（新規blob/data img・background-image・canvas
+  増加・完了/エラー文言のいずれかで判定、最大15秒、確認できなければDOM
+  snapshotと選択input情報を返す）へ拡張し、「新しいblob img」だけへの
+  限定を解消。画像処理区間全体の外側タイムアウトを45秒→90秒へ。②固定90秒
+  watchdog（約225秒かけて正常完走していた実行を誤って失敗判定していた）を
+  廃止し、`note-transfer:log`受信をheartbeatとして扱う`HEARTBEAT_STALL_MS`
+  （20秒）＋`HEARTBEAT_ABSOLUTE_CAP_MS`（10分、保険）方式へ変更——処理継続中
+  はtransfer-stateをfailedへ変更しない。③**確定原因**（推測ではなく
+  プロセス状態から特定）：続き31で`MAX_COMPLETION_ATTEMPTS=1`をcommitした
+  後、`tsx/esm`常駐の`noteTransferServer.ts`プロセスが再起動されておらず
+  旧ロジックのまま動作し続けていたことがv1.18.0実機テストで3回実行された
+  直接の原因。根本対策として`completionClaimStarted`（一度クレームしたら
+  恒久的にtrueになるラッチ、カウンタ不整合下でも再選出を防ぐ）＋
+  `activeRunToken`/`runToken`（`randomUUID`でクレームごとに発行、
+  `/result`が不一致トークンの報告を無視）による原子的1回claimを実装。
+  `tsc --noEmit`0エラー、`run-all.ts` **642 passed 0 failed**（632→642、
+  +10）。manifest.jsonの`version`を`1.19.0`へ、`BUILD_REVISION`を
+  `br19-2026-09-14-heartbeat-watchdog-atomic-claim`へ更新。
+  `transfer-state.json`は今回変更していない（マロン指示どおり実ブラウザ
+  未実行）。詳細は`DECISION_LOG_02.md` 2026-09-13 続き32参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

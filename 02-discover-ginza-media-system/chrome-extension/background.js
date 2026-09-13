@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br18-2026-09-14-sw-side-image-fetch'
+const BUILD_REVISION = 'br19-2026-09-14-heartbeat-watchdog-atomic-claim'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -248,11 +248,27 @@ async function waitForTabComplete(tabId, timeoutMs = 20000) {
   })
 }
 
-// 2026-09-14続き27：単発watchdogのタイムアウト（マロン指示）。この時間内に
-// 結果が返らなければ、それ以上待たず「タイムアウト」として1回だけ失敗報告する
-// ——タイムアウト後に本関数から自動的に再実行することはしない（呼び出し元の
-// ポーリングループ・サーバー側リトライ上限が別途担う既存の仕組みに委ねる）。
-const INJECTED_RUN_TIMEOUT_MS = 90000
+// 2026-09-14続き32（マロン指示：「開始から固定90秒で失敗にする方式を廃止
+// してください。stage進行をheartbeatとして更新し、一定時間stage更新がない
+// 場合だけ停止判定してください。処理継続中にtransfer-stateをfailedへ変更
+// しないでください」）：
+// 続き27の固定90秒watchdogは、v1.18.0実機検証でheartbeatなしの単純な
+// 「開始からの経過時間」判定だったため、実際には約225秒かけて正常に
+// hashtags/save/content-hashまで完了していた実行を「無応答」と誤って
+// 失敗判定してしまう事象が発生した（DECISION_LOG_02.md 2026-09-13
+// 続き32）。注入されたスクリプトが送る各stageログ（chrome.runtime.
+// sendMessage）を「まだ生きて進行している」証跡（heartbeat）として扱い、
+// 直近のheartbeatからSTALL_MS以上新しいログが届かない場合にのみ「停止
+// （stall）」と判定する——固定の総経過時間では判定しない。万一heartbeat
+// 自体が永久に途絶えない異常事態に備え、ABSOLUTE_CAP_MSを保険として残す
+// （通常はstall判定が先に効き、ここへは到達しない想定）。
+const HEARTBEAT_STALL_MS = 20000 // この時間、新しいstageログが届かなければ停止とみなす。
+const HEARTBEAT_POLL_MS = 2000
+const HEARTBEAT_ABSOLUTE_CAP_MS = 10 * 60 * 1000 // 保険の絶対上限（10分）。通常はstall判定が先に効く。
+
+// 現在実行中のジョブの最終stageログ受信時刻（tabIdごと）。
+// note-transfer:log受信時（下部のchrome.runtime.onMessageリスナー）に更新する。
+const lastHeartbeatByTab = new Map()
 
 // 2026-09-14続き31：SW側の画像取得1工程あたりのタイムアウト（マロン指示
 // 「各工程5秒以内に成功または明示的failureを返す」）。
@@ -369,26 +385,47 @@ async function runTransferViaExecuteScript(tabId, item) {
     await chrome.scripting.executeScript({ target: { tabId }, files: ['injected-transfer.js'] })
     logToServer('injected_file_injected', { tabId })
 
-    // ② データをtabs.sendMessageで渡し、単発watchdog付きで結果を待つ。
+    // ② データをtabs.sendMessageで渡し、heartbeatベースのstall検知付きで
+    // 結果を待つ（2026-09-14続き32、マロン指示：固定経過時間ではなく
+    // 「stage更新が一定時間無いこと」で停止と判定する）。
+    lastHeartbeatByTab.set(tabId, Date.now())
     const runPromise = chrome.tabs.sendMessage(tabId, {
       type: 'note-transfer:run',
       item,
       buildRevision: BUILD_REVISION,
       categoryIconAsset,
     })
-    const watchdogPromise = new Promise((resolve) => {
-      setTimeout(() => resolve({ __watchdogTimeout: true }), INJECTED_RUN_TIMEOUT_MS)
+    const stallPromise = new Promise((resolve) => {
+      const startedAt = Date.now()
+      const interval = setInterval(() => {
+        const lastHeartbeat = lastHeartbeatByTab.get(tabId) ?? startedAt
+        const sinceHeartbeat = Date.now() - lastHeartbeat
+        const sinceStart = Date.now() - startedAt
+        if (sinceHeartbeat >= HEARTBEAT_STALL_MS) {
+          clearInterval(interval)
+          resolve({ __stalled: true, reason: 'heartbeat_stall', sinceHeartbeat })
+        } else if (sinceStart >= HEARTBEAT_ABSOLUTE_CAP_MS) {
+          clearInterval(interval)
+          resolve({ __stalled: true, reason: 'absolute_cap', sinceStart })
+        }
+      }, HEARTBEAT_POLL_MS)
+      // runPromiseが先に解決した場合もこのintervalを止める（Promise.race
+      // で決着後、不要なintervalを回し続けない）。
+      runPromise.finally(() => clearInterval(interval)).catch(() => {})
     })
-    const result = await Promise.race([runPromise, watchdogPromise])
+    const result = await Promise.race([runPromise, stallPromise])
+    lastHeartbeatByTab.delete(tabId)
 
-    if (result && result.__watchdogTimeout) {
-      // タイムアウト後の自動再試行はしない（マロン指示）。1回だけ失敗報告
-      // する——実行中のスクリプト（もし生きていれば）はinjected-transfer.js
-      // 側のisRunningガードにより、この後の新規実行と重複しない設計。
-      logToServer('injected_run_watchdog_timeout', { tabId, timeoutMs: INJECTED_RUN_TIMEOUT_MS })
+    if (result && result.__stalled) {
+      // heartbeatベースのstall判定後の自動再試行はしない（マロン指示）。
+      // 1回だけ失敗報告する——実行中のスクリプト（もし生きていれば）は
+      // injected-transfer.js側のisRunningガードにより、この後の新規実行と
+      // 重複しない設計。
+      logToServer('injected_run_heartbeat_stall', { tabId, reason: result.reason, sinceHeartbeat: result.sinceHeartbeat, sinceStart: result.sinceStart })
       await reportResult(item.articleId, 'failure', {
-        error: `stage=injected_run_watchdog_timeout: ${INJECTED_RUN_TIMEOUT_MS}ms以内に応答がありませんでした`,
+        error: `stage=injected_run_heartbeat_stall: ${HEARTBEAT_STALL_MS}ms間stageの更新が無かったため停止と判定しました（reason=${result.reason}）`,
         mode: item.mode,
+        runToken: item.runToken,
       })
       return
     }
@@ -403,6 +440,7 @@ async function runTransferViaExecuteScript(tabId, item) {
       await reportResult(item.articleId, 'failure', {
         error: 'stage=execute_script_no_result: 注入したスクリプトから結果が返りませんでした',
         mode: item.mode,
+        runToken: item.runToken,
       })
       return
     }
@@ -416,12 +454,16 @@ async function runTransferViaExecuteScript(tabId, item) {
       // ——success応答でも握りつぶさずサーバーへ転送し、診断できるようにする
       // （画像以外は成功してしまい失敗経路のdebug送信が一度も発火しなかった
       // 実機での反省を踏まえた対応）。
+      // 2026-09-14続き32（マロン指示）：runTokenを結果報告に含め、サーバー
+      // 側が「このクレームの結果であること」を検証できるようにする
+      // （原子的1回claimの一部）。
       await reportResult(item.articleId, 'success', {
         draftUrl: result.draftUrl,
         mode: item.mode,
         hashtagsDone: result.hashtagsDone,
         iconDone: result.iconDone,
         iconDebug: result.iconResult?.debug ?? null,
+        runToken: item.runToken,
       })
       // 2026-09-14続き24（マロン指示）：「既存の非表示タブで完了している
       // 場合は、そのタブを新規作成せず前面表示する」——ハッシュタグ・画像とも
@@ -437,11 +479,11 @@ async function runTransferViaExecuteScript(tabId, item) {
         }
       }
     } else {
-      await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug, mode: item.mode })
+      await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug, mode: item.mode, runToken: item.runToken })
     }
   } catch (e) {
     logToServer('execute_script_error', { tabId, error: String(e?.message ?? e), stack: String(e?.stack ?? '').slice(0, 500) })
-    await reportResult(item.articleId, 'failure', { error: `stage=execute_script_error: ${String(e?.message ?? e)}`, mode: item.mode })
+    await reportResult(item.articleId, 'failure', { error: `stage=execute_script_error: ${String(e?.message ?? e)}`, mode: item.mode, runToken: item.runToken })
   }
 }
 
@@ -610,8 +652,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const tabId = sender.tab?.id
 
   if (msg?.type === 'note-transfer:log') {
-    // content.js からの段階別診断ログをそのままサーバーへ転送する。
+    // content.js／injected-transfer.js からの段階別診断ログをそのまま
+    // サーバーへ転送する。
     logToServer(msg.event, { ...msg.detail, tabId, frame: sender.frameId })
+    // 2026-09-14続き32（マロン指示：「stage進行をheartbeatとして更新する」）
+    // ——このtabIdで進行中のジョブがあれば、stageログの受信自体を
+    // 「まだ生きて進行している」証跡として記録する。
+    if (tabId != null) lastHeartbeatByTab.set(tabId, Date.now())
     return
   }
 

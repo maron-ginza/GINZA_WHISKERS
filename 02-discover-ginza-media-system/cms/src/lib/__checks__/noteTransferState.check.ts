@@ -247,6 +247,79 @@ const cases: CheckCase[] = [
       assert.equal(determineTransferMode({ articleId: 67, status: 'pending', attempts: 0 }), 'full')
     },
   },
+  {
+    // 2026-09-13続き32（マロン指示：「runIdまたはattemptToken単位でサーバー
+    // 側を原子的に1回だけclaimし、同じcompletion-onlyジョブを再取得できない
+    // ようにする」）——completionClaimStartedは「一度クレームしたら恒久的に
+    // true」のラッチであり、MAX_COMPLETION_ATTEMPTSのカウンタが古い値の
+    // まま（更新前ロジックのプロセスが動いていた等）でも、二度目のclaimを
+    // 構造的に防げることを確認する。
+    name: '【原子的1回claim】claimInProgressでcompletion-onlyジョブをクレームした時点でcompletionClaimStartedが恒久的にtrueになり、以後カウンタに関わらず再選出されない',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      assert.equal(state['67'].completionClaimStarted, undefined, '前提：クレーム前はcompletionClaimStartedが立っていない')
+      assert.equal(selectNextPendingArticleId(state, [67]), 67, '前提：クレーム前はcompletion-only候補として選出される')
+
+      state = claimInProgress(state, 67, '2026-09-14T00:01:00.000Z', 'token-A')
+      assert.equal(state['67'].completionClaimStarted, true, 'claimInProgress直後にcompletionClaimStartedがtrueになっていない')
+      assert.equal(state['67'].activeRunToken, 'token-A', 'claimInProgressがactiveRunTokenを記録していない')
+
+      // completionAttemptsが依然0（＝カウンタ上はまだ上限に達していない）
+      // 状態を人為的に再現しても、completionClaimStartedのラッチにより
+      // 選出されないことを確認する（カウンタ不整合への耐性）。
+      const staleCounterState: TransferState = {
+        ...state,
+        '67': { ...state['67'], status: 'success', completionAttempts: 0 },
+      }
+      assert.equal(
+        selectNextPendingArticleId(staleCounterState, [67]),
+        null,
+        'completionAttemptsが0（古いカウンタ）でもcompletionClaimStartedがtrueなら再選出されない',
+      )
+    },
+  },
+  {
+    name: '【原子的1回claim】recordCompletionAttemptはactiveRunTokenと一致しないrunTokenの結果報告を無視し、stateを一切変更しない',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      state = claimInProgress(state, 67, '2026-09-14T00:01:00.000Z', 'token-A')
+      const beforeMismatch = state
+
+      // 別のクレーム（例：古いサーバープロセスが並行して発行したトークン）
+      // からの結果報告——一致しないため無視され、stateは一切変更されない。
+      const afterMismatch = recordCompletionAttempt(state, 67, true, 'token-B-mismatched')
+      assert.equal(afterMismatch, beforeMismatch, 'runTokenが一致しない結果報告でstateオブジェクトが変更されている（無視されるべき）')
+      assert.equal(afterMismatch['67'].status, 'in_progress', 'runToken不一致の結果報告でstatusが変化してしまっている')
+      assert.equal(afterMismatch['67'].completionAttempts ?? 0, 0, 'runToken不一致の結果報告でcompletionAttemptsが加算されてしまっている')
+
+      // 正しいトークンでの結果報告は通常どおり反映され、消費後は
+      // activeRunTokenがクリアされる。
+      const afterMatch = recordCompletionAttempt(state, 67, true, 'token-A')
+      assert.equal(afterMatch['67'].status, 'success', '一致するrunTokenでの結果報告が反映されていない')
+      assert.equal(afterMatch['67'].needsCompletion, false, '一致するrunTokenでの成功報告後もneedsCompletionがfalseになっていない')
+      assert.equal(afterMatch['67'].activeRunToken, undefined, '一致するrunTokenでの結果報告後にactiveRunTokenがクリアされていない（クレーム消費）')
+      assert.equal(afterMatch['67'].completionClaimStarted, true, '結果報告後もcompletionClaimStartedは恒久的にtrueのまま維持されるべき')
+    },
+  },
+  {
+    name: '【原子的1回claim】runTokenを渡さない呼び出し（後方互換）は従来どおり無条件で反映される',
+    fn: () => {
+      let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
+      state = claimInProgress(state, 67, '2026-09-14T00:01:00.000Z') // runToken省略
+      assert.equal(state['67'].activeRunToken, undefined, 'runTokenを渡さないclaimInProgressでactiveRunTokenが設定されてしまっている')
+      const next = recordCompletionAttempt(state, 67, false) // runToken省略
+      assert.equal(next['67'].completionAttempts, 1, 'runToken省略時の結果報告が反映されていない')
+    },
+  },
+  {
+    name: '【原子的1回claim】fullモード（draftUrlが無い初回クレーム）ではcompletionClaimStartedをtrueにしない',
+    fn: () => {
+      const state = claimInProgress({}, 68, '2026-09-14T00:00:00.000Z', 'token-full')
+      assert.equal(determineTransferMode(undefined), 'full')
+      assert.equal(state['68'].completionClaimStarted, undefined, 'fullモードの初回クレームでcompletionClaimStartedがtrueになってしまっている')
+      assert.equal(state['68'].activeRunToken, 'token-full', 'fullモードでもactiveRunToken自体は記録されるべき')
+    },
+  },
 ]
 
 export const suite = () => runSuite('noteTransferState', cases)
