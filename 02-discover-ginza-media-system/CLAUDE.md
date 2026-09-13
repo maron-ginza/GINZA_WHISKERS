@@ -928,6 +928,22 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   実DOMへの要素探索ロジック自体の成否は次回実機試行の診断ログ待ち。
   Article #67は転記待ちを維持。詳細は`DECISION_LOG_02.md` 2026-09-13
   続き13参照。
+- 2026-09-13: 🔍 **note下書き自動転記——実機検証2回目失敗の調査：実ログ
+  （アクセスログ・診断ログ）は拡張からのリクエストが1件も届いていないことを
+  示した（Project 02 commit・push あり／DB更新なし）**——`transfer-state.json`
+  空・診断ログファイル自体が不存在（`content_script_loaded`すら未到達）・
+  サーバーアクセスログにも拡張からのリクエストが皆無、という実ログの
+  一致から、DOM操作の失敗ではなく**より手前（SW起動または注入経路自体）に
+  問題がある**と判定した。ただしこの開発環境からはブラウザDevTools・
+  chrome://extensionsのエラー表示が見えないため、1行レベルの原因までは
+  今回のログだけで完全には特定できていない——次回の診断ログの中身が決め手に
+  なる。対応：①最も早い段階で送る`service_worker_evaluated`起動証跡ログを
+  新設②`content_scripts`宣言的注入・メッセージ往復に依存しない
+  `chrome.scripting.executeScript`ベースの確実な注入経路を新設
+  （`injectedNoteTransfer`、DOM読み込み完了待機込み、0文字成功禁止・公開
+  ボタン除外ガードは維持）③`chrome.tabs.onUpdated`による独立トリガー経路を
+  追加。回帰テスト新規4件、`run-all.ts` **560 passed 0 failed**。Article #67は
+  転記待ちを維持。詳細は`DECISION_LOG_02.md` 2026-09-13 続き14参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

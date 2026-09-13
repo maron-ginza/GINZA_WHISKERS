@@ -264,6 +264,57 @@ const cases: CheckCase[] = [
       assert.ok(server.includes('appendDiagnosticLog'), '診断ログ書き込み関数が見つからない')
     },
   },
+  {
+    // 2026-09-14続き3：content_scriptsの宣言的注入・ready/startメッセージ往復
+    // だけに依存せず、chrome.scripting.executeScriptで対象タブへ確実に注入する
+    // 経路を実装すること（マロン指示）。静的に存在を確認する。
+    name: '【確実な注入経路】background.jsがchrome.scripting.executeScriptで対象タブへ直接注入する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/chrome\.scripting\.executeScript/.test(bg), 'chrome.scripting.executeScript の呼び出しが見つからない')
+      assert.ok(/func:\s*injectedNoteTransfer/.test(bg), 'executeScriptにinjectedNoteTransfer関数が渡されていない')
+      assert.ok(/function injectedNoteTransfer/.test(bg), 'injectedNoteTransfer関数の定義が見つからない')
+    },
+  },
+  {
+    name: '【確実な注入経路】DOM読み込み完了（waitForTabComplete）を待ってから注入する',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(/function waitForTabComplete/.test(bg), 'waitForTabComplete関数が見つからない')
+      assert.ok(/await waitForTabComplete\(/.test(bg), 'checkPending内でwaitForTabCompleteを待機していない')
+      assert.ok(/onUpdated\.addListener/.test(bg), "status:'complete' 判定用の chrome.tabs.onUpdated リスナーが見つからない")
+    },
+  },
+  {
+    // executeScriptで注入されるinjectedNoteTransfer自身も、content.jsと同様に
+    // 0文字のまま成功報告しないガードを持つこと（実行経路が変わっても安全境界は
+    // 変わらないことの確認）。
+    name: '【0文字成功禁止・executeScript経路】injectedNoteTransferもタイトル・本文0文字では成功を返さない',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const start = bg.indexOf('function injectedNoteTransfer')
+      const end = bg.indexOf('async function waitForTabComplete')
+      assert.ok(start >= 0 && end > start, 'injectedNoteTransfer関数の範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/titleReadback\.length\s*===\s*0/.test(body), 'injectedNoteTransfer内にタイトル0文字ガードが見つからない')
+      assert.ok(/bodyReadback\.length\s*===\s*0/.test(body), 'injectedNoteTransfer内に本文0文字ガードが見つからない')
+      assert.ok(
+        /finalTitle\.length\s*===\s*0\s*\|\|\s*finalBody\.length\s*===\s*0/.test(body),
+        'injectedNoteTransfer内に保存後の最終確認ガードが見つからない',
+      )
+      assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(body), 'injectedNoteTransfer内に「公開」ボタン除外ガードが見つからない')
+    },
+  },
+  {
+    name: '【最原始的な起動証跡】background.jsが他の何よりも早い段階でservice_worker_evaluatedログを送る',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const evalIdx = bg.indexOf("logToServer('service_worker_evaluated'")
+      const firstListenerIdx = bg.indexOf('onInstalled.addListener')
+      assert.ok(evalIdx >= 0, 'service_worker_evaluated ログ送信が見つからない')
+      assert.ok(evalIdx < firstListenerIdx, 'service_worker_evaluated が他のリスナー登録より後ろにある（最初の証跡として機能しない）')
+    },
+  },
 ]
 
 export const suite = () => runSuite('chromeExtensionManifest', cases)

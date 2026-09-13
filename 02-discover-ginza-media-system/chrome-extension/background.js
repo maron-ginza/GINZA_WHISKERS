@@ -93,6 +93,16 @@ function logToServer(event, detail) {
   }
 }
 
+// 2026-09-14続き3：実機検証2回目も「拡張再読み込み後、サーバーに一切
+// リクエストが届かない」という1回目と同一の症状で失敗した。この
+// service_worker_evaluatedログは、他のどの処理より前に（importScriptsや
+// 関数定義より前に）実行される、最も原始的な「SWスクリプト自体が評価された
+// か」の証跡である。次回、これすらサーバーに届いていなければ、原因は
+// background.js内部のロジックではなく、拡張の再読み込みそのものが
+// SWの実行に反映されていない（Chrome側の問題、または別の拡張インスタンスを
+// 見ている等）と判断できる。
+logToServer('service_worker_evaluated', { ts: Date.now() })
+
 // --- chrome.storage が使えない場合のメモリ内フォールバック ---
 let memoryInFlight = null // { articleId, startedAt }
 const storageAvailable = !!(chrome.storage && chrome.storage.local)
@@ -171,6 +181,376 @@ async function findOrOpenNoteEditorTab() {
   return created
 }
 
+/**
+ * chrome.scripting.executeScriptで対象タブへ直接注入する、完全に自己完結した
+ * 関数（2026-09-14続き3新設）。
+ *
+ * 【なぜこれが必要か】content_scripts宣言的マッチングは、拡張の再読み込み後も
+ * サーバーへ一切のリクエストが届かない（=SW側のポーリングすら動いていない
+ * ように見える）という2回連続の実機検証失敗を受けて、"content_scriptsの
+ * 自動注入だけに依存しない、確実に実行できる経路" として追加した。
+ * background.jsが対象タブを能動的に選び、明示的にこの関数を注入して
+ * 実行し、戻り値（Promise）で直接結果を受け取る——ready/startのメッセージ
+ * 往復に依存しないため、その経路のどこかが機能していなくても影響を受けない。
+ *
+ * chrome.scripting.executeScriptのfuncはFunction.prototype.toString()で
+ * シリアライズされ対象タブ内で再評価されるため、外側のクロージャ変数を
+ * 参照できない——必要なヘルパーはすべてこの関数の内部に自己完結させている
+ * （content.jsと論理的には同じ内容だが、実行経路が異なるため独立した
+ * コピーとして保持する）。
+ */
+function injectedNoteTransfer(item) {
+  return (async () => {
+    const stages = []
+    const log = (event, detail) => stages.push({ event, detail: detail ?? null, at: Date.now() })
+
+    function sleep(ms) {
+      return new Promise((r) => setTimeout(r, ms))
+    }
+    async function waitFor(fn, timeoutMs = 15000, intervalMs = 300) {
+      const start = Date.now()
+      while (Date.now() - start < timeoutMs) {
+        const result = fn()
+        if (result) return result
+        await sleep(intervalMs)
+      }
+      return null
+    }
+    async function waitForPageLoad(timeoutMs = 15000) {
+      if (document.readyState === 'complete') return true
+      return new Promise((resolvePromise) => {
+        const timer = setTimeout(() => resolvePromise(false), timeoutMs)
+        window.addEventListener(
+          'load',
+          () => {
+            clearTimeout(timer)
+            resolvePromise(true)
+          },
+          { once: true },
+        )
+      })
+    }
+    function visibleText(el) {
+      return (el.innerText || el.textContent || '').trim()
+    }
+    function isVisible(el) {
+      if (!el) return false
+      const rect = el.getBoundingClientRect()
+      const style = window.getComputedStyle(el)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    function deepQuerySelectorAll(selector, root = document) {
+      const out = []
+      const walk = (node) => {
+        if (!node) return
+        if (typeof node.querySelectorAll === 'function') out.push(...node.querySelectorAll(selector))
+        const all = typeof node.querySelectorAll === 'function' ? node.querySelectorAll('*') : []
+        for (const el of all) {
+          if (el.shadowRoot) walk(el.shadowRoot)
+        }
+      }
+      walk(root)
+      return out
+    }
+    function placeholderLike(el) {
+      return el.getAttribute?.('placeholder') || el.getAttribute?.('aria-label') || el.getAttribute?.('data-placeholder') || ''
+    }
+    function fieldKind(el) {
+      const tag = el.tagName.toLowerCase()
+      if (tag === 'textarea') return 'textarea'
+      if (tag === 'input') return 'input'
+      if (el.getAttribute('contenteditable') === 'true' || el.isContentEditable) return 'contenteditable'
+      if (el.getAttribute('role') === 'textbox') return 'contenteditable'
+      return 'unknown'
+    }
+    function findTitleField() {
+      const candidates = deepQuerySelectorAll(
+        'textarea, input[type="text"], input:not([type]), [contenteditable="true"], [role="textbox"]',
+      ).filter(isVisible)
+      const byLabel = candidates.find((el) => /タイトル|title/i.test(placeholderLike(el)))
+      if (byLabel) return { el: byLabel, kind: fieldKind(byLabel), reason: 'label-match' }
+      const heading = candidates.find((el) => /^h1$/i.test(el.tagName))
+      if (heading) return { el: heading, kind: fieldKind(heading), reason: 'heading-tag' }
+      const editableOnly = candidates.filter((el) => fieldKind(el) !== 'unknown')
+      if (editableOnly.length > 0) {
+        const sorted = [...editableOnly].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+        return { el: sorted[0], kind: fieldKind(sorted[0]), reason: 'topmost-fallback' }
+      }
+      return null
+    }
+    function findBodyField(excludeEl) {
+      const candidates = deepQuerySelectorAll('[contenteditable="true"], [role="textbox"]').filter(
+        (el) => isVisible(el) && el !== excludeEl && !excludeEl?.contains?.(el) && !el.contains?.(excludeEl),
+      )
+      if (candidates.length === 0) return null
+      const sorted = [...candidates].sort((a, b) => {
+        const ra = a.getBoundingClientRect()
+        const rb = b.getBoundingClientRect()
+        return rb.width * rb.height - ra.width * ra.height
+      })
+      return { el: sorted[0], kind: fieldKind(sorted[0]) }
+    }
+    function findHashtagInput() {
+      return deepQuerySelectorAll('input[type="text"], input:not([type])').find(
+        (el) => isVisible(el) && /タグ|ハッシュタグ|tag/i.test(placeholderLike(el)),
+      )
+    }
+    function findSaveDraftButton() {
+      const candidates = deepQuerySelectorAll('button, [role="button"], a')
+      return candidates.find((el) => {
+        if (!isVisible(el)) return false
+        const t = visibleText(el)
+        if (!t) return false
+        if (/公開/.test(t)) return false // 絶対除外
+        return /下書き\s*保存|下書きを保存/.test(t)
+      })
+    }
+    function setNativeValue(el, value) {
+      const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+      const desc = Object.getOwnPropertyDescriptor(proto, 'value')
+      if (desc && desc.set) desc.set.call(el, value)
+      else el.value = value
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    function dispatchInputLikeEvents(el, text) {
+      try {
+        el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }))
+      } catch {}
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+      try {
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+      } catch {}
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    async function setContentEditableParagraphs(el, text) {
+      el.focus()
+      document.execCommand('selectAll', false)
+      document.execCommand('delete', false)
+      const paragraphs = text.split('\n\n')
+      for (let i = 0; i < paragraphs.length; i++) {
+        const lines = paragraphs[i].split('\n')
+        for (let j = 0; j < lines.length; j++) {
+          document.execCommand('insertText', false, lines[j])
+          if (j < lines.length - 1) document.execCommand('insertLineBreak', false)
+        }
+        if (i < paragraphs.length - 1) {
+          document.execCommand('insertParagraph', false)
+          document.execCommand('insertParagraph', false)
+        }
+      }
+      dispatchInputLikeEvents(el, text)
+    }
+    function readBackText(field) {
+      if (!field) return ''
+      if (field.kind === 'textarea' || field.kind === 'input') return (field.el.value || '').trim()
+      return (field.el.innerText || field.el.textContent || '').trim()
+    }
+    async function verifyWritten(field, waitMs = 2000, intervalMs = 200) {
+      const start = Date.now()
+      let text = readBackText(field)
+      while (text.length === 0 && Date.now() - start < waitMs) {
+        await sleep(intervalMs)
+        text = readBackText(field)
+      }
+      return text
+    }
+    function pressEnter(el) {
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        el.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }))
+      }
+    }
+    async function attachCategoryIcon(iconInfo) {
+      if (!iconInfo || !iconInfo.url) return { attached: false, reason: 'カテゴリーアイコン情報なし' }
+      const fileInput = deepQuerySelectorAll('input[type="file"]')[0]
+      if (!fileInput) return { attached: false, reason: 'ファイル入力要素が見つからない' }
+      try {
+        const res = await fetch(iconInfo.url)
+        const blob = await res.blob()
+        const file = new File([blob], iconInfo.url.split('/').pop() || 'category-icon.jpg', { type: blob.type || 'image/jpeg' })
+        const dt = new DataTransfer()
+        dt.items.add(file)
+        fileInput.files = dt.files
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+        return { attached: true }
+      } catch (e) {
+        return { attached: false, reason: String(e?.message ?? e) }
+      }
+    }
+    function domDebugSnapshot() {
+      const buttons = deepQuerySelectorAll('button, [role="button"]').filter(isVisible).map(visibleText).filter(Boolean).slice(0, 40)
+      const editables = deepQuerySelectorAll('[contenteditable="true"], [role="textbox"]').filter(isVisible)
+      const editableSummary = editables.slice(0, 20).map((el) => ({
+        tag: el.tagName.toLowerCase(),
+        placeholderLike: placeholderLike(el),
+        rectWidth: Math.round(el.getBoundingClientRect().width),
+        rectHeight: Math.round(el.getBoundingClientRect().height),
+      }))
+      const textareas = deepQuerySelectorAll('textarea').filter(isVisible).map((el) => ({ placeholder: el.getAttribute('placeholder') }))
+      const inputs = deepQuerySelectorAll('input').filter(isVisible).map((el) => ({ type: el.getAttribute('type'), placeholder: el.getAttribute('placeholder') }))
+      return { buttons, editableSummary, textareas, inputs, title: document.title, bodyChildCount: document.body ? document.body.children.length : 0 }
+    }
+
+    log('injected_transfer_started', { url: location.href, readyState: document.readyState })
+    await waitForPageLoad(15000)
+    log('page_load_state', { readyState: document.readyState })
+
+    const ready = await waitFor(() => findTitleField() || deepQuerySelectorAll('[contenteditable="true"]').length > 0, 20000)
+    const snapshot = domDebugSnapshot()
+    log('dom_snapshot', snapshot)
+    if (!ready) {
+      return { status: 'failure', error: 'stage=editor_not_ready: エディタの初期化を検出できませんでした', debug: snapshot, stages }
+    }
+    await sleep(500)
+
+    const titleField = findTitleField()
+    if (!titleField) {
+      return { status: 'failure', error: 'stage=title_field_not_found', debug: domDebugSnapshot(), stages }
+    }
+    log('title_field_found', { kind: titleField.kind, reason: titleField.reason, tag: titleField.el.tagName })
+
+    if (titleField.kind === 'textarea' || titleField.kind === 'input') {
+      setNativeValue(titleField.el, item.title)
+    } else {
+      titleField.el.focus()
+      document.execCommand('selectAll', false)
+      document.execCommand('insertText', false, item.title)
+      dispatchInputLikeEvents(titleField.el, item.title)
+    }
+    const titleReadback = await verifyWritten(titleField)
+    log('title_write_verify', { length: titleReadback.length, sample: titleReadback.slice(0, 30) })
+    if (titleReadback.length === 0) {
+      return { status: 'failure', error: 'stage=title_write_not_verified: タイトル欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
+    }
+
+    const bodyField = findBodyField(titleField.el)
+    if (!bodyField) {
+      return { status: 'failure', error: 'stage=body_field_not_found', debug: domDebugSnapshot(), stages }
+    }
+    log('body_field_found', { kind: bodyField.kind, tag: bodyField.el.tagName })
+
+    await setContentEditableParagraphs(bodyField.el, item.body)
+    const bodyReadback = await verifyWritten(bodyField)
+    log('body_write_verify', { length: bodyReadback.length, sample: bodyReadback.slice(0, 30) })
+    if (bodyReadback.length === 0) {
+      return { status: 'failure', error: 'stage=body_write_not_verified: 本文欄への書き込みを読み戻せませんでした（0文字）', debug: domDebugSnapshot(), stages }
+    }
+
+    let hashtagResult = { attempted: false }
+    const hashtagInput = findHashtagInput()
+    if (hashtagInput) {
+      hashtagResult.attempted = true
+      for (const tag of item.hashtags || []) {
+        setNativeValue(hashtagInput, tag.replace(/^#/, ''))
+        pressEnter(hashtagInput)
+        await sleep(200)
+      }
+    }
+    log('hashtags_done', hashtagResult)
+
+    const iconResult = await attachCategoryIcon(item.categoryIcon)
+    log('icon_attach_done', iconResult)
+    await sleep(300)
+
+    const saveBtn = await waitFor(() => findSaveDraftButton(), 8000)
+    if (!saveBtn) {
+      return {
+        status: 'failure',
+        error: 'stage=save_button_not_found: 「下書き保存」ボタンが見つかりません（公開ボタンは対象外のため誤操作はしていません）',
+        debug: domDebugSnapshot(),
+        hashtagResult,
+        iconResult,
+        stages,
+      }
+    }
+    log('save_button_found', { text: visibleText(saveBtn) })
+    saveBtn.click()
+    await sleep(2000)
+
+    const finalTitle = readBackText(titleField)
+    const finalBody = readBackText(bodyField)
+    log('post_save_verify', { titleLength: finalTitle.length, bodyLength: finalBody.length })
+    if (finalTitle.length === 0 || finalBody.length === 0) {
+      return {
+        status: 'failure',
+        error: `stage=post_save_verify_failed: 保存操作後にタイトル(${finalTitle.length}文字)または本文(${finalBody.length}文字)が0文字になりました`,
+        stages,
+      }
+    }
+
+    return { status: 'success', draftUrl: location.href, hashtagResult, iconResult, stages }
+  })()
+}
+
+/** 対象タブがナビゲーション完了（status:'complete'）になるまで待つ。
+ * DOM読み込み完了まで待機してから注入するため（2026-09-14続き3、マロン指示）。 */
+async function waitForTabComplete(tabId, timeoutMs = 20000) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null)
+  if (tab && tab.status === 'complete') return true
+  return new Promise((resolvePromise) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener)
+      resolvePromise(false)
+    }, timeoutMs)
+    function listener(updatedTabId, info) {
+      if (updatedTabId === tabId && info.status === 'complete') {
+        clearTimeout(timer)
+        chrome.tabs.onUpdated.removeListener(listener)
+        resolvePromise(true)
+      }
+    }
+    chrome.tabs.onUpdated.addListener(listener)
+  })
+}
+
+/**
+ * chrome.scripting.executeScriptで対象タブへ直接注入し、実行結果を直接受け取る
+ * （content_scripts宣言的注入・ready/startメッセージ往復に依存しない経路）。
+ * 成功・失敗いずれもここでサーバーへ報告し、inFlightもここでクリアする。
+ */
+async function runTransferViaExecuteScript(tabId, item) {
+  logToServer('execute_script_attempt', { tabId, articleId: item.articleId })
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: injectedNoteTransfer,
+      args: [item],
+    })
+    const result = results?.[0]?.result
+    if (!result) {
+      logToServer('execute_script_no_result', { tabId })
+      await reportResult(item.articleId, 'failure', { error: 'stage=execute_script_no_result: 注入した関数から結果が返りませんでした' })
+      return
+    }
+    // 注入した関数が内部で記録した段階別ログ（stages）をまとめてサーバーへ転送する。
+    for (const s of result.stages ?? []) {
+      logToServer(s.event, { ...s.detail, tabId, via: 'executeScript' })
+    }
+    if (result.status === 'success') {
+      await reportResult(item.articleId, 'success', { draftUrl: result.draftUrl })
+    } else {
+      await reportResult(item.articleId, 'failure', { error: result.error, debug: result.debug })
+    }
+  } catch (e) {
+    logToServer('execute_script_error', { tabId, error: String(e?.message ?? e) })
+    await reportResult(item.articleId, 'failure', { error: `stage=execute_script_error: ${String(e?.message ?? e)}` })
+  }
+}
+
+async function reportResult(articleId, status, extra) {
+  try {
+    await fetch(`${SERVER_BASE}/api/note-transfer/result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ articleId, status, ...extra }),
+    })
+  } catch (e) {
+    console.error('[note-transfer] result report failed', e)
+  } finally {
+    await setInFlight(null)
+  }
+}
+
 async function checkPending() {
   try {
     const inFlight = await getInFlight()
@@ -192,10 +572,12 @@ async function checkPending() {
     await setInFlight(item.articleId)
 
     const tab = await findOrOpenNoteEditorTab()
-    // content script の起動・onMessage登録を待つため、readyメッセージを待つ
-    // （タブ作成／再読み込み直後は content script がまだ読み込まれていない
-    // 可能性があるため）。
-    pendingItemByTab.set(tab.id, item)
+    // 2026-09-14続き3：content_scriptsの宣言的注入（ready/startメッセージ往復）
+    // だけに依存せず、chrome.scripting.executeScriptで対象タブへ確実に注入する
+    // 経路を主経路とする（マロン指示）。DOM読み込み完了を待ってから注入する。
+    const loaded = await waitForTabComplete(tab.id, 20000)
+    logToServer('tab_load_wait_done', { tabId: tab.id, loaded })
+    await runTransferViaExecuteScript(tab.id, item)
   } catch (e) {
     console.error('[note-transfer] pending check failed', e)
     logToServer('check_pending_error', { error: String(e?.message ?? e) })
@@ -275,6 +657,16 @@ chrome.runtime.onStartup.addListener(() => {
 checkPending()
 
 const pendingItemByTab = new Map()
+
+// 2026-09-14続き3：アラーム（20秒間隔）だけに依存せず、note編集タブ自体が
+// 読み込み完了した瞬間にもcheckPending()を起動する（独立したトリガー経路を
+// 増やし、アラームが何らかの理由で発火しない場合でも動作するようにする）。
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === 'complete' && isNoteEditorTargetUrl(tab.url)) {
+    logToServer('note_editor_tab_completed', { tabId, url: tab.url })
+    checkPending()
+  }
+})
 
 // 転記対象タブが処理完了前に閉じられた場合、inFlightを放置しない
 // （2026-09-14続き2追加：中断されたタブの後始末）。

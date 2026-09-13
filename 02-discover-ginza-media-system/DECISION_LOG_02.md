@@ -14,6 +14,97 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き14（🔍 **note下書き自動転記——実機検証2回目失敗の調査：
+    実ログ（アクセスログ・診断ログ）は拡張からのリクエストが「一件も届いて
+    いない」ことを示し、SW起動自体が疑わしいと判定。content_scripts宣言的
+    注入に依存しない chrome.scripting.executeScript 経路と最原始的な起動
+    証跡ログを新設（Project 02 commit・push あり／DB更新なし／note公開
+    なし・Article #67は転記待ちのまま維持）**）:
+
+    マロン報告：続き13の修正（inFlightタイムアウト＋onInstalledクリア）適用後の
+    再読み込みでも、Article #67のnote編集画面は再び0文字・タイトル/本文とも
+    未入力のまま失敗。「これ以上Chrome操作を求める前に、実ログ（transfer-state・
+    診断ログ・アクセスログ・dom_snapshot・content script起動記録・pending取得
+    記録・DOM要素発見結果・書き込み読み戻し結果）を使って失敗した最初の段階を
+    特定すること」との指示。
+
+    **実ログの確認結果**：①`transfer-state.json`は実機検証後も`{}`のまま。
+    ②`.devlogs/night/note-transfer-diagnostic.jsonl`は**ファイル自体が
+    存在しない**——`content.js`の最初の1行で送るはずの`content_script_loaded`
+    ログすら一度も届いていない。③サーバーのアクセスログ（`console.log`、
+    `./p2 note-transfer serve`の標準出力）を確認したところ、サーバーは
+    続き13の修正適用時（17:03:44 JST）から現在（08:41 UTC時点で確認、
+    以後マロンの実機検証を挟んでも）まで**連続稼働しており**、記録されて
+    いる唯一のリクエストは検証作業中のこちら側のcurlテストのみ——**拡張
+    からのリクエストは`/pending`・`/log`のいずれも実機検証の時間帯に
+    1件も記録されていない**。
+
+    **判定**：この事実（`content_script_loaded`ログすら届かない＝
+    content.jsの実行そのものが1行も進んでいない）は、DOM要素の発見・
+    書き込み・読み戻しの失敗ではなく、**より手前の段階——拡張の
+    background service worker、またはcontent_scriptsの注入自体が
+    機能していない**ことを示す。続き13で実装した診断ログ経路
+    （`logToServer`）は`try/catch`で保護されているため、たとえ
+    `checkPending()`内部でエラーが起きても`check_pending_error`として
+    最低限サーバーへ届くはずだったが、それすら届いていない——このため、
+    「SWのロジックのどこかでエラーが起きた」よりも「SWのトップレベル
+    コード自体が実行されていない、または拡張の再読み込みが実際には
+    最新コードを反映していない」可能性が高いと判断した。ただし、
+    ブラウザのDevTools console.log・chrome://extensionsのエラー表示は
+    この開発環境から見えないため、**SWが本当に一度も評価されていないのか、
+    それとも評価はされたが後述の経路が機能していないだけなのかは、
+    今回のログだけでは完全に切り分けられない**——この限界を認めた
+    うえで、両方の可能性に対応する修正を行った。
+
+    **対応**：①**最原始的な起動証跡**——`background.js`の他のどの処理
+    よりも早い段階（`importScripts`や関数定義より前）で
+    `logToServer('service_worker_evaluated', ...)`を送信する1行を追加した。
+    次回、これすら届いていなければ「SWスクリプト自体が評価されていない
+    （拡張の再読み込みが反映されていない等、コード側では解決不能な問題）」
+    と判断でき、届いていれば「SWは起動しているが、その先のロジックに問題が
+    ある」と切り分けられる。②**content_scriptsの宣言的注入だけに依存しない
+    確実な注入経路**（マロン指示）——新規`chrome.scripting.executeScript`
+    ベースの経路を実装した。`background.js`が対象タブを選び、DOM読み込み
+    完了（`waitForTabComplete`、`chrome.tabs.onUpdated`のstatus:'complete'を
+    待つ）を確認したうえで、完全に自己完結した関数`injectedNoteTransfer`
+    （content.jsと論理的に同一のタイトル/本文探索・書き込み・0文字読み戻し
+    検証・保存ボタンクリック・保存後再確認ロジックを内包）を
+    `chrome.scripting.executeScript({target,func,args})`で直接注入し、
+    戻り値（Promise）で結果を直接受け取る——ready/startのメッセージ往復に
+    一切依存しない。`checkPending()`はこの経路を主経路とするよう変更した
+    （旧来のcontent_scripts宣言的注入・メッセージ往復は`content.js`に
+    残置し害のない冗長経路として維持）。③**独立したトリガー経路の追加**——
+    20秒間隔のアラームだけに頼らず、`chrome.tabs.onUpdated`でnote編集URLの
+    タブが`status:'complete'`になった瞬間にも`checkPending()`を起動する
+    （inFlightガードにより重複実行はしない）。
+
+    **回帰テスト新規4件**：`chromeExtensionManifest.check.ts`へ追加——
+    `chrome.scripting.executeScript`＋`injectedNoteTransfer`の存在、
+    `waitForTabComplete`／`chrome.tabs.onUpdated`によるDOM読み込み完了待機、
+    `injectedNoteTransfer`内にも0文字成功禁止・「公開」ボタン除外ガードが
+    存在すること（実行経路が変わっても安全境界が変わらないことの確認）、
+    `service_worker_evaluated`ログが他のリスナー登録より前に位置すること。
+    `run-all.ts` **560 passed 0 failed**（556→560、+4）。`tsc --noEmit`
+    0エラー、`node -c`で構文確認。サーバーを再起動しcurlで`/pending`・
+    dedupを再確認、テスト用の状態・診断ログは削除・リセットしArticle #67の
+    転記待ちを復元。
+
+    **今回「修正完了」と報告しない理由（マロン指示への忠実な対応）**：
+    実ログから確定できたのは「拡張からのリクエストが1件も届いていない」
+    という事実であり、これは深刻な手前側の問題（SW起動、または注入経路
+    そのもの）を示すが、**その事実だけでは「なぜ届かないか」の1行レベルの
+    原因までは特定できていない**。今回追加した`service_worker_evaluated`
+    ビーコンと`executeScript`経路は、次回の実機検証で初めて「SWは動いて
+    いるが最初のログすら送れていない」のか「SWは動いており、executeScript
+    経路なら実際にDOM操作まで到達する」のかを判別できる材料になる——
+    次回の`.devlogs/night/note-transfer-diagnostic.jsonl`の中身（1行でも
+    記録されるか、`dom_snapshot`まで到達するか）が、真の原因を確定させる
+    決め手になる。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き13（🐛 **note下書き自動転記——実機検証1回目失敗の根本原因を
     特定・修正：inFlightフラグにタイムアウトが無く放棄された試行が永久に
     checkPending()をブロックしていた。診断ログ経路・書き込み読み戻し検証・
