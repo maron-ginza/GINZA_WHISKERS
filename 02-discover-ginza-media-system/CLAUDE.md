@@ -858,6 +858,28 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   passed 0 failed、`tsc --noEmit` 0エラー。18項目の受入条件詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き9参照（固有名詞捏造検出専用ゲートの
   不在のみ△として残課題明示）。
+- 2026-09-13: ✅ **「Project 02全体の根本改善」残存3項目を完了し、受入条件18項目
+  全PASSを確認（Project 02 commit・push あり）**——①**固有名詞根拠ゲート**を
+  新規実装（`properNounGroundingGate.ts`）：括弧書き固有名詞・英字ブランド名を
+  抽出し、出典テキストに実在しない候補が1件でもあれば`generateMultiAngleArticleDrafts.ts`
+  の`coreGuards`で下書き生成を**block**する（既存の会期・出典ガードと異なり
+  WARNINGではなくincluded除外、公開前blocker）。回帰テスト7件（マロン指示の
+  失敗テスト含む）。②**銀座三越**：sitemap→RSS→HTML埋め込みJSON→内部APIの
+  4経路を`mitsukoshiGinzaHealthCheck.ts`で順次検証し直したが**全経路失敗を再確認**
+  （TCP接続タイムアウト3経路＋AkamaiエッジWAFによる403 1経路）——非公式情報での
+  補完はせずSOURCE_LEDGERへunreachable記録、候補は生成しない設計を維持。
+  ③**松屋銀座**：ローカルChrome依存（`playwright-core`/`fetchJsRenderedPage.ts`）
+  を全面撤去し、サイトのフロントエンドが実際に呼ぶStoryblok公開Content Delivery
+  APIを素の`fetch()`で直接呼ぶ方式へ切替え——Railway等ブラウザレス環境で
+  そのまま動作する。SourceLedgerへ`healthStatus`/`healthCheckedAt`/`healthNote`
+  を新設し松屋銀座・銀座三越双方の健全性を記録。固有名詞根拠ゲート有効化後の
+  状態で承認→記事生成→事実検証→note下書き保存の一気通貫を実データ再検証
+  （Article #66〈旧ゲート適用前〉を削除し新規Article #67で再生成、false
+  positiveなし・BLOCKER/WARNINGとも0件、draft維持・公開なし）。`run-all.ts`
+  527 passed 0 failed（+11）、`tsc --noEmit` 0エラー。**18項目の受入条件は
+  全項目PASS**（項目⑭は△→○へ昇格）。銀座三越の技術的取得不能は外部
+  ネットワーク制約として透明に記録（18項目のFAILには該当しない）。詳細は
+  `DECISION_LOG_02.md` 2026-09-13 続き10参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

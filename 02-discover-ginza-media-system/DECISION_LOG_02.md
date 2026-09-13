@@ -14,6 +14,166 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き10（✅ **「Project 02全体の根本改善」残存3項目を完了——固有名詞
+    根拠ゲート（公開前blocker・新規実装）／銀座三越の多経路検証を実装し4経路
+    すべて不能を確認（非公式補完なし）／松屋銀座をStoryblok公開Content Delivery
+    APIへ切替えChrome依存を撤去。18項目の受入条件を全項目PASSで確認
+    （Project 02 commit・push あり／DB更新はArticle #66削除＋Article #67
+    生成・DiscoveredContent健全性フィールド追加のみ）**）:
+
+    マロン指示：続き9で残った3項目（固有名詞根拠ゲート・銀座三越・松屋銀座の
+    本番運用適性）を追加確認なしで処理し、18項目の受入条件を全件PASS/FAIL/
+    対象外で提示すること。FAILを残したまま「完了」と報告しないこと。
+
+    **① 固有名詞根拠ゲート（新規実装・公開前blocker）**：新規
+    `cms/src/lib/curation/properNounGroundingGate.ts`（純粋・決定的・AIなし）。
+    括弧書き固有名詞（「」『』＜＞、Editorial Style Engineの既存表記慣行を
+    利用）と英字ブランド名らしき大文字始まり語を抽出し（あらゆるカタカナ列を
+    対象にする方式は誤検知が多いため採用しない、意図的に保守的な設計）、
+    `sourceProvenance`・ArticleFacts・DiscoveredContent由来のバッキング
+    テキストに実在しない候補が1件でもあれば`blocked:true`を返す。
+    `generateMultiAngleArticleDrafts.ts`の`coreGuards`（既存の会期・出典claim系
+    ガードと同じ枠組み）へ追加し、**既存の会期・出典ガードとは異なりWARNINGで
+    はなくincludedから除外する唯一のガード**として実装（`.map()`の戻り値型を
+    `MultiAngleDraftResult | null`へ変更し`null`をフィルタで除外）。
+    `candidateReviewServer.ts`の`handleApprove`は元から`enableCoreGuards:true`
+    で呼んでいるため、承認→記事生成の実運用経路へそのまま有効化される（新しい
+    呼び出し経路は追加していない）。回帰テスト新規`properNounGroundingGate.check.ts`
+    （7件、マロン指示どおりの「【失敗テスト】バッキングテキストに存在しない
+    固有名詞があればblocked:true」を含む）。
+
+    **② 銀座三越（mistore.jp）多経路検証**：新規`cms/src/scripts/
+    mitsukoshiGinzaHealthCheck.ts`（`./p2 mitsukoshi-health-check`）が
+    sitemap→RSS（推定パス）→HTML内埋め込みJSON確認→内部API（`api.mistore.jp`）
+    の順に検証し、初成功時点でSOURCE_LEDGERへ`healthStatus:'ok'`を記録、
+    全滅時は`healthStatus:'unreachable'`と4経路すべての失敗理由を記録する
+    （非公式情報による補完はしない——取得不能ならDiscoveredContent候補は
+    一切生成しない）。実行結果（本日再検証）：sitemap／RSS／HTML経路は
+    `www.mistore.jp`へのTCP接続自体がタイムアウト（"This operation was
+    aborted"）、内部API（`api.mistore.jp`）はTCP接続は成立するが
+    Akamaiエッジ（`errors.edgesuite.net`）からHTTP 403 Access Deniedを
+    受け取る——**4経路すべて失敗、SOURCE_LEDGERへunreachable記録済み**
+    （`source_ledger.id=3`、`health_checked_at`確認済み）。前回セッションの
+    「TCPタイムアウトで全面ブロック」という単一結論より精緻な診断（`mistore.jp`
+    裸ドメイン・`www.mitsukoshi.mistore.jp`は到達可能だが`www.mistore.jp`へ
+    リダイレクトして結局ブロックされる、`api.mistore.jp`は明示的なエッジWAF拒否）
+    を`healthNote`とコードコメントへ記録し、将来Railway等の別インフラ・別IPから
+    再実行すれば自動的に成功を検知できる形にした（手動curlの一回限り調査では
+    なく、再実行可能なコードとして残した）。**結論は変わらず——現時点で
+    銀座三越からの実データ取得は技術的に不能**（外部ネットワーク／Akamai側の
+    制約であり本コードの欠陥ではない。18項目のいずれも「全情報源からの取得
+    成功」を要求していないため、この結果は18項目のFAILには当たらないと判断
+    ——詳細は後述の18項目表参照）。
+
+    **③ 松屋銀座（matsuyaginza.com）——ローカルChrome依存を撤去**：
+    続き9で実装したPlaywright/ローカルChrome起動方式（本番Railway環境では
+    動作しない）を全面撤去（`playwright-core`をnpm uninstall、
+    `fetchJsRenderedPage.ts`を削除、残存import 0件を確認）。代わりに、
+    matsuyaginza.comのフロントエンド自身が呼んでいるStoryblok公開Content
+    Delivery API（`https://api.storyblok.com/v2/cdn/stories/...`、
+    `version=published`の配信専用トークン——Storyblokの設計上クライアント側に
+    公開される非秘密トークン、実ブラウザのネットワーク要求を1回だけ観測して
+    発見）を素の`fetch()`で直接呼ぶ方式へ切替えた。新規
+    `cms/src/lib/crawler/fetchMatsuyaStoryblok.ts`（非200・欠損時は`ok:false`
+    で確実に失敗、フォールバックなし）と`flattenStoryblokRichText.ts`
+    （Tiptap/ProseMirrorリッチテキストJSONを平文へ変換、`body`配下の任意の
+    深さで`richText`を再帰的に探索——出店者情報が`sideBySideContainer.
+    leftContent[]`にネストされている実データ構造を反映し、既存パーサー
+    `extractMatsuyaSweetsWeekly.ts`は無変更で再利用）。取得不能時は
+    `recordSourceHealth()`（新規共通ヘルパー、SourceLedgerの新規フィールドへ
+    書き込み）でunreachableを記録し候補を生成しない（松屋銀座も同じ仕組みを
+    共用）。実行確認：`https://www.matsuyaginza.com/jp/ginza/events/food/
+    sweets/20260909`（sitemap記載スラグから`jp/`プレフィックスを除去して
+    Storyblok APIへ渡す、404/200の実差分で発見した必須修正）→3店舗
+    （西洋菓子 しろたえ／ジッカ他）の商品・価格・共通会期を正しく抽出、
+    SOURCE_LEDGERへ`healthStatus:'ok'`記録済み。回帰テスト新規
+    `flattenStoryblokRichText.check.ts`（4件、実データフィクスチャでの
+    エンドツーエンド抽出を含む）。**Railway等ブラウザレス環境でもそのまま
+    動作する**（ブラウザ起動・JS実行は一切不要）。
+
+    **SourceLedgerスキーマ拡張**：`healthStatus`（select: unknown/ok/
+    unreachable）・`healthCheckedAt`（date、readOnly）・`healthNote`
+    （textarea、readOnly、試行経路と失敗理由を機械記録）の3フィールドを
+    追加（既存`lastCheckedAt`/`notes`とは独立、加算のみ・NULL許容）。
+    `payload generate:types`実行済み、ローカル開発DBはPayloadのdev-push
+    で反映済み。本番migrationは未生成（未デプロイのため影響なし）。
+
+    **`morningAutoRun.sh`統合**：`run_phase "mitsukoshi_health_check"
+    ./p2 mitsukoshi-health-check`を`matsuya_sweets_fetch`直後に追加
+    （既存のフェーズ単位リトライ・非致命的継続の枠組みにそのまま乗る）。
+
+    **実データE2E検証（固有名詞根拠ゲートを実際に有効化した状態での一気通貫）**：
+    続き9で生成した`Article #66`（新ゲート実装前の生成物）はバックアップ
+    （`_backups/article_66_before_delete_*.json`）のうえ削除し、同一DC
+    （#1154、松屋銀座「しろたえ」シュークリーム）に対し
+    `candidateReviewServer.handleApprove`と完全に同一の呼び出し列
+    （承認→`createMultiAngleDraftsFromDiscoveredContent`
+    〈`enableCoreGuards:true`〉→`buildNoteDraftPackage`）を一回限り
+    スクリプトで再実行——**固有名詞根拠ゲートはfalse positiveを起こさず
+    通過**（`skipped`に固有名詞根拠ゲート由来の理由なし）、`Article #67`
+    （`reviewStatus:draft`）を生成、`buildNoteDraftPackage`のBLOCKER・
+    WARNINGとも0件、note下書きパッケージを`.devlogs/night/queue/
+    2026-09-13/67/`へ保存。**公開・note転記・外部送信は一切行っていない**
+    （テストスクリプトは実行後に削除、Article #67はdraftのまま維持——
+    「公開しないテストデータ」の趣旨は続き9と同じ判断を踏襲）。
+
+    **固有名詞根拠ゲートの失敗テスト**：`properNounGroundingGate.check.ts`
+    の「【失敗テスト】バッキングテキストに存在しない固有名詞があれば
+    blocked:true」がマロン指示どおりの失敗シナリオ（出典に無い架空店舗名
+    「銀座スイーツ工房」を本文が捏造）を再現し、`run-all.ts`の一部として
+    毎回自動実行される。
+
+    **検証**：`tsc --noEmit`（cms）0エラー、`node --import=tsx/esm
+    src/lib/__checks__/run-all.ts` **527 passed 0 failed**（516→527、
+    今回追加11件＝flattenStoryblokRichText 4件＋properNounGroundingGate
+    7件）、`./p2 morning-brief`（通常朝刊コマンド、18カテゴリー分類・候補表示
+    込み）を実データで再実行し、松屋銀座DC#1154が会期中候補として自動的に
+    パイプラインへ流れることを確認、`./p2 sweets-today --limit=5`で候補表示
+    再確認、`./p2 matsuya-sweets-fetch`・`./p2 mitsukoshi-health-check`を
+    それぞれ独立に再実行し記録どおりの結果を確認。
+
+    **Project 02全体の根本改善——受入条件18項目 最終結果**：
+
+    | # | 受入条件 | 判定 | 根拠 |
+    |---|---|---|---|
+    | ① | 毎朝の収集→候補表示の一括自動実行 | PASS | `morningAutoRun.sh`（crawl→sweets-detail-fetch→matsuya-sweets-fetch→mitsukoshi-health-check→am-run→morning-brief）を`run_phase`リトライ込みで実行、本日実データで再確認 |
+    | ② | 18カテゴリー収集・分類 | PASS | `deriveProvisionalCategory`（既存）、本日`morning-brief`実行でBEAUTY/WORKSHOP等の分類を確認 |
+    | ③ | 3優先領域の反映 | PASS | `CORE_DAILY_BUCKETS`（既存）、本日`morning-brief`で①②③各1件確定 |
+    | ④ | 施設偏重の自動抑制 | PASS | `facilityConcentrationPenalty`＋GINZA SIX/銀座蔦屋書店固定除外・施設キャップ（既存） |
+    | ⑤ | 既投稿/既下書き/重複の自動除外 | PASS | `loadAlreadyDraftedDcIds`/`matchPublishedTheme`（既存）、`handleApprove`の既存Article重複チェックで本日も確認 |
+    | ⑥ | ArticleFacts保存 | PASS | Article #67生成でsourceProvenance・ArticleFacts保存を確認 |
+    | ⑦ | 価格・期間・条件は「公式記載なし」で非除外 | PASS | `sweets-today`本日出力でDC#1154/#1132とも「公式記載なし」表示・除外されず |
+    | ⑧ | 終了済み・銀座での実施未確認・非公式情報のみの候補は除外 | PASS | `evaluateSweetsEligibility`（既存）。銀座三越は取得不能のため候補自体を生成しない（非公式補完なし）＝本条件と整合 |
+    | ⑨ | 新規性と「今取り上げる理由」の判定 | PASS | `sweetsNewsworthiness.ts`（既存）、本日出力に「今取り上げる理由」表示を確認 |
+    | ⑩ | 候補要約＋公式出典の1画面表示 | PASS | `./p2 sweets-today --limit=5`本日実行結果 |
+    | ⑪ | 承認/保留/却下1回のみ | PASS | 候補レビュー画面（既存、無変更） |
+    | ⑫ | 承認後の記事生成〜note下書き保存の一気通貫 | PASS | 本日、固有名詞根拠ゲート有効化後の状態でArticle #67により再検証済み |
+    | ⑬ | ハッシュタグ4個・カテゴリーアイコン・画像注釈の自動設定 | PASS | 既存`noteMasthead.ts`、Article #67のnote下書きパッケージで確認 |
+    | ⑭ | 根拠のない日付・価格・販売状況・**固有名詞**の自動検出 | **PASS（今回△→○へ昇格）** | 新規`properNounGroundingGate.ts`を公開前blockerとして実装、回帰テスト7件＋実データE2Eでfalse positiveなしを確認 |
+    | ⑮ | 通常朝刊コマンドでの翌日再現 | PASS | 本日`./p2 morning-brief`が`sweets-today`と同一結果を再現 |
+    | ⑯ | エラー時自動復旧 | PASS | `run_phase`リトライ（既存）、`matsuya_sweets_fetch`/`mitsukoshi_health_check`も同枠組みに統合済み |
+    | ⑰ | 全テスト成功・型エラー0件 | PASS | `run-all.ts` 527 passed 0 failed、`tsc --noEmit` 0エラー（本日再実行） |
+    | ⑱ | 本記録・commit・push | PASS | 本エントリ＋CLAUDE.md反映後にcommit・push実施 |
+
+    **18項目はすべてPASS。FAILは残っていない。** ただし以下2点を残存リスクとして
+    明示する（いずれも18項目の判定基準には含まれないが、透明性のため記録する）：
+    (a) **銀座三越（mistore.jp）は本セッションの4経路検証でも技術的に取得不能
+    のまま**——原因はAkamaiエッジWAF/ネットワーク層のブロックという外部要因で
+    あり、本コードの実装不備ではない。非公式情報による補完はしておらず、
+    候補非生成＋health記録という設計どおりの安全側動作をしている。将来
+    Railway等の別インフラ・別IPアドレスから`./p2 mitsukoshi-health-check`を
+    再実行すれば、状況が変われば自動的に検知できる。(b) 固有名詞根拠ゲートは
+    意図的に保守的な抽出方式（括弧書き＋英字ブランド名のみ）のため、括弧を
+    使わない自由文中の固有名詞の捏造までは検出できない——将来的な精度向上の
+    余地として残る（過検知による正当な記事の量産ブロックを避けるためのトレード
+    オフとして今回は許容）。
+
+    **不変・実行範囲**：DB書き込みはArticle #66削除＋Article #67生成
+    （松屋銀座「しろたえ」シュークリーム、実データ）・SourceLedgerの
+    healthStatus等3件更新のみ。実Claude API呼び出しは1回（Article #67生成、
+    通常運用と同水準の小額課金）。note転記・外部公開・Chrome操作による
+    実際の投稿は一切行っていない。
+
   - 2026-09-13 続き9（🚀 **松屋銀座のJSレンダリング取得を実装し稼働確認、期間表記の
     抽出漏れ・ハッシュタグ4個統一を修正、承認→記事生成→事実検証→note下書き
     パッケージ保存の一気通貫を実データ（Article #66・非公開テストデータ）で検証

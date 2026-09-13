@@ -139,6 +139,7 @@ fi
 run_phase "crawl" ./p2 crawl
 run_phase "sweets_detail_fetch" ./p2 sweets-detail-fetch
 run_phase "matsuya_sweets_fetch" ./p2 matsuya-sweets-fetch
+run_phase "mitsukoshi_health_check" ./p2 mitsukoshi-health-check
 run_phase "am_run" ./p2 am-run --fetch --register-facts --write-facts
 run_phase "morning_brief" ./p2 morning-brief --json
 

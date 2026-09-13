@@ -32,6 +32,8 @@ import { suite as sweetsCandidateSelect } from './sweetsCandidateSelect.check'
 import { suite as sweetsEligibility } from './sweetsEligibility.check'
 import { suite as sweetsNewsworthiness } from './sweetsNewsworthiness.check'
 import { suite as extractMatsuyaSweetsWeekly } from './extractMatsuyaSweetsWeekly.check'
+import { suite as flattenStoryblokRichText } from './flattenStoryblokRichText.check'
+import { suite as properNounGroundingGate } from './properNounGroundingGate.check'
 import { suite as recurringEventYearGuard } from './recurringEventYearGuard.check'
 import { suite as sweetsDiscoveryKeywords } from './sweetsDiscoveryKeywords.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
@@ -76,6 +78,8 @@ const results: SuiteResult[] = [
   sweetsEligibility(),
   sweetsNewsworthiness(),
   extractMatsuyaSweetsWeekly(),
+  flattenStoryblokRichText(),
+  properNounGroundingGate(),
   recurringEventYearGuard(),
   sweetsDiscoveryKeywords(),
   extractPriceHint(),

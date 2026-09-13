@@ -1,30 +1,37 @@
-// GINZA WHISKERS / Project 02（2026-09-14新設）— 松屋銀座「今週のGINZAスイート」
-// 週替わり催事の収集（JSレンダリングが必要なサイト専用の代替経路）。
+// GINZA WHISKERS / Project 02（2026-09-14新設・同日改訂）— 松屋銀座「今週の
+// GINZAスイート」週替わり催事の収集。
 //
 //   ./p2 matsuya-sweets-fetch [--dry-run]
 //
 // 背景：matsuyaginza.com はReact SPAで、通常のHTTP+HTML取得では実際の催事情報を
-// 取得できない（2026-09-14確認）。sitemap.xmlから週替わりの
-// `/ginza/events/food/sweets/YYYYMMDD` ページ一覧を取得し、直近（本日以前で最新）の
-// 1件をfetchJsRenderedPage（playwright-core経由の実ブラウザ）で取得、
-// extractMatsuyaSweetsWeeklyで店舗・商品・価格・共通開催期間を抽出し、
-// 既存のDiscoveredContentコレクションへ1商品=1レコードで冪等に反映する
-// （通常のcrawlパイプラインと同じcurationStatus=inbox・重複更新の設計）。
+// 取得できない（2026-09-14確認）。当初はplaywright-core（この端末のGoogle Chrome）
+// でレンダリングして読む方式を実装したが、**ローカルChrome依存を本番運用へ持ち込ま
+// ない**という方針のため、次の優先順で本番Railway等でも動く経路へ切り替えた：
+//   1. 公式埋め込みJSON（HTML内に状態を持つ形式）… matsuyaginza.comには無い（確認済み）
+//   2. Storyblok公開Content Delivery API … ★採用。松屋銀座のフロントエンドが実際に
+//      呼んでいる公開トークン（version=publishedのみ返す、秘密鍵ではない公開配信用）
+//      を直接fetchする。ブラウザ・JavaScript実行不要——プレーンなHTTP fetchのみ。
+//   3. sitemap.xml … ページ一覧（週替わりスラッグ）の発見に引き続き使用
+//   4. 公式内部API（api.matsuyaginza.com） … 一般エンドポイントは403で不可、未使用
 //
-// Chromeが無い環境（本番Railway等）では自動的にスキップし、通常のHTTP取得
-// パイプライン（変化なしのまま）へフォールバックする——クラッシュしない。
+// **取得不能時の設計**：Storyblok APIが失敗した場合（トークン失効・スラッグ変更等）
+// は候補を一切生成せず、SOURCE_LEDGERのhealthStatusへ`unreachable`を記録して
+// 終了する（exit 0、致命的エラーとして扱わない——朝刊自動化チェーンの他フェーズを
+// 止めない）。非公式情報・推測データによる補完はしない。
 //
-// **DB書き込みはDiscoveredContentの通常の新規作成・更新のみ。AI呼び出し・
-// 課金・記事生成・note操作は一切しない。**
+// **DB書き込みはDiscoveredContentの通常の新規作成・更新、SOURCE_LEDGERの
+// healthStatus更新のみ。AI呼び出し・課金・記事生成・note操作は一切しない。**
 
 import { getPayload } from 'payload'
 import { createHash } from 'node:crypto'
 import config from '../payload.config'
-import { fetchJsRenderedPage, findChromeExecutable } from '../lib/crawler/fetchJsRenderedPage'
+import { fetchMatsuyaStoryblokStory } from '../lib/crawler/fetchMatsuyaStoryblok'
+import { flattenMatsuyaStoryblokStory } from '../lib/crawler/flattenStoryblokRichText'
 import { extractMatsuyaSweetsWeekly } from '../lib/crawler/extractMatsuyaSweetsWeekly'
 import { extractExplicitPeriod } from '../lib/pipeline/extractExplicitPeriod'
 import { classifyContentType } from '../lib/crawler/classifyContentType'
 import { classifyUxType } from '../lib/curation/uxType'
+import { recordSourceHealth } from '../lib/sourceLedger/recordSourceHealth'
 
 const DRY = process.argv.includes('--dry-run')
 const SITEMAP_URL = 'https://www.matsuyaginza.com/sitemap.xml'
@@ -45,16 +52,21 @@ function slugify(s: string): string {
 }
 
 /** sitemap.xmlから /ginza/events/food/sweets/YYYYMMDD 形式のURLを列挙する。 */
-async function findWeeklyUrls(): Promise<{ url: string; date: string }[]> {
+async function findWeeklyUrls(): Promise<{ url: string; slug: string; date: string }[]> {
   const res = await fetch(SITEMAP_URL, { headers: { 'User-Agent': USER_AGENT } })
   if (!res.ok) throw new Error(`sitemap.xml 取得失敗: HTTP ${res.status}`)
   const xml = await res.text()
-  const matches = [...xml.matchAll(/https:\/\/www\.matsuyaginza\.com\/jp\/ginza\/events\/food\/sweets\/(\d{8})/g)]
-  return matches.map((m) => ({ url: m[0], date: m[1] })).sort((a, b) => a.date.localeCompare(b.date))
+  const matches = [...xml.matchAll(/https:\/\/www\.matsuyaginza\.com\/(jp\/ginza\/events\/food\/sweets\/(\d{8}))/g)]
+  // Storyblok Content Delivery APIは`language=jp`パラメータでロケールを指定する方式のため、
+  // フルスラッグ先頭の`jp/`（ロケールフォルダ）は取り除いたものをAPI呼び出しに使う
+  // （2026-09-14実データ確認：`jp/`を含めると404、除いた`ginza/events/...`で200）。
+  return matches
+    .map((m) => ({ url: `https://www.matsuyaginza.com/${m[1]}`, slug: m[1].replace(/^jp\//, ''), date: m[2] }))
+    .sort((a, b) => a.date.localeCompare(b.date))
 }
 
 /** 本日以前で最新（＝「今週」に最も近い）の1件を選ぶ。無ければ最新の1件（未来含む）。 */
-function pickCurrentWeek(urls: { url: string; date: string }[], todayYmd: string): { url: string; date: string } | null {
+function pickCurrentWeek<T extends { date: string }>(urls: T[], todayYmd: string): T | null {
   if (urls.length === 0) return null
   const pastOrToday = urls.filter((u) => u.date <= todayYmd)
   if (pastOrToday.length > 0) return pastOrToday[pastOrToday.length - 1]
@@ -64,33 +76,48 @@ function pickCurrentWeek(urls: { url: string; date: string }[], todayYmd: string
 async function main() {
   const now = new Date()
   const todayYmd = now.toISOString().slice(0, 10).replace(/-/g, '')
+  const payload = await getPayload({ config })
 
-  if (!findChromeExecutable()) {
-    console.log('Chrome実行ファイルが見つからないため、この環境では松屋銀座のJSレンダリング取得をスキップします（通常のHTTP取得のみ継続）。')
+  let weeklyUrls: { url: string; slug: string; date: string }[]
+  try {
+    weeklyUrls = await findWeeklyUrls()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.log(`sitemap.xml 取得失敗: ${msg}`)
+    if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'unreachable', `sitemap.xml取得失敗: ${msg}`)
     process.exit(0)
   }
-
-  const weeklyUrls = await findWeeklyUrls()
   const current = pickCurrentWeek(weeklyUrls, todayYmd)
   if (!current) {
     console.log('sitemap.xmlに /ginza/events/food/sweets/ 形式のURLが見つかりませんでした。')
+    if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'unreachable', 'sitemap.xmlに週替わりGINZAスイートページが見つからない')
     process.exit(0)
   }
   console.log(`対象ページ: ${current.url}（sitemap掲載日 ${current.date}）`)
 
-  const fetched = await fetchJsRenderedPage(current.url)
-  if (!fetched.ok || !fetched.text) {
-    console.log(`取得失敗: ${fetched.errorMessage ?? '不明なエラー'}`)
-    process.exit(fetched.featureUnavailable ? 0 : 1)
+  const storyResult = await fetchMatsuyaStoryblokStory(current.slug)
+  if (!storyResult.ok || !storyResult.content) {
+    const msg = storyResult.errorMessage ?? '不明なエラー'
+    console.log(`Storyblok API 取得失敗: ${msg}`)
+    if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'unreachable', `Storyblok API取得失敗（${current.slug}）: ${msg}`)
+    process.exit(0)
   }
 
-  const parsed = extractMatsuyaSweetsWeekly(fetched.text)
+  const flatText = flattenMatsuyaStoryblokStory(storyResult.content)
+  if (!flatText) {
+    console.log('Storyblokストーリーからテキストを抽出できませんでした（richTextブロックが無い）。')
+    if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'unreachable', `Storyblokストーリーにテキストなし（${current.slug}）`)
+    process.exit(0)
+  }
+
+  const parsed = extractMatsuyaSweetsWeekly(flatText)
   console.log(`開催期間: ${parsed.periodText ?? '公式記載なし'} ／ 場所: ${parsed.location ?? '公式記載なし'} ／ 店舗数: ${parsed.items.length}`)
+
+  if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'ok', `Storyblok API経由で取得成功（${current.slug}、店舗${parsed.items.length}件）`)
 
   const period = parsed.periodText ? extractExplicitPeriod(parsed.periodText, { now }) : null
   const venue = parsed.location ? `松屋銀座 ${parsed.location}` : '松屋銀座'
 
-  const payload = await getPayload({ config })
   const sourceDocs = await payload.find({
     collection: 'source-ledger',
     where: { sourceId: { equals: SOURCE_ID } },

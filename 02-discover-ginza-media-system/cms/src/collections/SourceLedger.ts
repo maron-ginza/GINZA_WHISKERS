@@ -150,6 +150,37 @@ export const SourceLedger: CollectionConfig = {
       type: 'textarea',
     },
     {
+      name: 'healthStatus',
+      label: 'ソースヘルス（2026-09-14新設）',
+      type: 'select',
+      defaultValue: 'unknown',
+      options: [
+        { label: '未確認', value: 'unknown' },
+        { label: '正常', value: 'ok' },
+        { label: '取得不能', value: 'unreachable' },
+      ],
+      admin: {
+        description:
+          '専用の取得経路（Storyblok公開API・埋め込みJSON・sitemap等）を持つ情報源' +
+          '（松屋銀座・銀座三越等）について、直近の取得試行が成功したかを記録する。' +
+          '取得不能な情報源から候補を生成しない（推測で埋めない）ためのゲートとして' +
+          '呼び出し元スクリプトが参照・更新する。一般のcrawl対象サイトは既存の' +
+          'lastCheckedAt/notesで足りるため既定は未確認のまま運用に影響しない。',
+      },
+    },
+    {
+      name: 'healthCheckedAt',
+      label: 'ソースヘルス確認日時',
+      type: 'date',
+      admin: { readOnly: true },
+    },
+    {
+      name: 'healthNote',
+      label: 'ソースヘルス詳細（試行した経路・失敗理由）',
+      type: 'textarea',
+      admin: { readOnly: true },
+    },
+    {
       name: 'listingPageOverrides',
       label: '一覧ページ 手動指定（Source Coverage拡張、2026-08-17）',
       type: 'array',

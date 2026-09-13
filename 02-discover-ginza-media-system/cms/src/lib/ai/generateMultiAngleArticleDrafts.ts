@@ -13,6 +13,9 @@ import { checkUnsourcedClaims } from '../curation/unsourcedClaimGate'
 // 再発防止 #5（2026-09-13 Article #64 期間誤記載）：公式ページに明記されて
 // いない販売・開催期間を生成しない
 import { checkUnsourcedPeriodClaims } from '../curation/unsourcedPeriodClaimGate'
+// 固有名詞根拠ゲート（2026-09-14新設）：出典に無い人物名・店舗名・商品名・
+// 施設名・作品名・ブランド名を含む下書きをblockする（公開前blocker）
+import { evaluateProperNounGrounding } from '../curation/properNounGroundingGate'
 import { detectBasementFloorDrop } from '../crawler/normalizeVenueText'
 import { normalizeSocialCopy, type SocialCopyCaps } from './normalizeSocialCopy'
 import { blocksToLexicalState } from './lexical'
@@ -624,7 +627,7 @@ export async function generateMultiAngleArticleDrafts({
 
   const included: MultiAngleDraftResult[] = includedRaw
     .filter(({ angle }) => keptAngles.has(angle))
-    .map(({ angle, candidate }) => {
+    .map(({ angle, candidate }): MultiAngleDraftResult | null => {
       const volume = isArticleVolume(candidate.volume) ? candidate.volume : 'medium'
       if (!isArticleVolume(candidate.volume)) {
         console.error(
@@ -689,7 +692,8 @@ export async function generateMultiAngleArticleDrafts({
 
       // 再発防止 #1/#2/#4（2026-09-01 Trial）：CORE 経路向けの決定的ガード。
       // coreGuards 未指定なら completely no-op（従来挙動を広げない）。
-      // WARNING 記録のみ——included からは外さない（block へは変更しない）。
+      // 会期・出典claim系はWARNING記録のみ——includedからは外さない。ただし
+      // 2026-09-14追加の固有名詞根拠ゲートのみ例外で、下でblock（included除外）する。
       if (coreGuards) {
         const bodyForGate = [
           candidate.hook,
@@ -730,6 +734,24 @@ export async function generateMultiAngleArticleDrafts({
             warnings.push({ angle, codes: guardCodes, details: guardDetails, socialCopyChanged: [] })
           }
         }
+
+        // 固有名詞根拠ゲート（2026-09-14新設）：タイトル・本文・SNS文に含まれる
+        // 人物名・店舗名・商品名・施設名・作品名・ブランド名が、出典テキスト
+        // （sourceProvenance・DiscoveredContent由来）に一致しなければ、単なる
+        // WARNINGではなく**この角度の下書き生成を中止**する（マロン確定の
+        // 公開前blocker）。他のcoreGuards同様、coreGuards未指定時はno-op。
+        const properNounTexts = [candidate.title, bodyForGate, socialNote, socialX, socialInstagram]
+        const grounding = evaluateProperNounGrounding(properNounTexts, coreGuards.backingTexts)
+        if (grounding.blocked) {
+          skipped.push({
+            angle,
+            reason:
+              `固有名詞根拠ゲートによりblock（出典に無い固有名詞: ${grounding.ungroundedCandidates
+                .map((c) => `「${c.text}」`)
+                .join('・')}）`,
+          })
+          return null
+        }
       }
 
       const { blocks, provenance } = buildAngleArticleBlocks(
@@ -767,6 +789,7 @@ export async function generateMultiAngleArticleDrafts({
         },
       }
     })
+    .filter((x): x is MultiAngleDraftResult => x !== null)
 
   return { included, skipped, warnings }
 }
