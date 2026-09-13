@@ -34,6 +34,15 @@ export type TransferState = Record<string, TransferStateEntry>
 
 export const MAX_TRANSFER_ATTEMPTS = 3
 
+/** 2026-09-14続き31（マロン指示：「実機検証時の自動試行上限を1回にする。
+ * 3回の自動再試行は禁止」）：completion-onlyジョブ（既にタイトル・本文・
+ * 初回保存は成功済み、ハッシュタグ・カテゴリー画像のみ再試行するジョブ）
+ * の自動再試行回数の上限。full モード（新規記事の初回転記、
+ * recordFailure・MAX_TRANSFER_ATTEMPTS）とは意図的に別の定数とする——
+ * 実機検証を繰り返す中で3回の自動再試行が同じ原因で連続発生し検証の
+ * ノイズになっていたため、completion-onlyジョブに限り1回で打ち切る。 */
+export const MAX_COMPLETION_ATTEMPTS = 1
+
 /** ブラウザ側 inFlightArticleId のタイムアウト（120000ms）より余裕を持たせた
  * サーバー側 in_progress のstale判定しきい値（2026-09-14続き22）。 */
 export const STALE_IN_PROGRESS_MS = 150000
@@ -71,7 +80,7 @@ export function selectNextPendingArticleId(
     if (entry.status === 'success') {
       const needsCompletion = entry.needsCompletion === true
       const completionAttempts = entry.completionAttempts ?? 0
-      if (needsCompletion && completionAttempts < MAX_TRANSFER_ATTEMPTS) return id
+      if (needsCompletion && completionAttempts < MAX_COMPLETION_ATTEMPTS) return id
       continue
     }
     return id
@@ -163,7 +172,7 @@ export function recordCompletionAttempt(
       // 除外し続け（前回のinFlight永久ブロックと同種のバグ）、completionAttemptsが
       // 上限未満でも二度と再試行されなくなる。
       status: 'success',
-      needsCompletion: succeeded ? false : completionAttempts < MAX_TRANSFER_ATTEMPTS,
+      needsCompletion: succeeded ? false : completionAttempts < MAX_COMPLETION_ATTEMPTS,
       completionAttempts,
     },
   }

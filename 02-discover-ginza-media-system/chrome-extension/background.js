@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br17-2026-09-14-bounded-dom-search-image-timeouts'
+const BUILD_REVISION = 'br18-2026-09-14-sw-side-image-fetch'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -254,6 +254,92 @@ async function waitForTabComplete(tabId, timeoutMs = 20000) {
 // ポーリングループ・サーバー側リトライ上限が別途担う既存の仕組みに委ねる）。
 const INJECTED_RUN_TIMEOUT_MS = 90000
 
+// 2026-09-14続き31：SW側の画像取得1工程あたりのタイムアウト（マロン指示
+// 「各工程5秒以内に成功または明示的failureを返す」）。
+const SW_IMAGE_STAGE_TIMEOUT_MS = 5000
+
+function withStageTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve({ __timedOut: true }), ms)),
+  ])
+}
+
+/**
+ * 2026-09-14続き31（マロン指示）：「editor.note.comのページコンテキストから
+ * 画像をfetchする構成を廃止してください」——続き30の実機検証で、
+ * ページコンテキスト（injected-transfer.js、chrome.scripting.
+ * executeScriptのisolated world）からのfetch(img.url)がeditor.note.comの
+ * CSP等によって一度もサーバーへ到達しないまま5秒でタイムアウトする現象を
+ * 確認した。background Service Worker（拡張の特権コンテキスト、ページの
+ * CSPの影響を受けない）側でサーバーから画像バイト列を取得・検証し、
+ * base64としてtabs.sendMessageで渡す構成へ変更する——ページ側は一切の
+ * ネットワークfetchを行わない。
+ *
+ * HTTP status・mimeType・sizeBytes・SHA-256のすべてを検証し、1つでも
+ * 一致しなければ画像なしとして扱う（他画像への無断代替禁止の原則）。
+ * 各工程（fetch／サイズ照合／SHA-256計算）に個別5秒上限を設ける。
+ */
+async function fetchAndVerifyCategoryIconInBackground(categoryIcon) {
+  if (!categoryIcon || !categoryIcon.url || !categoryIcon.fileName || !categoryIcon.mimeType || !categoryIcon.sha256) {
+    return { ok: false, reason: 'カテゴリーアイコン情報が不完全（url/fileName/mimeType/sha256のいずれかが欠落）' }
+  }
+  logToServer('sw_image_fetch_start', { url: categoryIcon.url })
+  try {
+    const res = await withStageTimeout(fetch(categoryIcon.url), SW_IMAGE_STAGE_TIMEOUT_MS)
+    if (res && res.__timedOut) {
+      logToServer('sw_image_fetch_timeout', { url: categoryIcon.url })
+      return { ok: false, reason: 'stage=sw_image_fetch_timeout: SW側での画像取得が5秒以内に完了しませんでした' }
+    }
+    if (!res.ok) {
+      logToServer('sw_image_fetch_http_error', { status: res.status })
+      return { ok: false, reason: `stage=sw_image_fetch_http_error: HTTP ${res.status}` }
+    }
+    logToServer('sw_image_fetch_done', { status: res.status })
+
+    const buf = await withStageTimeout(res.arrayBuffer(), SW_IMAGE_STAGE_TIMEOUT_MS)
+    if (buf && buf.__timedOut) {
+      logToServer('sw_image_array_buffer_timeout', {})
+      return { ok: false, reason: 'stage=sw_image_array_buffer_timeout: 画像データの読み取りが5秒以内に完了しませんでした' }
+    }
+    if (buf.byteLength !== categoryIcon.sizeBytes) {
+      logToServer('sw_image_size_mismatch', { expected: categoryIcon.sizeBytes, actual: buf.byteLength })
+      return { ok: false, reason: `stage=sw_image_size_mismatch: 期待${categoryIcon.sizeBytes}バイト、実際${buf.byteLength}バイト（改変・破損の疑い）` }
+    }
+
+    const hashBuf = await withStageTimeout(crypto.subtle.digest('SHA-256', buf), SW_IMAGE_STAGE_TIMEOUT_MS)
+    if (hashBuf && hashBuf.__timedOut) {
+      logToServer('sw_image_sha256_digest_timeout', {})
+      return { ok: false, reason: 'stage=sw_image_sha256_digest_timeout: SHA-256計算が5秒以内に完了しませんでした' }
+    }
+    const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+    logToServer('sw_image_sha256_verify', { expected: categoryIcon.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === categoryIcon.sha256 })
+    if (actualSha256 !== categoryIcon.sha256) {
+      return { ok: false, reason: 'stage=sw_image_sha256_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）' }
+    }
+
+    // base64へエンコードしてtabs.sendMessageで渡せる形にする
+    // （マロン指示：「base64またはシリアライズ可能な数値配列」）。
+    const bytes = new Uint8Array(buf)
+    let binary = ''
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+    const base64 = btoa(binary)
+    logToServer('sw_image_base64_encoded', { byteLength: bytes.length })
+
+    return {
+      ok: true,
+      fileName: categoryIcon.fileName,
+      mimeType: categoryIcon.mimeType,
+      sha256: actualSha256,
+      sizeBytes: buf.byteLength,
+      base64,
+    }
+  } catch (e) {
+    logToServer('sw_image_fetch_error', { error: String(e?.message ?? e) })
+    return { ok: false, reason: `stage=sw_image_fetch_error: ${String(e?.message ?? e)}` }
+  }
+}
+
 /**
  * 固定content scriptファイル（injected-transfer.js）をchrome.scripting.
  * executeScript({files:[...]})で注入し、データはchrome.tabs.sendMessageで
@@ -271,13 +357,25 @@ const INJECTED_RUN_TIMEOUT_MS = 90000
 async function runTransferViaExecuteScript(tabId, item) {
   logToServer('execute_script_attempt', { tabId, articleId: item.articleId })
   try {
+    // 2026-09-14続き31（マロン指示）：画像はページコンテキストでfetchせず、
+    // SW側（この関数、拡張の特権コンテキスト）で事前に取得・検証し、
+    // 検証済みのbase64データをメッセージへ含める。categoryIconが無い
+    // 場合はそのままnullで送る（既存のno_usable_image_file経路が
+    // ページ側で処理する）。
+    const categoryIconAsset = item.categoryIcon ? await fetchAndVerifyCategoryIconInBackground(item.categoryIcon) : null
+
     // ① 固定ファイルを注入する（トップレベルのリスナー登録まで完了して
     // からPromiseが解決する。二重登録防止ガードはinjected-transfer.js側）。
     await chrome.scripting.executeScript({ target: { tabId }, files: ['injected-transfer.js'] })
     logToServer('injected_file_injected', { tabId })
 
     // ② データをtabs.sendMessageで渡し、単発watchdog付きで結果を待つ。
-    const runPromise = chrome.tabs.sendMessage(tabId, { type: 'note-transfer:run', item, buildRevision: BUILD_REVISION })
+    const runPromise = chrome.tabs.sendMessage(tabId, {
+      type: 'note-transfer:run',
+      item,
+      buildRevision: BUILD_REVISION,
+      categoryIconAsset,
+    })
     const watchdogPromise = new Promise((resolve) => {
       setTimeout(() => resolve({ __watchdogTimeout: true }), INJECTED_RUN_TIMEOUT_MS)
     })

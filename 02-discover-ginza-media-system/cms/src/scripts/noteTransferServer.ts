@@ -45,6 +45,7 @@ import {
   recordCompletionAttempt,
   determineTransferMode,
   MAX_TRANSFER_ATTEMPTS,
+  MAX_COMPLETION_ATTEMPTS,
   type TransferState,
 } from '../lib/night/noteTransferState'
 import { resolveImageAsset as resolveImageAssetPure } from '../lib/night/resolveImageAsset'
@@ -291,7 +292,11 @@ async function main() {
                   caption: heroNote?.caption ?? null,
                 },
                 attempt: prevAttempts + 1,
-                maxAttempts: MAX_ATTEMPTS,
+                // 2026-09-14続き31：completion-onlyジョブの自動再試行上限は
+                // MAX_COMPLETION_ATTEMPTS（1）——fullモード用のMAX_ATTEMPTS
+                // （3）をそのまま表示すると実際の上限と食い違うため、
+                // モードに応じて出し分ける。
+                maxAttempts: pending.mode === 'completion' ? MAX_COMPLETION_ATTEMPTS : MAX_ATTEMPTS,
               },
             }),
           )

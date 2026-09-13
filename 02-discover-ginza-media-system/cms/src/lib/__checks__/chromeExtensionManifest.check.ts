@@ -462,9 +462,9 @@ const cases: CheckCase[] = [
     name: '【重大バグ再発防止】injected-transfer.jsのhandleRunは未捕捉例外が起きても必ずstages・buildRevision付きの結果を返す（結果なし＝原因不明を構造的に無くす）',
     fn: () => {
       const inj = injSrc()
-      const start = inj.indexOf('async function handleRun(item, buildRevision, log) {')
+      const start = inj.indexOf('async function handleRun(item, buildRevision, log, categoryIconAsset) {')
       assert.ok(start >= 0, 'handleRunの定義が見つからない')
-      const end = inj.indexOf('async function runTransfer(item, log, stages) {')
+      const end = inj.indexOf('async function runTransfer(item, log, stages, categoryIconAsset) {')
       assert.ok(end > start, 'handleRunの範囲を特定できない')
       const body = inj.slice(start, end)
       assert.ok(/try\s*\{/.test(body), 'handleRun冒頭にtry節が見つからない')
@@ -716,24 +716,50 @@ const IMAGE_ASSET_TEST_CASES: CheckCase[] = [
     // SHA-256・配信URLが「すべて」揃っている場合のみ実在するものとして扱い、
     // 1つでも欠けていれば他画像への無断代替をせず「使用すべき画像ファイルが
     // ない」ことを明示すること。
-    name: '【画像なし明示】categoryIconの必須項目が1つでも欠けていれば無断代替せずno_usable_image_fileを報告する',
+    // 2026-09-14続き31：画像はSW側で取得・検証済みのcategoryIconAsset
+    // （base64）として受け取るよう変更したため、判定対象がimg.*から
+    // categoryIconAsset.*へ変わった。
+    name: '【画像なし明示】categoryIconAssetの必須項目が1つでも欠けていれば無断代替せずno_usable_image_fileを報告する',
     fn: () => {
       const inj = injSrc()
       assert.ok(/no_usable_image_file/.test(inj), 'no_usable_image_fileステージが見つからない')
       assert.ok(/noUsableImageFile:\s*true/.test(inj), 'noUsableImageFileフラグが見つからない')
       const idx = inj.indexOf('const imageAvailable =')
       assert.ok(idx >= 0, 'imageAvailable判定が見つからない')
-      const nearby = inj.slice(idx, idx + 300)
-      assert.ok(/img\.url/.test(nearby) && /img\.fileName/.test(nearby) && /img\.mimeType/.test(nearby) && /img\.sha256/.test(nearby), 'url/fileName/mimeType/sha256のすべてを必須項目として確認していない')
+      const nearby = inj.slice(idx, idx + 400)
+      assert.ok(
+        /categoryIconAsset\.ok/.test(nearby) &&
+          /categoryIconAsset\.base64/.test(nearby) &&
+          /categoryIconAsset\.fileName/.test(nearby) &&
+          /categoryIconAsset\.mimeType/.test(nearby) &&
+          /categoryIconAsset\.sha256/.test(nearby),
+        'ok/base64/fileName/mimeType/sha256のすべてを必須項目として確認していない',
+      )
     },
   },
   {
-    name: '【画像整合性検証】取得した画像の実SHA-256をペイロードのsha256と比較し、不一致なら添付しない',
+    name: '【画像整合性検証】受信した画像データの実SHA-256をペイロードのsha256と比較し、不一致なら添付しない（ページ側の再検証）',
     fn: () => {
       const inj = injSrc()
       assert.ok(/image_sha256_verify/.test(inj), 'image_sha256_verifyログが見つからない')
-      assert.ok(/actualSha256 !== img\.sha256/.test(inj), 'SHA-256不一致時のガードが見つからない')
+      assert.ok(/actualSha256 !== categoryIconAsset\.sha256/.test(inj), 'SHA-256不一致時のガードが見つからない')
       assert.ok(/image_integrity_mismatch/.test(inj), '不一致時の失敗ステージ名が見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き31（マロン必須修正⑥：「editor.note.com側のCSP/CORSに
+    // 依存しない構造にする」）：ページコンテキスト（injected-transfer.js）
+    // からのネットワークfetchが一切無いことを確認する——画像取得は
+    // background.js側（SW）へ移動済み。
+    name: '【CSP非依存】injected-transfer.jsはネットワークfetchを一切行わない（画像取得はSW側へ移動済み）',
+    fn: () => {
+      const inj = injSrc()
+      const codeOnly = inj
+        .split('\n')
+        .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+        .join('\n')
+      assert.ok(!/\bfetch\(/.test(codeOnly), 'injected-transfer.js（実コード部分）にfetch(...)呼び出しが残っている——ページコンテキストからのネットワークfetchはCSPでブロックされうるため廃止したはず')
+      assert.ok(/atob\(categoryIconAsset\.base64\)/.test(inj), 'base64デコード（atob）が見つからない——SW側で取得したデータを受け取る構造になっていない')
     },
   },
   {
@@ -790,7 +816,8 @@ const EDITOR_IMAGE_BUTTON_TEST_CASES: CheckCase[] = [
       assert.ok(/imageNotFoundSnapshot = domDebugSnapshot\(\)/.test(nearby), '画像トリガー未検出時にdomDebugSnapshotを保存していない')
       // 画像未検出ブロック内でfindProceedToPublishButton等の設定画面遷移を
       // 呼んでいないこと（推測で別画面を探さない）。
-      const blockEnd = inj.indexOf('const img = item.categoryIcon')
+      const blockEnd = inj.indexOf('const imageAvailable = !!(')
+      assert.ok(blockEnd > idx, 'imageAvailable判定の位置を特定できない')
       const block = inj.slice(idx, blockEnd)
       assert.ok(!/findProceedToPublishButton/.test(block), '画像未検出時に公開設定画面への遷移を試みている（推測探索の再発）')
     },
@@ -1047,7 +1074,12 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
     },
   },
   {
-    name: '【個別5秒上限の適用範囲】revealAndFindFileInput・画像取得(fetch/arrayBuffer/SHA-256)・DataTransfer後待機・プレビュー確認がすべてraceWithTimeoutで包まれている',
+    // 2026-09-14続き31：画像取得（fetch/arrayBuffer/SHA-256）はページ側から
+    // background.js（SW側）へ移動したため、ページ側（injected-transfer.js）
+    // に残る個別5秒上限（base64デコード・SHA-256再検証・DataTransfer後
+    // 待機・プレビュー確認）と、SW側（background.js）に新設した個別5秒
+    // 上限（fetch/arrayBuffer/SHA-256）をそれぞれ検証する。
+    name: '【個別5秒上限の適用範囲】revealAndFindFileInput・画像受信〜File生成・DataTransfer後待機・プレビュー確認がすべてraceWithTimeoutで包まれている（ページ側）',
     fn: () => {
       const inj = injSrc()
       const start = inj.indexOf('async function revealAndFindFileInput()')
@@ -1060,11 +1092,60 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       const imgEnd = inj.indexOf('return { iconResult }')
       assert.ok(imgStart >= 0 && imgEnd > imgStart, 'runImageSectionの範囲を特定できない')
       const imgBody = inj.slice(imgStart, imgEnd)
-      assert.ok(/raceWithTimeout\(fetch\(img\.url\), 5000, 'image_fetch'\)/.test(imgBody), '画像fetchへの5秒上限が見つからない')
-      assert.ok(/raceWithTimeout\(res\.arrayBuffer\(\), 5000, 'image_array_buffer'\)/.test(imgBody), 'arrayBuffer読み取りへの5秒上限が見つからない')
-      assert.ok(/raceWithTimeout\(crypto\.subtle\.digest\('SHA-256', buf\), 5000, 'image_sha256_digest'\)/.test(imgBody), 'SHA-256計算への5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(\s*Promise\.resolve\(\)\.then\(\(\) => \{\s*const binary = atob/.test(imgBody), 'base64デコードへの5秒上限が見つからない')
+      assert.ok(/raceWithTimeout\(crypto\.subtle\.digest\('SHA-256', decoded\), 5000, 'image_sha256_digest'\)/.test(imgBody), 'SHA-256再検証への5秒上限が見つからない')
       assert.ok(/raceWithTimeout\(sleep\(800\), 5000, 'post_datatransfer_wait'\)/.test(imgBody), 'DataTransfer後待機への5秒上限が見つからない')
       assert.ok(/raceWithTimeout\(\s*waitFor\(\(\) => \{/.test(imgBody), 'プレビュー確認waitForへの5秒上限が見つからない')
+    },
+  },
+  {
+    // 2026-09-14続き31（マロン必須修正①・②）：background.js（SW側）の
+    // 画像取得（fetch/arrayBuffer/SHA-256）にも個別5秒上限
+    // （withStageTimeout、raceWithTimeoutと同型のユーティリティ）が
+    // 適用されていることを確認する。
+    name: '【個別5秒上限の適用範囲】SW側（background.js）の画像fetch・arrayBuffer・SHA-256計算がすべてwithStageTimeoutで包まれている',
+    fn: () => {
+      const bg = bgSrc()
+      assert.ok(/function withStageTimeout\(promise, ms\)/.test(bg), 'withStageTimeoutの定義が見つからない')
+      const start = bg.indexOf('async function fetchAndVerifyCategoryIconInBackground(categoryIcon)')
+      const end = bg.indexOf('async function runTransferViaExecuteScript')
+      assert.ok(start >= 0 && end > start, 'fetchAndVerifyCategoryIconInBackgroundの範囲を特定できない')
+      const body = bg.slice(start, end)
+      assert.ok(/withStageTimeout\(fetch\(categoryIcon\.url\), SW_IMAGE_STAGE_TIMEOUT_MS\)/.test(body), 'SW側の画像fetchへの5秒上限が見つからない')
+      assert.ok(/withStageTimeout\(res\.arrayBuffer\(\), SW_IMAGE_STAGE_TIMEOUT_MS\)/.test(body), 'SW側のarrayBuffer読み取りへの5秒上限が見つからない')
+      assert.ok(/withStageTimeout\(crypto\.subtle\.digest\('SHA-256', buf\), SW_IMAGE_STAGE_TIMEOUT_MS\)/.test(body), 'SW側のSHA-256計算への5秒上限が見つからない')
+      assert.ok(/const SW_IMAGE_STAGE_TIMEOUT_MS = 5000/.test(bg), 'SW_IMAGE_STAGE_TIMEOUT_MSが5000msになっていない')
+    },
+  },
+  {
+    // 2026-09-14続き31（マロン指示：「HTTP status、mimeType、sizeBytes、
+    // SHA-256を検証する」）：SW側での検証がHTTP status（res.ok）・
+    // sizeBytes・SHA-256の3点を含むことを確認する（mimeTypeはサーバー
+    // 側resolveImageAssetで既に拡張子から決定的に導出・検証済みのため、
+    // ここでは転送されたbytesの整合性に関わる3点を確認する）。
+    name: '【SW側検証】fetchAndVerifyCategoryIconInBackgroundはHTTP status・sizeBytes・SHA-256を検証してから成功を返す',
+    fn: () => {
+      const bg = bgSrc()
+      const start = bg.indexOf('async function fetchAndVerifyCategoryIconInBackground(categoryIcon)')
+      const end = bg.indexOf('async function runTransferViaExecuteScript')
+      const body = bg.slice(start, end)
+      assert.ok(/if\s*\(!res\.ok\)\s*\{/.test(body), 'HTTP statusの検証が見つからない')
+      assert.ok(/if\s*\(buf\.byteLength !== categoryIcon\.sizeBytes\)\s*\{/.test(body), 'sizeBytesの検証が見つからない')
+      assert.ok(/if\s*\(actualSha256 !== categoryIcon\.sha256\)\s*\{/.test(body), 'SHA-256の検証が見つからない')
+      assert.ok(/ok:\s*true/.test(body), '検証成功時にok:trueを返す構造が見つからない')
+    },
+  },
+  {
+    name: '【base64転送】background.jsはtabs.sendMessageへcategoryIconAssetとしてbase64データを含める',
+    fn: () => {
+      const bg = bgSrc()
+      const idx = bg.indexOf('const categoryIconAsset = item.categoryIcon')
+      assert.ok(idx >= 0, 'categoryIconAssetの算出箇所が見つからない')
+      assert.ok(/fetchAndVerifyCategoryIconInBackground\(item\.categoryIcon\)/.test(bg), 'fetchAndVerifyCategoryIconInBackgroundの呼び出しが見つからない')
+      const sendIdx = bg.indexOf("chrome.tabs.sendMessage(tabId, {")
+      assert.ok(sendIdx >= 0, 'tabs.sendMessage呼び出しが見つからない')
+      const sendBody = bg.slice(sendIdx, sendIdx + 300)
+      assert.ok(/categoryIconAsset,/.test(sendBody), 'tabs.sendMessageのペイロードにcategoryIconAssetが含まれていない')
     },
   },
   {

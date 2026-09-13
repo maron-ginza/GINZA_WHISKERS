@@ -12,6 +12,7 @@ import {
   recordCompletionAttempt,
   determineTransferMode,
   MAX_TRANSFER_ATTEMPTS,
+  MAX_COMPLETION_ATTEMPTS,
   STALE_IN_PROGRESS_MS,
   type TransferState,
 } from '../night/noteTransferState'
@@ -143,19 +144,40 @@ const cases: CheckCase[] = [
       state = claimInProgress(state, 67) // /pending取得時と同じ操作
       assert.equal(state['67'].status, 'in_progress')
       state = recordCompletionAttempt(state, 67, false) // 失敗を報告
-      assert.equal(state['67'].status, 'success', 'in_progressのまま固着していないこと')
-      assert.equal(selectNextPendingArticleId(state, [67]), 67, '再試行対象として選出できること（in_progressのまま固着していれば選出されない）')
+      // 2026-09-14続き31：MAX_COMPLETION_ATTEMPTSが1になったため、1回失敗
+      // した時点で意図どおり再選出対象からは外れる（exhausted）——これは
+      // 「in_progressのまま固着するバグ」とは別の、正しい上限到達である。
+      // ここで検証すべき本来のバグ再発防止は「statusがin_progressのまま
+      // 固着していないこと」自体であり、statusを直接確認する。
+      assert.equal(state['67'].status, 'success', 'in_progressのまま固着していないこと（statusが正しくsuccessへ戻っている）')
+      assert.equal(state['67'].needsCompletion, false, '1回失敗でMAX_COMPLETION_ATTEMPTS（1）に達しneedsCompletionがfalseになること')
+      // 上限に余裕がある状況（まだ0回失敗）でも、claimInProgress→
+      // recordCompletionAttempt(false)後にin_progressのまま固着しない
+      // ことを別途確認する（真の「固着」バグの再現条件）。
+      let state2 = recordSuccess({}, 68, 'https://editor.note.com/notes/n2/edit/', '2026-09-14T00:00:00.000Z', true)
+      state2 = claimInProgress(state2, 68)
+      assert.equal(state2['68'].status, 'in_progress')
+      // completionAttemptsが0のままrecordCompletionAttemptを呼ぶ前に
+      // selectNextPendingArticleIdがin_progressを正しく除外することを確認
+      // （claimInProgress直後は選出されない＝多重取得防止）。
+      assert.equal(selectNextPendingArticleId(state2, [68]), null, 'in_progress中は選出されない（多重取得防止）')
     },
   },
   {
-    name: '【completion-only・3回上限】completion試行が3回失敗すると以後再選出されない',
+    // 2026-09-14続き31（マロン指示：「実機検証時の自動試行上限を1回にする。
+    // 3回の自動再試行は禁止」）：completion-onlyジョブの自動再試行上限は
+    // MAX_COMPLETION_ATTEMPTS（1）——full モードのMAX_TRANSFER_ATTEMPTS
+    // （3、recordFailure用）とは独立した別の定数であることを確認する。
+    name: '【completion-only・1回上限】completion試行が1回失敗すると以後再選出されない（MAX_TRANSFER_ATTEMPTSとは独立）',
     fn: () => {
       let state = recordSuccess({}, 67, 'https://editor.note.com/notes/n1/edit/', '2026-09-14T00:00:00.000Z', true)
-      for (let i = 1; i <= MAX_TRANSFER_ATTEMPTS; i++) {
+      assert.equal(MAX_COMPLETION_ATTEMPTS, 1, 'MAX_COMPLETION_ATTEMPTSは1であること')
+      assert.ok(MAX_COMPLETION_ATTEMPTS < MAX_TRANSFER_ATTEMPTS, 'completion-onlyの上限はfullモードの上限（3）より小さいこと')
+      for (let i = 1; i <= MAX_COMPLETION_ATTEMPTS; i++) {
         state = recordCompletionAttempt(state, 67, false)
       }
-      assert.equal(state['67'].completionAttempts, MAX_TRANSFER_ATTEMPTS)
-      assert.equal(selectNextPendingArticleId(state, [67]), null, '3回失敗後はcompletion-onlyとしても再選出されない')
+      assert.equal(state['67'].completionAttempts, MAX_COMPLETION_ATTEMPTS)
+      assert.equal(selectNextPendingArticleId(state, [67]), null, '1回失敗後はcompletion-onlyとしても再選出されない')
       assert.equal(state['67'].status, 'success', '初回の成功記録（タイトル・本文・保存）はcompletion失敗によって覆らない')
     },
   },

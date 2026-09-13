@@ -14,6 +14,126 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き31（🔧 **note下書き自動転記——続き30で確定した境界
+    （editor.note.comページコンテキストからの画像fetchがサーバーへ一度も
+    到達しない＝CSP等でブロックされている可能性）を受け、画像取得を
+    background Service Worker側（拡張の特権コンテキスト、ページのCSPの
+    影響を受けない）へ全面移管。SW側でHTTP status・sizeBytes・SHA-256を
+    検証し、base64化した画像データをtabs.sendMessageでページ側へ渡す
+    構成へ変更した。あわせてcompletion-onlyジョブの自動再試行上限を
+    3回から1回へ縮小（Project 02 commit・push あり／DB更新なし／note
+    公開なし。**マロン指示どおり今回は実ブラウザ実行を行わず、コード
+    修正のみ**）**）:
+
+    マロン指示：「v1.17.0の実機結果から画像失敗の境界を確定しました。
+    editor.note.comのページコンテキストから画像をfetchする構成を廃止
+    してください。」——必須対応11項目（①SW側でサーバーから画像バイト列を
+    取得②SW側でHTTP status・mimeType・sizeBytes・SHA-256を検証③検証済み
+    画像をbase64またはシリアライズ可能な数値配列としてtabs.sendMessageで
+    渡す④injected-transfer.jsはネットワークfetchを一切行わず受信データ
+    からBlob→File→DataTransferを生成⑤change/inputイベント発火・blob
+    previewの出現とSHA-256一致を確認⑥editor.note.com側のCSP/CORSに
+    依存しない構造⑦画像取得・受信・File生成・input設定・preview確認の
+    各stageを記録し各工程5秒以内に成功または明示的failureを返す⑧実機
+    検証時の自動試行上限を1回にする（3回の自動再試行禁止）⑨タイトル
+    本文再入力・新規タブ・tabs.reload・公開禁止⑩テスト・tsc・version
+    更新・commit・push⑪今回は実ブラウザ実行なし、変更内容・テスト数・
+    新version・commitを報告）。
+
+    **根本原因の裏付け**：続き30の実機ログで、`fetch(img.url)`が
+    ページコンテキスト（`chrome.scripting.executeScript`のisolated
+    world）から呼ばれた際、サーバーの実アクセスログに`/assets/
+    01_gourmet.jpg`へのGET・OPTIONSがいずれも1件も記録されていなかった
+    ——リクエスト自体がブラウザから送出されていないことを示す。この
+    パターンは、ページ自身のContent-Security-Policy（`connect-src`に
+    localhost等が含まれない場合）によるブロックで典型的に起きる。
+    isolated worldのcontent scriptはページのDOM・JS実行コンテキストとは
+    分離されているが、一部のChromeバージョンではネットワークリクエスト
+    がホストページのCSPの影響を受けることがある——マロンの診断に基づき、
+    そもそも画像取得をページコンテキストから排除する設計へ変更した。
+
+    **実装**：
+
+    1. **新規`fetchAndVerifyCategoryIconInBackground(categoryIcon)`**
+       （background.js）：拡張の特権コンテキスト（ページのCSPを受けない
+       Service Worker）でサーバーの`/assets/<file>`から画像を取得し、
+       ①HTTP status（`res.ok`）②`sizeBytes`一致③SHA-256一致、の3点を
+       検証する（`mimeType`はサーバー側`resolveImageAsset`が拡張子から
+       決定的に導出・付与済みのため、ここでは転送された実バイト列の
+       整合性検証に集中した）。各工程（fetch・`arrayBuffer()`・
+       `crypto.subtle.digest`）に新規`withStageTimeout`（5000ms、
+       `raceWithTimeout`と同型のユーティリティ）で個別5秒上限を適用。
+       検証成功時のみ、バイト列を1文字ずつ`String.fromCharCode`で
+       文字列化し`btoa`でbase64エンコードして返す（マロン指示：
+       「base64またはシリアライズ可能な数値配列」）。
+    2. **`runTransferViaExecuteScript`の変更**：`files:`注入の**前**に
+       `item.categoryIcon`があれば`fetchAndVerifyCategoryIconInBackground`
+       を呼び、結果を`categoryIconAsset`として`chrome.tabs.sendMessage`
+       のペイロードに追加した（`{type, item, buildRevision,
+       categoryIconAsset}`）。取得・検証に失敗した場合は`categoryIconAsset.
+       ok=false`＋`reason`のみを渡し、ページ側の既存「使用すべき画像
+       ファイルがない」経路（他画像への無断代替禁止）へそのまま合流する。
+    3. **`injected-transfer.js`の全面書き換え（画像処理部分）**：
+       `fetch(img.url)`・`res.arrayBuffer()`・その場でのSHA-256計算を
+       完全に削除し、**ページコンテキストでのネットワークfetchを一切
+       行わない構造**へ変更した。受信した`categoryIconAsset.base64`を
+       `atob`でデコードし（`Uint8Array`化）、**ページ側でも独自に
+       SHA-256を再計算して照合**する（SW側の検証を信頼しつつ、
+       メッセージ経路での破損・改変を二重に検出——マロン指示「blob
+       previewの出現とSHA-256一致を確認する」に対応）。一致した場合
+       のみBlob→File→DataTransferを生成し、既存のfile inputへ設定する
+       （`change`イベント発火・確認ボタン処理・プレビュー出現確認は
+       続き29の実装のまま維持）。`image_asset_received`（受信）・
+       `image_file_construct_start/done`（File生成）の新規stageログを
+       追加し、既存の`image_datatransfer_set_start/done`・
+       `image_preview_verify_start/done`と合わせて「受信→File生成→
+       input設定→preview確認」の各段階が連番ログで追える構造にした。
+       base64デコード・SHA-256再検証も含め、この区間の全Promiseへ
+       `raceWithTimeout`による個別5秒上限を維持している。
+    4. **completion-onlyジョブの自動再試行上限を3回→1回へ**
+       （`noteTransferState.ts`）：新規`MAX_COMPLETION_ATTEMPTS = 1`を
+       fullモード用`MAX_TRANSFER_ATTEMPTS`（3、`recordFailure`用）とは
+       独立した定数として新設し、`selectNextPendingArticleId`の
+       completion分岐・`recordCompletionAttempt`の両方で使用するよう
+       変更した。`noteTransferServer.ts`の`/pending`応答の
+       `maxAttempts`表示もモードに応じて出し分けるよう修正（completion
+       なら`MAX_COMPLETION_ATTEMPTS`、fullなら従来どおり）。
+    5. **維持**：タイトル・本文の再入力禁止（completion-onlyモードの
+       経路上で書き込み関数を呼ばない）・新規タブ作成禁止・
+       `tabs.reload`禁止・「投稿する」等の最終公開ボタン絶対禁止は
+       いずれも無変更のまま。
+
+    **ビルド識別の更新**：`manifest.json`の`version`を`1.17.0`→`1.18.0`
+    へ、`BUILD_REVISION`を`br18-2026-09-14-sw-side-image-fetch`へ
+    更新した。
+
+    **回帰テスト**：既存5件を新しいコード構造（`categoryIconAsset`ベース
+    の判定・base64デコード・handleRunの新シグネチャ）に合わせて更新。
+    新規5件——①SW側の画像fetch・arrayBuffer・SHA-256計算すべてに
+    `withStageTimeout`（5秒）が適用されていること②SW側検証がHTTP
+    status・sizeBytes・SHA-256の3点を行うこと③`tabs.sendMessage`の
+    ペイロードに`categoryIconAsset`が含まれること④
+    injected-transfer.jsが（コメントを除いた実コードとして）
+    `fetch(...)`を一切呼んでいないこと・`atob`によるbase64デコードが
+    存在すること⑤`MAX_COMPLETION_ATTEMPTS`が1であり
+    `MAX_TRANSFER_ATTEMPTS`（3）とは独立していること。既存の
+    「in_progress固着バグ再発防止」テストは、1回上限化に伴い
+    アサーションの前提が変わったため、真に検証すべき「statusが
+    in_progressのまま固着しない」という趣旨を保ったまま再構成した。
+    `run-all.ts` **632 passed 0 failed**（628→632）。`tsc --noEmit`
+    0エラー、`node -c`（background.js・injected-transfer.js）・
+    `manifest.json`妥当性を確認。
+
+    **state**：`transfer-state.json`は前回終了時点
+    （`status:'success', needsCompletion:false, completionAttempts:3`）
+    のまま**変更していない**——マロン必須修正⑪「今回は実ブラウザ実行を
+    行わない」に従い、サーバー側の再アーム・実機での検証は一切
+    行っていない。
+
+    **不変**：DB書き込みなし。`Articles.publishHistory`・`review_status`
+    とも変更なし。note公開・Chrome拡張以外からの実ブラウザ操作・課金は
+    一切なし。
+
   - 2026-09-13 続き30（🏆 **note下書き自動転記——1.17.0実機で3回連続、
     ハッシュタグ4/4・タイトル本文無変更（ハッシュ一致）・下書き保存を
     実測確認。90秒の無応答は完全に解消し、続き29の5秒タイムアウト設計が

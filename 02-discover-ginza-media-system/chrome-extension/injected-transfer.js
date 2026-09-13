@@ -78,7 +78,10 @@
         return true
       }
       isRunning = true
-      handleRun(msg.item, buildRevision, logNonBlocking)
+      // 2026-09-14続き31（マロン指示）：画像はページコンテキストでfetchせず、
+      // background Service Worker側で取得・検証済みのbase64データを
+      // categoryIconAssetとして受け取る。
+      handleRun(msg.item, buildRevision, logNonBlocking, msg.categoryIconAsset ?? null)
         .then((result) => {
           try {
             sendResponse(result)
@@ -130,11 +133,11 @@
    * （マロン指示：「注入処理の第1命令から最外周try/catch/finallyで囲み、
    * 必ずこの構造を戻す」）。
    */
-  async function handleRun(item, buildRevision, log) {
+  async function handleRun(item, buildRevision, log, categoryIconAsset) {
     const stages = []
     let finished = false
     try {
-      const result = await runTransfer(item, log, stages)
+      const result = await runTransfer(item, log, stages, categoryIconAsset)
       finished = true
       return { ...result, stages: result.stages ?? stages, buildRevision }
     } catch (e) {
@@ -153,7 +156,7 @@
     }
   }
 
-  async function runTransfer(item, log, stages) {
+  async function runTransfer(item, log, stages, categoryIconAsset) {
     const mode = item.mode === 'completion' ? 'completion' : 'full'
 
     function sleep(ms) {
@@ -730,15 +733,29 @@
         log('image_trigger_not_found_on_editor', imageNotFoundSnapshot)
       }
 
-      const img = item.categoryIcon
-      const imageAvailable = !!(img && img.url && img.fileName && img.mimeType && img.sha256)
+      // 2026-09-14続き31（マロン指示）：「editor.note.comのページコンテキスト
+      // から画像をfetchする構成を廃止」——画像はbackground Service Worker側
+      // で事前に取得・検証済み（HTTP status・mimeType・sizeBytes・SHA-256
+      // すべて検証済み）のものをcategoryIconAsset（base64）として受け取る。
+      // このページコンテキストでは一切のネットワークfetchを行わない。
+      const imageAvailable = !!(
+        categoryIconAsset &&
+        categoryIconAsset.ok &&
+        categoryIconAsset.base64 &&
+        categoryIconAsset.fileName &&
+        categoryIconAsset.mimeType &&
+        categoryIconAsset.sha256
+      )
 
       let iconResult
       if (!imageAvailable) {
         iconResult = {
           attached: false,
           noUsableImageFile: true,
-          reason: item?.categoryIconUnavailableReason || 'カテゴリーアイコン情報が不完全（url/fileName/mimeType/sha256のいずれかが欠落）',
+          reason:
+            (categoryIconAsset && categoryIconAsset.reason) ||
+            item?.categoryIconUnavailableReason ||
+            'カテゴリーアイコン情報が不完全（SW側での取得・検証に失敗、またはbase64/fileName/mimeType/sha256のいずれかが欠落）',
         }
         log('no_usable_image_file', { reason: iconResult.reason })
       } else if (!fileInput) {
@@ -749,29 +766,39 @@
         }
       } else {
         try {
-          log('image_fetch_start', { url: img.url })
-          const res = await raceWithTimeout(fetch(img.url), 5000, 'image_fetch')
-          if (res && res.__timedOut) {
-            throw new Error('stage=image_fetch_timeout: 画像取得が5秒以内に完了しませんでした')
+          log('image_asset_received', { fileName: categoryIconAsset.fileName, sizeBytes: categoryIconAsset.sizeBytes, mimeType: categoryIconAsset.mimeType })
+
+          log('image_file_construct_start', {})
+          const decoded = await raceWithTimeout(
+            Promise.resolve().then(() => {
+              const binary = atob(categoryIconAsset.base64)
+              const bytes = new Uint8Array(binary.length)
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+              return bytes
+            }),
+            5000,
+            'image_base64_decode',
+          )
+          if (decoded && decoded.__timedOut) {
+            throw new Error('stage=image_base64_decode_timeout: base64デコードが5秒以内に完了しませんでした')
           }
-          log('image_fetch_done', { ok: res.ok, status: res.status })
-          const buf = await raceWithTimeout(res.arrayBuffer(), 5000, 'image_array_buffer')
-          if (buf && buf.__timedOut) {
-            throw new Error('stage=image_array_buffer_timeout: 画像データの読み取りが5秒以内に完了しませんでした')
-          }
-          log('image_array_buffer_done', { byteLength: buf.byteLength })
-          const hashBuf = await raceWithTimeout(crypto.subtle.digest('SHA-256', buf), 5000, 'image_sha256_digest')
+
+          // ページ側でも独自にSHA-256を再計算し照合する（マロン指示：
+          // 「blob previewの出現とSHA-256一致を確認する」）——SW側の検証を
+          // 信頼しつつ、メッセージ経路での破損・改変を二重に検出する。
+          const hashBuf = await raceWithTimeout(crypto.subtle.digest('SHA-256', decoded), 5000, 'image_sha256_digest')
           if (hashBuf && hashBuf.__timedOut) {
             throw new Error('stage=image_sha256_digest_timeout: SHA-256計算が5秒以内に完了しませんでした')
           }
           const actualSha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('')
-          log('image_sha256_verify', { expected: img.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === img.sha256 })
-          if (actualSha256 !== img.sha256) {
-            iconResult = { attached: false, reason: `stage=image_integrity_mismatch: 取得した画像のSHA-256が一致しません（改変・破損の疑い）` }
+          log('image_sha256_verify', { expected: categoryIconAsset.sha256.slice(0, 12), actual: actualSha256.slice(0, 12), match: actualSha256 === categoryIconAsset.sha256 })
+          if (actualSha256 !== categoryIconAsset.sha256) {
+            iconResult = { attached: false, reason: 'stage=image_integrity_mismatch: 受信した画像データのSHA-256が一致しません（改変・破損の疑い）' }
           } else {
+            log('image_file_construct_done', { byteLength: decoded.length })
             log('image_datatransfer_set_start', {})
-            const blob = new Blob([buf], { type: img.mimeType })
-            const file = new File([blob], img.fileName, { type: img.mimeType })
+            const blob = new Blob([decoded], { type: categoryIconAsset.mimeType })
+            const file = new File([blob], categoryIconAsset.fileName, { type: categoryIconAsset.mimeType })
             const beforePreviewImgs = new Set(
               deepQuerySelectorAll('img', document, { budgetMs: 5000 }).map((el) => el.getAttribute('src')).filter((s) => s && s.startsWith('blob:')),
             )
@@ -811,7 +838,7 @@
               reason: previewOk ? undefined : 'stage=image_preview_not_verified: アップロード後のプレビュー画像（blob:src）が確認できませんでした',
               revealed: iconRevealed,
               triggerLabel: iconTriggerLabel,
-              fileName: img.fileName,
+              fileName: categoryIconAsset.fileName,
               sha256Verified: true,
             }
           }

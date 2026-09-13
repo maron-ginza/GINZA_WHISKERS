@@ -1272,6 +1272,27 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   最有力仮説だが未確認のまま推測でのコード変更はしていない。3回の自動実行後
   completionAttemptsが上限に達しneedsCompletion:falseへ自然遷移、以後の自動
   再試行なしを確認。詳細は`DECISION_LOG_02.md` 2026-09-13 続き30参照。
+- 2026-09-13: 🔧 **note下書き自動転記——editor.note.comページコンテキストから
+  の画像fetch（サーバーへ一度も到達せずCSP等でブロックされている可能性が
+  確定）を廃止し、background Service Worker側（拡張の特権コンテキスト）へ
+  全面移管（Project 02 commit・push あり／DB更新なし。今回は実ブラウザ実行
+  なし・コード修正のみ）**——新規`fetchAndVerifyCategoryIconInBackground`
+  （background.js）がSW側でサーバーの`/assets/<file>`から画像を取得し、
+  HTTP status・sizeBytes・SHA-256を検証（各工程に`withStageTimeout`5秒上限）、
+  成功時のみbase64エンコードして返す。`runTransferViaExecuteScript`は
+  files:注入前にこれを呼び、`categoryIconAsset`として`tabs.sendMessage`の
+  ペイロードに追加。`injected-transfer.js`はネットワークfetchを完全に
+  廃止し、受信したbase64を`atob`でデコード→ページ側でも独自にSHA-256を
+  再計算・照合（二重検証）→Blob→File→DataTransferで既存file inputへ設定。
+  `image_asset_received`・`image_file_construct_start/done`の新規stageログを
+  追加。あわせてcompletion-onlyジョブの自動再試行上限を新規
+  `MAX_COMPLETION_ATTEMPTS=1`（fullモード用`MAX_TRANSFER_ATTEMPTS`=3とは
+  独立）へ縮小。タイトル本文再入力禁止・新規タブ禁止・tabs.reload禁止・
+  「投稿する」絶対禁止は無変更。`manifest.json`のversionを`1.18.0`へ、
+  `BUILD_REVISION`を`br18-...`へ更新。既存5件更新＋新規5件、`run-all.ts`
+  **632 passed 0 failed**。`transfer-state.json`は前回の一時停止状態のまま
+  変更せず、実機検証は今回行っていない。詳細は`DECISION_LOG_02.md`
+  2026-09-13 続き31参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**
