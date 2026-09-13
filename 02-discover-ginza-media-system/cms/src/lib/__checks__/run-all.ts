@@ -49,6 +49,7 @@ import { suite as extractProductNewsFacts } from './extractProductNewsFacts.chec
 import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
 import { suite as factVerification, runFetchOutcomeTests } from './factVerification.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
+import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -95,6 +96,7 @@ const results: SuiteResult[] = [
   ginzaSixAutoResolve(),
   factVerification(),
   p0Morning(),
+  chromeExtensionManifest(),
 ]
 
 void (async () => {

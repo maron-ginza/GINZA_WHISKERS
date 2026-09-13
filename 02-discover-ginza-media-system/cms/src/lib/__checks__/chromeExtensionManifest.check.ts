@@ -1,0 +1,149 @@
+// GINZA WHISKERS / Project 02（2026-09-14新設）— chrome-extension/ の
+// manifest.json と background.js／content.js の整合性を静的検証する回帰テスト。
+//
+// 【背景】manifest.json の permissions に "alarms"／"storage" が欠けたまま
+// background.js が chrome.alarms.onAlarm / chrome.storage.local を無条件に
+// 呼び出しており、実機で「Service worker registration failed. Status code: 15」
+// 「Uncaught TypeError: Cannot read properties of undefined (reading 'onAlarm')」
+// が発生した（2026-09-14）。この種の「background.js が使うAPI名前空間に対応する
+// 権限がmanifest.jsonに無い」不整合を、実機で動かす前に機械的に検出する。
+//
+// AIなし・ネットワークなし・純粋な静的解析（正規表現によるAPI名前空間の抽出と
+// permissions配列の突合）。
+
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+
+import { runSuite, type CheckCase } from './_harness'
+
+const ROOT = resolve(process.cwd(), '..')
+const EXT_DIR = resolve(ROOT, 'chrome-extension')
+
+/** chrome.<namespace>.… の名前空間ごとに、MV3で明示的な permissions 宣言が必要なもの。
+ * chrome.runtime はいかなる場合も暗黙的に使え、permissions 宣言は不要。 */
+const NAMESPACE_TO_PERMISSION: Record<string, string> = {
+  alarms: 'alarms',
+  storage: 'storage',
+  tabs: 'tabs',
+  scripting: 'scripting',
+  downloads: 'downloads',
+  notifications: 'notifications',
+}
+
+function extractChromeNamespaces(source: string): Set<string> {
+  const found = new Set<string>()
+  const re = /\bchrome\.([a-zA-Z]+)\./g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source))) found.add(m[1])
+  return found
+}
+
+const cases: CheckCase[] = [
+  {
+    name: 'manifest.jsonが存在しJSONとしてパース可能',
+    fn: () => {
+      const raw = readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8')
+      const manifest = JSON.parse(raw)
+      assert.equal(manifest.manifest_version, 3)
+    },
+  },
+  {
+    name: 'background.jsが使うchrome API名前空間はすべてmanifest.jsonのpermissionsに宣言済み',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const permissions: string[] = Array.isArray(manifest.permissions) ? manifest.permissions : []
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      const namespaces = extractChromeNamespaces(bg)
+
+      const missing: string[] = []
+      for (const ns of namespaces) {
+        const requiredPermission = NAMESPACE_TO_PERMISSION[ns]
+        if (requiredPermission && !permissions.includes(requiredPermission)) {
+          missing.push(`chrome.${ns} は permissions に "${requiredPermission}" が必要`)
+        }
+      }
+      assert.deepEqual(missing, [], `不足しているpermissions: ${JSON.stringify(missing)}`)
+    },
+  },
+  {
+    name: 'content.jsが使うchrome API名前空間もmanifest.jsonのpermissionsに宣言済み',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const permissions: string[] = Array.isArray(manifest.permissions) ? manifest.permissions : []
+      const content = readFileSync(resolve(EXT_DIR, 'content.js'), 'utf8')
+      const namespaces = extractChromeNamespaces(content)
+
+      const missing: string[] = []
+      for (const ns of namespaces) {
+        const requiredPermission = NAMESPACE_TO_PERMISSION[ns]
+        if (requiredPermission && !permissions.includes(requiredPermission)) {
+          missing.push(`chrome.${ns} は permissions に "${requiredPermission}" が必要`)
+        }
+      }
+      assert.deepEqual(missing, [], `不足しているpermissions: ${JSON.stringify(missing)}`)
+    },
+  },
+  {
+    name: 'background.jsがchrome.alarms.onAlarmを呼ぶ箇所は必ずundefinedチェックを伴う（トップレベル無条件呼び出しの再発防止）',
+    fn: () => {
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      // 「if (...chrome.alarms...) { ... chrome.alarms.onAlarm... }」のように、
+      // onAlarm への言及より前に chrome.alarms の存在チェック（!chrome.alarms や
+      // chrome.alarms &&）が同一関数内に存在することを、ごく単純な行ベースの
+      // ヒューリスティックで確認する（意図は「無条件呼び出しの再発防止」であり
+      // 完全なAST解析はしない）。
+      const hasGuard = /if\s*\(\s*!?chrome\.alarms\b/.test(bg) || /chrome\.alarms\s*&&/.test(bg)
+      assert.ok(hasGuard, 'chrome.alarms の存在チェック（ガード）が見つからない')
+
+      // 旧バグの再発防止：トップレベル（関数外）で無条件に
+      // `chrome.alarms.onAlarm.addListener` を呼んでいないことを確認する。
+      // safeSetupAlarms() のような関数でラップされていれば OK。
+      // コメント行（// ... や JSDoc の * ...）を除外してから深さを追う——
+      // コメント文中で「chrome.alarms.onAlarm.addListener」という語句そのものに
+      // 言及しているだけの行を実コードと誤認しないようにする。
+      const codeLines = bg
+        .split('\n')
+        .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      let insideFunction = 0
+      let foundUnguardedTopLevelCall = false
+      for (const line of codeLines) {
+        insideFunction += (line.match(/\{/g) || []).length
+        insideFunction -= (line.match(/\}/g) || []).length
+        if (insideFunction <= 0 && /chrome\.alarms\.onAlarm\.addListener/.test(line)) {
+          foundUnguardedTopLevelCall = true
+        }
+      }
+      assert.equal(foundUnguardedTopLevelCall, false, 'トップレベルで無条件に chrome.alarms.onAlarm.addListener を呼んでいる（再発）')
+    },
+  },
+  {
+    name: 'background.jsのservice_worker参照ファイルが実在する',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const swPath = manifest.background?.service_worker
+      assert.ok(typeof swPath === 'string' && swPath.length > 0)
+      readFileSync(resolve(EXT_DIR, swPath), 'utf8') // 存在しなければ例外で失敗する
+    },
+  },
+  {
+    name: 'content_scriptsがnote.comの新規投稿URLにマッチする設定を持つ',
+    fn: () => {
+      const manifest = JSON.parse(readFileSync(resolve(EXT_DIR, 'manifest.json'), 'utf8'))
+      const matches: string[] = (manifest.content_scripts ?? []).flatMap((c: any) => c.matches ?? [])
+      assert.ok(
+        matches.some((m) => /note\.com.*notes\/new/.test(m)),
+        `content_scripts.matches に note.com/notes/new 相当のパターンが無い: ${JSON.stringify(matches)}`,
+      )
+    },
+  },
+]
+
+export const suite = () => runSuite('chromeExtensionManifest', cases)
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const r = suite()
+  console.log(`${r.fail === 0 ? 'PASS' : 'FAIL'} chromeExtensionManifest (${r.pass}/${r.pass + r.fail})`)
+  for (const f of r.failures) console.log('  ✗ ' + f)
+  process.exit(r.fail > 0 ? 1 : 0)
+}

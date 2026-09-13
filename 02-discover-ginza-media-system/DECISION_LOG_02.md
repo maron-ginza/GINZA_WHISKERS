@@ -14,6 +14,90 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
 
 ---
 
+  - 2026-09-13 続き11（🧩 **note下書き自動転記の恒久方式（Chrome拡張＋ローカル
+    サーバー）を新設し、実機で発覚した起動エラーを修正（Project 02 commit・push
+    あり／DB更新なし／note公開なし・Article #67は転記待ちのまま維持）**）:
+
+    マロン指示：「承認後、note下書きへ自動転記する」を受入条件とし、Claude in
+    Chromeのscript injection（note.comへ繰り返しタイムアウト、2026-09-02・
+    2026-09-13で再現済み）は今後使用・再試行しない前提で、既存Project 02
+    Chrome拡張を調査したうえで恒久方式を実装すること。
+
+    **調査結果**：Project 02固有の自作Chrome拡張は存在しなかった——これまで
+    使っていた「Claude in Chrome」はAnthropic提供のブリッジ拡張であり、
+    ソースコードを編集できる対象ではない。そのため、**新規に独立したChrome
+    拡張（`chrome-extension/`）を新設**する方式で対応した。
+
+    **アーキテクチャ**：①`chrome-extension/manifest.json`（Manifest V3）が
+    `https://note.com/notes/new*` への遷移時に`content.js`を宣言的
+    `content_scripts`として自動注入する——Claude in Chromeのオンデマンド
+    script injectionとは別の経路（ページ読み込み時にブラウザ自身が実行する
+    仕組み）で、同じタイムアウト障害を構造的に回避する設計。②
+    `background.js`（service worker）が新規`cms/src/scripts/
+    noteTransferServer.ts`（`./p2 note-transfer serve`、既定
+    `http://localhost:4601`・127.0.0.1限定）へ約20秒ごとに問い合わせ、未転記の
+    承認済み記事があればnote.comの新規投稿タブを開く。③`content.js`が
+    タイトル・本文・ハッシュタグ・カテゴリーアイコンを入力し、**「公開」を
+    含むテキストのボタンは対象から明示的に除外**したうえで「下書き保存」
+    ボタンのみをクリック、保存後のURLを`location.href`から読み取って
+    background経由でローカルサーバーへ報告する。④二重転記防止・3回リトライ
+    上限はローカルサーバー側の状態ファイル（`.devlogs/night/
+    transfer-state.json`、`pending`/`in_progress`/`success`/`failed`）で
+    一元管理し、`GET /api/note-transfer/pending`が承認済み
+    （`reviewStatus=approved`、Payload Local APIで都度確認）かつ未転記の
+    記事のみを返す（返却時点で`in_progress`にし多重取得を防止）。
+    `Articles.publishHistory`は書き換えない（既存`channel`enumが
+    `site/note/x/instagram/newsletter`のみで「note下書きへの転記」を表す
+    値が無く、混同すると既存のpublished判定・重複判定ロジックを誤らせる
+    恐れがあるため——転記記録はtransfer-state.jsonを正とする設計に変更）。
+    `./p2 note-transfer serve|status`をCLIへ追加。
+
+    **サーバー側の単体検証（curl、実ブラウザ操作なし）**：承認済み判定
+    （DC承認だけでは対象にならず`reviewStatus=approved`必須）／pending取得後の
+    即時`in_progress`化による多重取得防止／失敗report→attempts加算→3回で
+    `failed`固定・以後`pending`から除外／成功report→`success`固定・以後
+    再転記されない／`/assets/`が許可ディレクトリ配下のカテゴリーアイコンのみ
+    配信、をすべて実データ（Article #67・DC#1154）で確認。
+
+    **実機エラーの修正**：拡張を実際にChromeへ読み込んだところ、
+    ①「Service worker registration failed. Status code: 15」②「Uncaught
+    TypeError: Cannot read properties of undefined (reading 'onAlarm')」が
+    発生。原因は`manifest.json`の`permissions`が`["tabs","scripting"]`のみで
+    `alarms`／`storage`が欠落しており、権限が無いと`chrome.alarms`自体が
+    `undefined`になり、トップレベルで無条件に
+    `chrome.alarms.onAlarm.addListener(...)`を呼ぶと即座に例外→Service
+    Worker全体の登録が失敗する状態だった。**対応**：①`manifest.json`の
+    `permissions`へ`alarms`・`storage`を追加。②`background.js`に
+    `safeSetupAlarms()`（`chrome.alarms`の存在チェック後にのみ
+    `create`/`onAlarm.addListener`を呼び、失敗時は`setTimeout`ベースの
+    フォールバックポーリングへ切替え）と、`chrome.storage`未使用時の
+    メモリ内フォールバックを追加し、必要な権限が万一将来欠けても
+    Service Worker全体が起動不能にならないよう防御した。③新規回帰テスト
+    `cms/src/lib/__checks__/chromeExtensionManifest.check.ts`（6件）：
+    background.js／content.jsが使う`chrome.*`名前空間が`manifest.json`の
+    `permissions`にすべて宣言済みであることの静的検証、および
+    `chrome.alarms.onAlarm.addListener`のトップレベル無条件呼び出し
+    （今回のバグそのもの）が再発した場合に検出するコメント除外済み
+    ブレース深度チェックを含む。`run-all.ts`へ登録し**533 passed 0
+    failed**（527→533、+6）、`tsc --noEmit`0エラー。修正後、サーバー単体
+    検証（起動・localhost通信・二重転記防止・3回上限・成功報告）を再実施し
+    全項目再確認。
+
+    **未完了（次回への申し送り）**：拡張を実際にChromeへ読み込んで
+    note.com上で下書き保存が成功することの実機確認は、**Chromeの仕様上
+    自動化できない「パッケージ化されていない拡張機能を読み込む」操作**を
+    マロンが行った後でなければ検証できない——本エントリの時点ではまだ
+    その1回の操作の実施待ち。Article #67は`reviewStatus=approved`のまま、
+    note転記は未実施（transfer-state.jsonは空＝転記待ちを維持）。実機で
+    タイトル欄・本文欄・ハッシュタグ欄・下書き保存ボタンの検出に失敗した
+    場合は、content.jsが返すエラー詳細（`debug`フィールド：可視ボタンの
+    テキスト一覧・contenteditable数・textarea数）を手がかりにセレクタを
+    修正する前提。
+
+    **不変**：DB書き込みなし（テスト中の成功/失敗reportはすべて
+    transfer-state.jsonのみに影響し、都度リセット済み）。note公開・
+    Chrome拡張以外からの実ブラウザ操作・課金は一切なし。
+
   - 2026-09-13 続き10（✅ **「Project 02全体の根本改善」残存3項目を完了——固有名詞
     根拠ゲート（公開前blocker・新規実装）／銀座三越の多経路検証を実装し4経路
     すべて不能を確認（非公式補完なし）／松屋銀座をStoryblok公開Content Delivery

@@ -880,6 +880,22 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   全項目PASS**（項目⑭は△→○へ昇格）。銀座三越の技術的取得不能は外部
   ネットワーク制約として透明に記録（18項目のFAILには該当しない）。詳細は
   `DECISION_LOG_02.md` 2026-09-13 続き10参照。
+- 2026-09-13: 🧩 **note下書き自動転記の恒久方式（独自Chrome拡張＋ローカルサーバー）を
+  新設し、実機起動エラーを修正（Project 02 commit・push あり／DB更新なし）**——
+  Claude in Chromeのscript injection（note.comへ繰り返しタイムアウト）は今後
+  不使用とし、代わりに新規`chrome-extension/`（Manifest V3、`content_scripts`が
+  note.com/notes/new遷移時に自動注入——オンデマンド注入ではない）＋新規
+  `cms/src/scripts/noteTransferServer.ts`（`./p2 note-transfer serve`、
+  127.0.0.1限定）を構築。二重転記防止・3回リトライ上限はサーバー側state
+  ファイルで一元管理、「公開」を含むボタンはcontent.js内で物理的に除外。
+  実機読み込み時に`manifest.json`の`permissions`不足（alarms/storage欠落）
+  による Service Worker起動失敗を発見・修正し、`chrome.alarms`利用不能時の
+  防御的フォールバックを追加。新規回帰テスト
+  `chromeExtensionManifest.check.ts`（6件）、`run-all.ts` **533 passed 0
+  failed**。**note.com上での実際の下書き保存成功は、拡張の読み込みという
+  Chrome仕様上自動化できない1回の手動操作待ちのまま未検証**——Article #67は
+  `reviewStatus=approved`のままnote転記待ちを維持。詳細は`DECISION_LOG_02.md`
+  2026-09-13 続き11参照。
 - 2026-09-13: 🧭 **SWEETS候補に編集ゲート（新規性・話題性判定）を恒久実装——技術的な
   取得成功と編集候補としての「旬」を分離（Project 02 commit・push あり／DB更新は
   DC#431〈教文館〉の内容確認不能化のみ／実行結果＝旬の確認候補1件・定番候補3件）**

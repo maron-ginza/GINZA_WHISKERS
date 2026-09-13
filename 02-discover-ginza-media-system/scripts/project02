@@ -2843,6 +2843,40 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/mitsukoshiGinzaHealthCheck.ts "$@" )
     ;;
+  note-transfer)
+    shift
+    # 2026-09-14新設：note下書き自動転記サーバー。Claude in Chromeのscript injectionが
+    # note.comへ繰り返しタイムアウトした（2026-09-02・2026-09-13）ため、代わりに
+    # Chrome拡張（chrome-extension/、note.com/notes/newへの遷移時にブラウザが自動注入する
+    # content_scripts方式——オンデマンド注入ではない）が直接叩くローカルHTTPサーバーを
+    # 新設した。serve はサーバー起動（127.0.0.1限定・下書き保存のみ・公開ボタンには
+    # 一切触れない）、status は転記状態の読み取り専用表示。
+    sub="${1:-}"
+    case "$sub" in
+      serve)
+        shift
+        if ! docker info >/dev/null 2>&1 ||
+           [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+          fail "PostgreSQL が起動していません（先に ./p2 start）"
+          return 1 2>/dev/null || exit 1
+        fi
+        ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/noteTransferServer.ts "$@" )
+        ;;
+      status)
+        shift
+        STATE_FILE="$ROOT/.devlogs/night/transfer-state.json"
+        if [ -f "$STATE_FILE" ]; then
+          cat "$STATE_FILE"
+        else
+          echo '{}'
+        fi
+        ;;
+      *)
+        fail "使い方: ./p2 note-transfer serve [--port=4601] | ./p2 note-transfer status"
+        return 1 2>/dev/null || exit 1
+        ;;
+    esac
+    ;;
   morning-brief)
     shift
     # 朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ（スイーツ含む）③文化・アート
@@ -2954,6 +2988,8 @@ case "${1:-status}" in
     echo "  ./p2 sweets-detail-fetch [--dry-run]  スウィーツ情報源の詳細ページ追跡（Stage2補完）：crawl共有予算切れで内容/会場/日付が未取得のまま残っている候補だけ対象に1回だけ追加取得（JSON-LD/meta description等の既存汎用抽出器を再利用）。crawlの再実行はしない"
     echo "  ./p2 matsuya-sweets-fetch [--dry-run]  松屋銀座「今週のGINZAスイート」（2026-09-14新設・同日改訂）の週替わり催事を、Storyblok公開Content Delivery API（公開配信用トークンを直接fetch、ブラウザ不要・Railway等でも動作）経由で取得し、店舗・商品・価格・開催期間をDiscoveredContentへ反映。取得不能時はSOURCE_LEDGER.healthStatusへunreachableを記録し候補は生成しない"
     echo "  ./p2 mitsukoshi-health-check  銀座三越（mistore.jp、2026-09-14新設）の取得可否をsitemap/RSS/トップページ/内部APIの順に検証しSOURCE_LEDGER.healthStatusへ記録（読み取り専用・非公式情報による補完なし）"
+    echo "  ./p2 note-transfer serve [--port=4601]  note下書き自動転記サーバー（2026-09-14新設）を起動：承認済みArticleのnote-draft.jsonをChrome拡張（chrome-extension/）へ配信し、成功/失敗をChrome拡張から受け取り二重転記・3回超のリトライを防止する。127.0.0.1限定。公開ボタンには一切触れない（下書き保存のみ）"
+    echo "  ./p2 note-transfer status  note下書き自動転記の状態を表示（.devlogs/night/transfer-state.json、読み取り専用）"
     echo "  ./p2 publishlog add --dc=<id> [--title=] [--event=] [--venue=] [--period=] [--url=] [--published-at=] [--source=]  既公開テーマ台帳（PUBLISHED_REGISTRY）への追記：DB自動照合で検知できない、DB外で公開されたとマロンが確認した案件を登録。--url指定時は該当ArticleのpublishHistoryへも書き戻しを試みる（ベストエフォート）。台帳＝MANUAL_PUBLISHED_SEEDの緊急用補助であり主経路ではない"
     echo "  ./p2 morning-brief [--limit=N] [--json]  朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ(スイーツ含む) ③文化・アート 各1本で選定（施設集中の自動回避・重複/既記事化の除外・偏り補正）→ 候補要約＋必須ArticleFacts12項目(無い項目は「公式記載なし」)＋公式出典を1画面 → 承認/保留/却下の1操作(admin URL)＋承認後のnote下書き自動転記手順。読み取り専用・推測補完なし。.devlogs/morning/brief/ へ保存"
     echo "  ./p2 sweets-today [--exclude-facility=key1,key2] [--limit=5] [--json]  本日のSWEETS候補 再抽出：SWEETS_WAGASHI専用の候補を最大5件（既公開/既下書き/施設分散/公式情報完全度/定例イベントの前年流用防止を適用）。--exclude-facilityで施設を一時除外可（例: ginza-six,ginza-tsutaya）。確認候補0件は非0終了（優先カテゴリーが候補上位を占めない場合の自動失敗ゲート）。読み取り専用。.devlogs/morning/sweets-today/ へ保存"
