@@ -9,6 +9,9 @@
 //   ・A＋Bの合計が5未満なら C で埋めず、実数だけを返す（presentableShortfall=true）。
 //   ・topA（A判定のみ）は後方互換のため引き続き返す（buildDecisionSupport等が使用）。
 //   ・B/C の全件詳細は引き続き別枠（b/c）で返す。
+//   ・【2026-09-15追加・マロン指示・近似重複対策ルール3】topPresentable（同一日の上位候補）は
+//     同じ施設（digestMeta.facilityKey）を最大1件までとする——2件目以降はスキップし
+//     facilityCapSkips に理由つきで記録する（A/B/Cの元集合自体は変更しない・水増しもしない）。
 //
 // 優先順位（決定的）：A を B より先に（生成即応性が高い順）、各tier内は
 // 開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
@@ -51,9 +54,21 @@ export function buildMorningReport(
   const C = assessments.filter((a) => a.verdict === 'C')
 
   const topA = A.slice(0, topN)
-  // A を先に、続けて B（それぞれ既にrankAssessments済み）を並べ、topNで切る。
+  // A を先に、続けて B（それぞれ既にrankAssessments済み）を並べ、施設は最大1件まで、topNで切る。
   // Cは候補提示不可のため含めない。水増しはしない（A+Bの実数のみ）。
-  const topPresentable = [...A, ...B].slice(0, topN)
+  const topPresentable: CandidateAssessment[] = []
+  const facilityCapSkips: MorningReport['facilityCapSkips'] = []
+  const seenFacility = new Set<string>()
+  for (const a of [...A, ...B]) {
+    if (topPresentable.length >= topN) break
+    const fk = a.digestMeta?.facilityKey ?? null
+    if (fk && seenFacility.has(fk)) {
+      facilityCapSkips.push({ discoveredContentId: a.discoveredContentId, facilityKey: fk, verdict: a.verdict })
+      continue
+    }
+    if (fk) seenFacility.add(fk)
+    topPresentable.push(a)
+  }
 
   return {
     generatedAt: now.toISOString(),
@@ -63,6 +78,7 @@ export function buildMorningReport(
     aShortfall: A.length < topN,
     topPresentable,
     presentableShortfall: A.length + B.length < topN,
+    facilityCapSkips,
     b: B,
     c: C,
   }
@@ -205,6 +221,12 @@ export function renderMorningReport(report: MorningReport): string {
     if (report.presentableShortfall) {
       s += line()
       s += line(`  ※ A＋Bは ${report.counts.A + report.counts.B} 件のみ（5件に満たないため、Cでは補充していません）。`)
+    }
+    if (report.facilityCapSkips.length > 0) {
+      s += line()
+      s += line('  ※ 同一施設は上位候補に最大1件まで（施設集中回避）。以下は同一施設のため除外：')
+      for (const sk of report.facilityCapSkips)
+        s += line(`    - DC #${sk.discoveredContentId}（施設: ${sk.facilityKey} ／ [${sk.verdict}判定]）`)
     }
   }
 

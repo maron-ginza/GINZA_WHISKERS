@@ -442,6 +442,11 @@ export interface MorningReport {
   topPresentable: CandidateAssessment[]
   /** A＋Bの合計が5未満のとき true（Cで埋めていない） */
   presentableShortfall: boolean
+  /**
+   * 【2026-09-15追加・マロン指示・近似重複対策ルール3】topPresentableで同一施設2件目以降として
+   * スキップされた候補（施設は最大1件まで）。水増しの代わりに理由つきで記録する。
+   */
+  facilityCapSkips: { discoveredContentId: number; facilityKey: string; verdict: CandidateAssessment['verdict'] }[]
   /** B判定 全件（参考・詳細表示用） */
   b: CandidateAssessment[]
   /** C判定（除外理由つき） */

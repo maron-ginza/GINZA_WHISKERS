@@ -36,6 +36,8 @@ import { extractProductNewsFactsCandidate } from '../lib/morning/extractProductN
 import { extractPriceHint } from '../lib/morning/extractPriceHint'
 import {
   dedupCheck,
+  normalizeVenueKey,
+  checkRecentBrandVenueDuplicate,
   type DedupArticleRecord,
   type DedupNoteRecord,
 } from '../lib/morning/dedupCheck'
@@ -296,18 +298,34 @@ export async function loadArticleRecords(
     const prov = Array.isArray(a.editorialProvenance) ? (a.editorialProvenance as Array<Record<string, unknown>>) : []
     const dcIds: number[] = []
     const urls: string[] = []
+    const venueHints: string[] = []
     for (const p of prov) {
       const dcId = Number(p.discoveredContentSource)
       if (Number.isInteger(dcId) && dcId > 0) dcIds.push(dcId)
       if (typeof p.sourceUrl === 'string') urls.push(p.sourceUrl)
+      // 2026-09-15追加（近似重複ルール2用）：factType==='venue' の事実文から会場・ブランド
+      // 識別子を抽出する（createDraftFromArticleFactsがArticleFacts.venuesから
+      // 「会場：{place} {name}」形式で書き込む値、と同じ正規化を適用）。
+      if (p.factType === 'venue' && typeof p.fact === 'string') {
+        const key = normalizeVenueKey(p.fact)
+        if (key) venueHints.push(key)
+      }
     }
+    // 直近性の基準日時：publishHistory の note 公開日（最新）を優先、無ければ updatedAt。
+    const publishHistory = Array.isArray(a.publishHistory) ? (a.publishHistory as Array<Record<string, unknown>>) : []
+    const notePublishDates = publishHistory
+      .filter((p) => p.channel === 'note' && typeof p.publishedAt === 'string')
+      .map((p) => p.publishedAt as string)
+      .sort()
+    const recentDate = notePublishDates.length > 0 ? notePublishDates[notePublishDates.length - 1] : ((a.updatedAt as string | null) ?? null)
     out.push({
       id: Number(a.id),
       title: (a.title as string | null) ?? null,
       provenanceDcIds: [...new Set(dcIds)],
       provenanceSourceUrls: [...new Set(urls)],
       eventDates: [],
-      venueHints: [],
+      venueHints: [...new Set(venueHints)],
+      recentDate,
     })
   }
   return out
@@ -691,6 +709,14 @@ async function main(): Promise<void> {
           signals: classification.signals,
         })
 
+        // --- 近似重複ルール2（2026-09-15追加・マロン指示）：直近14日以内の同一ブランド・
+        //     同一会場の既投稿記事があればAへ昇格させない（除外はしない・B保留の根拠のみ）。
+        const candidateVenues = Array.isArray((factsDoc as Record<string, unknown> | undefined)?.venues)
+          ? ((factsDoc as Record<string, unknown>).venues as Array<{ name?: string | null; place?: string | null }>)
+          : []
+        const candidateVenueKey = normalizeVenueKey(candidateVenues[0]?.place, candidateVenues[0]?.name)
+        const recentBrandVenueDuplicate = checkRecentBrandVenueDuplicate(candidateVenueKey, articleRecords, now)
+
         const a = assessCandidate({
           dc: dcLike,
           facts: toFactsLike(factsDoc),
@@ -699,6 +725,7 @@ async function main(): Promise<void> {
           now,
           factKind,
           officialFetchOutcome: signals?.fetchOutcome ?? (signals ? (signals.ok ? 'ok' : 'unknown') : undefined),
+          recentBrandVenueDuplicate,
         })
         a.factKind = factKind
         a.factKindClassification = classification

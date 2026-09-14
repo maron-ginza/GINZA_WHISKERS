@@ -17,7 +17,14 @@ import {
   ssrfReject,
   isAllowedHost,
 } from './fetchOfficialSignals'
-import { dedupCheck, normUrl, titleSimilarity } from './dedupCheck'
+import {
+  dedupCheck,
+  normUrl,
+  titleSimilarity,
+  normalizeVenueKey,
+  checkRecentBrandVenueDuplicate,
+  type DedupArticleRecord,
+} from './dedupCheck'
 import { buildDecisionSupport } from './buildMorningReport'
 import { classifyFactKind } from './classifyFactKind'
 import { classifyTemplateType } from './classifyTemplateType'
@@ -273,6 +280,133 @@ const cases: CheckCase[] = [
     },
   },
 
+  // ---------- 近似重複ルール2（2026-09-15追加・マロン指示） ----------
+  // 直近14日以内に同一ブランド・同一会場の既投稿記事があれば、URL・タイトルが一致しなくても
+  // Aへ昇格させずBのまま保留する。実例＝DC#246「花西子 FLORASIS」（2026-09-15）。
+  {
+    name: 'normalizeVenueKey: 「会場：」接頭辞・空白差を吸収し厳密一致用キーを作る',
+    fn: () => {
+      assert(normalizeVenueKey('GINZA SIX B1F', '花西子 FLORASIS GINZA') === 'GINZASIXB1F花西子FLORASISGINZA', normalizeVenueKey('GINZA SIX B1F', '花西子 FLORASIS GINZA') ?? 'null')
+      assert(normalizeVenueKey('会場：GINZA SIX B1F 花西子 FLORASIS GINZA') === 'GINZASIXB1F花西子FLORASISGINZA', '「会場：」接頭辞を除去')
+      assert(normalizeVenueKey(null, undefined) === null, '情報なしはnull')
+    },
+  },
+  {
+    name: 'checkRecentBrandVenueDuplicate: 直近14日以内・同一キーの記事があればisDuplicate:true',
+    fn: () => {
+      const key = normalizeVenueKey('GINZA SIX B1F', '花西子 FLORASIS GINZA')
+      const articles: DedupArticleRecord[] = [
+        {
+          id: 60,
+          title: '花西子 チーク新色登場',
+          provenanceDcIds: [],
+          provenanceSourceUrls: [],
+          eventDates: [],
+          venueHints: [key!],
+          recentDate: '2026-09-08T00:00:00.000Z', // NOW=2026-09-02基準の別テストでは範囲外になるため、NOWは呼び出し時に個別指定する
+        },
+      ]
+      const r = checkRecentBrandVenueDuplicate(key, articles, new Date('2026-09-15T00:00:00Z'), 14)
+      assert(r.isDuplicate === true, `isDuplicate true 期待 / 実際 ${r.isDuplicate}`)
+      assert(r.matchedArticleId === 60, 'マッチしたArticle IDを返す')
+    },
+  },
+  {
+    name: 'checkRecentBrandVenueDuplicate: 14日を超えるとisDuplicate:false（範囲外）',
+    fn: () => {
+      const key = normalizeVenueKey('GINZA SIX B1F', '花西子 FLORASIS GINZA')
+      const articles: DedupArticleRecord[] = [
+        { id: 60, title: '花西子 チーク新色登場', provenanceDcIds: [], provenanceSourceUrls: [], eventDates: [], venueHints: [key!], recentDate: '2026-08-01T00:00:00.000Z' },
+      ]
+      const r = checkRecentBrandVenueDuplicate(key, articles, new Date('2026-09-15T00:00:00Z'), 14)
+      assert(r.isDuplicate === false, `isDuplicate false 期待（範囲外） / 実際 ${r.isDuplicate}`)
+    },
+  },
+  {
+    name: 'checkRecentBrandVenueDuplicate: 会場・ブランドキーが異なればisDuplicate:false',
+    fn: () => {
+      const articles: DedupArticleRecord[] = [
+        { id: 60, title: '別ブランドの記事', provenanceDcIds: [], provenanceSourceUrls: [], eventDates: [], venueHints: ['GINZASIXB1FジルサンダーGINZA'], recentDate: '2026-09-08T00:00:00.000Z' },
+      ]
+      const r = checkRecentBrandVenueDuplicate('GINZASIXB1F花西子FLORASISGINZA', articles, new Date('2026-09-15T00:00:00Z'), 14)
+      assert(r.isDuplicate === false, `isDuplicate false 期待（別会場・別ブランド） / 実際 ${r.isDuplicate}`)
+    },
+  },
+  {
+    // 実例＝DC#246（2026-09-15）：花西子 FLORASIS GINZA のファンデーション記事は、
+    // ArticleFacts ready・humanReviewedAt設定・saleAvailability='ongoing_no_end_stated'で
+    // 他の条件はすべてA相当だったが、2026-09-08に同ブランド・同会場のチーク記事が
+    // 既にあったため、A ではなく B のまま保留すべきだった。
+    name: '近似重複ルール2: DC#246クラス（他はA相当）でも直近14日以内の同一ブランド・同一会場記事があればB',
+    fn: () => {
+      const facts = readyFacts({
+        templateType: 'sale',
+        eventName: '玉方蓮葉(ギョクホウレンヨウ) クッションファンデーション UV',
+        eventDate: '販売期間の公式記載なし（新商品として継続販売中と案内）',
+        eventDateISO: null,
+        priceText: '各5,280円(税込)',
+        saleAvailability: 'ongoing_no_end_stated',
+        venues: [{ name: '花西子 FLORASIS GINZA', place: 'GINZA SIX B1F' }],
+        humanReviewedAt: '2026-09-14T22:54:29.583Z',
+      })
+      const candidateKey = normalizeVenueKey('GINZA SIX B1F', '花西子 FLORASIS GINZA')
+      const recentArticles: DedupArticleRecord[] = [
+        {
+          id: 60,
+          title: '花西子 FLORASIS チーク新色登場',
+          provenanceDcIds: [],
+          provenanceSourceUrls: [],
+          eventDates: [],
+          venueHints: [candidateKey!],
+          recentDate: '2026-09-08T00:00:00.000Z',
+        },
+      ]
+      const now246 = new Date('2026-09-15T00:00:00Z')
+      const recentBrandVenueDuplicate = checkRecentBrandVenueDuplicate(candidateKey, recentArticles, now246, 14)
+      assert(recentBrandVenueDuplicate.isDuplicate === true, '前提：近似重複が検出される')
+
+      const dcWithoutDup = baseDc({
+        id: 246,
+        title: '【花西子 FLORASIS】待望のUV機能付ファンデーション登場！',
+        articleUrl: 'https://ginza6.tokyo/news/detail/shopnews/224118',
+        sourceSiteName: 'GINZA SIX',
+        contentType: 'news',
+        eventStartAt: null,
+        eventEndAt: null,
+        lastCheckedAt: '2026-09-14T22:54:58.952Z',
+      })
+
+      // 比較対照：recentBrandVenueDuplicateを渡さなければ他条件だけでAになることを確認
+      const withoutRule = assessCandidate(mk({ dc: dcWithoutDup, facts, factKind: 'product_news', now: now246 }))
+      assert(withoutRule.verdict === 'A', `対照：近似重複チェックなしならA（実際 ${withoutRule.verdict}）`)
+
+      // 本題：recentBrandVenueDuplicateを渡すとBのまま保留される
+      const withRule = assessCandidate(
+        mk({ dc: dcWithoutDup, facts, factKind: 'product_news', now: now246, recentBrandVenueDuplicate }),
+      )
+      assert(withRule.verdict === 'B', `verdict B 期待（近似重複のため） / 実際 ${withRule.verdict}`)
+      assert(withRule.reasons.some((r) => r.includes('近似重複')), '理由に「近似重複」が明記される')
+      assert(
+        withRule.unconfirmed.some((u) => u.includes('近似重複')),
+        '未確認事項に近似重複の疑いが明記される（記事生成前に確認が必要）',
+      )
+    },
+  },
+  {
+    name: '近似重複ルール2: event系でも同様にBのまま保留される',
+    fn: () => {
+      const facts = readyFacts()
+      const candidateKey = normalizeVenueKey(facts.venues?.[0]?.place, facts.venues?.[0]?.name)
+      const recentArticles: DedupArticleRecord[] = [
+        { id: 61, title: '別の記事', provenanceDcIds: [], provenanceSourceUrls: [], eventDates: [], venueHints: [candidateKey!], recentDate: NOW.toISOString() },
+      ]
+      const recentBrandVenueDuplicate = checkRecentBrandVenueDuplicate(candidateKey, recentArticles, NOW, 14)
+      const a = assessCandidate(mk({ facts, recentBrandVenueDuplicate }))
+      assert(a.verdict === 'B', `verdict B 期待 / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('近似重複')), 'event系でも理由に近似重複が明記される')
+    },
+  },
+
   // ---------- buildMorningReport ----------
   {
     name: 'report: topA は A のみ・B/C は含めない・A<5 なら aShortfall',
@@ -349,6 +483,32 @@ const cases: CheckCase[] = [
       assert(rep.topPresentable.filter((x) => x.verdict === 'A').length === 3, 'A全3件を含む')
       assert(rep.topPresentable.filter((x) => x.verdict === 'B').length === 2, 'Bは4件中上位2件のみ（水増しではなく単純に5件で切る）')
       assert(rep.presentableShortfall === false, 'A+B=7>=5なのでshortfallではない')
+    },
+  },
+  {
+    // 2026-09-15追加・マロン指示・近似重複対策ルール3：同一日の上位候補では同じ施設を最大1件までとする。
+    name: 'report.topPresentable: 同一施設（digestMeta.facilityKey）は最大1件まで・2件目以降はfacilityCapSkipsへ',
+    fn: () => {
+      const mkWithFacility = (id: number, facilityKey: string, verdict: 'A' | 'B'): CandidateAssessment => {
+        const base = assessCandidate(
+          verdict === 'A'
+            ? mk({ facts: readyFacts({ eventDateISO: `2026-10-0${id}T00:00:00Z` }), dc: baseDc({ id }) })
+            : mk({ dc: baseDc({ id }), facts: undefined }),
+        )
+        return { ...base, digestMeta: { venue: null, officialFetch: null, priceHint: null, facilityKey, facilityLabel: facilityKey, category: null, categoryBasis: null, publishedAt: null, origin: 'approved' } }
+      }
+      const candidates = [
+        mkWithFacility(1, 'ginza-six', 'A'),
+        mkWithFacility(2, 'ginza-six', 'A'), // 同一施設2件目 → スキップされるはず
+        mkWithFacility(10, 'kyobunkwan', 'B'),
+        mkWithFacility(11, 'kabuki-za', 'B'),
+      ]
+      const rep = buildMorningReport(candidates, { now: NOW, topN: 5 })
+      const ginzaSixCount = rep.topPresentable.filter((x) => x.digestMeta?.facilityKey === 'ginza-six').length
+      assert(ginzaSixCount === 1, `同一施設は1件まで / 実際 ${ginzaSixCount}`)
+      assert(rep.topPresentable.length === 3, `施設重複1件を除いた3件 / 実際 ${rep.topPresentable.length}`)
+      assert(rep.facilityCapSkips.length === 1, `facilityCapSkipsに1件記録 / 実際 ${rep.facilityCapSkips.length}`)
+      assert(rep.facilityCapSkips[0].facilityKey === 'ginza-six', 'スキップ理由の施設キーが正しい')
     },
   },
 
@@ -548,6 +708,20 @@ const cases: CheckCase[] = [
       assert(r.duplicate === false, '弱シグナルのみは duplicate ではない')
       assert(r.possibleDuplicate === true, 'possibleDuplicate true')
       assert(titleSimilarity('銀座で秋の写真展を開催', '銀座で秋の写真展を開催中') >= 0.72, '類似度しきい値')
+    },
+  },
+  {
+    // 2026-09-15追加・マロン指示・近似重複対策ルール1：タイトルが（正規化後）完全一致する
+    // 候補は、開催日・会場が一致していなくても単独で強シグナル＝duplicateとする。
+    name: 'dedup: タイトルが正規化後に完全一致 → 単独で duplicate（強シグナル、開催日・会場の一致は不要）',
+    fn: () => {
+      const r = dedupCheck(
+        { id: 20, articleUrl: 'https://www.ginza.jp/d', title: '【花西子】新作コスメのご案内', eventStartAt: null, venue: null },
+        [{ id: 4, title: '【花西子】新作コスメのご案内', provenanceDcIds: [], provenanceSourceUrls: [], eventDates: [], venueHints: [] }],
+        [],
+      )
+      assert(r.duplicate === true, 'タイトル完全一致は単独で duplicate')
+      assert(r.signals.some((s) => s.type === 'article-exact-title' && s.strong === true), 'article-exact-title シグナルを強として記録')
     },
   },
   {

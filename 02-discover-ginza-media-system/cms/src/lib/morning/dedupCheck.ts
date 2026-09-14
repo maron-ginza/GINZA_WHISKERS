@@ -27,7 +27,15 @@ export interface DedupArticleRecord {
   /** editorialProvenance[].sourceUrl */
   provenanceSourceUrls: string[]
   eventDates: string[] // 参考：本文や provenance から取れた開催日（あれば）
+  /** editorialProvenance[].fact のうち factType==='venue' のものから抽出した会場・ブランド記述（2026-09-15追加） */
   venueHints: string[]
+  /**
+   * 直近性の基準日時（2026-09-15追加・近似重複ルール用）。publishHistory の note
+   * 公開日があればそれを優先、無ければ updatedAt/createdAt。取得できなければ null。
+   * 任意項目（既存の呼び出し元を壊さないため）——未設定は
+   * checkRecentBrandVenueDuplicate 側で「対象外」として扱う。
+   */
+  recentDate?: string | null
 }
 
 export interface DedupNoteRecord {
@@ -46,10 +54,12 @@ export interface DedupSignal {
   type:
     | 'article-provenance-dc'
     | 'article-same-source-url'
+    | 'article-exact-title'
     | 'article-similar-title'
     | 'article-same-event'
     | 'note-record-dc'
     | 'note-record-same-source-url'
+    | 'note-record-exact-title'
     | 'note-record-similar-title'
     | 'note-record-same-event'
   strong: boolean
@@ -153,7 +163,11 @@ export function dedupCheck(
       existingArticleId ??= a.id
     }
     const ts = titleSimilarity(dc.title, a.title)
-    if (ts >= th) signals.push({ type: 'article-similar-title', strong: false, detail: `Article #${a.id}「${a.title ?? ''}」と類似（${ts.toFixed(2)}）` })
+    // 2026-09-15追加（マロン指示・近似重複対策ルール1）：正規化後に完全一致（ts===1）は
+    // 「タイトルが一致」＝強シグナルとして単独で duplicate にする。1未満は従来どおり
+    // 類似タイトルの弱シグナル（同一開催日・会場との組み合わせでのみ duplicate）のまま。
+    if (ts === 1) signals.push({ type: 'article-exact-title', strong: true, detail: `Article #${a.id}「${a.title ?? ''}」とタイトルが一致` })
+    else if (ts >= th) signals.push({ type: 'article-similar-title', strong: false, detail: `Article #${a.id}「${a.title ?? ''}」と類似（${ts.toFixed(2)}）` })
     if (a.eventDates.some((d) => sameDay(d, dc.eventStartAt)) && a.venueHints.some((v) => venueOverlap(v, dc.venue)))
       signals.push({ type: 'article-same-event', strong: false, detail: `Article #${a.id} と開催日・会場が一致` })
   }
@@ -164,7 +178,8 @@ export function dedupCheck(
     if (dcUrl && n.sourceUrls.some((u) => normUrl(u) === dcUrl))
       signals.push({ type: 'note-record-same-source-url', strong: true, detail: `${n.kind}（${n.path}）が同一 sourceUrl` })
     const ts = titleSimilarity(dc.title, n.title)
-    if (ts >= th) signals.push({ type: 'note-record-similar-title', strong: false, detail: `${n.kind}（${n.path}）「${n.title ?? ''}」と類似（${ts.toFixed(2)}）` })
+    if (ts === 1) signals.push({ type: 'note-record-exact-title', strong: true, detail: `${n.kind}（${n.path}）「${n.title ?? ''}」とタイトルが一致` })
+    else if (ts >= th) signals.push({ type: 'note-record-similar-title', strong: false, detail: `${n.kind}（${n.path}）「${n.title ?? ''}」と類似（${ts.toFixed(2)}）` })
     if (sameDay(n.eventDate, dc.eventStartAt) && venueOverlap(n.venue, dc.venue))
       signals.push({ type: 'note-record-same-event', strong: false, detail: `${n.kind}（${n.path}）と開催日・会場が一致` })
   }
@@ -184,4 +199,73 @@ export function dedupCheck(
     externalPublicationUnverified: true,
     externalNote: '外部公開記録は未確認・マロン最終確認（システムは外部 note アカウントを巡回しない。8:00 の人間選定が最終ゲート）',
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 近似重複ルール2（2026-09-15追加・マロン指示）：
+// 「除外（C）」ではなく「Aへ昇格させずBのまま保留」の判定に使う、既投稿の
+// duplicate/possibleDuplicateとは独立した別シグナル。
+//
+//   直近14日以内に「同一ブランド＋同一会場」の記事が既にある場合、Aへは昇格させない。
+//
+// 実例（2026-09-15）：DC#246「花西子 FLORASIS GINZA」のファンデーション記事が、
+// 2026-09-08 公開済みの同ブランド・同会場（GINZA SIX）のチーク記事と、
+// URL・タイトルはどちらも一致しないため dedupCheck の duplicate 判定はすり抜けたが、
+// 編集上は近似重複だった。ArticleFacts.venues（name+place）から会場・ブランド識別子を
+// 決定的に作り、Article.editorialProvenance の factType==='venue' な事実から
+// 同じ識別子を持つ既存記事を探す（推測しない・厳密一致のみ）。
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 会場・ブランド識別子を正規化する。「会場：」等の接頭辞・空白差を吸収するだけで、
+ * 意味的な推測（別名の統合等）はしない——厳密一致のみを目的とする。
+ */
+export function normalizeVenueKey(...parts: (string | null | undefined)[]): string | null {
+  const joined = parts
+    .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+    .join(' ')
+    .replace(/^会場[：:]\s*/, '')
+    .replace(/[\s　]+/g, '')
+    .trim()
+  return joined.length > 0 ? joined : null
+}
+
+export interface RecentBrandVenueDuplicateResult {
+  isDuplicate: boolean
+  matchedArticleId?: number
+  matchedVenueKey?: string
+  windowDays: number
+  reason: string
+}
+
+/**
+ * 直近 windowDays（既定14日）以内に、同一の会場・ブランド識別子（normalizeVenueKey）を
+ * 持つ Article が既にあるかを判定する。あれば isDuplicate:true——呼び出し側
+ * （assessCandidate）はこれを「Aへ昇格させずBのまま保留」の根拠として使う
+ * （既存の dedupCheck の duplicate/C判定とは別軸。除外はしない）。
+ */
+export function checkRecentBrandVenueDuplicate(
+  candidateVenueKey: string | null,
+  articles: DedupArticleRecord[],
+  now: Date,
+  windowDays = 14,
+): RecentBrandVenueDuplicateResult {
+  if (!candidateVenueKey) {
+    return { isDuplicate: false, windowDays, reason: '会場・ブランド識別子が確認できないため判定対象外' }
+  }
+  const cutoff = now.getTime() - windowDays * 24 * 60 * 60 * 1000
+  for (const a of articles) {
+    const d = a.recentDate ? Date.parse(a.recentDate) : NaN
+    if (Number.isNaN(d) || d < cutoff || d > now.getTime()) continue
+    if (a.venueHints.some((v) => v === candidateVenueKey)) {
+      return {
+        isDuplicate: true,
+        matchedArticleId: a.id,
+        matchedVenueKey: candidateVenueKey,
+        windowDays,
+        reason: `直近${windowDays}日以内に同一ブランド・同一会場（${candidateVenueKey}）の記事 Article #${a.id} が既にあるため`,
+      }
+    }
+  }
+  return { isDuplicate: false, windowDays, reason: `直近${windowDays}日以内に同一ブランド・同一会場の記事なし` }
 }

@@ -13,6 +13,9 @@
 //         （saleAvailability='has_end_date'／'ongoing_no_end_stated'。isSaleAvailabilityConfirmed）
 //         ——'no_period_stated'（販売期間の記載なし）のまま human_reviewed だけで ready 化
 //         されたケースをAにしない（2026-09-14修正：DC#370のような事例）
+//       ・直近14日以内に同一ブランド・同一会場の記事が無い（近似重複ルール2、2026-09-15追加）
+//         ——URL・タイトルが一致しないため既存の重複判定はすり抜けるが、編集上は近似重複と
+//         判定される事例（DC#246「花西子 FLORASIS」のような事例）をAにしない
 //     → 20〜30 分で記事化できる見込み
 //   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要）:
 //       C でも A でもない。ArticleFacts が未作成／draft／期間未確認であっても、
@@ -68,6 +71,16 @@ export interface AssessCandidateInput {
    * 「取得失敗（再取得で解消しうる。『公式記載なし』とは別）」を明示する。verdict は動かさない。
    */
   officialFetchOutcome?: string
+  /**
+   * 近似重複ルール2（2026-09-15追加・マロン指示）。呼び出し元が
+   * dedupCheck.checkRecentBrandVenueDuplicate() の結果を渡す。isDuplicate:true のときは
+   * event/product_news いずれも A へ昇格させず B のまま保留する（除外〈C〉はしない）。
+   */
+  recentBrandVenueDuplicate?: {
+    isDuplicate: boolean
+    matchedArticleId?: number
+    reason: string
+  }
 }
 
 
@@ -230,14 +243,19 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     // 必須項目のconfirmedと人間確認は担保されている。humanReviewedAt の明示確認は
     // 「人間確認なしの自動A昇格を禁止する」ことの二重防御（belt and suspenders）。
     const saleAvailabilityConfirmed = isSaleAvailabilityConfirmed(facts?.saleAvailability)
+    const recentDupBlocks = !!input.recentBrandVenueDuplicate?.isDuplicate
     const eligible =
-      map.templateEligible && map.factsSource === 'ready' && !!facts?.humanReviewedAt && saleAvailabilityConfirmed
+      map.templateEligible &&
+      map.factsSource === 'ready' &&
+      !!facts?.humanReviewedAt &&
+      saleAvailabilityConfirmed &&
+      !recentDupBlocks
     if (eligible && !stale) {
       verdict = 'A'
       reasons.push(
         '記事タイプ＝product_news（商品ニュース）／必須項目（商品名・価格・販売期間・購入条件・出典）が' +
           'confirmedでArticleFacts ready・人間レビュー済み（humanReviewedAt設定）／templateEligible:true／公式出典あり／' +
-          `現在の販売状況も公式確認済み（saleAvailability=${facts?.saleAvailability}）／情報が新しい`,
+          `現在の販売状況も公式確認済み（saleAvailability=${facts?.saleAvailability}）／近似重複なし／情報が新しい`,
       )
     } else {
       verdict = 'B'
@@ -255,10 +273,17 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
           `現在の販売状況が公式に確認できていない（saleAvailability=${facts?.saleAvailability ?? '未設定'}。` +
             'ArticleFactsはreadyだが「販売期間の記載なし」は現在も販売中である確認にはならない）',
         )
+      else if (recentDupBlocks)
+        reasons.push(`近似重複のためA昇格を保留（${input.recentBrandVenueDuplicate?.reason}）`)
       if (stale) reasons.push('情報の確認日時が古く再確認が必要')
       if (!saleAvailabilityConfirmed) {
         unconfirmed.push(
           `現在の販売状況（公式ページで再確認が必要）: ${sourceUrl || '（公式URLなし）'} — 記事生成前に確認が必要`,
+        )
+      }
+      if (recentDupBlocks) {
+        unconfirmed.push(
+          `近似重複の疑い（${input.recentBrandVenueDuplicate?.reason}）— 記事生成前に既存記事との重複を確認が必要`,
         )
       }
     }
@@ -266,11 +291,13 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     // factKind === 'event'（未指定は後方互換で event 扱い）。
     // event はreadyGate.tsが常に機械日付（eventDateISO）と過去/未来ゲートを必須にしており
     // （sale向けのno_period_stated免除は存在しない）、ready＝現在の開催状況も確認済みで
-    // 一貫しているため、product_newsのような追加チェックは不要（2026-09-14確認）。
-    const eligible = map.templateEligible && map.factsSource === 'ready'
+    // 一貫しているため、product_newsのようなsaleAvailabilityチェックは不要（2026-09-14確認）。
+    // 近似重複ルール2（2026-09-15追加）はevent/product_news共通で適用する。
+    const recentDupBlocksEvent = !!input.recentBrandVenueDuplicate?.isDuplicate
+    const eligible = map.templateEligible && map.factsSource === 'ready' && !recentDupBlocksEvent
     if (eligible && !stale) {
       verdict = 'A'
-      reasons.push('記事タイプ＝event／必須項目を確認済み（ArticleFacts ready）／templateEligible:true／公式出典あり／情報が新しい')
+      reasons.push('記事タイプ＝event／必須項目を確認済み（ArticleFacts ready）／templateEligible:true／公式出典あり／近似重複なし／情報が新しい')
     } else {
       verdict = 'B'
       reasons.push('記事タイプ＝event')
@@ -278,7 +305,13 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       else if (map.factsSource === 'draft') reasons.push('ArticleFacts が draft（human_reviewed で ready にする必要あり）')
       else if (map.factsSource === 'withdrawn') reasons.push('ArticleFacts が withdrawn')
       else if (!map.templateEligible) reasons.push('必須項目に不足あり（下記 missing）')
+      else if (recentDupBlocksEvent) reasons.push(`近似重複のためA昇格を保留（${input.recentBrandVenueDuplicate?.reason}）`)
       if (stale) reasons.push('情報の確認日時が古く再確認が必要')
+      if (recentDupBlocksEvent) {
+        unconfirmed.push(
+          `近似重複の疑い（${input.recentBrandVenueDuplicate?.reason}）— 記事生成前に既存記事との重複を確認が必要`,
+        )
+      }
     }
   }
 
