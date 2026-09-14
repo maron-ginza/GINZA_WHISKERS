@@ -9768,3 +9768,37 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   （cms）0エラー。**今回は実ブラウザを一切操作していない**——コード修正・
   テスト・型検査・状態ファイルの復元・commit・pushのみ。実機での動作確認は
   次回、既に稼働中のサーバー・拡張の自動ポーリングに委ねる。
+
+- 2026-09-14 続き35: 🛠 **note下書き自動転記——v1.20.0実機検証結果を受け、
+  post_confirm_click_waitから画像調整モーダル閉鎖待ちまでの区間へ
+  heartbeat送信を追加（最小修正。Project 02 commit・push あり／DB更新
+  なし。実ブラウザは未操作）**——v1.20.0実機（続き34）でマロン確定の
+  事実：①「保存」ボタンのクリックは成功する（根本原因の修正は有効）、
+  ②タイトル・本文・画像アップロード自体・ハッシュタグ4/4・下書き保存は
+  いずれも孤立継続の中で実際に成功していた、③実害はSW側heartbeat
+  watchdogの誤検知（`post_confirm_click_wait`＋モーダル閉鎖確認待ちの
+  区間で計20秒超・バックグラウンドタブのタイマー抑制が原因）により
+  サーバーへの完了報告が途切れたことのみ、④新規タブ・reload・公開は
+  0件。マロン指示どおり**モーダル操作そのものには一切手を入れず**、
+  この区間だけに3秒間隔のheartbeatを並行送信する処理を追加した——
+  `clickElement(confirmBtn)`直後から`modalClosed`判定完了までの間、
+  `modalWaitHeartbeatActive`フラグで制御する非同期ループが
+  `image_adjust_modal_wait_heartbeat`ログを送り続け、モーダル閉鎖判定
+  （`image_adjust_modal_closed`ログ）の直前でフラグをfalseにして停止する。
+  この変更は`logNonBlocking`（診断ログ送信のみ、fire-and-forget）を
+  呼ぶだけで、`/api/note-transfer/result`への追加POSTや
+  `completionAttempts`／`claimInProgress`／`recordCompletionAttempt`
+  （`cms/src/lib/night/noteTransferState.ts`、`chrome-extension/
+  background.js`）には一切触れていない——**completion-only再試行を
+  消費しないことをコード上でも確認済み**（該当2ファイルは今回無変更、
+  回帰テストでも「heartbeatログ直後にfetch呼び出しが無い」ことを機械的に
+  確認）。`manifest.json`のversionを`1.21.0`へ、`BUILD_REVISION`を
+  `br21-2026-09-14-modal-wait-heartbeat`へ更新。回帰テスト新規2件
+  （heartbeatループがクリックからモーダル閉鎖判定までの区間全体を覆って
+  いることの位置関係確認、completion-only試行を消費しないことの機械的
+  確認）、既存2件のスライス窓を`indexOf`ベースへ修正（挿入したコード分の
+  ずれに対応）、`run-all.ts` **651 passed 0 failed**（649→651）。
+  `tsc --noEmit`（cms）0エラー。**今回は実ブラウザ・`transfer-state.json`
+  ともに一切操作していない**——次回の実機検証（マロンによる拡張再読み込み
+  待ち）で、①heartbeat stallが再発しないこと、②結果が正しくサーバーへ
+  報告され`transfer-state.json`に反映されること、を確認する。

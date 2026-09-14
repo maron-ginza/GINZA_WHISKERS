@@ -1431,7 +1431,9 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       const inj = injSrc()
       const idx = inj.indexOf("log('image_adjust_confirm_click'")
       assert.ok(idx >= 0, '確認ボタンクリックのログが見つからない')
-      const body = inj.slice(idx, idx + 700)
+      const closedIdx = inj.indexOf("log('image_adjust_modal_closed'", idx)
+      assert.ok(closedIdx > idx, 'image_adjust_modal_closedログが見つからない')
+      const body = inj.slice(idx, closedIdx + 200)
       assert.ok(/waitFor\(\(\) => \(!isVisible\(confirmBtn\) \? true : null\), 5000, 300\)/.test(body), 'モーダルが閉じたことを確認するwaitForが見つからない')
       assert.ok(/log\('image_adjust_modal_closed', \{ closed: !!modalClosed \}\)/.test(body), 'image_adjust_modal_closedログが見つからない')
     },
@@ -1480,6 +1482,45 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       assert.ok(!CONFIRM_LIKE_RE.test('下書き保存'), '「下書き保存」に誤って一致している')
       assert.ok(!CONFIRM_LIKE_RE.test('一時保存'), '「一時保存」に誤って一致している')
       assert.ok(!CONFIRM_LIKE_RE.test('公開する'), '「公開する」に誤って一致している（安全境界）')
+    },
+  },
+  {
+    // 2026-09-14続き35（マロン指示：「post_confirm_click_waitから画像調整
+    // モーダル閉鎖待ちまでの区間にもheartbeatを追加」）：続き34の実機検証で
+    // この区間が20秒超（heartbeat watchdogの閾値超過）を要することが判明した
+    // ため、モーダル操作のロジック自体には手を入れず、区間全体に並行して
+    // heartbeatだけを送る最小修正を確認する。
+    name: '【モーダル待機区間のheartbeat】確認ボタンクリック後からモーダル閉鎖確認までの区間で3秒間隔のheartbeatを並行送信し、区間終了時に停止する',
+    fn: () => {
+      const inj = injSrc()
+      const idx = inj.indexOf("log('image_adjust_confirm_click'")
+      assert.ok(idx >= 0, '確認ボタンクリックのログが見つからない')
+      const end = inj.indexOf("log('image_adjust_modal_closed'", idx)
+      assert.ok(end > idx, 'image_adjust_modal_closedログが見つからない')
+      const body = inj.slice(idx, end)
+      assert.ok(/let modalWaitHeartbeatActive = true/.test(body), 'heartbeatループの制御フラグが見つからない')
+      assert.ok(/log\('image_adjust_modal_wait_heartbeat', \{ elapsedMs: Date\.now\(\) - hbStart \}\)/.test(body), 'image_adjust_modal_wait_heartbeatログが見つからない')
+      assert.ok(/await sleep\(3000\)/.test(body), '3秒間隔のheartbeatになっていない')
+      assert.ok(/modalWaitHeartbeatActive = false/.test(body), 'モーダル閉鎖確認後にheartbeatループを停止していない')
+      // heartbeatループの開始位置がconfirmBtnクリックより後、停止がmodalClosed
+      // 算出より後（＝区間全体を覆っている）ことを位置関係で確認する。
+      const clickIdx = body.indexOf('clickElement(confirmBtn)')
+      const loopStartIdx = body.indexOf('let modalWaitHeartbeatActive = true')
+      const modalClosedCalcIdx = body.indexOf('const modalClosed = await waitFor(')
+      const loopStopIdx = body.indexOf('modalWaitHeartbeatActive = false')
+      assert.ok(clickIdx >= 0 && loopStartIdx > clickIdx, 'heartbeatループの開始がクリックより前になっている')
+      assert.ok(modalClosedCalcIdx >= 0 && loopStopIdx > modalClosedCalcIdx, 'heartbeatループの停止がモーダル閉鎖判定より前になっている（区間を覆っていない）')
+    },
+  },
+  {
+    name: '【completion-only試行を消費しない】heartbeat区間の追加はcompletionAttempts・claimInProgress・recordCompletionAttemptのロジックに一切触れていない',
+    fn: () => {
+      const bg = bgSrc()
+      assert.ok(/br21-2026-09-14-modal-wait-heartbeat/.test(bg), 'BUILD_REVISIONがbr21へ更新されていない')
+      // heartbeatはlogNonBlocking経由で送るだけで、/api/note-transfer/result
+      // への新規POSTや試行回数を操作するコードを追加していないことを確認する。
+      const inj = injSrc()
+      assert.ok(!/image_adjust_modal_wait_heartbeat[\s\S]{0,200}fetch\(/.test(inj), 'heartbeatログ処理の直後でfetch呼び出し（サーバーへの追加報告）が行われている')
     },
   },
 ]

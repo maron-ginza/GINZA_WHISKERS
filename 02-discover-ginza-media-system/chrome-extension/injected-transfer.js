@@ -1010,11 +1010,32 @@
             if (confirmBtn && !confirmTimedOut) {
               log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
               clickElement(confirmBtn)
+
+              // 2026-09-14続き35（マロン指示：「post_confirm_click_waitから
+              // 画像調整モーダル閉鎖待ちまでの区間にもheartbeatを追加」）：
+              // この区間は続き34の実機検証でバックグラウンドタブのタイマー
+              // 抑制により想定（最大約5.5秒）を大きく超える実時間（20秒超）を
+              // 要することを確認済み——SW側heartbeat watchdog
+              // （HEARTBEAT_STALL_MS=20000）の誤stall判定を防ぐため、この
+              // 区間の処理と並行して3秒間隔でheartbeatだけを送る（モーダル
+              // 操作のロジック自体は変更しない）。
+              let modalWaitHeartbeatActive = true
+              ;(async () => {
+                const hbStart = Date.now()
+                while (modalWaitHeartbeatActive) {
+                  await sleep(3000)
+                  if (modalWaitHeartbeatActive) {
+                    log('image_adjust_modal_wait_heartbeat', { elapsedMs: Date.now() - hbStart })
+                  }
+                }
+              })()
+
               await raceWithTimeout(sleep(500), 5000, 'post_confirm_click_wait')
               // 2026-09-14続き34（マロン指示：「モーダルが閉じたことを確認」）：
               // クリックしたボタン自体が不可視になったことをもって、モーダルが
               // 閉じたと判定する（推測でreflection成功を前提にしない）。
               const modalClosed = await waitFor(() => (!isVisible(confirmBtn) ? true : null), 5000, 300)
+              modalWaitHeartbeatActive = false
               log('image_adjust_modal_closed', { closed: !!modalClosed })
             }
 
