@@ -38,6 +38,7 @@ import { suite as recurringEventYearGuard } from './recurringEventYearGuard.chec
 import { suite as sweetsDiscoveryKeywords } from './sweetsDiscoveryKeywords.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as productSweetsTemplate } from './productSweetsTemplate.check'
+import { suite as createDraftFromProductSweetsTemplate } from './createDraftFromProductSweetsTemplate.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as noteMasthead } from './noteMasthead.check'
@@ -89,6 +90,7 @@ const results: SuiteResult[] = [
   sweetsDiscoveryKeywords(),
   extractPriceHint(),
   productSweetsTemplate(),
+  createDraftFromProductSweetsTemplate(),
   buildEditorialBrief(),
   buildFinalCandidateDigest(),
   noteMasthead(),

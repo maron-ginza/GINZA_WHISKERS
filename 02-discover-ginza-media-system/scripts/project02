@@ -838,6 +838,65 @@ draft_template() {
   return "$_dt_rc"
 }
 
+# マロン指示（2026-09-14）：商品・スウィーツ専用テンプレート（productSweetsTemplate.ts）
+# 経由で Article(reviewStatus:draft) を保存する。draft_template（イベント専用、
+# ArticleFacts依存）とは完全に独立——既存コマンド・既存ファイルは一切変更しない。
+#   ・既定 dry-run。--yes 明示時のみ作成。--dry-run と --yes 両方あれば dry-run が勝つ。
+#   ・AI呼び出しなし・note投稿なし・自動公開なし。
+draft_product_sweets_template() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 商品・スウィーツ専用テンプレート経由ドラフト生成（draft-product-sweets-template） ==="
+
+  DCID=""
+  HAS_YES=""
+  DPST_ARGS=""
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) HAS_YES="1"; DPST_ARGS="$DPST_ARGS --yes" ;;
+      --dry-run) DPST_ARGS="$DPST_ARGS --dry-run" ;;
+      --*) : ;;
+      *) [ -z "$DCID" ] && DCID="$arg" ;;
+    esac
+  done
+
+  if [ -z "$DCID" ]; then
+    echo "Usage: ./p2 draft-product-sweets-template <DiscoveredContent の数値ID> [--dry-run] [--yes]"
+    echo "  例: ./p2 draft-product-sweets-template 1152 --dry-run   # 何が作られるか確認（DB 書き込みなし）"
+    echo "      ./p2 draft-product-sweets-template 1152 --yes       # Article(reviewStatus:draft) を新規作成"
+    echo "  templateEligible（sourceName/sourceUrl/title が揃っている）かつ承認済みの"
+    echo "  DiscoveredContent のみ対象。既定は dry-run。AI呼び出し・note投稿・自動公開はしない。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if [ -z "$HAS_YES" ]; then
+    case " $DPST_ARGS " in
+      *" --dry-run "*) : ;;
+      *) DPST_ARGS="$DPST_ARGS --dry-run" ;;
+    esac
+  fi
+
+  ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/draftProductSweetsTemplate.ts "$DCID" $DPST_ARGS 2>"$LOG_DIR/draft_product_sweets_template.log" )
+  _dpst_rc=$?
+  if [ "$_dpst_rc" -ne 0 ]; then
+    fail "draft-product-sweets-template の実行に失敗しました"
+    echo "--- $LOG_DIR/draft_product_sweets_template.log 末尾 ---"
+    tail -20 "$LOG_DIR/draft_product_sweets_template.log" 2>/dev/null
+  fi
+  echo "================================================"
+  echo
+  return "$_dpst_rc"
+}
+
 refresh_dates() {
   echo
   echo "=== GINZA WHISKERS / Project 02 個別ページ日付再確認（Source Coverage拡張） ==="
@@ -2651,6 +2710,10 @@ case "${1:-status}" in
   draft-template)
     shift
     draft_template "$@"
+    ;;
+  draft-product-sweets-template)
+    shift
+    draft_product_sweets_template "$@"
     ;;
   themes)
     shift

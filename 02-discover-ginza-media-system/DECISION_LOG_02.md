@@ -9896,3 +9896,50 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   呼び出しはいずれも行っていない。次工程（マロン承認後）：CMS保存用の
   新規スクリプト（`draft-product-sweets-template`相当、既定dry-run・
   `--yes`明示時のみ作成、の安全設計を`draft-template`と揃える）を追加する。
+
+- 2026-09-14 続き38: 🎉 **商品・スウィーツ専用テンプレート経由でDC #1152を
+  CMS下書き保存——Article #69作成（マロン指示・承認済み。Project 02
+  commit・push あり／DB更新はArticles 1件のみ／Claude API等の有料API
+  呼び出しなし）**——続き37で作った適格判定・プレビューに続き、CMS保存
+  本体を新規実装。**新規**：①`cms/src/lib/template/
+  createDraftFromProductSweetsTemplate.ts`——`buildProductSweetsArticle`
+  （決定的・AIなし）だけで`payload.create`する orchestrator。既存の
+  `createDraftFromArticleFacts.ts`（イベント専用・ArticleFacts依存）とは
+  完全独立、無変更。承認済み・templateEligible・pillar Tag存在の3ゲート、
+  `aiGeneratedBy`は`template:product_sweets:dc#<id>`固定。②`cms/src/
+  scripts/draftProductSweetsTemplate.ts`＋`./p2 draft-product-sweets-
+  template`——`draft-template`と同じ安全設計（既定dry-run・`--yes`明示時
+  のみ作成・`--dry-run`が`--yes`より優先）。**idempotency（二重作成防止）
+  の設計判断**：初回dry-run実行で`status:already_drafted`（既存
+  Article #68）と誤検知するバグを実機で発見——原因は逆引きクエリが
+  「同じDCを参照する**任意の**Article」をduplicate扱いしていたため、
+  Article #68（`draft-from-dc`による別経路のAI生成記事、
+  `aiGeneratedBy='claude-sonnet-5 (multi-angle:core:medium...)'`）まで
+  ブロック要因にしてしまっていた。マロン指示「Article #68は使用・変更・
+  削除しない」は#68を触らない意味であり#68でブロックする意味ではないと
+  判断し、二重作成判定を**本テンプレート自身が作ったArticle
+  （`aiGeneratedBy`が`template:product_sweets:`で始まるもの）のみ**に
+  限定するよう修正——他経路の既存Articleとは独立して共存し、本テンプレート
+  だけの冪等性（同じdcIdで何度呼んでもArticleは1件だけ）を保証する。
+  回帰テスト新規11件（既定dry-run／DC未発見／未承認／必須項目欠落／
+  idempotency〈dry-run・live両方〉／pillar未発見／live成功でcreate1回・
+  articleId返却／plan内容／AI非依存のソース検査／既存スクリプト無変更／
+  **他経路の既存Article〈Article #68実例の再現〉ではブロックされない**）、
+  `run-all.ts` **679 passed 0 failed**（668→679）。`tsc --noEmit`
+  （cms）0エラー。**実機での手順**：①`./p2 draft-product-sweets-template
+  1152 --dry-run`で本文・SOURCE出典・ハッシュタグ4個
+  （`#旬の銀座 #銀座スイーツ #松屋銀座 #GINZATIMEEDIT`、マロン指定と完全
+  一致）・editorialProvenance 2件（会場・販売期間、`verifiedAt=
+  2026-09-13T21:05:10.496Z`＝6:00定時収集〈`morning_brief.attempt1.log`〉
+  で実際に確認された値と同一）を確認、価格は既存`extractPriceHint`の
+  ラベル近傍基準どおり「公式記載なし」のまま（831円は昇格させない）。
+  ②有料API呼び出し0回であることをソース検査（fetch/@anthropic-ai
+  import/Anthropicクライアント生成いずれも不在）で確認。③`--yes`で実行
+  → **Article #69作成**（`reviewStatus=draft`・`_status=draft`）。
+  ④再度dry-runし`already_drafted`（既存Article #69）を確認——idempotency
+  が実機でも機能。⑤DB直接確認：Article #68は`created_at`・
+  `ai_generated_by`とも不変（未使用・未変更・未削除）。note転記・公開・
+  ブラウザ操作は行っていない。**version更新は対象外**——本タスクは
+  CMSバックエンドスクリプトの追加であり、Chrome拡張のような
+  `manifest.json`相当のバージョン管理対象が無い（`cms/package.json`は
+  既存の「触れない」方針を維持し無変更）。詳細はコミットメッセージ参照。
