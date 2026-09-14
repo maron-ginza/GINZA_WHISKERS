@@ -278,7 +278,9 @@ function buildArticleFactsStore(
 }
 
 /** 全 Article を dedup 用の軽量レコードへ（title + editorialProvenance の dcId/sourceUrl） */
-async function loadArticleRecords(
+// 2026-09-14（マロン指示）：dailySecondCandidates.ts から同じ dedup ロジック
+// （dedupCheck.ts）をそのまま再利用するため export する（ロジック自体は無変更）。
+export async function loadArticleRecords(
   payload: Awaited<ReturnType<typeof getPayload>>,
 ): Promise<DedupArticleRecord[]> {
   const out: DedupArticleRecord[] = []
@@ -311,7 +313,7 @@ async function loadArticleRecords(
 }
 
 /** .devlogs/night/queue 配下の note-draft.json / note-body.txt を dedup 用レコードへ（ローカル記録のみ） */
-function buildNoteRecords(): DedupNoteRecord[] {
+export function buildNoteRecords(): DedupNoteRecord[] {
   const recs: DedupNoteRecord[] = []
   const root = resolve(process.cwd(), '..', '.devlogs', 'night', 'queue')
   if (!existsSync(root)) return recs
@@ -1206,4 +1208,11 @@ async function main(): Promise<void> {
   }
 }
 
-main()
+// 2026-09-14（マロン指示対応、実機発見）：他スクリプト（dailySecondCandidates.ts等）が
+// loadArticleRecords/buildNoteRecordsをexport経由で再利用するためimportしたところ、
+// このファイルがCLIとして直接実行されたとき以外（＝importされただけ）でもmain()が
+// 無条件に走り、6:00時点のスナップショットであるべき.devlogs/morning/<date>/report.txt
+// を現在のDB状態で上書きしてしまう事故が実際に発生した。他の全スクリプトと同じ
+// 「CLIとして直接実行されたときだけmain()を呼ぶ」ガードに揃える（動作そのものは
+// 無変更——直接実行時の挙動は従来どおり）。
+if (import.meta.url === `file://${process.argv[1]}`) main()

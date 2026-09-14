@@ -772,6 +772,43 @@ product_sweets_template_check() {
   return "$_pstc_rc"
 }
 
+# マロン指示（2026-09-14）：候補抽出条件の修正——「当日更新」中心ではなく「今日行く
+# 価値があり、まだ記事化していない有効情報」から、本日N本目の候補を全18カテゴリー
+# 横断で選ぶ。指定したDC群のみを対象にする（このコマンド自身は収集・再収集をしない）。
+# 読み取り専用・DB書き込みなし・AI呼び出しなし。
+daily_second_candidates() {
+  echo
+  echo "=== GINZA WHISKERS / Project 02 本日N本目候補（全18カテゴリー横断・読み取り専用） ==="
+
+  if [ -z "$1" ]; then
+    echo "Usage: ./p2 daily-second-candidates --dc=<id1>,<id2>,... [--exclude-category=SWEETS,FOOD]"
+    echo "  指定したDiscoveredContent群だけを評価する（再収集はしない）。"
+    echo "  DB書き込み・AI呼び出し・記事生成・note操作・公開はしない。"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start を実行してください）"
+    echo "================================================"
+    echo
+    return 1
+  fi
+
+  ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/dailySecondCandidates.ts "$@" 2>"$LOG_DIR/daily_second_candidates.log" )
+  _dsc_rc=$?
+  if [ "$_dsc_rc" -ne 0 ]; then
+    fail "daily-second-candidates の実行に失敗しました"
+    echo "--- $LOG_DIR/daily_second_candidates.log 末尾 ---"
+    tail -20 "$LOG_DIR/daily_second_candidates.log" 2>/dev/null
+  fi
+  echo "================================================"
+  echo
+  return "$_dsc_rc"
+}
+
 # 第2段階C Stage 4（2026-09-02）：テンプレート経路 → Article(reviewStatus:draft)。
 # ready かつ必須充足の ArticleFacts を持つ templateEligible:true の DiscoveredContent
 # だけを、決定的テンプレ（AI なし・¥0）で Article(draft) 化する。
@@ -2706,6 +2743,10 @@ case "${1:-status}" in
   product-sweets-template-check)
     shift
     product_sweets_template_check "$@"
+    ;;
+  daily-second-candidates)
+    shift
+    daily_second_candidates "$@"
     ;;
   draft-template)
     shift

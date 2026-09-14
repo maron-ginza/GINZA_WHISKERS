@@ -10,6 +10,7 @@ import {
   computeCandidateCoverage,
   aggregateCoverage,
   OVEREXPOSED_FACILITY_KEYS,
+  isExplicitlyEndedByTitle,
 } from '../pipeline/candidateCoverageScore'
 
 function assert(c: unknown, m: string): void {
@@ -201,6 +202,17 @@ const cases: CheckCase[] = [
       assert(agg.total === 4 && agg.byCategory.ART === 3, JSON.stringify(agg.byCategory))
       assert(agg.missingCategories.includes('BEAUTY'), `missing: ${agg.missingCategories}`)
       assert(agg.overweightFacilities[0]?.facility === 'GINZA SIX', JSON.stringify(agg.overweightFacilities))
+    },
+  },
+  {
+    name: 'isExplicitlyEndedByTitle：【受付終了】等の明記語があるタイトルはtrue（マロン指示・2026-09-14）',
+    fn: () => {
+      assert(isExplicitlyEndedByTitle('【受付終了】紙とひかりで作るのぞける立体絵ワークショップ') === true, '【受付終了】を検出できない')
+      assert(isExplicitlyEndedByTitle('新商品発売のお知らせ・完売御礼') === true, '完売御礼を検出できない')
+      assert(isExplicitlyEndedByTitle('秋の企画展は会期終了いたしました') === true, '会期終了いたしましたを検出できない')
+      assert(isExplicitlyEndedByTitle('新作タルト、9月15日まで販売中') === false, '「販売中」を誤って終了扱いしている')
+      assert(isExplicitlyEndedByTitle('参加者募集中のワークショップ') === false, '「募集中」を誤って終了扱いしている')
+      assert(isExplicitlyEndedByTitle(null) === false, 'nullでtrueになっている')
     },
   },
 ]

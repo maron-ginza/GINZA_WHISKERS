@@ -9943,3 +9943,66 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   CMSバックエンドスクリプトの追加であり、Chrome拡張のような
   `manifest.json`相当のバージョン管理対象が無い（`cms/package.json`は
   既存の「触れない」方針を維持し無変更）。詳細はコミットメッセージ参照。
+
+- 2026-09-14 続き39: 🛠 **候補抽出条件の修正——「当日更新」中心から「今日行く
+  価値があり未記事化の有効情報」中心へ。BEAUTY誤分類バグ修正・終了明記語
+  検出・全18カテゴリー横断の「本日N本目」セレクタを新設（マロン指示。
+  Project 02 commit・push あり／DB更新なし／実AI・課金なし）**——
+  ①`provisionalCategory.ts`のBEAUTY正規表現「リップ」が「ドリップポット」
+  等の器具名に部分一致してしまうバグを修正（否定後読み `(?<!ド)リップ`
+  で「ドリップ」由来の誤爆のみ除外、口紅・リップクリーム等の正しい一致は
+  維持）。実データ（DC#741「ドリップポットITTEKI Pro」）で確認済みの
+  誤分類が解消したことを確認。②`candidateCoverageScore.ts`へ
+  `isExplicitlyEndedByTitle`を新設——構造化`eventEndAt`が無い候補でも
+  タイトルに「【受付終了】」「完売御礼」「会期終了」等の明記語があれば
+  終了済みと判定する（実データDC#433「【受付終了】...ワークショップ」で
+  未検出だった問題への対応）。既存の`daysUntilEndScore`（構造化日付での
+  終了判定）は無変更。③新規`selectDailySecondCandidates.ts`——既存の
+  `officialCompleteness`（必須5項目：商品名・企画名／公式URL／場所／
+  内容／出典確認日、価格・開催期間等は任意のまま無変更）・
+  `computeCandidateCoverage`・`categoryDeficiencyBonus`（7日間カテゴリー
+  別採用件数→不足カテゴリーへのボーナス、既存・無変更）・
+  `facilityConcentrationPenalty`（7日間施設別採用件数→大手4施設
+  〈GINZA SIX/銀座三越/松屋銀座/銀座蔦屋書店〉への強い減点、既存・
+  無変更）をそのまま再利用し、固定4バケット
+  （スイーツ和菓子/グルメ/ビューティー/文化アート）に限定されていた
+  既存の`morningBriefSelect.ts`では不可能だった「本日除外カテゴリーを
+  除いた全18カテゴリー横断で上位候補を出す」新しいセレクタを追加
+  （`morningBriefSelect.ts`自体は無変更）。重複判定は既存
+  `dedupCheck.ts`をそのまま使用——施設単位・ページ単位では除外せず、
+  同一URL/DC参照・類似タイトル+同一開催日のみを重複と判定する設計を維持。
+  ④CLI `./p2 daily-second-candidates --dc=<id,...> --exclude-category=<...>`
+  （読み取り専用・指定DCのみ評価・再収集なし）。回帰テスト新規17件
+  （BEAUTY誤爆修正1件・isExplicitlyEndedByTitle6件・
+  selectDailySecondCandidates11件〈カテゴリー除外／必須項目の要否／
+  終了判定〈構造化・タイトル明記語〉／施設単位で除外しないことの実証／
+  重複フラグ／水増ししないこと／7日間カテゴリー不足ボーナス／施設集中
+  ペナルティ／AI非依存のソース検査〉）、`run-all.ts` **692 passed 0
+  failed**（691→692。内訳は続き39全体で679→692の+13、うち1件は下記
+  バグ修正の再発防止テスト）。`tsc --noEmit`（cms）0エラー。
+  **実機で発見・修正した重大バグ**：`dailySecondCandidates.ts`が
+  `loadArticleRecords`/`buildNoteRecords`（既存`dedupCheck.ts`の正しい
+  重複判定に必要な既存ヘルパー、`morningRun.ts`からexportして再利用する
+  設計）をimportした際、`morningRun.ts`が他の全スクリプトと異なり
+  末尾で`main()`を無条件呼び出し（`import.meta.url`ガード無し）していた
+  ため、importしただけでam-runの本処理が走り、`.devlogs/morning/
+  2026-09-14/report.txt`（6:00収集時点のスナップショットのはずのファイル）
+  が現在のDB状態〈DC#1152のcurationStatus変更・Article#68/#69の作成を
+  含む〉で上書きされてしまった。**外部ネットワーク呼び出し・DB書き込み・
+  課金はいずれも発生していない**（このimport時実行では`--fetch`
+  `--register-facts`とも未指定のため）が、ローカルdevlogsファイル1件が
+  意図せず書き換わった。`morningRun.ts`へ他の全スクリプトと同じ
+  `if (import.meta.url === ...) main()`ガードを追加して修正——
+  直接CLI実行時の挙動は無変更、importされただけでは実行されなくなった。
+  再発防止の回帰テストを追加済み。**6:00データのみを使った最終dry-run**
+  （`./p2 daily-second-candidates --dc=370,1154,1153,386,373,100,368,
+  337,549,527,388,141,327,369,371,310,331,97,324,150
+  --exclude-category=SWEETS,FOOD`、6:00 am_run評価対象の20件と完全一致
+  するID群を明示指定・再収集なし）：評価対象20件→本日公開済みカテゴリー
+  除外4件・同一商品/イベント重複14件・構造化終了済み1件を除外し、
+  **基準を満たした候補1件（DC#370「AMBUSH® x New Era® – GINZA SIX」、
+  カテゴリーは明記語なしのため未確定、終了間近〈あと1日〉）**。水増し
+  なし。DC#1152・Article#68・#69・#69のpublishHistory・重複防止台帳は
+  いずれも本タスクで変更していない（`daily-second-candidates`実行前後で
+  再確認済み）。note転記・公開・ブラウザ操作・有料API呼び出しはいずれも
+  行っていない。version更新は前回同様、本タスクの性質上対象なし。

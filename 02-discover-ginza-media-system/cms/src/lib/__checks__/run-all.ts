@@ -39,6 +39,7 @@ import { suite as sweetsDiscoveryKeywords } from './sweetsDiscoveryKeywords.chec
 import { suite as extractPriceHint } from './extractPriceHint.check'
 import { suite as productSweetsTemplate } from './productSweetsTemplate.check'
 import { suite as createDraftFromProductSweetsTemplate } from './createDraftFromProductSweetsTemplate.check'
+import { suite as selectDailySecondCandidates } from './selectDailySecondCandidates.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as noteMasthead } from './noteMasthead.check'
@@ -91,6 +92,7 @@ const results: SuiteResult[] = [
   extractPriceHint(),
   productSweetsTemplate(),
   createDraftFromProductSweetsTemplate(),
+  selectDailySecondCandidates(),
   buildEditorialBrief(),
   buildFinalCandidateDigest(),
   noteMasthead(),
