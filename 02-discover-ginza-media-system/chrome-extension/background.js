@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br21-2026-09-14-modal-wait-heartbeat'
+const BUILD_REVISION = 'br22-2026-09-14-heartbeat-stall-90s'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -262,7 +262,15 @@ async function waitForTabComplete(tabId, timeoutMs = 20000) {
 // （stall）」と判定する——固定の総経過時間では判定しない。万一heartbeat
 // 自体が永久に途絶えない異常事態に備え、ABSOLUTE_CAP_MSを保険として残す
 // （通常はstall判定が先に効き、ここへは到達しない想定）。
-const HEARTBEAT_STALL_MS = 20000 // この時間、新しいstageログが届かなければ停止とみなす。
+// 2026-09-14続き36（マロン指示：「HEARTBEAT_STALL_MSをChromeのバックグラウンド
+// タブ抑制に対応する90秒へ変更」）：v1.21.0実機検証で、続き35で追加した3秒
+// 間隔heartbeat自体は2回（3.996秒・7.996秒）正常到達していたが、その後
+// Chromeのバックグラウンドタブに対するタイマー抑制により後続のheartbeatが
+// 途絶え、20秒の旧閾値では正常に進行中の処理を誤ってstalledと判定して
+// いた（nominal 15秒のreflection確認が実測約60秒かかる事象も同じ抑制が
+// 原因と判断）。Project 02はバックグラウンドでの自動運転が前提のため、
+// この抑制の規模に見合う90秒へ引き上げる。
+const HEARTBEAT_STALL_MS = 90000 // この時間、新しいstageログが届かなければ停止とみなす。
 const HEARTBEAT_POLL_MS = 2000
 const HEARTBEAT_ABSOLUTE_CAP_MS = 10 * 60 * 1000 // 保険の絶対上限（10分）。通常はstall判定が先に効く。
 

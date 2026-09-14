@@ -1516,11 +1516,47 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
     name: '【completion-only試行を消費しない】heartbeat区間の追加はcompletionAttempts・claimInProgress・recordCompletionAttemptのロジックに一切触れていない',
     fn: () => {
       const bg = bgSrc()
-      assert.ok(/br21-2026-09-14-modal-wait-heartbeat/.test(bg), 'BUILD_REVISIONがbr21へ更新されていない')
+      assert.ok(/br22-2026-09-14-heartbeat-stall-90s/.test(bg), 'BUILD_REVISIONがbr22へ更新されていない')
       // heartbeatはlogNonBlocking経由で送るだけで、/api/note-transfer/result
       // への新規POSTや試行回数を操作するコードを追加していないことを確認する。
       const inj = injSrc()
       assert.ok(!/image_adjust_modal_wait_heartbeat[\s\S]{0,200}fetch\(/.test(inj), 'heartbeatログ処理の直後でfetch呼び出し（サーバーへの追加報告）が行われている')
+    },
+  },
+  {
+    // 2026-09-14続き36（マロン指示：「HEARTBEAT_STALL_MSをChromeの
+    // バックグラウンドタブ抑制に対応する90秒へ変更」）：v1.21.0実機検証で
+    // heartbeat自体は3.996秒・7.996秒に正常到達していたが、その後Chromeの
+    // バックグラウンドタブ抑制により後続heartbeatが途絶え、20秒の旧閾値では
+    // 正常進行中の処理を誤ってstalledと判定した（nominal 15秒のreflection
+    // 確認が実測約60秒かかる事象も同じ抑制が原因）。
+    name: '【heartbeat stall閾値の引き上げ】HEARTBEAT_STALL_MSは90秒（90000ms）へ更新され、ブラウザ側inFlightタイムアウト（120秒）より短いまま維持されている',
+    fn: () => {
+      const bg = bgSrc()
+      const m = bg.match(/const HEARTBEAT_STALL_MS = (\d+)/)
+      assert.ok(m, 'HEARTBEAT_STALL_MSの値を取得できない')
+      assert.strictEqual(Number(m![1]), 90000, `HEARTBEAT_STALL_MSが90000msになっていない（実際: ${m![1]}ms）`)
+      const inflightMatch = bg.match(/const INFLIGHT_TIMEOUT_MS = (\d+)/)
+      assert.ok(inflightMatch, 'INFLIGHT_TIMEOUT_MSの値を取得できない')
+      assert.ok(Number(m![1]) < Number(inflightMatch![1]), 'HEARTBEAT_STALL_MS（90秒）がINFLIGHT_TIMEOUT_MS以上になっている')
+    },
+  },
+  {
+    name: '【completion-only再試行の誤消費防止（閾値変更版）】HEARTBEAT_STALL_MSの変更はcompletionAttempts・claimInProgress・recordCompletionAttemptの実装（noteTransferState.ts）に一切触れていない',
+    fn: () => {
+      // stall判定閾値はwatchdogの「いつ失敗とみなすか」だけを制御する定数で
+      // あり、試行回数を数える・記録するロジック（1回の失敗で何回分を消費
+      // するか等）とは独立している——この独立性が保たれていることを、
+      // noteTransferState.tsが本変更で一切改変されていないことで確認する
+      // （試行の数え方自体を変えるつもりはないため）。
+      const stateSrc = readFileSync(resolve(EXT_DIR, '..', 'cms', 'src', 'lib', 'night', 'noteTransferState.ts'), 'utf8')
+      assert.ok(/MAX_COMPLETION_ATTEMPTS/.test(stateSrc), 'MAX_COMPLETION_ATTEMPTSが見つからない（ファイル構造が変わっていないか確認）')
+      assert.ok(!/HEARTBEAT_STALL_MS/.test(stateSrc), 'noteTransferState.tsがHEARTBEAT_STALL_MSを直接参照している——watchdog閾値と試行回数ロジックが結合してしまっている')
+      // recordCompletionAttemptは「1回の失敗報告＝1回のcompletionAttempts加算」
+      // のままであり、stall閾値の大小に関わらず二重加算・多重加算をしない
+      // ことを既存実装のシグネチャで確認する（同一runTokenの多重報告は
+      // tokenAccepted判定で別途弾かれる——続き32以降の既存設計、無変更）。
+      assert.ok(/const completionAttempts = \(prev\.completionAttempts \?\? 0\) \+ 1/.test(stateSrc), 'completionAttemptsの加算ロジックが見つからない（変更されていないか確認できない）')
     },
   },
 ]

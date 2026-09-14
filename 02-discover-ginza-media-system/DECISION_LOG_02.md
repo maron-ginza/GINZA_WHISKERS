@@ -9802,3 +9802,40 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   ともに一切操作していない**——次回の実機検証（マロンによる拡張再読み込み
   待ち）で、①heartbeat stallが再発しないこと、②結果が正しくサーバーへ
   報告され`transfer-state.json`に反映されること、を確認する。
+
+- 2026-09-14 続き36: 🛠 **note下書き自動転記——v1.21.0実機検証結果を受け、
+  HEARTBEAT_STALL_MSを20秒→90秒へ引き上げ（Project 02 commit・push
+  あり／DB更新なし。実ブラウザは未操作）**——v1.21.0実機検証（続き35）で
+  マロン確定の事実：①続き35で追加したheartbeatは3.996秒・7.996秒の2回
+  正常にサーバーへ到達し、実装自体は動作していた、②その後Chromeの
+  バックグラウンドタブに対するタイマー抑制により後続heartbeatが途絶え、
+  旧閾値20秒では正常進行中の処理を誤ってstalledと判定した、③nominal
+  15秒のreflection確認が実測約60秒かかる事象も同じ抑制が原因、
+  ④Project 02はバックグラウンドでの自動運転が前提。マロン指示どおり
+  **モーダル操作ロジックには一切手を入れず**、`HEARTBEAT_STALL_MS`
+  （`chrome-extension/background.js`）を`20000`→`90000`へ変更した
+  のみ。この定数はwatchdogの「いつ失敗とみなすか」だけを制御し、試行
+  回数のカウント・記録ロジック（`cms/src/lib/night/noteTransferState.ts`
+  の`completionAttempts`／`claimInProgress`／`recordCompletionAttempt`）
+  とは独立しており、同ファイルは今回無変更——回帰テストで
+  `noteTransferState.ts`が`HEARTBEAT_STALL_MS`を直接参照していない
+  こと、`completionAttempts`の加算ロジック
+  （`const completionAttempts = (prev.completionAttempts ?? 0) + 1`）が
+  変更されていないことを機械的に確認した。あわせて
+  `HEARTBEAT_STALL_MS`（90秒）がブラウザ側`INFLIGHT_TIMEOUT_MS`
+  （120秒）より短いまま維持されていることも確認した。
+  `manifest.json`のversionを`1.22.0`へ、`BUILD_REVISION`を
+  `br22-2026-09-14-heartbeat-stall-90s`へ更新。回帰テスト新規2件
+  （閾値が90000msであることの値確認＋inFlightタイムアウトより短い
+  ことの確認、completionAttempts加算ロジックへの非接触確認）、既存1件
+  （BUILD_REVISION文字列）を更新、`run-all.ts` **653 passed 0 failed**
+  （651→653）。`tsc --noEmit`（cms）0エラー。**注記（コード変更はして
+  いない、記録のみ）**：`chrome-extension/injected-transfer.js`側の
+  画像処理区間全体タイムアウト
+  （`raceWithTimeout(runImageSection(), 90000, 'image_section_overall')`、
+  続き29実装）も同じ90秒であるため、両者が近接するタイミングで競合する
+  可能性がある——ただし本タスクは「モーダル操作ロジックを変更しない」
+  指示のため、この観測のみ記録し変更していない。**今回は実ブラウザ・
+  `transfer-state.json`ともに一切操作していない**——次回の実機検証で
+  ①heartbeat stallが再発しないこと、②画像調整モーダルが「保存」
+  クリック後に閉じるかどうか（続き34・35から未解決のまま）、を確認する。
