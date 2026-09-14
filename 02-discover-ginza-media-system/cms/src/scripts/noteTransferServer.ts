@@ -58,6 +58,24 @@ const MAX_ATTEMPTS = MAX_TRANSFER_ATTEMPTS
 
 const QUEUE_DIR = resolve(ROOT, '.devlogs', 'night', 'queue')
 const STATE_PATH = resolve(ROOT, '.devlogs', 'night', 'transfer-state.json')
+
+/** 2026-09-13続き33（マロン指示：「起動ログでBUILD_REVISION br19、
+ * MAX_COMPLETION_ATTEMPTS=1を確認してください」）：このサーバープロセスが
+ * どのChrome拡張コード（background.js）と対になって起動したかを起動時に
+ * 一目で確認できるよう、background.jsのBUILD_REVISION定数を読み取って
+ * 起動ログへ出す。サーバー自身はこの値を一切使わない（純粋に診断表示用）
+ * ——旧プロセスが再起動されないまま古いロジックで動き続ける事故
+ * （2026-09-13続き32で確定した根本原因）の再発に、人間がすぐ気づける
+ * ようにする。 */
+function readExtensionBuildRevision(): string | null {
+  try {
+    const bg = readFileSync(resolve(ROOT, 'chrome-extension', 'background.js'), 'utf8')
+    const m = bg.match(/const BUILD_REVISION = '([^']+)'/)
+    return m ? m[1] : null
+  } catch {
+    return null
+  }
+}
 const ICON_DIR = resolve(ROOT, 'media', 'discover-ginza-category-icons')
 const DIAGNOSTIC_LOG_PATH = resolve(ROOT, '.devlogs', 'night', 'note-transfer-diagnostic.jsonl')
 
@@ -473,6 +491,8 @@ async function main() {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`[note-transfer] http://localhost:${PORT} で待ち受け中（127.0.0.1のみ・外部非公開）`)
     console.log(`[note-transfer] state: ${STATE_PATH}`)
+    console.log(`[note-transfer] MAX_COMPLETION_ATTEMPTS=${MAX_COMPLETION_ATTEMPTS} MAX_TRANSFER_ATTEMPTS=${MAX_ATTEMPTS}`)
+    console.log(`[note-transfer] extension BUILD_REVISION=${readExtensionBuildRevision() ?? '(chrome-extension/background.jsから読み取れませんでした)'}`)
   })
 }
 

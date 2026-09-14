@@ -370,12 +370,19 @@
       })
     }
     function findConfirmLikeButton() {
+      // 2026-09-14続き34（マロン指示）：v1.19.0実機ログで、画像アップロード後に
+      // 出現する画像調整モーダルのボタンラベルが「キャンセル」「保存」だったと
+      // 判明——従来の正規表現に「保存」が含まれておらずクリックされないまま
+      // モーダルが開いたままになり、verifyImageReflectedの反映待機が
+      // タイムアウトしていた（根本原因）。「保存」単体（完全一致）のみを追加し、
+      // 「下書き保存」ボタン（findSaveDraftButton対象）との誤爆を避ける。
       return deepQuerySelectorAll('button, [role="button"]').find((el) => {
         if (!isVisible(el)) return false
         const t = visibleText(el)
         if (!t) return false
         if (/公開/.test(t)) return false
-        return /確定|適用|設定する|完了|トリミング|OK/.test(t)
+        if (/下書き/.test(t)) return false
+        return /確定|適用|設定する|完了|トリミング|OK|^保存$/.test(t)
       })
     }
     /** 選択済みタグ領域だけを対象にし、サジェスト候補（統計文言「件」付き）
@@ -557,7 +564,18 @@
 
       const start = Date.now()
       let matched = null
+      // 2026-09-14続き34（マロン指示：「内部待機中は非同期heartbeatを送信」）：
+      // このループは従来log()を一切呼んでおらず、SW側のheartbeat watchdog
+      // （HEARTBEAT_STALL_MS=20000）が正当な待機中でも誤ってstall判定していた
+      // （v1.19.0実機で確定した既知バグ）。3秒間隔でheartbeatだけを送る
+      // （判定ロジック自体には使わない・fire-and-forget）。
+      let lastHeartbeatAt = start
       while (Date.now() - start < timeoutMs) {
+        const nowForHeartbeat = Date.now()
+        if (nowForHeartbeat - lastHeartbeatAt >= 3000) {
+          log('image_reflection_check_heartbeat', { elapsedMs: nowForHeartbeat - start })
+          lastHeartbeatAt = nowForHeartbeat
+        }
         const imgs = deepQuerySelectorAll('img', document, { budgetMs: 2000 })
         const newImg = imgs.find((el) => {
           const s = el.getAttribute('src')
@@ -993,6 +1011,11 @@
               log('image_adjust_confirm_click', { text: visibleText(confirmBtn) })
               clickElement(confirmBtn)
               await raceWithTimeout(sleep(500), 5000, 'post_confirm_click_wait')
+              // 2026-09-14続き34（マロン指示：「モーダルが閉じたことを確認」）：
+              // クリックしたボタン自体が不可視になったことをもって、モーダルが
+              // 閉じたと判定する（推測でreflection成功を前提にしない）。
+              const modalClosed = await waitFor(() => (!isVisible(confirmBtn) ? true : null), 5000, 300)
+              log('image_adjust_modal_closed', { closed: !!modalClosed })
             }
 
             // 2026-09-14続き32（マロン必須修正①）：プレビュー判定を「新しい
@@ -1046,6 +1069,16 @@
     log('save_button_found', { text: visibleText(saveBtn), stage: 'editor' })
     clickElement(saveBtn)
     await sleep(2000)
+    // 2026-09-14続き34（マロン指示：「note下書き保存を確認」）：保存クリック後、
+    // 保存失敗を示すエラー文言が出ていないかを確認する（成功トーストの有無は
+    // note側UIで確実な文言が未確認のため、エラー非検出をもって「保存できた」
+    // とみなす——推測で成功と断定しない設計は維持）。
+    const saveErrorText = deepQuerySelectorAll('span, div, p', document, { budgetMs: 2000 })
+      .filter(isVisible)
+      .map(visibleText)
+      .find((t) => t && /保存に失敗|エラーが発生|保存できません/.test(t))
+    const draftSaveOk = !saveErrorText
+    log('draft_save_check', { ok: draftSaveOk, errorText: saveErrorText || null })
 
     // --- ③ ハッシュタグの確認・補正（選択済みタグ領域だけをスコープ対象に
     // する。サジェスト候補は数えない） ---
@@ -1171,8 +1204,22 @@
     const hashtagsDone = appliedTagCount >= expectedTagsNoHash.length && expectedTagsNoHash.length > 0
     const iconDone = iconResult.attached === true
 
+    // 2026-09-14続き34（マロン指示：「hashtags4/4・画像1/1・下書き保存・
+    // hash一致・公開0の全条件が揃わない限りneedsCompletion:falseとsuccessを
+    // 禁止」）：completion-onlyジョブ（画像・ハッシュタグの再試行専用）では、
+    // この5条件を実測で確認できたときのみstatus:'success'を返す。公開ボタンは
+    // コード上どこからも一切クリックしないため「公開0」は構造的に常に成立する。
+    // fullモード（初回転記）は従来どおりの挙動を維持する（タイトル・本文の
+    // 0文字チェックは既に上でstatus:'failure'として個別return済み）。
+    const completionConditionsMet = hashtagsDone && iconDone && integrityOk && draftSaveOk
+    const status = mode === 'completion' ? (completionConditionsMet ? 'success' : 'failure') : 'success'
+
     return {
-      status: 'success',
+      status,
+      error:
+        status === 'failure'
+          ? `stage=completion_conditions_not_met: hashtagsDone=${hashtagsDone} iconDone=${iconDone} integrityOk=${integrityOk} draftSaveOk=${draftSaveOk}`
+          : undefined,
       draftUrl: location.href,
       hashtagResult,
       iconResult,
@@ -1182,6 +1229,7 @@
       expectedTagCount: expectedTagsNoHash.length,
       iconApplied,
       integrityOk,
+      draftSaveOk,
       stages,
     }
   }

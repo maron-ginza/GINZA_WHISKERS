@@ -9724,3 +9724,47 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
     `persistStoryClusters.ts`は「clusterKeyが再計算で二度と出現しなくなった
     行を自動削除しない」設計のまま（意図的な既知の制約、コード内コメントに
     明記済み）——将来的なクリーンアップ処理の要否は未検討。
+
+- 2026-09-13 続き34: 🛠 **note下書き自動転記——v1.19.0実機ログで確定した
+  根本原因（画像調整モーダルの「保存」ボタンが一度もクリックされない）を
+  修正。heartbeat送信・モーダル閉鎖確認・下書き保存確認を追加し、
+  completion成功条件を明示ゲート化（Project 02 commit・push あり／DB更新
+  なし。今回は実ブラウザを動かさずコード修正のみ）**——v1.19.0実機
+  completion-only実行の実ログを解析した結果、画像アップロード後に出現する
+  画像調整モーダルのボタンラベルが「キャンセル」「保存」であったのに対し、
+  `findConfirmLikeButton()`の正規表現（確定|適用|設定する|完了|
+  トリミング|OK）に「保存」が含まれておらずクリックされないままモーダルが
+  開いたままになり、`verifyImageReflected`の反映待機（最大15秒）が
+  常にタイムアウトしていたことが根本原因と判明。加えて同関数の内部
+  ポーリングループが一度も`log()`を呼ばないため、SW側heartbeat watchdog
+  （`HEARTBEAT_STALL_MS=20000`、続き32で追加した正当な待機を誤判定しない
+  ための仕組み）がこの待機自体を誤ってstallと判定する副作用も確認した。
+  **対応**：①`findConfirmLikeButton()`へ「保存」単体（完全一致・「下書き」
+  除外）を追加。②確認ボタンクリック後、そのボタンが不可視になったことを
+  `waitFor`で確認し`image_adjust_modal_closed`としてログ記録（モーダルが
+  閉じたことの明示確認）。③`verifyImageReflected`の内部ループへ3秒間隔の
+  heartbeatログ（`image_reflection_check_heartbeat`、判定ロジックには
+  使わずSW側watchdogの誤stall防止のみに使用）を追加。④下書き保存クリック
+  後にエラー文言（保存に失敗／エラーが発生／保存できません）の有無を
+  `draft_save_check`としてログ記録し`draftSaveOk`を算出。⑤**completion
+  モード限定**で、`hashtagsDone && iconDone && integrityOk && draftSaveOk`
+  の4条件（公開はコード上どこからもクリックしないため「公開0」は構造的に
+  常時成立）がすべて揃わない限り`status:'success'`を返さないゲートを追加
+  （揃わなければ`status:'failure'`＋具体的な理由文字列。fullモードの
+  挙動は変更していない）。マロン指示どおりArticle #67を
+  `needsCompletion:true, completionAttempts:0`へ復元——あわせて、続き32で
+  追加した原子的1回claimの恒久ラッチ`completionClaimStarted`も`false`へ
+  戻した（このラッチをtrueのまま残すと`selectNextPendingArticleId`が
+  `completionAttempts`の値に関わらず二度とこの記事を選ばない設計のため、
+  マロンが意図する「もう一度試行させる」再アームには
+  `completionClaimStarted`のリセットが必須と判断——`needsCompletion`／
+  `completionAttempts`の2フィールドのみでは再アームが機能しない）。
+  `manifest.json`のversionを`1.20.0`へ、`BUILD_REVISION`を
+  `br20-2026-09-14-image-modal-save-heartbeat`へ更新。回帰テスト新規6件
+  （画像調整モーダルのボタン検出・モーダル閉鎖確認・heartbeat送信・
+  下書き保存確認・completion成功条件ゲート・「保存」単体パターンが
+  「下書き保存」「一時保存」「公開する」に誤爆しないことの正規表現実挙動
+  テスト）、`run-all.ts` **649 passed 0 failed**（643→649）。`tsc --noEmit`
+  （cms）0エラー。**今回は実ブラウザを一切操作していない**——コード修正・
+  テスト・型検査・状態ファイルの復元・commit・pushのみ。実機での動作確認は
+  次回、既に稼働中のサーバー・拡張の自動ポーリングに委ねる。

@@ -102,7 +102,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br19-2026-09-14-heartbeat-watchdog-atomic-claim'
+const BUILD_REVISION = 'br20-2026-09-14-image-modal-save-heartbeat'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,

@@ -734,6 +734,24 @@ const WATCHDOG_DEDUP_TEST_CASES: CheckCase[] = [
     },
   },
   {
+    // 2026-09-13続き33（マロン指示：「起動ログでBUILD_REVISION br19、
+    // MAX_COMPLETION_ATTEMPTS=1を確認してください」）：サーバープロセスが
+    // どのbackground.jsコードと対になって起動したかを起動時ログで確認
+    // できることを検証する——旧プロセスが再起動されないまま古いロジックで
+    // 動き続ける事故（続き32）に、人間がすぐ気づけるようにするため。
+    name: '【起動時ビルド確認】noteTransferServer.tsは起動時にMAX_COMPLETION_ATTEMPTSとbackground.jsのBUILD_REVISIONをログへ出す',
+    fn: () => {
+      const server = readFileSync(SERVER_SRC, 'utf8')
+      assert.ok(/function readExtensionBuildRevision\(\)/.test(server), 'readExtensionBuildRevision関数が見つからない')
+      assert.ok(/const m = bg\.match\(\/const BUILD_REVISION = '/.test(server), 'background.jsのBUILD_REVISION定数を読み取る正規表現が見つからない')
+      const listenIdx = server.indexOf("server.listen(PORT, '127.0.0.1', () => {")
+      assert.ok(listenIdx >= 0, 'server.listen呼び出しが見つからない')
+      const listenBody = server.slice(listenIdx, listenIdx + 700)
+      assert.ok(/MAX_COMPLETION_ATTEMPTS=\$\{MAX_COMPLETION_ATTEMPTS\}/.test(listenBody), '起動ログにMAX_COMPLETION_ATTEMPTSが出力されていない')
+      assert.ok(/extension BUILD_REVISION=\$\{readExtensionBuildRevision\(\)/.test(listenBody), '起動ログにbackground.jsのBUILD_REVISIONが出力されていない')
+    },
+  },
+  {
     // background.js側がstall報告・完了報告のいずれでもitem.runTokenを
     // 欠かさず/resultへ渡すことを確認する——渡し忘れると、サーバー側の
     // トークン検証がすべての結果報告を「不一致」として無視してしまう
@@ -1391,6 +1409,77 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       const imageSectionIdx = inj.indexOf("log('image_section_start', {})")
       assert.ok(completionIdx >= 0 && imageSectionIdx > completionIdx, 'completion分岐と画像処理区間の位置関係を特定できない')
       assert.ok(!/setContentEditableParagraphs/.test(inj.slice(completionIdx, imageSectionIdx)), 'completion経路上でタイトル・本文の書き込み関数が呼ばれている（再入力禁止の再発）')
+    },
+  },
+  {
+    // 2026-09-14続き34（マロン指示：v1.19.0実機ログで発見した「画像調整
+    // モーダルの『保存』ボタンが一度もクリックされない」バグの修正確認）。
+    name: '【画像調整モーダルのボタン検出】findConfirmLikeButtonは「保存」単体（完全一致）を確認ボタンとして認識し、「下書き保存」は除外する',
+    fn: () => {
+      const inj = injSrc()
+      const start = inj.indexOf('function findConfirmLikeButton()')
+      assert.ok(start >= 0, 'findConfirmLikeButton関数が見つからない')
+      const end = inj.indexOf('\n    }', start)
+      const body = inj.slice(start, end)
+      assert.ok(/\^保存\$/.test(body), '「保存」単体（完全一致）を確認ボタンとして認識するパターンが見つからない')
+      assert.ok(/if\s*\(\s*\/下書き\/\.test\(t\)\)\s*return\s*false/.test(body), '「下書き」（下書き保存ボタン）を除外するガードが見つからない')
+    },
+  },
+  {
+    name: '【画像調整モーダルの閉鎖確認】確認ボタンクリック後、そのボタンが不可視になったことをwaitForで確認しログへ記録する',
+    fn: () => {
+      const inj = injSrc()
+      const idx = inj.indexOf("log('image_adjust_confirm_click'")
+      assert.ok(idx >= 0, '確認ボタンクリックのログが見つからない')
+      const body = inj.slice(idx, idx + 700)
+      assert.ok(/waitFor\(\(\) => \(!isVisible\(confirmBtn\) \? true : null\), 5000, 300\)/.test(body), 'モーダルが閉じたことを確認するwaitForが見つからない')
+      assert.ok(/log\('image_adjust_modal_closed', \{ closed: !!modalClosed \}\)/.test(body), 'image_adjust_modal_closedログが見つからない')
+    },
+  },
+  {
+    name: '【heartbeat送信】verifyImageReflectedの内部ポーリングループは3秒間隔でheartbeatログを送信し、SW側watchdogの誤stall判定を防ぐ',
+    fn: () => {
+      const inj = injSrc()
+      const vStart = inj.indexOf('async function verifyImageReflected(timeoutMs)')
+      const vEnd = inj.indexOf('\n    async function normalizedHash', vStart)
+      assert.ok(vStart >= 0 && vEnd > vStart, 'verifyImageReflectedの範囲を特定できない')
+      const body = inj.slice(vStart, vEnd)
+      assert.ok(/nowForHeartbeat - lastHeartbeatAt >= 3000/.test(body), '3秒間隔のheartbeat判定が見つからない')
+      assert.ok(/log\('image_reflection_check_heartbeat', \{ elapsedMs: nowForHeartbeat - start \}\)/.test(body), 'image_reflection_check_heartbeatログが見つからない')
+    },
+  },
+  {
+    name: '【下書き保存確認】保存クリック後にエラー文言の有無を確認しdraftSaveOkとしてログへ記録する',
+    fn: () => {
+      const inj = injSrc()
+      const idx = inj.indexOf("clickElement(saveBtn)")
+      assert.ok(idx >= 0, 'saveBtnクリック箇所が見つからない')
+      const body = inj.slice(idx, idx + 700)
+      assert.ok(/保存に失敗\|エラーが発生\|保存できません/.test(body), '保存失敗文言の検出パターンが見つからない')
+      assert.ok(/const draftSaveOk = !saveErrorText/.test(body), 'draftSaveOkの算出が見つからない')
+      assert.ok(/log\('draft_save_check', \{ ok: draftSaveOk, errorText: saveErrorText \|\| null \}\)/.test(body), 'draft_save_checkログが見つからない')
+    },
+  },
+  {
+    name: '【completion成功条件のゲート】completionモードはhashtagsDone・iconDone・integrityOk・draftSaveOkの全てがtrueでない限りstatus:successを返さない',
+    fn: () => {
+      const inj = injSrc()
+      const idx = inj.indexOf('const completionConditionsMet =')
+      assert.ok(idx >= 0, 'completionConditionsMetの算出が見つからない')
+      const body = inj.slice(idx, idx + 900)
+      assert.ok(/hashtagsDone && iconDone && integrityOk && draftSaveOk/.test(body), '5条件（公開0は構造的に常時成立）を全て要求するAND条件が見つからない')
+      assert.ok(/const status = mode === 'completion' \? \(completionConditionsMet \? 'success' : 'failure'\) : 'success'/.test(body), 'completionモード限定のstatusゲートが見つからない')
+      assert.ok(/draftSaveOk,\s*\n\s*stages,/.test(body), '最終returnにdraftSaveOkが含まれていない')
+    },
+  },
+  {
+    name: '【完全一致の安全性】「保存」単体パターンは「下書き保存」「一時保存」等の長い文言には一致しない（正規表現の実挙動テスト）',
+    fn: () => {
+      const CONFIRM_LIKE_RE = /確定|適用|設定する|完了|トリミング|OK|^保存$/
+      assert.ok(CONFIRM_LIKE_RE.test('保存'), '「保存」単体に一致しない')
+      assert.ok(!CONFIRM_LIKE_RE.test('下書き保存'), '「下書き保存」に誤って一致している')
+      assert.ok(!CONFIRM_LIKE_RE.test('一時保存'), '「一時保存」に誤って一致している')
+      assert.ok(!CONFIRM_LIKE_RE.test('公開する'), '「公開する」に誤って一致している（安全境界）')
     },
   },
 ]
