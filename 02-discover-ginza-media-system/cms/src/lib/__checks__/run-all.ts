@@ -37,6 +37,7 @@ import { suite as properNounGroundingGate } from './properNounGroundingGate.chec
 import { suite as recurringEventYearGuard } from './recurringEventYearGuard.check'
 import { suite as sweetsDiscoveryKeywords } from './sweetsDiscoveryKeywords.check'
 import { suite as extractPriceHint } from './extractPriceHint.check'
+import { suite as productSweetsTemplate } from './productSweetsTemplate.check'
 import { suite as buildEditorialBrief } from './buildEditorialBrief.check'
 import { suite as buildFinalCandidateDigest } from './buildFinalCandidateDigest.check'
 import { suite as noteMasthead } from './noteMasthead.check'
@@ -87,6 +88,7 @@ const results: SuiteResult[] = [
   recurringEventYearGuard(),
   sweetsDiscoveryKeywords(),
   extractPriceHint(),
+  productSweetsTemplate(),
   buildEditorialBrief(),
   buildFinalCandidateDigest(),
   noteMasthead(),

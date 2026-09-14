@@ -9839,3 +9839,60 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   `transfer-state.json`ともに一切操作していない**——次回の実機検証で
   ①heartbeat stallが再発しないこと、②画像調整モーダルが「保存」
   クリック後に閉じるかどうか（続き34・35から未解決のまま）、を確認する。
+
+- 2026-09-14 続き37: 🆕 **「商品・スウィーツ専用の決定論的テンプレート」を新設
+  （マロン指示。Project 02 commit・push あり／DB更新なし／実AI・課金なし）**
+  ——DC #1152（松屋銀座「ジッカ 神紅と多伎いちじくのタルト」）を既存の
+  `template-check`にかけたところ`templateEligible:false`だった。原因は
+  既存のイベント用テンプレート（`renderArticleFromTemplate.ts` /
+  `saleTemplate.ts` / `readyGate.ts`）が要求するArticleFacts（イベント専用
+  スキーマ：eventDate/eventTime/venues/editionLabel/theme/whatHappens/
+  areaLead/audienceNote/paid/applyDeadline/resultDate/resultRule/applyRule/
+  officialInfoNote）自体が存在しないこと——`factKind=product_news`の構造化
+  事実は`.devlogs/morning/<date>/facts/`のプロポーザルに留まりDBの
+  `article-facts`へは書かれない設計（2026-09-02決定）のため、DC #1152の
+  ような単純な商品・スウィーツ販売情報は構造的にhuman_reviewへ落ちる。
+  **マロン指示により、ArticleFactsに一切依存しない新規・独立のテンプレートを
+  追加**（既存のイベント用テンプレート4ファイルは無変更・未参照）。
+  **新規ファイル**：①`cms/src/lib/template/productSweetsTemplate.ts`——
+  DiscoveredContentの軽量フィールド（sourceName/sourceUrl/verifiedAt/title/
+  venue/contentType/excerpt/eventStartAt/eventEndAt）だけから「なぜ今、
+  見に行くか／見どころ／会期・時間・会場／訪問前の注意／GINZA WHISKERSの
+  視点／SOURCE」の6ブロックを決定的に組み立てる純粋関数。「見どころ」は
+  公式抜粋（excerpt）をそのまま使い新たな文章を創作しない、価格判定は
+  既存`extractPriceHint`と同じラベル近傍基準を流用（ラベルなしの孤立した
+  金額は確認済み扱いにしない＝DC #1152の「831円」は公式記載なしのまま）、
+  欠落項目はすべて「公式記載なし」（捏造しない）。ハッシュタグは
+  `#旬の銀座`＋カテゴリー（`deriveProvisionalCategory`を再利用）＋施設名
+  （`resolveFacilityKey`を再利用）＋`#GINZATIMEEDIT`の決定的4個ルール
+  （呼び出し元が4個以上明示指定すればそちらを優先）。②`cms/src/lib/
+  template/productSweetsEligibility.ts`——sourceName/sourceUrl/titleの
+  3項目のみ必須、venue/excerpt/販売期間/verifiedAtは任意（欠落は
+  `optionalNotStated`に記録するのみでブロックしない）という、既存の
+  event用readyGateとは独立した適格性判定。③`cms/src/scripts/
+  productSweetsTemplateCheck.ts`——読み取り専用CLIエントリ（DB書き込み
+  なし・AI呼び出しなし）。④`scripts/project02`に`product-sweets-template-
+  check`コマンドを追加（既存コマンド・関数は無変更、新規関数・新規dispatch
+  caseの追加のみ）。⑤回帰テスト新規`productSweetsTemplate.check.ts`
+  （15件：イベント専用項目を参照しないことのソース検査／必須3項目欠落での
+  human_review化／任意項目欠落でのブロックなし／DC #1152相当での
+  eligible判定／6ブロック構成／見どころが公式抜粋そのまま／会期・会場・
+  価格の扱い／SOURCE行の内容／ハッシュタグ4個の完全一致／呼び出し元
+  ハッシュタグ優先／全項目欠落時の公式記載なし＋provenance空／
+  provenanceがconfirmedのみ／AI・ネットワーク・DB非依存のソース検査／
+  既存イベント用テンプレート4ファイルが無変更であることの検査／決定性）、
+  `run-all.ts` **668 passed 0 failed**（653→668）。`tsc --noEmit`（cms）
+  0エラー。**DC #1152で実際に`./p2 product-sweets-template-check 1152`を
+  実行**（読み取り専用・DB書き込みなし・AI呼び出しなし）：
+  `templateEligible:true / route:product_sweets_template`、
+  facilityLabel=松屋銀座・categoryLabel=SWEETS、
+  salesPeriodConfirmed=true・priceConfirmed=false、ハッシュタグは
+  `#旬の銀座 #銀座スイーツ #松屋銀座 #GINZATIMEEDIT`（マロン指定の4個と
+  完全一致）。**今回はCMSへの保存（draft作成）スクリプトは未実装・未実行**
+  ——マロンの指示が「テンプレート適格判定まで実行し、CMS保存前に結果を
+  報告」だったため、プレビュー表示までに留めた。DC #1152の
+  `curationStatus=approved`は変更していない（保持のまま）。Article #68は
+  未参照・未変更。note転記・公開・ブラウザ操作・Claude API等の有料API
+  呼び出しはいずれも行っていない。次工程（マロン承認後）：CMS保存用の
+  新規スクリプト（`draft-product-sweets-template`相当、既定dry-run・
+  `--yes`明示時のみ作成、の安全設計を`draft-template`と揃える）を追加する。
