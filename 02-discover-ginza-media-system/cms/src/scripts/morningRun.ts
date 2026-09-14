@@ -30,6 +30,7 @@ import { buildMorningReport, renderMorningReport } from '../lib/morning/buildMor
 import { buildFinalCandidateDigest, renderFinalCandidateDigest } from '../lib/morning/buildFinalCandidateDigest'
 import { classifyFactKind } from '../lib/morning/classifyFactKind'
 import { classifyTemplateType } from '../lib/morning/classifyTemplateType'
+import { excludeNonArticleCandidate } from '../lib/morning/excludeNonArticleCandidate'
 import { buildTemplatePrecheck } from '../lib/morning/templatePrecheck'
 import { extractProductNewsFactsCandidate } from '../lib/morning/extractProductNewsFacts'
 import { extractPriceHint } from '../lib/morning/extractPriceHint'
@@ -477,7 +478,11 @@ async function main(): Promise<void> {
     const coll = checkCollection(dateStr)
     mark('collectionCheck', step)
 
-    // 3. 承認済み DiscoveredContent ＋ 重複判定用データ ＋ 許可ドメイン
+    // 3. 承認前（inbox）＋承認済み（approved）DiscoveredContent ＋ 重複判定用データ ＋ 許可ドメイン
+    //    【2026-09-14変更・マロン指示】候補抽出・事実評価・18カテゴリー分類の対象から
+    //    curationStatus=approved 限定条件を完全に外した（根本原因の確定を受けた修正）。
+    //    マロン承認は、ここで評価された候補を記事生成・CMS保存へ進める条件としてのみ
+    //    使う（この読み込み自体はrejectedのみを除外し、inbox/approved両方を評価する）。
     step = Date.now()
     const imageInventory = await buildImageInventory(payload)
     const { allowedHosts, typeById: sourceLedgerTypeById } = await buildSourceLedgerMaps(payload)
@@ -485,7 +490,7 @@ async function main(): Promise<void> {
     const noteRecords = buildNoteRecords()
     const approved = await payload.find({
       collection: 'discovered-content',
-      where: { curationStatus: { equals: 'approved' } },
+      where: { curationStatus: { in: ['inbox', 'approved'] } },
       limit: args.limit,
       depth: 1,
       overrideAccess: true,
@@ -533,6 +538,48 @@ async function main(): Promise<void> {
         const factsDoc = factsRes.docs[0] as unknown as Record<string, unknown> | undefined
 
         const dcLike = toDcLike(raw)
+
+        // --- 対象外ページの決定的除外（2026-09-14追加・マロン指示） ---
+        //   一覧ページ／カテゴリーページ／アーカイブ／検索結果／共通案内／システム告知／
+        //   My account／通信販売トップ／本文を確認できないページ、を記事タイプ分類より
+        //   前に除外する。URL構造とタイトルは信頼できる情報源としてそのまま使うが、
+        //   excerptがナビ・メニュー文言のみで実質空のときは「本文を確認できない」として
+        //   除外する（推測補完しない）。除外された候補はCとして理由つきで残す。
+        const excl = excludeNonArticleCandidate({
+          sourceName: dcLike.sourceSiteName ?? null,
+          url: dcLike.articleUrl ?? null,
+          venue: dcLike.venue ?? null,
+          title: dcLike.title ?? null,
+          excerpt: dcLike.excerpt ?? null,
+          contentType: dcLike.contentType ?? null,
+          uxType: dcLike.uxType ?? null,
+        })
+        if (excl.excluded) {
+          assessments.push({
+            discoveredContentId: dcId,
+            title: dcLike.title ?? `DiscoveredContent #${dcId}`,
+            displayTitle: (dcLike.title ?? `DiscoveredContent #${dcId}`).split(/\s*\|\s*/)[0],
+            sourceName: dcLike.sourceSiteName ?? '',
+            sourceUrl: dcLike.articleUrl ?? '',
+            verdict: 'C',
+            reasons: [`候補対象外（${excl.pageKind}）: ${excl.reasons.join(' ／ ')}`],
+            verifiedItems: [],
+            missing: [],
+            unconfirmed: [],
+            dedup: { duplicate: false },
+            expired: false,
+            ginzaRelevant: false,
+            hasTraceableSource: false,
+            factKind: 'unknown',
+            factsSource: 'none',
+            templateEligible: false,
+            image: { available: false, policy: '画像なし（候補対象外のため未評価）', externalImageProhibited: true },
+            eventPeriod: '不明',
+            applyDeadline: '不明',
+            estimateMinutes: 0,
+          })
+          continue
+        }
 
         // --- 重複判定（多シグナル・ローカル記録のみ） ---
         const dr = dedupCheck(
@@ -626,6 +673,12 @@ async function main(): Promise<void> {
           excerpt: dcLike.excerpt ?? null,
           sourceType: sourceLedgerTypeById.get(Number(raw.sourceSite ?? raw.source_site_id)) ?? null,
           officialSignals: signals,
+          // 【2026-09-14修正・マロン指示】url/sourceName/venueが未指定だとclassifySourcePageType
+          // が常にpageKind='unknown'を返し、既存のURL構造ベースの個別記事判定が実質機能して
+          // いなかった（根本原因の一つ）。assessInboxPool.tsと同じ呼び出し方に揃える。
+          url: dcLike.articleUrl ?? null,
+          sourceName: dcLike.sourceSiteName ?? null,
+          venue: dcLike.venue ?? null,
         })
         const factKind = classification.factKind
         factsAudit.push({
@@ -660,6 +713,10 @@ async function main(): Promise<void> {
           uxType: (raw.uxType as string | null) ?? dcLike.uxType ?? null,
           title: dcLike.title ?? null,
           excerpt: dcLike.excerpt ?? null,
+          // 【2026-09-14修正】classifyFactKindと同じ理由でurl/sourceName/venueを渡す。
+          url: dcLike.articleUrl ?? null,
+          sourceName: dcLike.sourceSiteName ?? null,
+          venue: dcLike.venue ?? null,
         })
         a.templateType = templateTypeCls.templateType
 

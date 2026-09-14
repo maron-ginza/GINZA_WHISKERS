@@ -25,6 +25,7 @@ import { getOrComputeCrossCulture } from '../crossCulture'
 import { computeTargetFitScore, sourceTypeOf } from './targetFitScore'
 import { computeCandidateCoverage } from './candidateCoverageScore'
 import { deriveProvisionalCategory } from './provisionalCategory'
+import { excludeNonArticleCandidate } from '../morning/excludeNonArticleCandidate'
 import { resolveFacilityKey } from '../curation/facilityKey'
 import type {
   ArticleFactsLike,
@@ -119,7 +120,10 @@ export async function assessInboxPool(
 ): Promise<AssessInboxPoolResult> {
   const now = opts.now ?? new Date()
   const statuses = opts.statuses ?? ['inbox']
-  const limit = Math.max(1, Math.min(1000, opts.limit ?? 200))
+  // 【2026-09-14変更・マロン指示】curationStatus=approved限定を外しinbox+approved
+  // 両方を評価対象にしたことで母集団が拡大したため、上限を1000→1500へ引き上げる
+  // （DB問い合わせ自体は固定回数のまま・候補ループはメモリ内処理のみのため負荷増は小さい）。
+  const limit = Math.max(1, Math.min(1500, opts.limit ?? 200))
 
   const dcRes = await payload.find({
     collection: 'discovered-content',
@@ -339,6 +343,41 @@ export async function assessInboxPool(
     const dcId = Number(raw.id)
     try {
       const dcLike = toDcLike(raw)
+
+      // --- 対象外ページの決定的除外（2026-09-14追加・マロン指示） ---
+      //   一覧ページ／カテゴリーページ／アーカイブ／検索結果／共通案内／システム告知／
+      //   My account／通信販売トップ／本文を確認できないページ を記事タイプ分類より
+      //   前に除外する（morningRun.tsの同名ゲートと同一ロジックを共有）。
+      const excl = excludeNonArticleCandidate({
+        sourceName: dcLike.sourceSiteName ?? null,
+        url: dcLike.articleUrl ?? null,
+        venue: dcLike.venue ?? null,
+        title: dcLike.title ?? null,
+        excerpt: dcLike.excerpt ?? null,
+        contentType: dcLike.contentType ?? null,
+        uxType: dcLike.uxType ?? null,
+      })
+      if (excl.excluded) {
+        abc.C++
+        candidates.push({
+          discoveredContentId: dcId,
+          title: dcLike.title ?? `DC #${dcId}`,
+          sourceName: dcLike.sourceSiteName ?? '',
+          sourceUrl: dcLike.articleUrl ?? '',
+          verdict: 'C',
+          expired: false,
+          ginzaRelevant: false,
+          hasTraceableSource: false,
+          duplicate: false,
+          factKind: 'unknown',
+          templateType: 'unknown',
+          templateEligible: false,
+          factsSource: 'none',
+          missingForTemplate: [`候補対象外（${excl.pageKind}）: ${excl.reasons.join(' ／ ')}`],
+        })
+        continue
+      }
+
       // 日付正規化：DC に event 日付が無いとき、タイトル・本文抜粋に **明記された** 会期を拾う
       // （推測はしない・書かれている日付のみ）。expired 判定・時期分散に反映される。
       let periodBasis: string | null = null

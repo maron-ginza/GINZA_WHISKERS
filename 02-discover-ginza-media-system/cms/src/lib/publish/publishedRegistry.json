@@ -38,5 +38,15 @@
     "dcId": 365,
     "source": "manual:registry（マロン確認・過去投稿済み・URL未記録）",
     "publishedAt": null
+  },
+  {
+    "noteUrl": null,
+    "title": "銀座で、島根の秋をひと匙。ジッカ「神紅と多伎いちじくのタルト」は9月15日まで",
+    "eventName": "ジッカ 神紅と多伎いちじくのタルト",
+    "venue": "松屋銀座 地下1F GINZAスイート",
+    "period": "2026-09-09〜2026-09-15",
+    "dcId": 1152,
+    "source": "manual:registry（マロン確認・note手動公開（Article #69））",
+    "publishedAt": "2026-09-14"
   }
 ]

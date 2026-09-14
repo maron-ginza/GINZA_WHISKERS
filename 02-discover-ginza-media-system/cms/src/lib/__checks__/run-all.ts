@@ -56,6 +56,9 @@ import { suite as chromeExtensionManifest } from './chromeExtensionManifest.chec
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
 import { suite as resolveImageAsset } from './resolveImageAsset.check'
+import { suite as hasUsableBodyContent } from './hasUsableBodyContent.check'
+import { suite as excludeNonArticleCandidate } from './excludeNonArticleCandidate.check'
+import { suite as morningRunWiring } from './morningRunWiring.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -109,6 +112,9 @@ const results: SuiteResult[] = [
   noteTransferUrlMatch(),
   noteTransferState(),
   resolveImageAsset(),
+  hasUsableBodyContent(),
+  excludeNonArticleCandidate(),
+  morningRunWiring(),
 ]
 
 void (async () => {
