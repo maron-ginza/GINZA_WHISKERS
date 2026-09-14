@@ -425,14 +425,24 @@ export interface ArticleFactsCandidate {
 /** 7:10 レポート全体 */
 export interface MorningReport {
   generatedAt: string
-  /** 評価した承認済み DiscoveredContent 件数 */
+  /** 評価した DiscoveredContent 件数（inbox＋approved。承認前情報も含む） */
   assessed: number
   counts: { A: number; B: number; C: number }
-  /** A判定のみ・優先順位順（最大5）。A が5未満なら実数のみ */
+  /** A判定のみ・優先順位順（最大5）。A が5未満なら実数のみ（後方互換・buildDecisionSupport等が使用） */
   topA: CandidateAssessment[]
   /** A が5未満のとき true（B/C で埋めていない） */
   aShortfall: boolean
-  /** B判定（参考・上位には載せない） */
+  /**
+   * 【2026-09-14追加・マロン指示】7:10の候補一覧に実際に表示する候補（A＋B、優先順位順・
+   * 最大5）。A（公式情報だけで記事生成可能）を先に、続けてB（旬の候補として提示可能・
+   * 生成前に公式確認が必要）を並べる。C（候補提示不可）は含めない。
+   * ArticleFactsの全項目confirmedは、この一覧に載る条件にしない
+   * （記事生成・CMS保存の必須条件としてのみ使用する）。
+   */
+  topPresentable: CandidateAssessment[]
+  /** A＋Bの合計が5未満のとき true（Cで埋めていない） */
+  presentableShortfall: boolean
+  /** B判定 全件（参考・詳細表示用） */
   b: CandidateAssessment[]
   /** C判定（除外理由つき） */
   c: CandidateAssessment[]

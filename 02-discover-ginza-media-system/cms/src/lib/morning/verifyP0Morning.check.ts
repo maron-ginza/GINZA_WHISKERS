@@ -8,7 +8,7 @@
 import { runSuite, type CheckCase } from '../__checks__/_harness'
 import { imagePreflight } from './imagePreflight'
 import { assessCandidate, type AssessCandidateInput } from './assessCandidate'
-import { buildMorningReport } from './buildMorningReport'
+import { buildMorningReport, renderMorningReport } from './buildMorningReport'
 import {
   extractJsonLd,
   firstEventDates,
@@ -298,6 +298,57 @@ const cases: CheckCase[] = [
       const rep = buildMorningReport([B1, C1], { now: NOW })
       assert(rep.topA.length === 0, 'topA は空')
       assert(rep.aShortfall === true, 'aShortfall true')
+    },
+  },
+
+  // ---------- topPresentable（2026-09-14追加・マロン指示：7:10候補一覧にA＋B両方を表示） ----------
+  {
+    name: 'report.topPresentable は A を先に・続けて B を含む（C は含めない）。承認前(inbox)情報のB候補も一覧に表示される',
+    fn: () => {
+      const A1 = assessCandidate(mk({ facts: readyFacts(), dc: baseDc({ id: 1, eventStartAt: '2026-10-01T00:00:00Z', eventEndAt: '2026-10-01T00:00:00Z' }) }))
+      // DC #532 相当：curationStatus=inbox（未承認）のASTURIASクラシックギターフェア。
+      // ArticleFacts未作成のためB判定——承認条件はcurationStatusで別途フィルタされる話であり、
+      // assessCandidate自体は承認状態を見ない。承認前情報でもB候補として一覧に載ることを検証する。
+      const B532 = assessCandidate(
+        mk({
+          dc: baseDc({ id: 532, title: 'ASTURIAS クラシックギターフェア【銀座本店 4F Ginza Guitar Salon】', articleUrl: 'https://www.yamano-music.co.jp/information/99532' }),
+          facts: undefined,
+        }),
+      )
+      const C1 = assessCandidate(mk({ dc: baseDc({ id: 4, articleUrl: '' }) }))
+      const rep = buildMorningReport([A1, B532, C1], { now: NOW })
+
+      assert(rep.topPresentable.length === 2, `topPresentable は A+B の2件 / 実際 ${rep.topPresentable.length}`)
+      assert(rep.topPresentable[0].verdict === 'A', 'A が先頭')
+      assert(rep.topPresentable[1].verdict === 'B', 'B が続く')
+      assert(rep.topPresentable.some((x) => x.discoveredContentId === 532), 'DC #532（未承認・B判定）がtopPresentableに含まれる')
+      assert(!rep.topPresentable.some((x) => x.discoveredContentId === 4), 'C（候補提示不可）はtopPresentableに含まれない')
+      assert(rep.presentableShortfall === true, 'A+B<5 なので presentableShortfall')
+
+      // 実際の7:10レポート本文（renderMorningReport）にDC#532がB判定として、
+      // 未確認項目・確認すべき公式URL・記事生成前に確認が必要、の3点とともに表示されることを確認
+      const text = renderMorningReport(rep)
+      assert(text.includes('■ 候補一覧（A＋B・優先順位順・最大5）'), '候補一覧セクションがA＋B表記になっている')
+      assert(text.includes('DC #532'), 'DC #532が候補一覧本文に出力される')
+      const idx532 = text.indexOf('DC #532')
+      const around532 = text.slice(idx532, idx532 + 1200)
+      assert(around532.includes('確認すべき公式URL'), 'DC#532の周辺に確認すべき公式URLが明記される')
+      assert(around532.includes('https://www.yamano-music.co.jp/information/99532'), '公式URLの実際の値が出力される')
+      assert(around532.includes('未確認項目'), 'DC#532の周辺に未確認項目が明記される')
+      assert(around532.includes('記事生成前に確認が必要'), 'DC#532の周辺に「記事生成前に確認が必要」が明記される')
+    },
+  },
+  {
+    name: 'report.topPresentable: A+Bが5件超のときtopNで切る（水増し・取りこぼしなし）',
+    fn: () => {
+      const as = [1, 2, 3].map((id) => assessCandidate(mk({ facts: readyFacts({ eventDateISO: `2026-10-0${id}T00:00:00Z` }), dc: baseDc({ id }) })))
+      const bs = [10, 11, 12, 13].map((id) => assessCandidate(mk({ dc: baseDc({ id }), facts: undefined })))
+      const rep = buildMorningReport([...as, ...bs], { now: NOW, topN: 5 })
+      assert(rep.counts.A === 3 && rep.counts.B === 4, `内訳 ${JSON.stringify(rep.counts)}`)
+      assert(rep.topPresentable.length === 5, `topN=5で切られる / 実際 ${rep.topPresentable.length}`)
+      assert(rep.topPresentable.filter((x) => x.verdict === 'A').length === 3, 'A全3件を含む')
+      assert(rep.topPresentable.filter((x) => x.verdict === 'B').length === 2, 'Bは4件中上位2件のみ（水増しではなく単純に5件で切る）')
+      assert(rep.presentableShortfall === false, 'A+B=7>=5なのでshortfallではない')
     },
   },
 
@@ -719,7 +770,10 @@ const cases: CheckCase[] = [
   {
     // 2026-09-06、根本改善：product_news も必須項目confirmed・human_reviewed_at設定・
     // ArticleFacts ready なら A 相当へ進める（人間確認なしの自動A昇格は禁止）。
-    name: 'assessCandidate: factKind=product_news + ArticleFacts ready（sale・必須項目confirmed・human_reviewed_at設定）→ A',
+    // 2026-09-14追加：現在の販売状況も公式確認済み（saleAvailability='has_end_date'。
+    // 実際に発売日=eventDateISOがconfirmedのため妥当）であることを明示——「販売期間の
+    // 記載なし」のまま ready 化された DC#370 クラスとの違いを試験する対比fixture。
+    name: 'assessCandidate: factKind=product_news + ArticleFacts ready（sale・必須項目confirmed・human_reviewed_at設定・販売状況confirmed）→ A',
     fn: () => {
       const a = assessCandidate(
         mk({
@@ -734,6 +788,7 @@ const cases: CheckCase[] = [
             eventDateISO: FUTURE_ISO,
             priceText: '3,190円(税込)',
             officialInfoNote: '数量限定・なくなり次第終了。店舗にてお問い合わせください。',
+            saleAvailability: 'has_end_date',
             hashtags: [{ tag: '#銀座' }],
             sourceProvenanceFacts: [
               { fact: '価格 3,190円(税込)', sourceType: 'official', factType: 'price', verificationStatus: 'confirmed' },
@@ -742,7 +797,7 @@ const cases: CheckCase[] = [
           },
         }),
       )
-      assert(a.verdict === 'A', `必須confirmed＋human_reviewed_at設定＋ready なら A（実際 ${a.verdict}／理由: ${a.reasons.join(' / ')}）`)
+      assert(a.verdict === 'A', `必須confirmed＋human_reviewed_at設定＋ready＋販売状況confirmedなら A（実際 ${a.verdict}／理由: ${a.reasons.join(' / ')}）`)
       assert(a.templateEligible === true && a.factsSource === 'ready', 'sale の mapper 値を正しく反映する')
       assert(a.reasons.join().includes('人間レビュー済み'), '理由に人間レビュー済みを明示')
     },

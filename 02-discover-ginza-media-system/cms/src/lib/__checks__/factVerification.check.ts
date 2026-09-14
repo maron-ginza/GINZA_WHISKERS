@@ -395,7 +395,12 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'toFactsLike ラウンドトリップ: ready な sale の article-facts doc → toFactsLike → assessCandidate → A（DC #370 クラスの回帰）',
+    // 2026-09-14改訂（マロン指示）：DC#370は「販売期間の記載なし（店頭にて取扱）」＝
+    // saleAvailability='no_period_stated'のまま human_reviewed だけでready化されており、
+    // 現在の販売状況を公式確認できていない。ArticleFacts ready・templateEligible:true
+    // （＝記事生成は妨げない）ではあるが、候補「提示」のA（公式情報だけで記事生成可能）
+    // には現在の販売状況の確認も必要とし、B（旬の候補として提示・生成前に要確認）へ修正。
+    name: 'toFactsLike ラウンドトリップ: ready だが saleAvailability=no_period_stated の sale → toFactsLike → assessCandidate → B（DC #370 クラス・2026-09-14修正）',
     fn: () => {
       const doc = {
         enrichmentStatus: 'ready',
@@ -419,8 +424,16 @@ const cases: CheckCase[] = [
       const facts = toFactsLike(doc) as unknown as AssessCandidateInput['facts']
       const dcLike: DiscoveredContentLike = dc({ id: 370, title: 'AMBUSH® x New Era® – GINZA SIX', sourceSiteName: 'GINZA SIX', contentType: 'news', venue: null, articleUrl: 'https://ginza6.tokyo/news/detail/shopnews/224269' })
       const a = assessCandidate({ dc: dcLike, facts, factKind: 'product_news', dedup: { duplicate: false }, imageInventory: [], now: NOW })
-      assert(a.verdict === 'A', `verdict A（実際 ${a.verdict}／理由 ${a.reasons.join(' / ')}）`)
-      assert(a.factsSource === 'ready' && a.templateEligible === true, 'ready sale として正しく評価')
+      assert(a.verdict === 'B', `verdict B 期待（現在の販売状況が公式未確認のため）／実際 ${a.verdict}／理由 ${a.reasons.join(' / ')}`)
+      assert(a.factsSource === 'ready' && a.templateEligible === true, 'ArticleFactsはreadyのまま（記事生成の必須条件には影響しない）')
+      assert(
+        a.reasons.some((r) => r.includes('現在の販売状況')),
+        '理由に「現在の販売状況が未確認」が明記される',
+      )
+      assert(
+        a.unconfirmed.some((u) => u.includes(dcLike.articleUrl ?? '') && u.includes('記事生成前に確認が必要')),
+        '未確認事項に確認すべき公式URLと「記事生成前に確認が必要」が明記される',
+      )
     },
   },
   {

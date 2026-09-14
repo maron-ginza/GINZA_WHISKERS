@@ -1,10 +1,17 @@
-// GINZA WHISKERS / Project 02 P0 改善（2026-09-02）— 7:10 候補レポートの組み立て（純粋関数）。
+// GINZA WHISKERS / Project 02 P0 改善（2026-09-02、2026-09-14候補提示の是正で改訂）
+// — 7:10 候補レポートの組み立て（純粋関数）。
 //
-//   ・A判定のみを優先順位順に最大5件（topA）。
-//   ・A が5未満なら B/C で埋めず、A の実数だけを返す（aShortfall=true）。
-//   ・B/C は参考として別枠で返す（上位提示はしない）。
+//   ・【2026-09-14改訂・マロン指示】7:10の候補一覧（topPresentable）には A と B の
+//     両方を表示する（A＋B、優先順位順・最大5）。C（候補提示不可）は含めない。
+//       A＝公式情報だけで記事生成可能
+//       B＝旬の候補としてマロンへ提示可能だが、記事生成前に不足項目の公式確認が必要
+//       C＝候補提示不可
+//   ・A＋Bの合計が5未満なら C で埋めず、実数だけを返す（presentableShortfall=true）。
+//   ・topA（A判定のみ）は後方互換のため引き続き返す（buildDecisionSupport等が使用）。
+//   ・B/C の全件詳細は引き続き別枠（b/c）で返す。
 //
-// 優先順位（決定的）：開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
+// 優先順位（決定的）：A を B より先に（生成即応性が高い順）、各tier内は
+// 開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
 
 import type { CandidateAssessment, MorningReport } from './types'
 
@@ -44,6 +51,9 @@ export function buildMorningReport(
   const C = assessments.filter((a) => a.verdict === 'C')
 
   const topA = A.slice(0, topN)
+  // A を先に、続けて B（それぞれ既にrankAssessments済み）を並べ、topNで切る。
+  // Cは候補提示不可のため含めない。水増しはしない（A+Bの実数のみ）。
+  const topPresentable = [...A, ...B].slice(0, topN)
 
   return {
     generatedAt: now.toISOString(),
@@ -51,6 +61,8 @@ export function buildMorningReport(
     counts: { A: A.length, B: B.length, C: C.length },
     topA,
     aShortfall: A.length < topN,
+    topPresentable,
+    presentableShortfall: A.length + B.length < topN,
     b: B,
     c: C,
   }
@@ -166,30 +178,38 @@ function renderOne(a: CandidateAssessment, rank: number): string {
 export function renderMorningReport(report: MorningReport): string {
   let s = ''
   s += line('════════════════════════════════════════════════')
-  s += line(`  Project 02 — 7:10 A判定候補レポート`)
+  s += line(`  Project 02 — 7:10 候補レポート`)
   s += line(`  生成: ${report.generatedAt}`)
-  s += line(`  評価: 承認済み DiscoveredContent ${report.assessed} 件`)
+  s += line(`  評価: DiscoveredContent ${report.assessed} 件（inbox＋approved。承認前情報も含む）`)
   s += line(`  内訳: A=${report.counts.A} / B=${report.counts.B} / C=${report.counts.C}`)
   s += line('════════════════════════════════════════════════')
   s += line()
-  s += line('■ 上位候補（A判定のみ・優先順位順・最大5）')
-  if (report.topA.length === 0) {
-    s += line('  A判定の候補は 0 件です。B/C で埋めません。')
-    s += line('  → 8:00 の選定に出せる「完璧」な候補がありません。B判定の不足項目を')
-    s += line('    埋めて ArticleFacts を ready にするか、当日の投稿判断はマロン／レナで。')
+  s += line('■ 候補一覧（A＋B・優先順位順・最大5）')
+  s += line('  A＝公式情報だけで記事生成可能 ／ B＝旬の候補として提示可能・記事生成前に不足項目の公式確認が必要')
+  if (report.topPresentable.length === 0) {
+    s += line('  A・B判定の候補は 0 件です（Cで埋めません）。')
+    s += line('  → 8:00 の選定に出せる候補がありません。当日の投稿判断はマロン／レナで。')
   } else {
-    report.topA.forEach((a, i) => {
+    report.topPresentable.forEach((a, i) => {
       s += line()
       s += renderOne(a, i + 1)
+      if (a.verdict === 'B') {
+        s += line(`  ── B判定：記事生成前に確認が必要 ──`)
+        s += line(`  確認すべき公式URL : ${a.sourceUrl || '（なし）'}`)
+        s += line(
+          `  未確認項目        : ${[...a.missing, ...a.unconfirmed].length ? [...a.missing, ...a.unconfirmed].join(' / ') : a.reasons.join(' / ')}`,
+        )
+        s += line(`  → 記事生成前に確認が必要（公式URLで不足項目を確認・ArticleFactsをreadyにしてから記事生成へ）`)
+      }
     })
-    if (report.aShortfall) {
+    if (report.presentableShortfall) {
       s += line()
-      s += line(`  ※ A判定は ${report.counts.A} 件のみ（5件に満たないため、B/C では補充していません）。`)
+      s += line(`  ※ A＋Bは ${report.counts.A + report.counts.B} 件のみ（5件に満たないため、Cでは補充していません）。`)
     }
   }
 
   s += line()
-  s += line('■ B判定（未確認あり・上位には出さない・別表）')
+  s += line('■ B判定 全件（参考・詳細）')
   if (report.b.length === 0) s += line('  なし')
   else
     report.b.forEach((a) => {

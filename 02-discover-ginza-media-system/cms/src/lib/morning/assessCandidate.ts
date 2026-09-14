@@ -1,19 +1,31 @@
-// GINZA WHISKERS / Project 02 P0 改善（2026-09-02）— A/B/C 判定（純粋関数・AI なし）。
+// GINZA WHISKERS / Project 02 P0 改善（2026-09-02、2026-09-14候補提示の是正で改訂）
+// — A/B/C 判定（純粋関数・AI なし）。
 //
-// 【判定基準（ユーザー確定・2026-09-02）】
-//   C（記事候補から除外）: 開催終了 / 既投稿と重複 / 銀座関連性を確認できない /
-//                          追跡可能な公式出典が無い
-//   A（即記事化可・上位提示対象）: C でない かつ
+// 【判定基準（2026-09-14改訂・マロン指示）】
+//   C（候補提示不可）: 開催終了 / 既投稿と重複 / 銀座関連性を確認できない /
+//                      追跡可能な公式出典が無い
+//   A（公式情報だけで記事生成可能）: C でない かつ
 //       ・ArticleFacts が ready（必須項目がすべて確認済み）
 //       ・templateEligible:true
 //       ・追跡可能な公式 URL を持つ
 //       ・情報の確認日時が新しい（既定 14 日以内）
+//       ・product_news（商品ニュース）は追加で、現在の販売状況が公式に確認できている
+//         （saleAvailability='has_end_date'／'ongoing_no_end_stated'。isSaleAvailabilityConfirmed）
+//         ——'no_period_stated'（販売期間の記載なし）のまま human_reviewed だけで ready 化
+//         されたケースをAにしない（2026-09-14修正：DC#370のような事例）
 //     → 20〜30 分で記事化できる見込み
-//   B（未確認あり・上位5件には原則含めない）: C でも A でもない。
-//       不足項目（missing）と、A へ引き上げるための追加所要時間を明示する。
+//   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要）:
+//       C でも A でもない。ArticleFacts が未作成／draft／期間未確認であっても、
+//       銀座関連性・追跡可能な出典・非終了が確認できればBとして候補提示する
+//       ——**ArticleFactsの全項目confirmedは候補「提示」の必須条件にしない**。
+//       記事生成・CMS保存に進む際の必須条件としてのみ使う（既存のArticleFacts
+//       readyゲート・Articles.beforeChangeの人間承認ゲートは無変更）。
+//       不足項目（missing/unconfirmed）と、確認すべき公式URL、A へ引き上げるための
+//       追加所要時間を明示する。
 //
 // 「完璧」＝必須項目を確認できた案件だけを A とする。未確認情報は推測で埋めない
-// ——missing / unconfirmed に列挙するだけ。
+// ——missing / unconfirmed に列挙するだけ。B は「未確認のまま提示しない」候補ではなく
+// 「未確認項目を明示したうえでマロンへ提示する」候補である。
 
 import {
   mapDiscoveredContentToEventFields,
@@ -67,6 +79,30 @@ function toDate(v: unknown): Date | null {
 
 function daysBetween(a: Date, b: Date): number {
   return Math.abs(a.getTime() - b.getTime()) / 86_400_000
+}
+
+// 商品ニュース（product_news）で「現在の販売状況」が公式に確認できているかを、
+// 既存の構造化フィールド saleAvailability（extractProductNewsFacts.ts が公式ページ本文の
+// 明記から決定的に判定・readyGate.ts が既に「過去/未来ゲート免除」の根拠に使っている値）
+// で判定する（2026-09-14追加・マロン指示）。
+//
+//   'has_end_date'         … 販売終了日が明記されている → 現在の状況を確認済み
+//   'ongoing_no_end_stated'… 公式本文に「発売中・継続販売中」等の明記があり終了を示す語も
+//                             ない → 現在も販売中であることを確認済み
+//   'no_period_stated'     … 開始日・終了日・会期ラベルいずれも無く「店頭にて取扱」等の
+//                             一般的な販売明示のみ → **現在も販売中かどうかは公式に未確認**
+//                             （readyGate は必須項目・過去/未来ゲートの両方を免除して
+//                             templateEligible=true にできるが、それは「記事生成は妨げない」
+//                             という判断であり「現在の状況を確認済み」という意味ではない）
+//   'unknown' / 未設定      … 未確認
+//
+// A（候補提示：公式情報だけで記事生成可能）にするのは 'has_end_date' /
+// 'ongoing_no_end_stated' のみ。'no_period_stated' はArticleFacts readyでも B へ落とし、
+// 「現在の販売状況を公式ページで再確認してから記事生成へ」と明示する
+// （DC#370のような事例。ArticleFactsの全項目confirmedを候補「提示」の必須条件にしない
+// 一方で、A＝生成可能の判定にはこの追加確認を要求する）。
+function isSaleAvailabilityConfirmed(saleAvailability: string | null | undefined): boolean {
+  return saleAvailability === 'has_end_date' || saleAvailability === 'ongoing_no_end_stated'
 }
 
 /** サイトナビ由来のノイズを避けた表示用タイトル */
@@ -193,12 +229,15 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     // 設定できない（AI・自動化からの直接遷移は不可）ため、ここに到達する時点で
     // 必須項目のconfirmedと人間確認は担保されている。humanReviewedAt の明示確認は
     // 「人間確認なしの自動A昇格を禁止する」ことの二重防御（belt and suspenders）。
-    const eligible = map.templateEligible && map.factsSource === 'ready' && !!facts?.humanReviewedAt
+    const saleAvailabilityConfirmed = isSaleAvailabilityConfirmed(facts?.saleAvailability)
+    const eligible =
+      map.templateEligible && map.factsSource === 'ready' && !!facts?.humanReviewedAt && saleAvailabilityConfirmed
     if (eligible && !stale) {
       verdict = 'A'
       reasons.push(
         '記事タイプ＝product_news（商品ニュース）／必須項目（商品名・価格・販売期間・購入条件・出典）が' +
-          'confirmedでArticleFacts ready・人間レビュー済み（humanReviewedAt設定）／templateEligible:true／公式出典あり／情報が新しい',
+          'confirmedでArticleFacts ready・人間レビュー済み（humanReviewedAt設定）／templateEligible:true／公式出典あり／' +
+          `現在の販売状況も公式確認済み（saleAvailability=${facts?.saleAvailability}）／情報が新しい`,
       )
     } else {
       verdict = 'B'
@@ -211,10 +250,23 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       else if (map.factsSource === 'withdrawn') reasons.push('ArticleFacts が withdrawn')
       else if (!map.templateEligible) reasons.push('必須項目に不足あり（下記 missing）')
       else if (!facts?.humanReviewedAt) reasons.push('human_reviewed_at が未設定（人間レビュー未確認のため自動A昇格しない）')
+      else if (!saleAvailabilityConfirmed)
+        reasons.push(
+          `現在の販売状況が公式に確認できていない（saleAvailability=${facts?.saleAvailability ?? '未設定'}。` +
+            'ArticleFactsはreadyだが「販売期間の記載なし」は現在も販売中である確認にはならない）',
+        )
       if (stale) reasons.push('情報の確認日時が古く再確認が必要')
+      if (!saleAvailabilityConfirmed) {
+        unconfirmed.push(
+          `現在の販売状況（公式ページで再確認が必要）: ${sourceUrl || '（公式URLなし）'} — 記事生成前に確認が必要`,
+        )
+      }
     }
   } else {
-    // factKind === 'event'（未指定は後方互換で event 扱い）
+    // factKind === 'event'（未指定は後方互換で event 扱い）。
+    // event はreadyGate.tsが常に機械日付（eventDateISO）と過去/未来ゲートを必須にしており
+    // （sale向けのno_period_stated免除は存在しない）、ready＝現在の開催状況も確認済みで
+    // 一貫しているため、product_newsのような追加チェックは不要（2026-09-14確認）。
     const eligible = map.templateEligible && map.factsSource === 'ready'
     if (eligible && !stale) {
       verdict = 'A'
