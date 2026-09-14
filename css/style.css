@@ -934,6 +934,25 @@ a.content-card:hover {
 }
 
 /* ==========================================================
+   1枚表示（cc-span-full）専用カードの画像規則（2026-09-14 追加）
+   対象：GINZA 400 YEARS／GINZA DIGITAL ART LAB の2枚のみ
+   （entry-visual--single を個別付与済み。GINZA CROSS CULTURE MAP他の
+   cc-span-full カードにはこのクラスを付けていないため無関係）。
+   2枚並列カード用の object-fit: cover 規則がそのまま適用され、
+   cc-span-full による全幅表示時に画角が切れていた不具合の修正。
+   aspect-ratio は上の .entry-visual--400years（2:1）／
+   --digital-art-lab（4:3）——各画像の元の縦横比のまま——を維持し、
+   ここでは object-fit のみ contain に切り替えて画像全体を常に表示する。
+   比率が完全一致するため通常は余白は生じないが、将来素材が変わり
+   比率が変わった場合に備えて黒系背景（--color-bg）で余白を処理する。
+   PC／スマートフォンとも同一ルールで対応（ブレークポイント別の
+   上書きは不要）。 */
+.entry-visual.entry-visual--single img {
+  object-fit: contain;
+  background: var(--color-bg);
+}
+
+/* ==========================================================
    ヒーローの仮背景画像（2026-09-11 追加）
    index.html の <section class="hero hero--image"> 専用。画像は
    <img> としてHTMLに置き、その上に既存の .hero-inner（見出し・説明文・

@@ -186,9 +186,11 @@
             <span class="card-cta">noteで読む</span>
           </div>
         </a>
-        <!-- GINZA 400 YEARS：独立した公開URLが未確定。確定時に href を付与し is-pending を削除する。 -->
+        <!-- GINZA 400 YEARS：独立した公開URLが未確定。確定時に href を付与し is-pending を削除する。
+             entry-visual--single：cc-span-full（1枚表示）専用の表示規則。2026-09-14、
+             2枚並列カードと同じ cover 規則が全幅表示で画角を切ってしまう不具合の修正。 -->
         <a class="content-card content-card--visual is-pending cc-span-full" aria-disabled="true">
-          <div class="entry-visual entry-visual--400years" aria-hidden="true">
+          <div class="entry-visual entry-visual--400years entry-visual--single" aria-hidden="true">
             <img src="images/cards/400years.jpg" width="768" height="384" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
@@ -201,9 +203,11 @@
              05-2 はワークスペース外の別プロジェクト（/Users/maron/project-05-2-ginza-digital-art-lab/）で
              公開URLが未確定のため、リンク先を推測実装せずリンクなし・準備中として掲載する
              （Root CLAUDE.md 2026-08-19 PMO決定）。URL確定時に href を付与し is-pending を削除する。
-             ビジュアルは仮カード画像（images/cards/digital-art-lab.jpg、2026-09-11配置）。 -->
+             ビジュアルは仮カード画像（images/cards/digital-art-lab.jpg、2026-09-11配置）。
+             entry-visual--single：cc-span-full（1枚表示）専用の表示規則（2026-09-14追加、
+             理由はGINZA 400 YEARSのコメント参照）。 -->
         <a class="content-card content-card--visual is-pending cc-span-full" aria-disabled="true">
-          <div class="entry-visual entry-visual--digital-art-lab" aria-hidden="true">
+          <div class="entry-visual entry-visual--digital-art-lab entry-visual--single" aria-hidden="true">
             <img src="images/cards/digital-art-lab.jpg" width="512" height="384" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
