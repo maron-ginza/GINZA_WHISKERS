@@ -302,7 +302,11 @@ function mapFromReadyFacts(
     .map((h) => str(h?.tag))
     .filter(Boolean)
   const priceText = str((facts as { priceText?: string | null }).priceText)
-  const paid = facts.paid === 'paid'
+  // 2026-09-15修正：facts.paid==='paid'のbooleanへ潰していたため、'unknown'（未設定・
+  // admissionApplicable='no'含む）が false になり、テンプレ側で「無料」と誤断定される
+  // バグがあった（DC#610「秋の名品展」での事故）。3値（'paid'/'free'/'unknown'）を
+  // そのままEventArticleFields.paidへ渡し、断定はrender側（templates.ts）に委ねる。
+  const paid = (facts.paid as string | null) ?? 'unknown'
   const applyRequired = facts.applyRequired === 'yes'
   const applyDeadline = str(facts.applyDeadline)
   const resultDate = str(facts.resultDate)

@@ -37,7 +37,7 @@ import {
   officialPageLabel,
 } from '../template/polishArticleDraft'
 import { renderArticleFromTemplate, type TemplateArticleInput } from '../template/renderArticleFromTemplate'
-import type { EventArticleFields } from '../template/templates'
+import { buildAngleInputFromExhibition, buildAngleInputFromGeneric, type EventArticleFields } from '../template/templates'
 
 function assert(c: unknown, m: string): void {
   if (!c) throw new Error(m)
@@ -516,7 +516,7 @@ const cases: CheckCase[] = [
         venues: [{ name: 'AMBUSH® x New Era®', place: 'AMBUSH® WORKSHOP GINZA フロア: 3F' }],
         areaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、催しが開かれています。',
         audienceNote: 'ストリートからデイリーまで、装いのアクセントを探している方へ。',
-        paid: false,
+        paid: 'unknown',
         priceText: 'NEW ERA A-PATCH CAP：16,500円（税込）／NEW ERA A-PATCH MIX CAP：17,600円（税込）',
         applyDeadline: '',
         resultDate: '',
@@ -564,7 +564,7 @@ const cases: CheckCase[] = [
         venues: [{ name: 'テスト個展『みほん』', place: '銀座 蔦屋書店 ART IN CABINET（GINZA SIX 6F）' }],
         areaLead: '会場は1か所です。',
         audienceNote: '手仕事に関心のある方へ。',
-        paid: false,
+        paid: 'free',
         applyDeadline: '',
         resultDate: '',
         resultRule: '',
@@ -589,6 +589,132 @@ const cases: CheckCase[] = [
       assert(!/undefined|\[object Object\]/i.test(r.noteBody), '断片混入なし')
     },
   },
+  // ---------- 料金誤補完バグの再発防止（2026-09-15、DC#610「秋の名品展」の事故） ----------
+  //   templates.ts の f.paid ? '有料' : '無料' が、paidが'unknown'（未確認・
+  //   admissionApplicable='no'含む）のときも「入場は無料です」と誤断定していたバグ。
+  {
+    name: 'buildAngleInputFromExhibition: paid=free明記のときだけ「入場は無料です」',
+    fn: () => {
+      const base: EventArticleFields = {
+        primaryCategory: 'ART', season: '秋', eventName: 'テスト展', editionLabel: '', theme: '',
+        whatHappens: 'テスト内容。', eventDate: '2026年9月6日〜9月23日', eventTime: '10時〜19時',
+        venues: [{ name: 'テスト展', place: 'テスト画廊' }],
+        areaLead: 'テスト画廊で開催中です。', audienceNote: 'アートに関心のある方へ。',
+        paid: 'free', priceText: '', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '', closing: '', callToAction: '',
+      }
+      const r = buildAngleInputFromExhibition(base)
+      assert(r.content.includes('入場は無料です。'), `paid=freeでは「入場は無料です」を表示（実際: ${r.content}）`)
+    },
+  },
+  {
+    name: 'buildAngleInputFromExhibition: paid=paid＋priceTextありなら確認できた料金を表示（「有料です」だけにしない）',
+    fn: () => {
+      const base: EventArticleFields = {
+        primaryCategory: 'ART', season: '秋', eventName: 'テスト展', editionLabel: '', theme: '',
+        whatHappens: 'テスト内容。', eventDate: '2026年9月6日〜9月23日', eventTime: '10時〜19時',
+        venues: [{ name: 'テスト展', place: 'テスト画廊' }],
+        areaLead: 'テスト画廊で開催中です。', audienceNote: 'アートに関心のある方へ。',
+        paid: 'paid', priceText: '一般1,000円', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '', closing: '', callToAction: '',
+      }
+      const r = buildAngleInputFromExhibition(base)
+      assert(r.content.includes('料金は一般1,000円です。'), `確認できた料金を表示（実際: ${r.content}）`)
+      assert(!r.content.includes('入場は無料です'), '有料明記なのに「無料」と出ない')
+    },
+  },
+  {
+    name: 'buildAngleInputFromExhibition: paid=paidだがpriceText空なら「観覧は有料です」（金額を捏造しない）',
+    fn: () => {
+      const base: EventArticleFields = {
+        primaryCategory: 'ART', season: '秋', eventName: 'テスト展', editionLabel: '', theme: '',
+        whatHappens: 'テスト内容。', eventDate: '2026年9月6日〜9月23日', eventTime: '10時〜19時',
+        venues: [{ name: 'テスト展', place: 'テスト画廊' }],
+        areaLead: 'テスト画廊で開催中です。', audienceNote: 'アートに関心のある方へ。',
+        paid: 'paid', priceText: '', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '', closing: '', callToAction: '',
+      }
+      const r = buildAngleInputFromExhibition(base)
+      assert(r.content.includes('観覧は有料です。'), `金額不明でも有料の事実だけ表示（実際: ${r.content}）`)
+      assert(!/\d+円/.test(r.content), '存在しない金額を作らない')
+    },
+  },
+  {
+    // 実例＝DC#610「秋の名品展」（銀座柳画廊、2026-09-15）：入場料・予約要否は公式ページに
+    // 一切記載が無く、admissionApplicable='no'（readyGateのpaid必須を免除する値）で
+    // ready化された。paidはunknownのまま——「無料」と推測してはならない。
+    name: 'buildAngleInputFromExhibition: paid=unknown（DC#610クラス・admissionApplicable=no）は「無料」と推測せず「料金：公式記載なし」',
+    fn: () => {
+      const base: EventArticleFields = {
+        primaryCategory: 'ART', season: '秋', eventName: '秋の名品展', editionLabel: '', theme: '',
+        whatHappens: '20世紀を代表する巨匠の作品を中心とした展示販売。',
+        eventDate: '2026年9月6日(日)〜9月23日(水)　期間中無休', eventTime: '平日10:00〜19:00／土・日・祝11:00〜18:00',
+        venues: [{ name: '秋の名品展', place: '銀座柳画廊' }],
+        areaLead: '銀座柳画廊で、20世紀の巨匠作品を中心とした展示販売が行われています。',
+        audienceNote: '近代・現代の絵画や版画に関心のある方に向いています。',
+        paid: 'unknown', priceText: '', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '入場料・予約要否に関する記載は公式ページに一切ありません。', closing: '', callToAction: '',
+      }
+      const r = buildAngleInputFromExhibition(base)
+      assert(!r.content.includes('入場は無料です'), `「無料」と推測しない（実際: ${r.content}）`)
+      assert(!r.content.includes('観覧は有料です'), '「有料」とも推測しない')
+      assert(r.content.includes('料金：公式記載なし。'), `未確認は「料金：公式記載なし」と表示（実際: ${r.content}）`)
+    },
+  },
+  {
+    name: 'buildAngleInputFromGeneric: paid=unknownなら価格の断定を一切出さない（priceText優先・空なら省略）',
+    fn: () => {
+      const base: EventArticleFields = {
+        primaryCategory: '', season: '秋', eventName: 'テスト企画', editionLabel: '', theme: '',
+        whatHappens: 'テスト内容。', eventDate: '2026年9月1日〜', eventTime: '',
+        venues: [], areaLead: '', audienceNote: '',
+        paid: 'unknown', priceText: '', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote: '', closing: '', callToAction: '',
+      }
+      const r = buildAngleInputFromGeneric(base)
+      assert(!r.content.includes('有料です'), 'paid=unknownでは「有料です」を出さない')
+      assert(!r.content.includes('無料'), 'paid=unknownでは「無料」も出さない')
+    },
+  },
+  {
+    // DC#610の実際の入力（ArticleFacts）に近い形でrenderArticleFromTemplateまで通し、
+    // 生成本文に「入場は無料です」が含まれないことをE2Eで確認する。
+    name: 'renderArticleFromTemplate（exhibition・DC#610「秋の名品展」再現）: 生成本文に「入場は無料です」を含まない',
+    fn: () => {
+      const fields: EventArticleFields = {
+        primaryCategory: 'ART', season: '秋', eventName: '秋の名品展', editionLabel: '', theme: '',
+        whatHappens:
+          '20世紀を代表する巨匠の作品を中心とした展示販売。ピカソ、シャガール、藤田嗣治、横山大観、草間彌生など著名作家の、お求めやすい版画作品も多数出品。',
+        eventDate: '2026年9月6日(日)〜9月23日(水)　期間中無休',
+        eventTime: '平日10:00〜19:00／土・日・祝11:00〜18:00',
+        venues: [{ name: '秋の名品展', place: '銀座柳画廊' }],
+        areaLead: '銀座柳画廊で、20世紀の巨匠作品を中心とした展示販売が行われています。',
+        audienceNote: '近代・現代の絵画や版画に関心のある方に向いています。',
+        paid: 'unknown',
+        priceText: '',
+        applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
+        officialInfoNote:
+          '入場料・予約要否に関する記載は公式ページに一切ありません（料金・チケット・予約に関する語自体が本文に無いことを確認済み）。商業画廊での展示販売のため、詳細・作品価格は画廊へ直接お問い合わせください。',
+        closing: '', callToAction: '',
+      }
+      const input: TemplateArticleInput = {
+        discoveredContentId: 610,
+        fields,
+        sourceName: 'GINZA OFFICIAL',
+        sourceUrl: 'https://www.ginza.jp/shopnews/shopnews-ginza-yanagi-gallery/35821',
+        verifiedAt: '2026-09-14T21:04:25.696Z',
+        sourceProvenance: [
+          { fact: '会期：2026年9月6日(日)〜9月23日(水)', sourceType: 'official', factType: 'date', verificationStatus: 'confirmed' },
+        ],
+        hashtags: ['#銀座', '#銀座柳画廊', '#秋の名品展'],
+        appliedTemplate: 'exhibition',
+      }
+      const r = renderArticleFromTemplate(input)
+      assert(!r.noteBody.includes('入場は無料です'), `「入場は無料です」が本文に含まれない（実際冒頭200字: ${r.noteBody.slice(0, 200)}）`)
+      assert(!r.noteBody.includes('観覧は有料です'), '「観覧は有料です」も含まれない（金額不明のため）')
+      assert(r.noteBody.includes('料金：公式記載なし'), '「料金：公式記載なし」が本文に含まれる')
+    },
+  },
   // ---------- 公開前テンプレート整合性（販売期間／出典種別／購入案内の統合・2026-09-09） ----------
   {
     name: 'isShopnewsUrl / officialPageLabel: shopnews は「公式ショップニュース」、それ以外は「公式ページ」',
@@ -610,7 +736,7 @@ const cases: CheckCase[] = [
         eventDate: '販売期間の記載なし（店頭にて取扱）', eventTime: '',
         venues: [{ name: 'AMBUSH® x New Era®', place: 'AMBUSH® WORKSHOP GINZA フロア: 3F' }],
         areaLead: 'AMBUSH® WORKSHOP GINZA フロア: 3Fで、催しが開かれています。',
-        audienceNote: '装いのアクセントを探している方へ。', paid: false,
+        audienceNote: '装いのアクセントを探している方へ。', paid: 'unknown',
         priceText: 'NEW ERA A-PATCH CAP：16,500円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
         officialInfoNote: '販売期間の記載なし（店頭にて取扱）。詳細は店舗でご確認ください。',
         saleAvailability: 'no_period_stated', closing: '',
@@ -646,7 +772,7 @@ const cases: CheckCase[] = [
         whatHappens: '限定色を集めたフェアです。',
         eventDate: '2026年10月1日（水）〜10月20日（火）', eventTime: '',
         venues: [{ name: 'テストブランド', place: '銀座 蔦屋書店 文具売り場（GINZA SIX 6F）' }],
-        areaLead: '文具売り場で開催中。', audienceNote: '指先を整えたい方へ。', paid: false,
+        areaLead: '文具売り場で開催中。', audienceNote: '指先を整えたい方へ。', paid: 'unknown',
         priceText: 'libra：2,580円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
         officialInfoNote: '店頭で販売します。',
         closing: '', callToAction: '店頭販売の最新情報は、公式イベントページでご確認ください。',
@@ -671,7 +797,7 @@ const cases: CheckCase[] = [
         eventName: 'テスト『フェア』', editionLabel: '', theme: '',
         whatHappens: '限定色のフェアです。', eventDate: '2026年10月1日〜10月20日', eventTime: '',
         venues: [{ name: 'テスト', place: '銀座 蔦屋書店 文具売り場（GINZA SIX 6F）' }],
-        areaLead: '開催中。', audienceNote: '指先を整えたい方へ。', paid: false,
+        areaLead: '開催中。', audienceNote: '指先を整えたい方へ。', paid: 'unknown',
         priceText: 'A：2,580円（税込）', applyDeadline: '', resultDate: '', resultRule: '', applyRule: '',
         officialInfoNote: '店頭で販売します。', closing: '',
         callToAction: '店頭販売の最新情報は、公式イベントページでご確認ください。',

@@ -27,7 +27,7 @@ export const ginchakaiFixture: TemplateArticleInput & { unconfirmedNotes: string
     areaLead: '全銀座エリアに対応した3つの企画',
     audienceNote:
       '銀座で茶の湯や香に触れる時間を探している方、この恒例行事に関心のある方に向いています。',
-    paid: true,
+    paid: 'paid',
     applyDeadline: '2026年10月7日（水）',
     resultDate: '2026年10月15日（木）',
     resultRule: '当選された方へのご連絡をもって発表に代えられます',

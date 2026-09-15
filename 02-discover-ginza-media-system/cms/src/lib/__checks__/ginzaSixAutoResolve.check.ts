@@ -271,7 +271,7 @@ const cases: CheckCase[] = [
         venues: [{ name: '花西子 FLORASIS GINZA', place: 'GINZA SIX B1F' }],
         areaLead: '花西子 FLORASIS GINZA フロア: B1Fで、新作チークを販売中です。',
         audienceNote: '花や美容を楽しみながら、季節の変わり目に自分を整えたい方へ。',
-        paid: false,
+        paid: 'unknown',
         priceText: '3,190円（税込）',
         applyDeadline: '',
         resultDate: '',

@@ -89,8 +89,14 @@ export interface EventArticleFields {
   areaLead: string
   /** 対象読者の一文（例: 〜に向いています。） */
   audienceNote: string
-  /** 有料イベントか */
-  paid: boolean
+  /**
+   * 入場料・観覧料の状態（2026-09-15修正：booleanだと「未確認」を表現できず、
+   * 公式記載が無い場合に誤って「無料」と断定していたバグを修正）。
+   * 'paid' / 'free' が明記されているときだけ本文で断定する。'unknown'（未設定・
+   * admissionApplicable='no' 等）は無料・有料のどちらにも断定しない
+   * ——「料金：公式記載なし」等、未確認である旨のみ表示する。
+   */
+  paid: 'paid' | 'free' | 'unknown' | string
   /** 価格の表示文字列（sale / generic 用。任意。空なら本文で価格に触れない） */
   priceText?: string
   /** 申込期限（入力どおり。本文で1回だけ使う） */
@@ -160,7 +166,7 @@ export function buildAngleInputFromEvent(f: EventArticleFields): AngleNarrativeI
   // 開催日はここで1回だけ。
   const p1 = `開催は${f.eventDate}、${f.eventTime}です。抽選対象のお茶席体験は、${f.areaLead}です。`
   const p2 = `${venueList}で開かれます。${f.audienceNote}`
-  const paidClause = f.paid ? '3つの企画はいずれも有料で、' : ''
+  const paidClause = f.paid === 'paid' ? '3つの企画はいずれも有料で、' : ''
   // 申込案内。「なぜ、いま」は独立見出しにせず「受付はすでに始まっており」で統合。
   // 申込期限・当選発表日はここで1回だけ。
   const p3 =
@@ -216,7 +222,18 @@ export function resolveEditorsNoteExhibition(f: EventArticleFields): string {
 
 export function buildAngleInputFromExhibition(f: EventArticleFields): AngleNarrativeInput {
   const venueList = f.venues.map((v) => `「${v.name}」は${v.place}`).join('、')
-  const admission = f.paid ? '観覧は有料です。' : '入場は無料です。'
+  // 2026-09-15修正：paidが'free'/'paid'いずれかで明記されている場合だけ断定する。
+  // 'unknown'（未設定・admissionApplicable='no'を含む）は「無料」と推測せず、
+  // 「料金：公式記載なし」とだけ表示する（DC#610「秋の名品展」での誤補完の再発防止）。
+  const priceText = (f.priceText ?? '').trim()
+  const admission =
+    f.paid === 'free'
+      ? '入場は無料です。'
+      : f.paid === 'paid'
+        ? priceText
+          ? `料金は${priceText}です。`
+          : '観覧は有料です。'
+        : '料金：公式記載なし。'
 
   // 導入：季節・展示名・何が行われるか。回次・テーマ・日付は入れない。
   const hook =
@@ -270,7 +287,7 @@ export function buildAngleInputFromGeneric(f: EventArticleFields): AngleNarrativ
   const venueList = f.venues.map((v) => `${v.name}は${v.place}`).join('、')
   const priceLine = (f.priceText ?? '').trim()
     ? `価格は${(f.priceText ?? '').trim()}。`
-    : f.paid
+    : f.paid === 'paid'
       ? '有料です。'
       : ''
 

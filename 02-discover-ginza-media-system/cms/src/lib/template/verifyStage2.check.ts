@@ -126,7 +126,7 @@ ok(!!eligible.sourceMeta && eligible.sourceMeta.sourceName === 'GINZA OFFICIAL',
 ok(eligible.sourceMeta?.sourceUrl === 'https://www.ginza.jp/event/35565', 'sourceMeta.sourceUrl は DC.articleUrl 由来')
 ok(eligible.sourceMeta?.verifiedAt === '2026-09-01T21:33:15.201Z', 'sourceMeta.verifiedAt は DC.lastCheckedAt 由来')
 ok(JSON.stringify(eligible.hashtags) === JSON.stringify(['#銀茶会', '#銀座', '#お茶会']), 'hashtags は ArticleFacts 由来')
-ok(eligible.fields?.paid === true, 'paid=paid → fields.paid === true')
+ok(eligible.fields?.paid === 'paid', "paid=paid → fields.paid === 'paid'")
 ok(eligible.fields?.venues.length === 3, 'venues 3件が渡る')
 ok((eligible.provenance ?? []).length === 2, 'provenance は 2件（confirmed + unconfirmed をそのまま保持）')
 
