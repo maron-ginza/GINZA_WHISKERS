@@ -1,34 +1,33 @@
-// GINZA WHISKERS / Project 02 P0 改善（2026-09-02、2026-09-14候補提示の是正で改訂）
+// GINZA WHISKERS / Project 02 P0 改善（2026-09-02、2026-09-15 A判定候補不足の是正で全面改訂）
 // — A/B/C 判定（純粋関数・AI なし）。
 //
-// 【判定基準（2026-09-14改訂・マロン指示）】
-//   C（候補提示不可）: 開催終了 / 既投稿と重複 / 銀座関連性を確認できない /
-//                      追跡可能な公式出典が無い
-//   A（公式情報だけで記事生成可能）: C でない かつ
-//       ・ArticleFacts が ready（必須項目がすべて確認済み）
-//       ・templateEligible:true
-//       ・追跡可能な公式 URL を持つ
-//       ・情報の確認日時が新しい（既定 14 日以内）
-//       ・product_news（商品ニュース）は追加で、現在の販売状況が公式に確認できている
-//         （saleAvailability='has_end_date'／'ongoing_no_end_stated'。isSaleAvailabilityConfirmed）
-//         ——'no_period_stated'（販売期間の記載なし）のまま human_reviewed だけで ready 化
-//         されたケースをAにしない（2026-09-14修正：DC#370のような事例）
-//       ・直近14日以内に同一ブランド・同一会場の記事が無い（近似重複ルール2、2026-09-15追加）
-//         ——URL・タイトルが一致しないため既存の重複判定はすり抜けるが、編集上は近似重複と
-//         判定される事例（DC#246「花西子 FLORASIS」のような事例）をAにしない
-//     → 20〜30 分で記事化できる見込み
+// 【判定基準（2026-09-15改訂・マロン指示）】
+//   C（候補提示不可・安全条件。変更なし）: 開催終了 / 既投稿と重複 / 銀座関連性を
+//                      確認できない / 追跡可能な公式出典が無い
+//   A（旬の候補として提示可能。18カテゴリー共通の目的型／発見型ロジック）：
+//     C でない かつ target­OrDiscoveryEligibility.ts の6条件をすべて満たす候補
+//     （銀座で購入・飲食・鑑賞・利用・体験できる／公式情報で場所・提供状況を確認
+//     できる／季節性・新規性・期間性・話題性・発見性のいずれかがある／非重複／
+//     非終了／18カテゴリーへ分類できる）。**ArticleFacts.enrichmentStatus='ready'
+//     （人間による事前データ入力）はA判定の必須条件にしない**——これは「記事
+//     生成の準備が整っているか」の判定であり「候補として提示する価値があるか」
+//     の判定ではないため（2026-09-15、実データでA=0の根本原因と特定）。
+//     「銀座限定でない」「他地域にも店舗がある」「通販でも買える」「銀座を
+//     訪れる唯一の目的でない」「常設店舗である」はいずれも除外理由にしない。
+//     A判定の理由に「目的型」または「発見型」を明記する。
 //   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要）:
 //       C でも A でもない。ArticleFacts が未作成／draft／期間未確認であっても、
-//       銀座関連性・追跡可能な出典・非終了が確認できればBとして候補提示する
-//       ——**ArticleFactsの全項目confirmedは候補「提示」の必須条件にしない**。
-//       記事生成・CMS保存に進む際の必須条件としてのみ使う（既存のArticleFacts
-//       readyゲート・Articles.beforeChangeの人間承認ゲートは無変更）。
-//       不足項目（missing/unconfirmed）と、確認すべき公式URL、A へ引き上げるための
-//       追加所要時間を明示する。
+//       銀座関連性・追跡可能な出典・非終了が確認できればBとして候補提示する。
+//       常設商品・常設サービスで季節性等のsignalが一切無いものはBのまま
+//       （意図的な設計。新規性なき常設情報を無理にAへ引き上げない）。
+//       記事生成・CMS保存に進む際にArticleFactsのreadyゲート・Articles.
+//       beforeChangeの人間承認ゲートを通す必要がある点は無変更（生成readiness＝
+//       genReady として理由に併記する。A判定自体とは分離する）。
 //
-// 「完璧」＝必須項目を確認できた案件だけを A とする。未確認情報は推測で埋めない
-// ——missing / unconfirmed に列挙するだけ。B は「未確認のまま提示しない」候補ではなく
-// 「未確認項目を明示したうえでマロンへ提示する」候補である。
+// 「完璧」＝必須項目を確認できた案件だけを A とする、という旧基準は
+// 「記事生成readiness」の判定としては維持しつつ、候補「提示」のA判定からは
+// 分離した（2026-09-15）。未確認情報は推測で埋めない——missing / unconfirmed
+// に列挙するだけ。
 
 import {
   mapDiscoveredContentToEventFields,
@@ -39,6 +38,7 @@ import { assessGinzaRelevance, isSingleGinzaVenueSource } from './ginzaRelevance
 import { imagePreflight } from './imagePreflight'
 import { isPastEventEnd } from '../curation/eventEndBoundary'
 import { toTokyoDateString } from '../util/businessDate'
+import { evaluateTargetOrDiscoveryEligibility } from './targetOrDiscoveryEligibility'
 import type { CandidateAssessment, FactKind } from './types'
 
 export interface AssessCandidateInput {
@@ -229,89 +229,92 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   } else if (!hasTraceableSource) {
     verdict = 'C'
     reasons.push('追跡可能な公式出典 URL が無い')
-  } else if (input.factKind === 'unknown') {
-    // 記事タイプ判定不能：推測で event / product_news に分類しない → B のまま人間へ
-    verdict = 'B'
-    reasons.push('記事タイプを判定できない（event / product_news のシグナルが揃わない・矛盾）。推測分類はしない。8:00 で人間が判断')
-  } else if (input.factKind === 'product_news') {
-    // 2026-09-06、根本改善：product_news も evaluateReadyGate（templateType='sale'）で
-    // 商品名(contentTitle)・商品概要(contentSummary)・販売期間(availablePeriod+eventDateISO)・
-    // 価格(priceText)・購入条件等(officialInfoNote)・confirmed出典・ハッシュタグを一本化して
-    // 判定できる（2026-09-03の共通Article Facts化で mapper 側は既に対応済み）。
-    // enrichmentStatus='ready' は ArticleFacts.beforeChange がログイン済み人間の操作でしか
-    // 設定できない（AI・自動化からの直接遷移は不可）ため、ここに到達する時点で
-    // 必須項目のconfirmedと人間確認は担保されている。humanReviewedAt の明示確認は
-    // 「人間確認なしの自動A昇格を禁止する」ことの二重防御（belt and suspenders）。
-    const saleAvailabilityConfirmed = isSaleAvailabilityConfirmed(facts?.saleAvailability)
+  } else {
+    // 18カテゴリー共通・目的型／発見型のA判定（2026-09-15、マロン指示で全面改訂）。
+    // ArticleFacts.enrichmentStatus='ready'（人間の事前手入力）はここでは判定条件にしない
+    // ——記事「候補提示」の可否と記事「生成readiness」の可否を分離する（下記 genReady）。
+    // 近似重複（同一ブランド・同一会場、直近14日以内）は event/product_news/unknown 共通で
+    // A適格判定そのものをブロックする安全条件として維持する（targetOrDiscoveryEligibility 内）。
     const recentDupBlocks = !!input.recentBrandVenueDuplicate?.isDuplicate
-    const eligible =
-      map.templateEligible &&
-      map.factsSource === 'ready' &&
-      !!facts?.humanReviewedAt &&
-      saleAvailabilityConfirmed &&
-      !recentDupBlocks
-    if (eligible && !stale) {
-      verdict = 'A'
-      reasons.push(
-        '記事タイプ＝product_news（商品ニュース）／必須項目（商品名・価格・販売期間・購入条件・出典）が' +
-          'confirmedでArticleFacts ready・人間レビュー済み（humanReviewedAt設定）／templateEligible:true／公式出典あり／' +
-          `現在の販売状況も公式確認済み（saleAvailability=${facts?.saleAvailability}）／近似重複なし／情報が新しい`,
-      )
-    } else {
-      verdict = 'B'
-      reasons.push('記事タイプ＝product_news（商品ニュース）')
-      if (map.factsSource === 'none') reasons.push('ArticleFacts が未作成（必須項目が構造化されていない）')
+    const eligibility = evaluateTargetOrDiscoveryEligibility({
+      title: dc.title ?? null,
+      venue: dc.venue ?? null,
+      articleUrl: dc.articleUrl ?? null,
+      excerpt: dc.excerpt ?? null,
+      sourceSiteName: dc.sourceSiteName ?? null,
+      contentType: dc.contentType ?? null,
+      factKind: input.factKind ?? 'event',
+      eventStartAt: dc.eventStartAt ?? null,
+      eventEndAt: dc.eventEndAt ?? null,
+      expired,
+      ginzaRelevant,
+      hasTraceableSource,
+      duplicate: dedup.duplicate,
+      recentBrandVenueDuplicate: recentDupBlocks,
+      stale,
+      now,
+    })
+
+    // 記事生成 readiness（ArticleFacts ベース。旧 A 判定ロジックをそのまま「生成可能か」の
+    // 参考情報として温存する。verdict の決定には使わない）
+    let genReady = false
+    let genReadyNote = ''
+    if (input.factKind === 'unknown') {
+      genReadyNote = '記事タイプ未判定のため記事生成readiness未評価（推測分類はしない）'
+    } else if (input.factKind === 'product_news') {
+      // enrichmentStatus='ready' は ArticleFacts.beforeChange がログイン済み人間の操作でしか
+      // 設定できないため、ready かつ humanReviewedAt 済みであれば人間確認は担保されている。
+      const saleAvailabilityConfirmed = isSaleAvailabilityConfirmed(facts?.saleAvailability)
+      genReady =
+        map.templateEligible &&
+        map.factsSource === 'ready' &&
+        !!facts?.humanReviewedAt &&
+        saleAvailabilityConfirmed &&
+        !recentDupBlocks &&
+        !stale
+      if (map.factsSource === 'none') genReadyNote = 'ArticleFacts が未作成（必須項目が構造化されていない）'
       else if (map.factsSource === 'draft')
-        reasons.push(
-          'ArticleFacts が draft（商品名・価格・販売期間・購入条件・出典を公式で人間が確定入力し、human_reviewed で ready にする必要あり）',
-        )
-      else if (map.factsSource === 'withdrawn') reasons.push('ArticleFacts が withdrawn')
-      else if (!map.templateEligible) reasons.push('必須項目に不足あり（下記 missing）')
-      else if (!facts?.humanReviewedAt) reasons.push('human_reviewed_at が未設定（人間レビュー未確認のため自動A昇格しない）')
-      else if (!saleAvailabilityConfirmed)
-        reasons.push(
-          `現在の販売状況が公式に確認できていない（saleAvailability=${facts?.saleAvailability ?? '未設定'}。` +
-            'ArticleFactsはreadyだが「販売期間の記載なし」は現在も販売中である確認にはならない）',
-        )
-      else if (recentDupBlocks)
-        reasons.push(`近似重複のためA昇格を保留（${input.recentBrandVenueDuplicate?.reason}）`)
-      if (stale) reasons.push('情報の確認日時が古く再確認が必要')
-      if (!saleAvailabilityConfirmed) {
+        genReadyNote =
+          'ArticleFacts が draft（商品名・価格・販売期間・購入条件・出典を公式で人間が確定入力し、human_reviewed で ready にする必要あり）'
+      else if (map.factsSource === 'withdrawn') genReadyNote = 'ArticleFacts が withdrawn'
+      else if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
+      else if (!facts?.humanReviewedAt) genReadyNote = 'human_reviewed_at が未設定（人間レビュー未確認）'
+      else if (!saleAvailabilityConfirmed) {
+        genReadyNote = `現在の販売状況が公式に確認できていない（saleAvailability=${facts?.saleAvailability ?? '未設定'}）`
         unconfirmed.push(
           `現在の販売状況（公式ページで再確認が必要）: ${sourceUrl || '（公式URLなし）'} — 記事生成前に確認が必要`,
         )
-      }
-      if (recentDupBlocks) {
-        unconfirmed.push(
-          `近似重複の疑い（${input.recentBrandVenueDuplicate?.reason}）— 記事生成前に既存記事との重複を確認が必要`,
-        )
-      }
+      } else if (recentDupBlocks) genReadyNote = `近似重複のため生成保留（${input.recentBrandVenueDuplicate?.reason}）`
+      else if (stale) genReadyNote = '情報の確認日時が古く再確認が必要'
+    } else {
+      // event（未指定は後方互換で event 扱い）
+      genReady = map.templateEligible && map.factsSource === 'ready' && !recentDupBlocks && !stale
+      if (map.factsSource === 'none') genReadyNote = 'ArticleFacts が未作成（必須項目が構造化されていない）'
+      else if (map.factsSource === 'draft') genReadyNote = 'ArticleFacts が draft（human_reviewed で ready にする必要あり）'
+      else if (map.factsSource === 'withdrawn') genReadyNote = 'ArticleFacts が withdrawn'
+      else if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
+      else if (recentDupBlocks) genReadyNote = `近似重複のため生成保留（${input.recentBrandVenueDuplicate?.reason}）`
+      else if (stale) genReadyNote = '情報の確認日時が古く再確認が必要'
     }
-  } else {
-    // factKind === 'event'（未指定は後方互換で event 扱い）。
-    // event はreadyGate.tsが常に機械日付（eventDateISO）と過去/未来ゲートを必須にしており
-    // （sale向けのno_period_stated免除は存在しない）、ready＝現在の開催状況も確認済みで
-    // 一貫しているため、product_newsのようなsaleAvailabilityチェックは不要（2026-09-14確認）。
-    // 近似重複ルール2（2026-09-15追加）はevent/product_news共通で適用する。
-    const recentDupBlocksEvent = !!input.recentBrandVenueDuplicate?.isDuplicate
-    const eligible = map.templateEligible && map.factsSource === 'ready' && !recentDupBlocksEvent
-    if (eligible && !stale) {
+    if (recentDupBlocks) {
+      unconfirmed.push(
+        `近似重複の疑い（${input.recentBrandVenueDuplicate?.reason}）— 記事生成前に既存記事との重複を確認が必要`,
+      )
+    }
+
+    if (eligibility.eligible) {
       verdict = 'A'
-      reasons.push('記事タイプ＝event／必須項目を確認済み（ArticleFacts ready）／templateEligible:true／公式出典あり／近似重複なし／情報が新しい')
+      const modeLabel = eligibility.mode === 'purpose' ? '目的型' : '発見型'
+      reasons.push(`${modeLabel}：${eligibility.reasons.join(' / ')}（カテゴリー：${eligibility.category ?? '不明'}）`)
+      if (genReady) {
+        reasons.push('記事生成readinessも達成（ArticleFacts ready・人間レビュー済み）')
+      } else {
+        reasons.push(`参考：記事生成readinessは未達（${genReadyNote || 'ArticleFacts未確認'}）。公式情報の追加確認後に記事生成へ`)
+      }
     } else {
       verdict = 'B'
-      reasons.push('記事タイプ＝event')
-      if (map.factsSource === 'none') reasons.push('ArticleFacts が未作成（必須項目が構造化されていない）')
-      else if (map.factsSource === 'draft') reasons.push('ArticleFacts が draft（human_reviewed で ready にする必要あり）')
-      else if (map.factsSource === 'withdrawn') reasons.push('ArticleFacts が withdrawn')
-      else if (!map.templateEligible) reasons.push('必須項目に不足あり（下記 missing）')
-      else if (recentDupBlocksEvent) reasons.push(`近似重複のためA昇格を保留（${input.recentBrandVenueDuplicate?.reason}）`)
-      if (stale) reasons.push('情報の確認日時が古く再確認が必要')
-      if (recentDupBlocksEvent) {
-        unconfirmed.push(
-          `近似重複の疑い（${input.recentBrandVenueDuplicate?.reason}）— 記事生成前に既存記事との重複を確認が必要`,
-        )
-      }
+      reasons.push(`Aにならなかった理由：${eligibility.blockers.join(' / ')}`)
+      if (genReadyNote) reasons.push(`記事生成readiness：${genReadyNote}`)
     }
   }
 

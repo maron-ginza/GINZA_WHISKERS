@@ -237,34 +237,60 @@ const cases: CheckCase[] = [
 
   // ---------- B 判定 ----------
   {
-    name: 'B: 銀座・未来・出典ありだが ArticleFacts 未作成 → missing 非空・追加時間あり・捏造なし',
+    // 2026-09-15改訂：ArticleFacts.enrichmentStatus='ready' はA判定の必須条件ではなくなった
+    // ——公式に確認できる期間（eventStartAt/eventEndAt）がある旬候補は、ArticleFacts未作成
+    // でもA（候補提示）。missing（記事生成readiness情報）は引き続き列挙され、捏造もしない。
+    name: 'A（2026-09-15改訂）: 銀座・未来・出典ありなら ArticleFacts 未作成でも旬候補としてA・missingは生成readiness情報として残る・捏造なし',
     fn: () => {
       const a = assessCandidate(mk({ facts: undefined }))
-      assert(a.verdict === 'B', `期待 B / 実際 ${a.verdict}`)
+      assert(a.verdict === 'A', `期待 A（ArticleFacts未作成をA判定のブロッカーにしない） / 実際 ${a.verdict} reasons=${a.reasons.join('|')}`)
       assert(a.factsSource === 'none', `factsSource 期待 none / 実際 ${a.factsSource}`)
-      assert(a.missing.length > 0, 'missing が列挙されるはず')
-      assert(typeof a.bAdditionalMinutes === 'number' && a.bAdditionalMinutes > 0, '追加所要時間が出るはず')
-      assert(a.templateEligible === false, 'templateEligible は false')
+      assert(a.missing.length > 0, 'missing（記事生成readiness情報）は引き続き列挙されるはず')
+      assert(a.templateEligible === false, 'templateEligible は false（記事生成readinessは未達のまま）')
+      assert(a.reasons.some((r) => r.includes('記事生成readiness')), '記事生成readiness未達の旨がreasonsに残る（A判定自体とは分離）')
       // 捏造しない：日付が facts に無いので eventPeriod は DC 由来のみ（推測補完しない）
       assert(!a.missing.some((m) => m === ''), 'missing に空文字を混ぜない')
     },
   },
   {
-    name: 'B: ArticleFacts が draft（ready でない）→ 上位に出さない',
+    name: 'A（2026-09-15改訂）: ArticleFacts が draft（ready でない）でも旬候補としてA・factsSourceはdraftのまま',
     fn: () => {
       const a = assessCandidate(mk({ facts: readyFacts({ enrichmentStatus: 'draft' }) }))
-      assert(a.verdict === 'B', `期待 B / 実際 ${a.verdict}`)
+      assert(a.verdict === 'A', `期待 A / 実際 ${a.verdict}`)
       assert(a.factsSource === 'draft', `factsSource 期待 draft / 実際 ${a.factsSource}`)
+      assert(a.reasons.join().includes('draft'), '記事生成readinessの理由にdraftである旨が残る')
     },
   },
   {
-    name: 'B: 確認日時が古い（freshness 超過）と ready でも A に上げない',
+    name: 'B: 確認日時が古い（freshness 超過）は ready でも A に上げない（安全条件）',
     fn: () => {
       const a = assessCandidate(
         mk({ facts: readyFacts(), dc: baseDc({ lastCheckedAt: '2026-07-01T00:00:00Z' }) }),
       )
       assert(a.verdict === 'B', `期待 B / 実際 ${a.verdict}`)
       assert(a.unconfirmed.join().includes('確認日時が古い'), '古い旨を unconfirmed に記録')
+    },
+  },
+  {
+    // 必須回帰確認（マロン指示）：季節性等のsignalが一切無い通常の常設サービスはBのまま
+    name: 'B（必須回帰）: 開催期間なし・新規性/話題性の明記語もない通常の常設サービスはB',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '銀座本店のご案内',
+            excerpt: '通常営業時間は10時から20時までです。',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+          facts: undefined,
+        }),
+      )
+      assert(a.verdict === 'B', `常設サービス（signalなし）は期待 B / 実際 ${a.verdict} reasons=${a.reasons.join('|')}`)
+      assert(
+        a.reasons.some((r) => r.includes('季節性') || r.includes('常設情報のみ')),
+        '季節性等のsignalが無い旨が理由に含まれる',
+      )
     },
   },
 
@@ -277,6 +303,57 @@ const cases: CheckCase[] = [
       assert(a.templateEligible === true, 'templateEligible は true')
       assert(a.estimateMinutes === 25, `想定時間 25 / 実際 ${a.estimateMinutes}`)
       assert(a.missing.length === 0, `A なら missing は空 / 実際 ${a.missing.join('|')}`)
+    },
+  },
+
+  // ---------- 必須回帰確認（2026-09-15・マロン指示：A判定過少の是正） ----------
+  {
+    name: 'A（必須回帰）: 他地域にも店舗・通販併用でも、銀座で購入・体験できる旬の候補はA（銀座限定でない・唯一の目的でない、を除外理由にしない）',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '【全国の百貨店・オンラインストアでも販売中】銀座店では季節限定パッケージが先行販売',
+            excerpt: '銀座本店以外にも全国の店舗・公式通販サイトでお取り扱いがございます。',
+          }),
+          facts: undefined,
+        }),
+      )
+      assert(a.verdict === 'A', `他地域展開・通販併用でも銀座で旬なら期待 A / 実際 ${a.verdict} reasons=${a.reasons.join('|')}`)
+      assert(a.reasons.some((r) => r.includes('目的型') || r.includes('発見型')), '目的型／発見型のいずれかが理由に明記される')
+    },
+  },
+  {
+    name: 'A（必須回帰）: 銀ブラ途中の発見型候補（新商品・季節限定の明記語のみ、期間未確定）もA',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '銀座三丁目の路面店に新作スイーツが新登場',
+            excerpt: '店頭に立ち寄って気軽に楽しめる、季節限定の新商品です。',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+          facts: undefined,
+        }),
+      )
+      assert(a.verdict === 'A', `発見型候補は期待 A / 実際 ${a.verdict} reasons=${a.reasons.join('|')}`)
+      assert(a.reasons.some((r) => r.includes('発見型')), '発見型と明記される')
+    },
+  },
+  {
+    name: 'B（必須回帰）: 終了済み・重複・銀座で利用不可の候補はAにならない（安全条件は緩めない）',
+    fn: () => {
+      const expiredC = assessCandidate(mk({ dc: baseDc({ eventStartAt: PAST_ISO, eventEndAt: PAST_ISO }) }))
+      assert(expiredC.verdict === 'C', `終了済みは期待 C / 実際 ${expiredC.verdict}`)
+      const dupC = assessCandidate(mk({ dedup: { duplicate: true, existingArticleId: 1 } }))
+      assert(dupC.verdict === 'C', `既投稿重複は期待 C / 実際 ${dupC.verdict}`)
+      const notGinza = assessCandidate(
+        mk({ dc: baseDc({ title: '新宿の展覧会', excerpt: '新宿で開催', venue: '新宿', sourceSiteName: 'X' }) }),
+      )
+      assert(notGinza.verdict === 'C', `銀座で利用不可は期待 C / 実際 ${notGinza.verdict}`)
     },
   },
 
@@ -413,7 +490,8 @@ const cases: CheckCase[] = [
     fn: () => {
       const A1 = assessCandidate(mk({ facts: readyFacts(), dc: baseDc({ id: 1, eventStartAt: '2026-10-01T00:00:00Z', eventEndAt: '2026-10-01T00:00:00Z' }) }))
       const A2 = assessCandidate(mk({ facts: readyFacts({ eventDateISO: '2026-10-20T00:00:00Z' }), dc: baseDc({ id: 2 }) }))
-      const B1 = assessCandidate(mk({ dc: baseDc({ id: 3 }), facts: undefined }))
+      // B1: 開催期間・新規性等のsignalが無い常設情報（2026-09-15改訂：ArticleFacts未作成自体はA/Bを分けない）
+      const B1 = assessCandidate(mk({ dc: baseDc({ id: 3, eventStartAt: null, eventEndAt: null }), facts: undefined }))
       const C1 = assessCandidate(mk({ dc: baseDc({ id: 4, articleUrl: '' }) }))
       const rep = buildMorningReport([A2, B1, A1, C1], { now: NOW })
       assert(rep.counts.A === 2 && rep.counts.B === 1 && rep.counts.C === 1, `内訳 ${JSON.stringify(rep.counts)}`)
@@ -427,7 +505,7 @@ const cases: CheckCase[] = [
   {
     name: 'report: A が 0 件でも B/C で埋めない',
     fn: () => {
-      const B1 = assessCandidate(mk({ dc: baseDc({ id: 10 }), facts: undefined }))
+      const B1 = assessCandidate(mk({ dc: baseDc({ id: 10, eventStartAt: null, eventEndAt: null }), facts: undefined }))
       const C1 = assessCandidate(mk({ dc: baseDc({ id: 11, articleUrl: '' }) }))
       const rep = buildMorningReport([B1, C1], { now: NOW })
       assert(rep.topA.length === 0, 'topA は空')
@@ -440,12 +518,19 @@ const cases: CheckCase[] = [
     name: 'report.topPresentable は A を先に・続けて B を含む（C は含めない）。承認前(inbox)情報のB候補も一覧に表示される',
     fn: () => {
       const A1 = assessCandidate(mk({ facts: readyFacts(), dc: baseDc({ id: 1, eventStartAt: '2026-10-01T00:00:00Z', eventEndAt: '2026-10-01T00:00:00Z' }) }))
-      // DC #532 相当：curationStatus=inbox（未承認）のASTURIASクラシックギターフェア。
-      // ArticleFacts未作成のためB判定——承認条件はcurationStatusで別途フィルタされる話であり、
-      // assessCandidate自体は承認状態を見ない。承認前情報でもB候補として一覧に載ることを検証する。
+      // DC #532 相当：curationStatus=inbox（未承認）のASTURIASクラシックギター常設売り場案内。
+      // 開催期間・新規性等のsignalが無い常設情報のためB判定——承認条件はcurationStatusで別途
+      // フィルタされる話であり、assessCandidate自体は承認状態を見ない。承認前情報でもB候補として
+      // 一覧に載ることを検証する（2026-09-15改訂：ArticleFacts未作成自体はA/Bを分けない）。
       const B532 = assessCandidate(
         mk({
-          dc: baseDc({ id: 532, title: 'ASTURIAS クラシックギターフェア【銀座本店 4F Ginza Guitar Salon】', articleUrl: 'https://www.yamano-music.co.jp/information/99532' }),
+          dc: baseDc({
+            id: 532,
+            title: 'ASTURIAS クラシックギター売場のご案内【銀座本店 4F Ginza Guitar Salon】',
+            articleUrl: 'https://www.yamano-music.co.jp/information/99532',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
           facts: undefined,
         }),
       )
@@ -476,7 +561,7 @@ const cases: CheckCase[] = [
     name: 'report.topPresentable: A+Bが5件超のときtopNで切る（水増し・取りこぼしなし）',
     fn: () => {
       const as = [1, 2, 3].map((id) => assessCandidate(mk({ facts: readyFacts({ eventDateISO: `2026-10-0${id}T00:00:00Z` }), dc: baseDc({ id }) })))
-      const bs = [10, 11, 12, 13].map((id) => assessCandidate(mk({ dc: baseDc({ id }), facts: undefined })))
+      const bs = [10, 11, 12, 13].map((id) => assessCandidate(mk({ dc: baseDc({ id, eventStartAt: null, eventEndAt: null }), facts: undefined })))
       const rep = buildMorningReport([...as, ...bs], { now: NOW, topN: 5 })
       assert(rep.counts.A === 3 && rep.counts.B === 4, `内訳 ${JSON.stringify(rep.counts)}`)
       assert(rep.topPresentable.length === 5, `topN=5で切られる / 実際 ${rep.topPresentable.length}`)
@@ -493,7 +578,7 @@ const cases: CheckCase[] = [
         const base = assessCandidate(
           verdict === 'A'
             ? mk({ facts: readyFacts({ eventDateISO: `2026-10-0${id}T00:00:00Z` }), dc: baseDc({ id }) })
-            : mk({ dc: baseDc({ id }), facts: undefined }),
+            : mk({ dc: baseDc({ id, eventStartAt: null, eventEndAt: null }), facts: undefined }),
         )
         return { ...base, digestMeta: { venue: null, officialFetch: null, priceHint: null, facilityKey, facilityLabel: facilityKey, category: null, categoryBasis: null, publishedAt: null, origin: 'approved' } }
       }
@@ -802,7 +887,7 @@ const cases: CheckCase[] = [
     name: 'decision: A<5 でも topA 実数と B の昇格可能性・追加時間を返す',
     fn: () => {
       const A1 = assessCandidate(mk({ facts: readyFacts(), dc: baseDc({ id: 1 }) }))
-      const B1 = assessCandidate(mk({ dc: baseDc({ id: 2 }), facts: undefined }))
+      const B1 = assessCandidate(mk({ dc: baseDc({ id: 2, eventStartAt: null, eventEndAt: null }), facts: undefined }))
       const rep = buildMorningReport([A1, B1], { now: NOW })
       const d = buildDecisionSupport(rep)
       assert(d.aCount === 1, 'A=1')
@@ -931,14 +1016,14 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'assessCandidate: factKind=product_news → B・event の missing/unconfirmed を参照しない（ArticleFacts無し）',
+    name: 'assessCandidate: factKind=product_news・ArticleFacts無しでも旬候補としてA（2026-09-15改訂）。event の missing/unconfirmed は参照しない',
     fn: () => {
       const a = assessCandidate(mk({ factKind: 'product_news', dc: baseDc({ contentType: 'news' }) }))
-      assert(a.verdict === 'B', `product_news は B（実際 ${a.verdict}）`)
+      assert(a.verdict === 'A', `product_news でもArticleFacts未作成だけでBにしない（実際 ${a.verdict}）`)
       assert(a.factKind === 'product_news', 'factKind を持つ')
       assert(a.missing.length === 0, 'event 用 missing を出さない')
-      assert(a.templateEligible === false && a.factsSource === 'none', 'event 用 mapper 値を使わない')
-      assert(a.reasons.join().includes('product_news') || a.reasons.join().includes('商品ニュース'), '理由に記事タイプを明示')
+      assert(a.templateEligible === false && a.factsSource === 'none', '記事生成readinessはArticleFacts未作成のまま（event 用 mapper 値は使わない）')
+      assert(a.reasons.some((r) => r.includes('ArticleFacts が未作成')), '記事生成readiness未達（ArticleFacts未作成）の旨を理由に明示')
     },
   },
   {
@@ -977,7 +1062,7 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'assessCandidate: factKind=product_news + ArticleFacts ready だが humanReviewedAt 未設定 → B（人間確認なしの自動A昇格を禁止・二重防御）',
+    name: 'assessCandidate: factKind=product_news + ArticleFacts ready だが humanReviewedAt 未設定 → 旬候補としてA・記事生成readinessは未達のまま（2026-09-15改訂：A判定と生成readinessを分離）',
     fn: () => {
       const a = assessCandidate(
         mk({
@@ -1000,12 +1085,12 @@ const cases: CheckCase[] = [
           },
         }),
       )
-      assert(a.verdict === 'B', `humanReviewedAt 未設定なら A にしない（実際 ${a.verdict}）`)
-      assert(a.reasons.join().includes('human_reviewed_at が未設定'), '理由に human_reviewed_at 未設定を明示')
+      assert(a.verdict === 'A', `humanReviewedAt 未設定でも候補提示のAにする（実際 ${a.verdict}）`)
+      assert(a.reasons.join().includes('human_reviewed_at が未設定'), '記事生成readinessの理由に human_reviewed_at 未設定が残る（生成前の確認は引き続き必要）')
     },
   },
   {
-    name: 'assessCandidate: factKind=product_news + ArticleFacts draft（ready未満）→ B・missing/unconfirmedは空のまま（回帰）',
+    name: 'assessCandidate: factKind=product_news + ArticleFacts draft（ready未満）→ 旬候補としてA・missing/unconfirmedは空のまま・factsSourceはdraftを反映（回帰）',
     fn: () => {
       const a = assessCandidate(
         mk({
@@ -1014,23 +1099,23 @@ const cases: CheckCase[] = [
           facts: {
             enrichmentStatus: 'draft',
             templateType: 'sale',
-            priceText: '3,190円(税込)', // 一部だけ入力されていても draft なら A にしない
+            priceText: '3,190円(税込)', // 一部だけ入力されていても記事生成readinessはdraftのまま
           },
         }),
       )
-      assert(a.verdict === 'B', `draft は B のまま（実際 ${a.verdict}）`)
+      assert(a.verdict === 'A', `draft でも候補提示のA（実際 ${a.verdict}）`)
       assert(a.factsSource === 'draft', `factsSource は draft を正しく反映（実際 ${a.factsSource}）`)
       assert(a.missing.length === 0, 'draft の product_news では event 用 missing を出さない（回帰）')
-      assert(a.reasons.join().includes('draft'), '理由に draft を明示')
+      assert(a.reasons.join().includes('draft'), '記事生成readinessの理由に draft を明示')
     },
   },
   {
-    name: 'assessCandidate: factKind=unknown → B・「推測分類しない」と明示',
+    name: 'assessCandidate: factKind=unknown でも旬候補としてA・「推測分類しない」は記事生成readinessの注記として残る（2026-09-15改訂）',
     fn: () => {
       const a = assessCandidate(mk({ factKind: 'unknown', dc: baseDc() }))
-      assert(a.verdict === 'B', `unknown は B（実際 ${a.verdict}）`)
+      assert(a.verdict === 'A', `unknown（記事タイプ判定不能）自体はA判定のブロッカーにしない（実際 ${a.verdict}）`)
       assert(a.missing.length === 0, 'event 用 missing を出さない')
-      assert(a.reasons.join().includes('判定できない') || a.reasons.join().includes('推測'), '推測分類しない旨を明示')
+      assert(a.reasons.join().includes('推測'), '推測分類しない旨を明示（記事生成readinessの注記として）')
     },
   },
   {
