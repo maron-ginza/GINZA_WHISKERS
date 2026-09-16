@@ -3011,6 +3011,32 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/matsuyaSweetsWeeklyFetch.ts "$@" )
     ;;
+  matsuya-gourmet-fetch)
+    shift
+    # 2026-09-16続き8新設：松屋銀座「グルメ」一覧ページ（既存のStoryblok公開API経由）
+    # から個別の催事・フェア・商品紹介ページを発見し、一覧全体を1件にせず個別ページ
+    # 単位でDiscoveredContentへ保存する（グルメイベント／B1・B2食品売場／和洋菓子の
+    # ショップニュース／食品催場／期間限定出店情報）。取得不能時は候補を生成しない。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/matsuyaGourmetEventsFetch.ts "$@" )
+    ;;
+  mitsukoshi-food-events-fetch)
+    shift
+    # 2026-09-16続き8新設：銀座三越 食料品催事・ショップニュースの収集。
+    # SOURCE_LEDGER.healthStatusがunreachableの間は候補を一切生成しない
+    # （非公式情報・推測データによる補完はしない）。先に
+    # ./p2 mitsukoshi-health-check で最新の到達可否を確認すること。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/mitsukoshiGinzaFoodEventsFetch.ts "$@" )
+    ;;
   mitsukoshi-health-check)
     shift
     # 2026-09-14新設：銀座三越（mistore.jp）公式情報源の取得可否を、sitemap・RSS・

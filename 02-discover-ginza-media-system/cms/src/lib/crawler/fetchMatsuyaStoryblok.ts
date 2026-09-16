@@ -32,6 +32,13 @@ export interface StoryblokFetchResult {
   content: Record<string, unknown> | null
   httpStatus: number | null
   errorMessage: string | null
+  /**
+   * 【2026-09-16続き8追加】ストーリーのタイトル（Storyblok管理画面上の名前）。
+   * 個別イベントページのDiscoveredContent.titleに使う（推測しない・実在する
+   * 値をそのまま使う）。取得できなければ空文字。既存の呼び出し元
+   * （matsuyaSweetsWeeklyFetch.ts）はこのフィールドを使わないため無影響。
+   */
+  storyName: string
 }
 
 /**
@@ -51,20 +58,23 @@ export async function fetchMatsuyaStoryblokStory(slug: string): Promise<Storyblo
         content: null,
         httpStatus: res.status,
         errorMessage: `Storyblok API HTTP ${res.status}（トークン失効・スラッグ不存在等の可能性。推測で代替しない）`,
+        storyName: '',
       }
     }
-    const json = (await res.json()) as { story?: { content?: Record<string, unknown> } }
+    const json = (await res.json()) as { story?: { name?: string; content?: Record<string, unknown> } }
     const content = json.story?.content ?? null
+    const storyName = json.story?.name ?? ''
     if (!content) {
-      return { ok: false, content: null, httpStatus: res.status, errorMessage: 'Storyblok APIレスポンスにcontentが無い' }
+      return { ok: false, content: null, httpStatus: res.status, errorMessage: 'Storyblok APIレスポンスにcontentが無い', storyName }
     }
-    return { ok: true, content, httpStatus: res.status, errorMessage: null }
+    return { ok: true, content, httpStatus: res.status, errorMessage: null, storyName }
   } catch (e) {
     return {
       ok: false,
       content: null,
       httpStatus: null,
       errorMessage: e instanceof Error ? e.message : String(e),
+      storyName: '',
     }
   } finally {
     clearTimeout(timer)

@@ -28,6 +28,7 @@ import config from '../payload.config'
 import { fetchMatsuyaStoryblokStory } from '../lib/crawler/fetchMatsuyaStoryblok'
 import { flattenMatsuyaStoryblokStory } from '../lib/crawler/flattenStoryblokRichText'
 import { extractMatsuyaSweetsWeekly } from '../lib/crawler/extractMatsuyaSweetsWeekly'
+import { parseMatsuyaSweetsWeeklyUrlsFromSitemap } from '../lib/crawler/parseMatsuyaSitemap'
 import { extractExplicitPeriod } from '../lib/pipeline/extractExplicitPeriod'
 import { classifyContentType } from '../lib/crawler/classifyContentType'
 import { classifyUxType } from '../lib/curation/uxType'
@@ -56,13 +57,7 @@ async function findWeeklyUrls(): Promise<{ url: string; slug: string; date: stri
   const res = await fetch(SITEMAP_URL, { headers: { 'User-Agent': USER_AGENT } })
   if (!res.ok) throw new Error(`sitemap.xml 取得失敗: HTTP ${res.status}`)
   const xml = await res.text()
-  const matches = [...xml.matchAll(/https:\/\/www\.matsuyaginza\.com\/(jp\/ginza\/events\/food\/sweets\/(\d{8}))/g)]
-  // Storyblok Content Delivery APIは`language=jp`パラメータでロケールを指定する方式のため、
-  // フルスラッグ先頭の`jp/`（ロケールフォルダ）は取り除いたものをAPI呼び出しに使う
-  // （2026-09-14実データ確認：`jp/`を含めると404、除いた`ginza/events/...`で200）。
-  return matches
-    .map((m) => ({ url: `https://www.matsuyaginza.com/${m[1]}`, slug: m[1].replace(/^jp\//, ''), date: m[2] }))
-    .sort((a, b) => a.date.localeCompare(b.date))
+  return parseMatsuyaSweetsWeeklyUrlsFromSitemap(xml)
 }
 
 /** 本日以前で最新（＝「今週」に最も近い）の1件を選ぶ。無ければ最新の1件（未来含む）。 */
@@ -115,7 +110,13 @@ async function main() {
 
   if (!DRY) await recordSourceHealth(payload, SOURCE_ID, 'ok', `Storyblok API経由で取得成功（${current.slug}、店舗${parsed.items.length}件）`)
 
-  const period = parsed.periodText ? extractExplicitPeriod(parsed.periodText, { now }) : null
+  // 2026-09-17追加：専用のPERIOD_RE（extractMatsuyaSweetsWeekly.ts）がこの週の
+  // ページ表記に一致しなかった場合、フォールバックとして本文全体を汎用の
+  // extractExplicitPeriod（既存・他の情報源でも使用）に通す（推測ではなく、
+  // 別の既存の決定的抽出器で同じ本文を再確認するだけ）。
+  const period = parsed.periodText
+    ? extractExplicitPeriod(parsed.periodText, { now })
+    : extractExplicitPeriod(flatText, { now })
   const venue = parsed.location ? `松屋銀座 ${parsed.location}` : '松屋銀座'
 
   const sourceDocs = await payload.find({

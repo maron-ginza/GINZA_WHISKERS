@@ -101,18 +101,19 @@ export function deriveAutoArticleFacts(input: AutoArticleFactsInput): AutoArticl
   const end = input.eventEndAt ? new Date(input.eventEndAt) : null
   const startValid = start && !Number.isNaN(start.getTime())
   const endValid = end && !Number.isNaN(end.getTime())
-  if (startValid) {
-    eventDateISO = start!.toISOString()
-    if (endValid && end!.getTime() !== start!.getTime()) {
+  if (startValid || endValid) {
+    // 2026-09-17修正：eventDateISO は readyGate.ts の過去/未来ゲート（isPastEventEnd）が
+    // 「まだ有効か」を判定するために使う値のため、開始日ではなく**終了日**を優先する
+    // （終了日が無ければ開始日）。開始日を使っていた旧実装では、開始済み・終了前の
+    // 継続中の催事（例：9/16開始・9/22終了、判定日9/17）まで「過去」と誤判定していた
+    // （assessCandidate.ts のexpired判定＝endD基準と同じ考え方に揃えた）。
+    eventDateISO = (endValid ? end! : start!).toISOString()
+    if (startValid && endValid && end!.getTime() !== start!.getTime()) {
       availablePeriod = `${toTokyoDateStringLocal(start!)} 〜 ${toTokyoDateStringLocal(end!)}`
     } else {
-      availablePeriod = toTokyoDateStringLocal(start!)
+      availablePeriod = toTokyoDateStringLocal(endValid ? end! : start!)
     }
-    derivedFrom.push(`availablePeriod/eventDateISO ← DiscoveredContent.eventStartAt/eventEndAt: "${availablePeriod}"`)
-  } else if (endValid) {
-    eventDateISO = end!.toISOString()
-    availablePeriod = toTokyoDateStringLocal(end!)
-    derivedFrom.push(`availablePeriod/eventDateISO ← DiscoveredContent.eventEndAt: "${availablePeriod}"`)
+    derivedFrom.push(`availablePeriod ← DiscoveredContent.eventStartAt/eventEndAt: "${availablePeriod}" ／ eventDateISO ← 終了日優先`)
   } else {
     missing.push('availablePeriod（DiscoveredContent.eventStartAt/eventEndAtの構造化日付が未確認）')
   }

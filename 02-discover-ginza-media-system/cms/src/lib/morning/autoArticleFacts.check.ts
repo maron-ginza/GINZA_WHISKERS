@@ -61,6 +61,33 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-09-17回帰：eventDateISOに開始日を使っていた旧実装は、開始済み・終了前の
+    // 継続中の催事（例：昨日開始・明日終了）を readyGate.ts のisPastEventEndが
+    // 「過去」と誤判定していた（実データDC#1190〜1193、松屋銀座GINZAスイートで発覚）。
+    // 終了日を優先することで、開始済みでも終了前ならreadyになることを確認する。
+    name: '【回帰・不具合修正】開始済み・終了前（現在進行中）の期間はreadyGateで「過去」と誤判定されない',
+    fn: () => {
+      const now = new Date()
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+      const r = deriveAutoArticleFacts({
+        title: '松屋銀座 GINZAスイート｜テスト店舗 テスト商品',
+        articleUrl: 'https://www.matsuyaginza.com/jp/ginza/events/food/sweets/test',
+        eventStartAt: yesterday,
+        eventEndAt: tomorrow,
+        category: 'SWEETS',
+      })
+      assert(r.eligible === true, `eligible:true（実際 missing=${JSON.stringify(r.missing)}）`)
+      const gateResult = applyArticleFactsReadyGate({
+        data: { ...r.payload },
+        operation: 'create',
+        userId: null,
+        context: { autoReadyFromSavedDcFacts: true },
+      })
+      assert(gateResult.enrichmentStatus === 'ready', `継続中の期間はready化できる（実際 ${JSON.stringify(gateResult)}）`)
+    },
+  },
+  {
     name: 'titleが空ならeligible:false',
     fn: () => {
       const r = deriveAutoArticleFacts({ ...wellFormed, title: '' })

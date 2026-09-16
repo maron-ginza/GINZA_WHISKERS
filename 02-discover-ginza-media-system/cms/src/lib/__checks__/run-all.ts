@@ -58,6 +58,9 @@ import { suite as selectionRecord } from '../morning/selectionRecord.check'
 import { suite as noteDraftFromSelection } from '../morning/noteDraftFromSelection.check'
 import { suite as atomicWrite } from '../util/atomicWrite.check'
 import { suite as autoArticleFacts } from '../morning/autoArticleFacts.check'
+import { suite as parseMatsuyaSitemap } from '../crawler/parseMatsuyaSitemap.check'
+import { suite as extractMatsuyaGourmetEvents } from '../crawler/extractMatsuyaGourmetEvents.check'
+import { suite as extractMitsukoshiGinzaFoodEvents } from '../crawler/extractMitsukoshiGinzaFoodEvents.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
@@ -120,6 +123,9 @@ const results: SuiteResult[] = [
   noteDraftFromSelection(),
   atomicWrite(),
   autoArticleFacts(),
+  parseMatsuyaSitemap(),
+  extractMatsuyaGourmetEvents(),
+  extractMitsukoshiGinzaFoodEvents(),
   chromeExtensionManifest(),
   noteTransferUrlMatch(),
   noteTransferState(),
