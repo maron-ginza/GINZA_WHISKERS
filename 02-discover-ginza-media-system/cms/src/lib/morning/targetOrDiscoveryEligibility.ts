@@ -25,7 +25,10 @@
 //      新規性語（3.のsignal）だけでは満たさない。期間・販売状況を確認できない候補、
 //      過去月・過去季節の言及のみの候補はB。タイトルに明示された過去の年月日
 //      （西暦4桁を含む表記）は「受付中」等の語より優先し、last_checked_at
-//      （再クロール日時）は有効期限の根拠にしない（2026-09-16追加）。
+//      （再クロール日時）は有効期限の根拠にしない（2026-09-16追加）。「予約受付中」
+//      「ネット予約」「観劇弁当」「公演」「イベント」「フェア」「講演」の語は、
+//      構造化期間かタイトル中の具体的な年月日が無い限り語だけではAにしない
+//      （2026-09-16続き追加。DC#1167クラス）。
 //   8. 【2026-09-16追加】過去の報告・メディア掲載系（「掲載されました」「メディア掲載」
 //      「開催報告」「終了報告」「過去の紹介」）ではない——過去の出来事の記録は旬の候補
 //      ではない。
@@ -113,6 +116,28 @@ export function findExplicitPastDateInTitle(title: string | null, now: Date): Pa
   return { found: false, date: null }
 }
 
+/** タイトルに明示された年月日があるか（過去・未来問わず。西暦4桁を含む表記のみ・推測しない） */
+export function findExplicitDateInTitle(title: string | null): PastDateSignalResult {
+  const text = title ?? ''
+  const re = new RegExp(EXPLICIT_FULL_DATE_RE)
+  const m = re.exec(text)
+  if (!m) return { found: false, date: null }
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return { found: false, date: null }
+  return { found: true, date: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` }
+}
+
+// 予約・イベント系の明記語（2026-09-16続き追加・マロン指示）。これらの語は「予約受付中」
+// 自体が CURRENT_AVAILABILITY_RE にも含まれるため、語だけで現在性ありとしてしまうと
+// 「受付終了済みだが告知ページ自体は残っている」実例（DC#1167「観劇弁当」ネット予約
+// 受付中！のような、DC#40と同型だが日付がタイトルに無いケース）を取りこぼす。
+// この語群が含まれる場合は、構造化期間（eventStartAt/eventEndAt）かタイトルに明示された
+// 具体的な年月日（西暦4桁を含む表記）のいずれかが無い限り、現在性の明記語だけでは
+// Aにしない。
+const EVENT_RESERVATION_TRIGGER_RE = /予約受付中|ネット予約|観劇弁当|公演|イベント|フェア|講演/
+
 export interface CurrencyConfirmationResult {
   confirmed: boolean
   reason: string
@@ -148,6 +173,20 @@ export function evaluateCurrencyConfirmation(
     return {
       confirmed: false,
       reason: `タイトルに過去の年月日（${pastDate.date}）が明記されており、現在性の明記語（受付中等）より優先して現在性なしと判定`,
+    }
+  }
+  // 2026-09-16続き追加：予約・イベント系の語（予約受付中／ネット予約／観劇弁当／公演／
+  // イベント／フェア／講演）は、語だけでは現在性ありとしない——具体的な開催日
+  // （構造化データは既に確認済み〈上でreturn済み〉のため、ここではタイトルに明示された
+  // 年月日）が無い限りBにする（DC#1167クラス：日付の無い「ネット予約受付中！」告知）。
+  if (EVENT_RESERVATION_TRIGGER_RE.test(title ?? '')) {
+    const anyDate = findExplicitDateInTitle(title)
+    if (anyDate.found) {
+      return { confirmed: true, reason: `予約・イベント系の語だが具体的な開催日（${anyDate.date}）をタイトルで確認` }
+    }
+    return {
+      confirmed: false,
+      reason: '予約受付中／公演／イベント／フェア／講演等の語のみで具体的な開催日を確認できない（last_checked_atは根拠にしない）',
     }
   }
   if (CURRENT_AVAILABILITY_RE.test(title ?? '')) {

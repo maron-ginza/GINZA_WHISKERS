@@ -1,4 +1,4 @@
-// GINZA WHISKERS / Project 02（2026-09-16、マロン指示：朝の候補表示を3枠化）
+// GINZA WHISKERS / Project 02（2026-09-16、マロン指示：朝の候補表示を3枠化・安全補正）
 //
 // 朝の候補表示を「ビューティー・ファッション」「グルメ・スウィーツ」「文化・アート」の
 // 3枠に絞り、原則として各枠から1件を提示する（純粋関数・DB非依存・AIなし）。
@@ -9,7 +9,7 @@
 // 消える・Bへ降格する、ということは一切ない（buildMorningReport.topA/topPresentable
 // と同様、表示選択にすぎない）。
 //
-// 【条件（2026-09-16改訂）】
+// 【条件（2026-09-16続き改訂）】
 //   ・同一施設（digestMeta.facilityKey）は3枠を通じて1件まで
 //   ・同一親施設（digestMeta.parentFacilityKey。GINZA SIX・山野楽器等の表記揺れ統合）も1件まで
 //   ・過去14日以内に同一施設／親施設でArticle作成・承認・note下書き生成・朝刊選定の
@@ -17,6 +17,11 @@
 //   ・未分類（digestMeta.category が null）の候補は3枠に入れない（推測で分類しない）
 //   ・開催中または今後開催される「確認済み」情報（eventPeriod が構造化されているもの）を優先
 //   ・既投稿・近似重複はA判定の時点で除外済み（本モジュールでは判定し直さない）
+//   ・【続き追加】基本枠（BEAUTY_FASHION/GOURMET_SWEETS/CULTURE_ART）の自カテゴリーに
+//     安全な候補が無ければ、18カテゴリーの他カテゴリーから次点を繰り上げる（fallback）。
+//     fallback候補も現在性確認済み・既処理でない・施設クールダウン対象外・近似重複なし・
+//     同一親施設でない、を満たす必要がある（＝A判定候補である以上すべて既に満たしている）。
+//     どの候補（自カテゴリー・他カテゴリーとも）も使えなければ、無理に埋めず「該当なし」。
 
 import type { CandidateAssessment } from './types'
 import { checkFacilityCooldown, type FacilityActivityRecord } from './facilityActivityHistory'
@@ -44,6 +49,8 @@ export interface ThreeSlotPick {
   candidate: CandidateAssessment | null
   /** candidate が null のときの理由（該当A候補なし、等） */
   emptyReason: string | null
+  /** 自カテゴリーではなく他カテゴリーから繰り上げた代替候補か */
+  isFallback: boolean
 }
 
 export interface ThreeSlotFacilityCooldownSkip {
@@ -89,15 +96,14 @@ export function selectMorningThreeSlots(
   })
 
   const usedGroupKeys = new Set<string>()
-  const slots: ThreeSlotPick[] = []
+  const usedDcIds = new Set<number>()
   const facilityCooldownSkips: ThreeSlotFacilityCooldownSkip[] = []
 
-  for (const bucket of MORNING_THREE_SLOT_BUCKETS) {
-    const inBucket = sorted.filter((a) => bucket.categories.includes(a.digestMeta!.category as string))
-
-    let candidate: CandidateAssessment | null = null
+  /** pool から、施設クールダウン・同一（親）施設・使用済みDCを除いた最初の1件を選ぶ */
+  function pickFrom(pool: CandidateAssessment[], bucketKey: string): { candidate: CandidateAssessment | null; sawAnyOffCooldown: boolean } {
     let sawAnyOffCooldown = false
-    for (const a of inBucket) {
+    for (const a of pool) {
+      if (usedDcIds.has(a.discoveredContentId)) continue // 他枠で既に選出済み（自カテゴリー・fallback問わず）
       const fk = a.digestMeta?.facilityKey ?? null
       const pfk = a.digestMeta?.parentFacilityKey ?? null
       const groupKey = pfk ?? fk
@@ -109,7 +115,7 @@ export function selectMorningThreeSlots(
         if (cooldown.onCooldown) {
           facilityCooldownSkips.push({
             discoveredContentId: a.discoveredContentId,
-            bucketKey: bucket.key,
+            bucketKey,
             groupKey: groupKey ?? '(不明)',
             reason: cooldown.reason,
           })
@@ -117,18 +123,53 @@ export function selectMorningThreeSlots(
         }
       }
       sawAnyOffCooldown = true
-      candidate = a
       if (groupKey) usedGroupKeys.add(groupKey)
-      break
+      usedDcIds.add(a.discoveredContentId)
+      return { candidate: a, sawAnyOffCooldown }
+    }
+    return { candidate: null, sawAnyOffCooldown }
+  }
+
+  // 2パス方式：他カテゴリーからの繰り上げ（fallback）が、後続バケット本来の自カテゴリー
+  // 候補を先取りしてしまわないよう、まず全バケットの自カテゴリー選定を終えてから
+  // （pass 1）、それでも埋まらなかったバケットだけ他カテゴリーから繰り上げる（pass 2）。
+  const pending: {
+    bucket: ThreeSlotBucket
+    inBucket: CandidateAssessment[]
+    primary: ReturnType<typeof pickFrom>
+  }[] = []
+
+  for (const bucket of MORNING_THREE_SLOT_BUCKETS) {
+    const inBucket = sorted.filter((a) => bucket.categories.includes(a.digestMeta!.category as string))
+    const primary = pickFrom(inBucket, bucket.key)
+    pending.push({ bucket, inBucket, primary })
+  }
+
+  const slots: ThreeSlotPick[] = []
+  for (const { bucket, inBucket, primary } of pending) {
+    if (primary.candidate) {
+      slots.push({ bucketKey: bucket.key, bucketLabel: bucket.label, candidate: primary.candidate, emptyReason: null, isFallback: false })
+      continue
     }
 
-    let emptyReason: string | null = null
-    if (!candidate) {
-      if (inBucket.length === 0) emptyReason = 'このバケットに該当するA判定候補が無い'
-      else if (!sawAnyOffCooldown) emptyReason = '該当候補はあるが全て施設クールダウン中または同一施設が既に他枠で選出済み'
-      else emptyReason = '該当候補はあるが同一施設が既に他枠で選出済み'
+    // 自カテゴリーに安全な候補が無い → 18カテゴリーの他カテゴリーから次点を繰り上げる
+    // （pass 2。他バケットの自カテゴリー選定〈pass 1〉が全て終わった後の残りから選ぶ）。
+    // fallback候補もA判定候補（現在性確認済み・既処理でない・近似重複なし）であること自体は
+    // 既に保証されている——ここでは施設クールダウン・同一（親）施設・使用済みDCのみ追加判定。
+    const otherPool = sorted.filter((a) => !bucket.categories.includes(a.digestMeta!.category as string))
+    const fallback = pickFrom(otherPool, bucket.key)
+
+    if (fallback.candidate) {
+      slots.push({ bucketKey: bucket.key, bucketLabel: bucket.label, candidate: fallback.candidate, emptyReason: null, isFallback: true })
+      continue
     }
-    slots.push({ bucketKey: bucket.key, bucketLabel: bucket.label, candidate, emptyReason })
+
+    let emptyReason: string
+    if (inBucket.length === 0 && otherPool.length === 0) emptyReason = '該当するA判定候補が無い（他カテゴリーにも無い）'
+    else if (!primary.sawAnyOffCooldown && !fallback.sawAnyOffCooldown)
+      emptyReason = '該当候補はあるが自カテゴリー・他カテゴリーとも全て施設クールダウン中または使用済み'
+    else emptyReason = '該当候補はあるが同一施設・同一親施設が既に他枠で選出済み（他カテゴリーにも代替なし）'
+    slots.push({ bucketKey: bucket.key, bucketLabel: bucket.label, candidate: null, emptyReason, isFallback: false })
   }
   return { slots, facilityCooldownSkips }
 }

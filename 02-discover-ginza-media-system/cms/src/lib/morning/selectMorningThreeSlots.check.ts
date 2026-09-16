@@ -239,6 +239,59 @@ const cases: CheckCase[] = [
       assert(artSlot?.candidate?.discoveredContentId === 73, `同一親施設72はスキップされ73が選ばれる（実際 ${artSlot?.candidate?.discoveredContentId}）`)
     },
   },
+
+  // ---------- 18カテゴリーの別カテゴリーからの代替選定（2026-09-16続き追加・マロン指示） ----------
+  {
+    name: '自カテゴリーに安全な候補が無いバケットは、18カテゴリーの別カテゴリーから次点を繰り上げる（isFallback:true）',
+    fn: () => {
+      // BEAUTY/SHOPPING・FOOD/CAFE/SWEETS候補が無く、ARTのみ2件ある状況
+      const art1 = mkA(81, 'ART', 'ginza-tsutaya')
+      const art2 = mkA(82, 'ART', 'kabukiza')
+      const r = selectMorningThreeSlots([art1, art2])
+      const cultureSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
+      assert(cultureSlot?.candidate?.discoveredContentId === 81, '文化・アートは自カテゴリーの81が優先される')
+      assert(cultureSlot?.isFallback === false, '自カテゴリー選出はisFallback:false')
+
+      const beautySlot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
+      assert(beautySlot?.candidate?.discoveredContentId === 82, `ビューティー・ファッションは他カテゴリーの82が繰り上がる（実際 ${beautySlot?.candidate?.discoveredContentId}）`)
+      assert(beautySlot?.isFallback === true, '他カテゴリーからの繰り上げはisFallback:true')
+    },
+  },
+  {
+    name: '代替候補（fallback）も施設クールダウン・使用済み・同一親施設の判定は通常どおり適用される',
+    fn: () => {
+      const art1 = mkA(91, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
+      const history: FacilityActivityRecord[] = [
+        {
+          groupKey: 'PARENT_GINZA_SIX',
+          facilityKey: 'ginza-six',
+          facilityLabel: 'GINZA SIX',
+          date: '2026-09-14T00:00:00.000Z',
+          source: 'article',
+          detail: 'Article #1 作成',
+        },
+      ]
+      const r = selectMorningThreeSlots([art1], { facilityHistory: history, now: NOW })
+      // 文化・アート（自カテゴリー）もビューティー・ファッション（fallback候補としても）も
+      // 同じGINZA SIXクールダウンで抑制され、該当なしになるはず
+      const cultureSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
+      const beautySlot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
+      assert(cultureSlot?.candidate === null, '自カテゴリーもクールダウンで該当なし')
+      assert(beautySlot?.candidate === null, 'fallbackもクールダウンで該当なし（安全な候補が無ければ無理に埋めない）')
+    },
+  },
+  {
+    name: '安全な候補が1件しか無い場合は3件を無理に埋めず、埋まらない枠は該当なしのまま残す',
+    fn: () => {
+      const only = mkA(101, 'SWEETS', 'ginza-motoji')
+      const r = selectMorningThreeSlots([only])
+      const filled = r.slots.filter((s) => s.candidate != null)
+      assert(filled.length === 1, `埋まる枠は1件のみ（実際 ${filled.length}）`)
+      assert(filled[0].candidate?.discoveredContentId === 101, 'グルメ・スウィーツに101が入る')
+      const emptySlots = r.slots.filter((s) => s.candidate == null)
+      assert(emptySlots.length === 2 && emptySlots.every((s) => !!s.emptyReason), '残り2枠は理由付きで該当なしのまま（無理に埋めない）')
+    },
+  },
 ]
 
 export const suite = (): ReturnType<typeof runSuite> => runSuite('selectMorningThreeSlots', cases)

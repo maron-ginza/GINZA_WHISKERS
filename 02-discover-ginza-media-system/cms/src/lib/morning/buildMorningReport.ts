@@ -208,7 +208,8 @@ export function renderMorningReport(report: MorningReport): string {
   for (const slot of report.morningThreeSlots.slots) {
     if (slot.candidate) {
       const c = slot.candidate
-      s += line(`  ・${slot.bucketLabel}: DC #${c.discoveredContentId} ${c.displayTitle}`)
+      const tag = slot.isFallback ? `［他カテゴリーからの代替・実カテゴリー: ${c.digestMeta?.category ?? '不明'}］` : ''
+      s += line(`  ・${slot.bucketLabel}: DC #${c.discoveredContentId} ${c.displayTitle} ${tag}`)
       s += line(`      施設: ${c.digestMeta?.facilityLabel || c.digestMeta?.facilityKey || '（不明）'} ／ 期間: ${c.eventPeriod} ／ URL: ${c.sourceUrl || '（なし）'}`)
     } else {
       s += line(`  ・${slot.bucketLabel}: 該当なし（${slot.emptyReason ?? '不明'}）`)

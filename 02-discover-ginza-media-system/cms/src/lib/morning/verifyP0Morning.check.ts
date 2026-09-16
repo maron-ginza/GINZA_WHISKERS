@@ -582,6 +582,65 @@ const cases: CheckCase[] = [
       assert(noYear.verdict === 'A', `年の無い日付表記は過去と断定しない・現在性語「新発売」でA（実際 ${noYear.verdict}）`)
     },
   },
+  {
+    // 実例＝DC#1167「平成中村座“観劇弁当”ネット予約受付中！」（歌舞伎座）。DC#40と同型
+    // （last_checked_atは新しいがタイトル自体に具体的な開催日が無い）だが、DC#40と異なり
+    // タイトルに過去日付そのものが無いため findExplicitPastDateInTitle だけでは検出できず、
+    // 「予約受付中」の語がそのままCURRENT_AVAILABILITY_REに一致してAになっていた
+    // （2026-09-16続き、実データ再判定で発見）。予約・イベント系の語は構造化期間か
+    // タイトル中の具体的な年月日が無い限り語だけでAにしない。
+    name: 'B（必須回帰・2026-09-16続き追加）: DC#1167クラス——「ネット予約受付中」等は具体的な開催日が無ければ語だけでAにしない',
+    fn: () => {
+      const NOW_0916 = new Date('2026-09-16T00:00:00Z')
+      const dc1167 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '平成中村座“観劇弁当”ネット予約受付中！',
+            excerpt: null,
+            eventStartAt: null,
+            eventEndAt: null,
+            lastCheckedAt: '2026-09-15T21:00:00Z',
+          }),
+          now: NOW_0916,
+        }),
+      )
+      assert(dc1167.verdict !== 'A', `DC#1167クラスは期待 B（実際 ${dc1167.verdict}）`)
+      assert(
+        dc1167.reasons.some((r) => r.includes('具体的な開催日を確認できない')),
+        '具体的な開催日を確認できない旨が理由に明記される',
+      )
+
+      // 対照：同じ語でも構造化期間があればA
+      const withPeriod = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '平成中村座“観劇弁当”ネット予約受付中！',
+            eventStartAt: '2026-10-05T00:00:00Z',
+            eventEndAt: '2026-10-05T00:00:00Z',
+            lastCheckedAt: '2026-09-15T21:00:00Z',
+          }),
+          now: NOW_0916,
+        }),
+      )
+      assert(withPeriod.verdict === 'A', `構造化期間があればA（実際 ${withPeriod.verdict}）`)
+
+      // 対照：同じ語でもタイトルに具体的な年月日（西暦4桁）があればA
+      // （「フェア」はEVENT_RESERVATION_TRIGGER_REと話題性シグナル〈discovery signal〉の
+      // 両方に一致する語のため、これ単体で両条件を満たすfixtureにできる）
+      const withTitleDate = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '秋の特別フェア 2026.10.05開催のご案内',
+            eventStartAt: null,
+            eventEndAt: null,
+            lastCheckedAt: '2026-09-15T21:00:00Z',
+          }),
+          now: NOW_0916,
+        }),
+      )
+      assert(withTitleDate.verdict === 'A', `タイトルに具体的な年月日があればA（実際 ${withTitleDate.verdict} reasons=${withTitleDate.reasons.join('|')}）`)
+    },
+  },
 
   // ---------- 使用済み候補の自動除外（2026-09-16追加・マロン指示） ----------
   // マロンによる投稿済み設定・施設設定・手動台帳登録を前提にせず、DiscoveredContent.
