@@ -1,54 +1,58 @@
-// GINZA WHISKERS / Project 02（2026-09-16続き5、マロン指示：V1 5段階責任分離）
+// GINZA WHISKERS / Project 02（2026-09-16続き6、マロン指示：V1 Stage 5 追加費用0円化）
 // — Stage 5「選定後のnote原稿作成」のエントリポイント。
 //
-//   ./p2 morning draft-selected <date> [--yes]
+//   ./p2 morning-draft-selected <date> [--force]
 //
-// 【責務の境界】マロンが Stage 4（./p2 morning select）で選んだ DC だけを原稿作成の
-// 対象にする。Stage 1（A判定）時に確認済み・DBへ保存済みの情報だけを使う——このスクリプト
-// 自身は URL 再取得・再検索・再クロール・再裏どりを一切行わない（外部ネットワークへは
-// 一切アクセスしない）。公式情報に記載がない内容は既存の生成プロンプト側の方針
-// （Editorial Trust Layer）どおり「公式記載なし」として扱い、推測・補完はしない。
+// 【追加費用0円】Claude API / OpenAI API / その他有料APIを一切呼ばない。中核の
+// 判定・生成ロジックは純粋関数 noteDraftFromSelection.prepareNoteDraftFromSelection
+// （AI/DB/外部fetchなし・既存の決定的テンプレート生成経路を再利用）に分離済み——
+// このスクリプトは DiscoveredContent / ArticleFacts の DB 読み取りと、全件検証後の
+// atomic write だけを担う薄いラッパー。
 //
-// 【整合性チェック】Stage 4 選定時点で記録した sourceUrl と、現在 DB に保存されている
-// DiscoveredContent.articleUrl を突合する。一致しない場合は選定後にデータが変わった
-// 可能性があるため、再調査・推測はせず「データ不整合」として当該DCだけ停止・報告する
-// （他のDCの処理は継続する）。
+// 【責務の境界】マロンが Stage 4（./p2 morning-select）で選んだ DC だけを原稿作成の
+// 対象にする。このスクリプト自身は URL 再取得・再検索・再クロール・再裏どりを一切
+// 行わない（外部ネットワークへは一切アクセスしない。DBの読み取りのみ）。
 //
-// 【生成前提】既存の createMultiAngleDraftsFromDiscoveredContent は
-// curationStatus==='approved' を必須とする（既存のMaron Editor's Choice承認ゲート、
-// このスクリプトでは変更しない）。Stage 4 の選定記録があっても未承認なら「承認が必要」
-// として原稿作成をブロックする——このスクリプトが承認状態を書き換えることはない。
+// 【全体を停止（all-or-nothing）】3件のうち1件でも「データ不整合」または
+// 「templateEligible:false（必須情報の不足・未確認）」に該当する場合、**どの件も
+// 保存せず**停止・報告する（推測で埋めない・途中までの原稿を保存しない）。
+// 先に全3件を検証し、全件が生成可能と確認できてから初めて書き込む（2フェーズ）。
 //
-// 【費用】--yes を指定した場合のみ Claude API を呼ぶ（実際の課金が発生する）。
-// --yes 未指定（既定）は「何を生成する予定か」の計画表示のみで、API 呼び出し・
-// DB 書き込みは一切行わない。
+// 【二重生成防止】同じ日付の note-drafts.json が既に存在する場合は --force が無い
+// 限り拒否する。書き込みは atomic write（一時ファイル→rename）。
 
 import { getPayload } from 'payload'
 
 import config from '../payload.config'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { createMultiAngleDraftsFromDiscoveredContent } from '../lib/ai/createMultiAngleDraftsFromDiscoveredContent'
+import { toDcLike } from './morningRun'
+import { toFactsLike } from '../lib/morning/toFactsLike'
+import { prepareNoteDraftFromSelection, type PreparedNoteDraft } from '../lib/morning/noteDraftFromSelection'
+import { atomicWriteFileSync } from '../lib/util/atomicWrite'
 import type { MorningSelectionRecord } from '../lib/morning/selectionRecord'
 
-interface ItemResult {
+interface StopItem {
   discoveredContentId: number
-  status: 'created' | 'blocked' | 'inconsistent' | 'dry-run' | 'error'
-  detail: string
+  reason: string
 }
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const date = args[0]
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    console.error('エラー: 第1引数に対象日（YYYY-MM-DD）を指定してください。例: ./p2 morning draft-selected 2026-09-16')
+    console.error('エラー: 第1引数に対象日（YYYY-MM-DD）を指定してください。例: ./p2 morning-draft-selected 2026-09-16')
     process.exit(1)
   }
-  const yes = args.includes('--yes')
+  const force = args.includes('--force')
 
-  const selectionPath = resolve(process.cwd(), '..', '.devlogs', 'morning', date, 'selection.json')
+  const dayRoot = resolve(process.cwd(), '..', '.devlogs', 'morning', date)
+  const selectionPath = resolve(dayRoot, 'selection.json')
   if (!existsSync(selectionPath)) {
-    console.error(`エラー: 選定記録が見つかりません: ${selectionPath}\n先に ./p2 morning select ${date} <dc1> <dc2> <dc3> を実行してください。`)
+    console.error(
+      `エラー: Stage 4 の選定記録が見つかりません: ${selectionPath}\n` +
+        `先に ./p2 morning-select ${date} <dc1> <dc2> <dc3> を実行してください。`,
+    )
     process.exit(1)
   }
 
@@ -60,75 +64,90 @@ async function main(): Promise<void> {
     process.exit(1)
     return
   }
-  if (!Array.isArray(record.picks) || record.picks.length === 0) {
-    console.error('エラー: 選定記録に picks がありません。')
+  if (!Array.isArray(record.picks) || record.picks.length !== 3 || !record.sweetsSatisfied) {
+    console.error(
+      'エラー: 選定記録が3本・SWEETS1本の条件を満たしていません（Stage 4 は本来この状態を' +
+        '保存しないため、選定記録が破損している可能性があります）。推測で処理を続けず停止します。',
+    )
+    process.exit(1)
+  }
+
+  const draftsPath = resolve(dayRoot, 'note-drafts.json')
+  if (existsSync(draftsPath) && !force) {
+    console.error(
+      `エラー: 本日のnote原稿は既に生成済みです（二重生成防止）: ${draftsPath}\n` +
+        '再生成する場合は --force を指定してください。',
+    )
     process.exit(1)
   }
 
   const payload = await getPayload({ config })
-  const results: ItemResult[] = []
+
+  // --- フェーズ1：全3件を検証する（DB読み取りのみ・ファイル書き込みなし） ---
+  const prepared: PreparedNoteDraft[] = []
+  const stopped: StopItem[] = []
 
   for (const pick of record.picks) {
     try {
-      const dc = await payload.findByID({
+      const dcRaw = (await payload.findByID({
         collection: 'discovered-content',
         id: pick.discoveredContentId,
         depth: 1,
         overrideAccess: true,
+      })) as unknown as Record<string, unknown>
+      const currentArticleUrl = (dcRaw.articleUrl as string | null) ?? null
+
+      const factsRes = await payload.find({
+        collection: 'article-facts',
+        where: { discoveredContent: { equals: pick.discoveredContentId } },
+        limit: 1,
+        depth: 0,
+        overrideAccess: true,
       })
-      const currentUrl = (dc as unknown as { articleUrl?: string | null }).articleUrl ?? ''
+      const factsDoc = factsRes.docs[0] as unknown as Record<string, unknown> | undefined
 
-      // データ不整合チェック：選定時点の sourceUrl と現在の articleUrl が食い違っていれば、
-      // 選定後にデータが変わった可能性がある——推測で読み替えず停止・報告する。
-      if (pick.sourceUrl && currentUrl && pick.sourceUrl !== currentUrl) {
-        results.push({
-          discoveredContentId: pick.discoveredContentId,
-          status: 'inconsistent',
-          detail: `Stage 4 選定時の公式URLと現在のDBの値が異なります（選定時: ${pick.sourceUrl} / 現在: ${currentUrl}）。再調査・推測はせず停止します。`,
-        })
-        continue
-      }
-
-      const curationStatus = (dc as unknown as { curationStatus?: string | null }).curationStatus ?? null
-      if (curationStatus !== 'approved') {
-        results.push({
-          discoveredContentId: pick.discoveredContentId,
-          status: 'blocked',
-          detail: `curationStatus が approved ではありません（現在: ${curationStatus ?? '未設定'}）。既存のMaron Editor's Choice承認を先に行ってください（このスクリプトは承認状態を変更しません）。`,
-        })
-        continue
-      }
-
-      if (!yes) {
-        results.push({
-          discoveredContentId: pick.discoveredContentId,
-          status: 'dry-run',
-          detail: '生成可能（--yes 未指定のため実行していません。--yes 指定時に Claude API を1回呼び出します＝課金発生）。',
-        })
-        continue
-      }
-
-      // 既存の生成関数をそのまま再利用（新しいAI呼び出しスキーマは追加しない）。
-      // CORE角度のみ（draft-today と同じ方針）。URL再取得・再クロールはこの関数内でも行わない。
-      const created = await createMultiAngleDraftsFromDiscoveredContent(payload, pick.discoveredContentId, {
-        angles: ['core'],
-        enableCoreGuards: true,
+      const result = prepareNoteDraftFromSelection({
+        pick,
+        currentArticleUrl,
+        dc: toDcLike(dcRaw),
+        facts: toFactsLike(factsDoc),
       })
-      results.push({
-        discoveredContentId: pick.discoveredContentId,
-        status: 'created',
-        detail: `Article作成: ${created.createdArticles.map((a) => `#${a.id}`).join(', ') || '（なし）'}`,
-      })
+      if (result.status === 'stopped') {
+        stopped.push({ discoveredContentId: result.discoveredContentId, reason: result.reason })
+      } else {
+        prepared.push(result.draft)
+      }
     } catch (err) {
-      results.push({
+      stopped.push({
         discoveredContentId: pick.discoveredContentId,
-        status: 'error',
-        detail: err instanceof Error ? err.message : String(err),
+        reason: err instanceof Error ? err.message : String(err),
       })
     }
   }
 
-  console.log(JSON.stringify({ date, dryRun: !yes, results }, null, 2))
+  // --- 全体を停止（all-or-nothing）：1件でも失敗したら何も保存しない ---
+  if (stopped.length > 0) {
+    console.error('原稿作成を停止しました（1件でも問題があれば全体を保存しません）:')
+    for (const s of stopped) console.error(`  - DC #${s.discoveredContentId}: ${s.reason}`)
+    console.log(JSON.stringify({ saved: false, date, stopped }, null, 2))
+    process.exit(1)
+  }
+
+  // --- フェーズ2：全件検証成功。ここで初めて書き込む（atomic write） ---
+  const bundle = {
+    date,
+    generatedAt: new Date().toISOString(),
+    method: 'template' as const, // AI不使用・決定的生成であることを明示
+    selectionRecordSelectedAt: record.selectedAt,
+    drafts: prepared,
+  }
+  const result = atomicWriteFileSync(draftsPath, JSON.stringify(bundle, null, 2), { force })
+  if (!result.written) {
+    console.error(`エラー: ${result.reason}`)
+    process.exit(1)
+  }
+
+  console.log(JSON.stringify({ saved: true, path: draftsPath, count: prepared.length, drafts: prepared }, null, 2))
   process.exit(0)
 }
 

@@ -142,7 +142,10 @@ function parseArgs(): Args {
 }
 
 // ── Payload doc → プレーン値（templateCheck.ts / morningCandidates と同型） ──
-function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
+// 【2026-09-16続き6・マロン指示】Stage 5（morningDraftSelected.ts）が
+// DiscoveredContent 生データ → DiscoveredContentLike 変換を再利用するために export した
+// （二重実装しない。ロジック自体は無変更）。
+export function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
   const ss = dc.sourceSite
   const sourceSiteName =
     ss && typeof ss === 'object'

@@ -833,6 +833,38 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-16 続き6: 🎯 **V1 Stage 4／5を完成——選定は厳格ゲート＋atomic write、
+  note原稿作成はAI不使用の決定論的テンプレート生成へ全面置き換え（正本
+  `MORNING_PIPELINE_V1_SPEC.md` §5・6・10改訂。Project 02 commit・push あり／
+  本番DB更新なし・Claude/OpenAI等の有料API呼び出し0回・追加費用0円）**——
+  **Stage 4**（`selectionRecord.validateSelectionForCommit`＋`./p2 morning-select`）：
+  3本ちょうど・候補ボード実在（未分類/使用済み/B/C相当は拒否）・SWEETS最低1件、
+  の**いずれか1つでも満たさなければ警告して`selection.json`を一切保存しない**
+  （旧実装は警告のみで保存していたが、これを厳格化。`buildSelectionRecord`自体は
+  既存単体テストの後方互換のため無変更で残置）。保存は新規`atomicWrite.ts`
+  （一時ファイル→rename。書き込み直前にも存在確認しTOCTOU窓を縮小）経由。
+  **Stage 5**（`./p2 morning-draft-selected`）：Claude APIを呼ぶ旧実装
+  （`createMultiAngleDraftsFromDiscoveredContent`）を撤去し、既存の「追加API課金
+  0円で生成する決定的関数」（`mapDiscoveredContentToEventFields`→
+  `buildTemplateArticleInput`→`renderArticleFromTemplate`、2026-09-02〜の既存実装・
+  新ロジック追加なし）を新規`noteDraftFromSelection.prepareNoteDraftFromSelection`
+  （純粋関数・AI/DB/外部fetchなし）経由で呼ぶ方式へ全面置換。選定時`sourceUrl`と
+  現在DB値の不一致、または`templateEligible:false`（`ArticleFacts`未ready含む）は
+  推測せず停止——**3件中1件でも該当すれば全体を保存しない（all-or-nothing）**。
+  二重生成は`note-drafts.json`存在チェック＋atomic writeで拒否。**費用ゲートとしての
+  `--yes`は廃止**（呼ぶAPIが無いため）、`--force`は二重生成の上書き許可のみ。
+  **検証**：関連テスト135/135 pass（新規`noteDraftFromSelection.check.ts`5件・
+  `atomicWrite.check.ts`5件・`selectionRecord.check.ts`に`validateSelectionForCommit`
+  5件追加、既存120件は無変更のままpass）、`tsc --noEmit`0エラー。**E2E fixture
+  を隔離一時ディレクトリで1回実行**（本番`.devlogs`・本番DB未使用、`global.fetch`を
+  監視し外部呼び出し0回を実測確認、31/31 pass）——SWEETS1+他2件のA候補→選定→
+  atomic write確認→翌日未選定A保持確認→選定3件のみ原稿生成確認→二重生成拒否確認・
+  SWEETSなし/2件/4件/B/C指定の全拒否確認、を1本のスクリプトで検証し実行後削除。
+  **10月1日運用への影響**：Stage 5がArticleFacts.ready必須のため、本日時点のA候補
+  （4件・全て未ready）は仮に選定してもStage 5が全件停止する見込み——admin画面での
+  ArticleFacts人間入力・ready化が明日以降の運用の実質的前提条件（詳細・明朝の実行
+  手順は`MORNING_PIPELINE_V1_SPEC.md`§9・§10）。
+
 - 2026-09-16: 🏗 **朝処理をV1・5段階責任分離へ確定（正本 `MORNING_PIPELINE_V1_SPEC.md`
   新設。Project 02 commit・push あり／DB更新なし・実行なし・課金0円）**——Stage 1
   A/B/Cスクリーニング（`assessCandidate.ts`/`targetOrDiscoveryEligibility.ts`、

@@ -115,3 +115,47 @@ export function collectUsedDcIds(records: MorningSelectionRecord[]): Set<number>
   for (const r of records) for (const p of r.picks) ids.add(p.discoveredContentId)
   return ids
 }
+
+export interface SelectionValidation {
+  ok: boolean
+  /** ok:false のときの理由（複数該当しうる）。呼び出し元はこれを表示して停止し、保存しない */
+  errors: string[]
+  /** 参考表示用に常に組み立てる（ok:false でも中身は見られる）。呼び出し元は ok:true のときだけ永続化する */
+  record: MorningSelectionRecord
+}
+
+/**
+ * 【2026-09-16続き6・マロン指示】Stage 4 の厳格ゲート——「3本・SWEETS1本」の条件、
+ * および候補ボードに実在しない／重複指定を1つでも満たさない場合は ok:false とし、
+ * 呼び出し元（./p2 morning-select）はこの場合ファイルへ一切保存しない
+ * （buildSelectionRecord 自体は引き続き「警告つきで記録だけは組み立てる」軽量な
+ * ビルダーとして残す——既存の単体テストが検証する挙動は変更しない。この関数は
+ * その上に「commit していいか」の判定を1枚重ねるだけ）。
+ */
+export function validateSelectionForCommit(params: {
+  date: string
+  selectedBy?: string
+  now?: Date
+  board: CandidateBoard
+  discoveredContentIds: number[]
+}): SelectionValidation {
+  const record = buildSelectionRecord(params)
+  const errors: string[] = []
+
+  if (params.discoveredContentIds.length !== 3) {
+    errors.push(`DC番号は3件指定してください（実際 ${params.discoveredContentIds.length}件指定）`)
+  }
+  for (const r of record.rejected) {
+    errors.push(
+      `DC #${r.discoveredContentId}: ${r.reason}（候補ボードに存在する未使用のA候補のみ指定できます）`,
+    )
+  }
+  if (!record.sweetsSatisfied) {
+    errors.push('SWEETSカテゴリーの候補が最低1件含まれていません')
+  }
+  if (record.picks.length !== 3) {
+    errors.push(`有効な選定が3件になりません（実際 ${record.picks.length}件）`)
+  }
+
+  return { ok: errors.length === 0, errors, record }
+}

@@ -3,7 +3,12 @@
 //   node --import=tsx/esm src/lib/morning/selectionRecord.check.ts
 
 import { runSuite, type CheckCase } from '../__checks__/_harness'
-import { buildSelectionRecord, collectUsedDcIds, type MorningSelectionRecord } from './selectionRecord'
+import {
+  buildSelectionRecord,
+  collectUsedDcIds,
+  validateSelectionForCommit,
+  type MorningSelectionRecord,
+} from './selectionRecord'
 import type { CandidateBoard } from './candidateBoard'
 
 function assert(cond: unknown, msg: string): void {
@@ -131,6 +136,61 @@ const cases: CheckCase[] = [
       const rec = buildSelectionRecord({ date: '2026-09-16', board, discoveredContentIds: [1, 1, 2] })
       assert(rec.picks.length === 2, '重複は1回だけpicksに入る')
       assert(rec.rejected.some((r) => r.discoveredContentId === 1), '2回目の1がrejectedに入る')
+    },
+  },
+
+  // ---------- 2026-09-16続き6：validateSelectionForCommit（Stage 4厳格ゲート） ----------
+  {
+    name: 'validateSelectionForCommit: 正常な3本（SWEETS含む）はok:true',
+    fn: () => {
+      const board = mkBoard()
+      const v = validateSelectionForCommit({ date: '2026-09-16', board, discoveredContentIds: [1, 2, 3] })
+      assert(v.ok === true, `ok:true（実際 errors=${JSON.stringify(v.errors)}）`)
+      assert(v.errors.length === 0, 'エラーなし')
+    },
+  },
+  {
+    name: 'validateSelectionForCommit: SWEETSなしはok:falseで拒否',
+    fn: () => {
+      const board = mkBoard()
+      const v = validateSelectionForCommit({ date: '2026-09-16', board, discoveredContentIds: [2, 3] })
+      assert(v.ok === false, 'ok:false')
+      assert(v.errors.some((e) => e.includes('SWEETS')), 'SWEETS不足の理由が含まれる')
+    },
+  },
+  {
+    name: 'validateSelectionForCommit: 2件のみ指定はok:falseで拒否',
+    fn: () => {
+      const board = mkBoard()
+      const v = validateSelectionForCommit({ date: '2026-09-16', board, discoveredContentIds: [1, 2] })
+      assert(v.ok === false, 'ok:false')
+      assert(v.errors.some((e) => e.includes('3件')), '3件指定の理由が含まれる')
+    },
+  },
+  {
+    name: 'validateSelectionForCommit: 4件指定はok:falseで拒否',
+    fn: () => {
+      const board = mkBoard()
+      // mkBoard に4件目のART候補を追加した拡張ボードを使う
+      const extended: CandidateBoard = {
+        ...board,
+        byCategory: {
+          ...board.byCategory,
+          ART: [...board.byCategory.ART, { discoveredContentId: 5, title: 'ART候補2', facilityLabel: null, category: 'ART', eventPeriod: '不明', sourceUrl: 'https://example.com/5', reasons: ['理由'] }],
+        },
+      }
+      const v = validateSelectionForCommit({ date: '2026-09-16', board: extended, discoveredContentIds: [1, 2, 3, 5] })
+      assert(v.ok === false, 'ok:false')
+      assert(v.errors.some((e) => e.includes('3件')), '3件指定の理由が含まれる')
+    },
+  },
+  {
+    name: 'validateSelectionForCommit: 未分類（B/C相当・ボードに実在しない）DC番号を含む指定はok:falseで拒否',
+    fn: () => {
+      const board = mkBoard()
+      const v = validateSelectionForCommit({ date: '2026-09-16', board, discoveredContentIds: [1, 4, 999] })
+      assert(v.ok === false, 'ok:false')
+      assert(v.errors.length >= 2, '未分類(4)・存在しない(999)双方の理由が含まれる')
     },
   },
 ]
