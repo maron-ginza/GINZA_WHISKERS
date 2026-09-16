@@ -70,6 +70,7 @@ import {
 import { deriveProvisionalCategory, isCategoryResolved } from '../lib/pipeline/provisionalCategory'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
+import { collectUsedDcIds, type MorningSelectionRecord } from '../lib/morning/selectionRecord'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -441,54 +442,64 @@ export function buildNoteDraftActivityInputs(noteRecords: DedupNoteRecord[]): Ra
 }
 
 /**
- * .devlogs/morning/<YYYY-MM-DD>/report.json（日付名ディレクトリのみ・auto/brief/
- * candidate-review/review/sweets-today等は対象外）を読み、①過去に朝刊候補として
- * 提示済みのDC ID集合と②施設活動レコード材料を返す（読み取り専用・DB非依存）。
+ * 【2026-09-16続き5改訂・マロン指示：V1 5段階責任分離】.devlogs/morning/<YYYY-MM-DD>/
+ * selection.json（日付名ディレクトリのみ）を読み、①過去に実際にマロンが選定した
+ * （＝Stage 4 の選定記録に picks として残っている）DC ID集合と②施設活動レコード材料を
+ * 返す（読み取り専用・DB非依存）。
+ *
+ * 【重要】旧実装は report.json の topA/topPresentable（＝候補ボードに表示されただけの
+ * 候補）を「既処理」とみなしていたが、これは「本日選ばれなかったAは翌日も候補ボードへ
+ * 残る」という新方針と矛盾するため撤廃した。「使用済み」とみなすのは selection.json に
+ * 実際に記録された選定（マロンが選んだ3本）のみ。checkAlreadyProcessedByPastMorning /
+ * buildFacilityActivityFromPastMorning（facilityActivityHistory.ts）は既存のまま
+ * 再利用し、渡すデータソースだけをここで差し替える。
  */
-export function loadPastMorningActivity(withinDays = 60): { dcIds: Set<number>; raw: RawPastMorningActivity[] } {
-  const dcIds = new Set<number>()
+export function loadPastMorningActivity(withinDays = 400): {
+  dcIds: Set<number>
+  raw: RawPastMorningActivity[]
+  records: MorningSelectionRecord[]
+} {
+  const records: MorningSelectionRecord[] = []
   const raw: RawPastMorningActivity[] = []
   const root = resolve(process.cwd(), '..', '.devlogs', 'morning')
-  if (!existsSync(root)) return { dcIds, raw }
+  if (!existsSync(root)) return { dcIds: new Set(), raw, records }
   const cutoff = Date.now() - withinDays * 24 * 60 * 60 * 1000
   let dirs: string[]
   try {
     dirs = readdirSync(root)
   } catch {
-    return { dcIds, raw }
+    return { dcIds: new Set(), raw, records }
   }
   for (const d of dirs) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue // 日付名ディレクトリのみ（auto/brief等を除外）
-    const reportPath = resolve(root, d, 'report.json')
-    if (!existsSync(reportPath)) continue
+    const selPath = resolve(root, d, 'selection.json')
+    if (!existsSync(selPath)) continue
     let parsed: unknown
     try {
-      parsed = JSON.parse(readFileSync(reportPath, 'utf8'))
+      parsed = JSON.parse(readFileSync(selPath, 'utf8'))
     } catch {
       continue
     }
-    const obj = parsed as Record<string, unknown>
-    const report = (obj.report as Record<string, unknown> | undefined) ?? obj
-    const generatedAt = (report?.generatedAt as string | undefined) ?? `${d}T00:00:00.000Z`
-    const t = Date.parse(generatedAt)
+    const rec = parsed as MorningSelectionRecord
+    if (!rec || !Array.isArray(rec.picks)) continue
+    const t = Date.parse(rec.selectedAt ?? '')
+    // 選定は時間窓なしで恒久的に「使用済み」扱いにする方針だが、ディレクトリ走査の
+    // スコープだけは withinDays（既定400日）で区切る（性能上のスコープ限定であり、
+    // 「クールダウン14日」等の意味的な時間窓とは別）。
     if (!Number.isNaN(t) && t < cutoff) continue
-    const lists = [report?.topA, report?.topPresentable].filter(Array.isArray) as Array<Array<Record<string, unknown>>>
-    for (const list of lists) {
-      for (const item of list) {
-        const id = Number(item.discoveredContentId)
-        if (!Number.isInteger(id) || id <= 0) continue
-        dcIds.add(id)
-        raw.push({
-          discoveredContentId: id,
-          sourceName: (item.sourceName as string | null) ?? null,
-          sourceUrl: (item.sourceUrl as string | null) ?? null,
-          venue: (item.digestMeta as Record<string, unknown> | undefined)?.venue as string | null ?? null,
-          generatedAt,
-        })
-      }
+    records.push(rec)
+    for (const p of rec.picks) {
+      if (!Number.isInteger(p.discoveredContentId) || p.discoveredContentId <= 0) continue
+      raw.push({
+        discoveredContentId: p.discoveredContentId,
+        sourceName: null,
+        sourceUrl: p.sourceUrl ?? null,
+        venue: p.facilityLabel ?? null,
+        generatedAt: rec.selectedAt ?? `${d}T00:00:00.000Z`,
+      })
     }
   }
-  return { dcIds, raw }
+  return { dcIds: collectUsedDcIds(records), raw, records }
 }
 
 /** 承認済み（approved）DiscoveredContent から施設活動レコード材料を作る（既に取得済みの approved.docs を再利用） */
@@ -1300,7 +1311,7 @@ async function main(): Promise<void> {
 
     // 5. レポート
     step = Date.now()
-    const report = buildMorningReport(assessments, { now })
+    const report = buildMorningReport(assessments, { now, usedDcIds: pastMorning.dcIds })
     mark('buildReport', step)
 
     const totalMs = Date.now() - t0

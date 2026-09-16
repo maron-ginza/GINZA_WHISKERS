@@ -53,19 +53,20 @@ function hasConfirmedPeriod(a: CandidateAssessment): boolean {
   return a.eventPeriod !== '不明'
 }
 
-function satisfiesRequiredCategory(a: CandidateAssessment): boolean {
+export function satisfiesRequiredCategory(a: CandidateAssessment): boolean {
   return a.digestMeta?.category === REQUIRED_CATEGORY
 }
 
-export function selectMorningThreeSlots(assessments: CandidateAssessment[]): ThreeSlotsResult {
-  // A判定のみが対象（B/Cはここへ渡さない。verdict='A' は既に現在性・既処理・近似重複・
-  // 施設/親施設クールダウンをすべて通過済み——このファイルでは判定し直さない）。
-  // 未分類（category null）も対象外（推測で分類しない。未分類件数はレポート側で別報告）。
-  const safe = assessments.filter((a) => a.verdict === 'A' && !!a.digestMeta?.category)
-
-  // 優先順位（価値の代理指標）：確認済み期間があるものを先に、次点で開催が近い順
-  // （既存 eventPeriod 文字列の先頭日付）、最後に id 昇順（決定的タイブレーク）。
-  const sorted = [...safe].sort((x, y) => {
+/**
+ * 【2026-09-16続き5・マロン指示】候補の優先順位付け（価値の代理指標）だけを切り出した
+ * 純粋関数——候補ボード（candidateBoard.ts）が「削除せず再利用する」対象として、
+ * ここから import して使う。確認済み期間があるものを先に、次点で開催が近い順
+ * （既存 eventPeriod 文字列の先頭日付）、最後に id 昇順（決定的タイブレーク）。
+ * A/B/C・カテゴリー・使用済み判定はここでは行わない（呼び出し元が事前にフィルタ済みの
+ * 配列を渡す）。
+ */
+export function rankCandidatesByPriority(list: CandidateAssessment[]): CandidateAssessment[] {
+  return [...list].sort((x, y) => {
     const px = hasConfirmedPeriod(x) ? 0 : 1
     const py = hasConfirmedPeriod(y) ? 0 : 1
     if (px !== py) return px - py
@@ -76,6 +77,21 @@ export function selectMorningThreeSlots(assessments: CandidateAssessment[]): Thr
     if (tx !== ty) return tx - ty
     return x.discoveredContentId - y.discoveredContentId
   })
+}
+
+/**
+ * 【2026-09-16続き5・マロン指示】このファイルの自動3本確定（selectMorningThreeSlots）は
+ * 通常の朝処理経路からは外した——最終3本を選ぶのはマロン（候補ボード→マロン選定→
+ * 選定記録、詳細は candidateBoard.ts / selectionRecord.ts）。この関数自体は削除せず、
+ * 後方互換・単体テスト・将来の再利用のために残す。
+ */
+export function selectMorningThreeSlots(assessments: CandidateAssessment[]): ThreeSlotsResult {
+  // A判定のみが対象（B/Cはここへ渡さない。verdict='A' は既に現在性・既処理・近似重複・
+  // 施設/親施設クールダウンをすべて通過済み——このファイルでは判定し直さない）。
+  // 未分類（category null）も対象外（推測で分類しない。未分類件数はレポート側で別報告）。
+  const safe = assessments.filter((a) => a.verdict === 'A' && !!a.digestMeta?.category)
+
+  const sorted = rankCandidatesByPriority(safe)
 
   const usedGroupKeys = new Set<string>()
   const usedDcIds = new Set<number>()

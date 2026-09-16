@@ -452,19 +452,15 @@ export interface MorningReport {
   /** C判定（除外理由つき） */
   c: CandidateAssessment[]
   /**
-   * 【2026-09-16続き4改訂・マロン指示】朝の候補表示を最大3件（うちSWEETSを必ず1件）に
-   * 絞った選出結果。A判定（18カテゴリー全体を対象）の中から表示用に選ぶだけであり、
-   * A判定の可否そのものには影響しない（最終選定処理はA/B/Cを更新しない）。
+   * 【2026-09-16続き5改訂・マロン指示：V1 5段階責任分離】Stage 3「A候補ボード」。
+   * A判定（18カテゴリー全体を対象・使用済み＝過去にマロンが実際に選定したDCを除く）を
+   * SWEETS独立枠／その他カテゴリー別／未分類、に整理して表示する。**最終3本はここでは
+   * 確定しない**——確定するのはマロン（Stage 4、selectionRecord.ts）。このボード自体は
+   * A/B/C・カテゴリー・DBデータを一切変更しない読み取り専用の表示。
+   * （旧 morningThreeSlots による自動3本確定は通常経路から外した。
+   * selectMorningThreeSlots.ts 自体は削除せず残置——後方互換・単体テスト用）。
    */
-  morningThreeSlots: import('./selectMorningThreeSlots').ThreeSlotsResult
-  /**
-   * 【2026-09-16続き4追加・マロン指示】A判定だがderiveProvisionalCategoryが18カテゴリー
-   * のいずれにも分類できなかった候補（推測で割り当てない・未分類のまま件数とDC番号を
-   * 報告する）。カテゴリー分類はA/B/C判定のブロッカーではないため、これらは引き続き
-   * verdict='A'のまま（morningThreeSlotsの選定対象からは除外される——カテゴリー不明の
-   * まま表示できないため）。
-   */
-  unclassifiedA: { discoveredContentId: number; title: string }[]
+  candidateBoard: import('./candidateBoard').CandidateBoard
 }
 
 // ─────────────────────────────────────────────────────────────

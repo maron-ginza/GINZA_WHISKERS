@@ -17,7 +17,7 @@
 // 開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
 
 import type { CandidateAssessment, MorningReport } from './types'
-import { selectMorningThreeSlots } from './selectMorningThreeSlots'
+import { buildCandidateBoard, type BoardEntry } from './candidateBoard'
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -45,7 +45,7 @@ export function rankAssessments(list: CandidateAssessment[]): CandidateAssessmen
 
 export function buildMorningReport(
   assessments: CandidateAssessment[],
-  opts: { now?: Date; topN?: number } = {},
+  opts: { now?: Date; topN?: number; usedDcIds?: ReadonlySet<number> } = {},
 ): MorningReport {
   const now = opts.now ?? new Date()
   const topN = opts.topN ?? 5
@@ -71,13 +71,6 @@ export function buildMorningReport(
     topPresentable.push(a)
   }
 
-  // 【2026-09-16続き4追加】A判定だが18カテゴリーへ分類できない候補（推測で割り当てない・
-  // 未分類のまま件数とDC番号を報告する。カテゴリー分類はA/B/C判定のブロッカーではない）。
-  const unclassifiedA = A.filter((a) => !a.digestMeta?.category).map((a) => ({
-    discoveredContentId: a.discoveredContentId,
-    title: a.displayTitle,
-  }))
-
   return {
     generatedAt: now.toISOString(),
     assessed: assessments.length,
@@ -89,8 +82,10 @@ export function buildMorningReport(
     facilityCapSkips,
     b: B,
     c: C,
-    morningThreeSlots: selectMorningThreeSlots(assessments),
-    unclassifiedA,
+    // Stage 3：A候補ボード（読み取り専用・A/B/Cを変更しない）。usedDcIds は「過去に
+    // マロンが実際に選定したDC」の集合（呼び出し元が selectionRecord.collectUsedDcIds
+    // で用意する。未指定なら空集合＝除外なし）。
+    candidateBoard: buildCandidateBoard(assessments, opts.usedDcIds ?? new Set()),
   }
 }
 
@@ -201,6 +196,14 @@ function renderOne(a: CandidateAssessment, rank: number): string {
   return s
 }
 
+function renderBoardEntry(e: BoardEntry): string {
+  let s = ''
+  s += line(`    - DC #${e.discoveredContentId} ${e.title}`)
+  s += line(`        施設: ${e.facilityLabel ?? '（不明）'} ／ 期間: ${e.eventPeriod} ／ URL: ${e.sourceUrl || '（なし）'}`)
+  s += line(`        A判定理由: ${e.reasons.join(' / ')}`)
+  return s
+}
+
 export function renderMorningReport(report: MorningReport): string {
   let s = ''
   s += line('════════════════════════════════════════════════')
@@ -210,32 +213,29 @@ export function renderMorningReport(report: MorningReport): string {
   s += line(`  内訳: A=${report.counts.A} / B=${report.counts.B} / C=${report.counts.C}`)
   s += line('════════════════════════════════════════════════')
   s += line()
-  s += line('■ 朝の候補（18カテゴリー全体から最大3件・固定枠は廃止）')
-  s += line('  3件のうちSWEETSを必ず1件含める。残り2件はSHOPPING固定枠にせず18カテゴリー全体から選ぶ。')
-  s += line('  A判定は既に現在性・既処理・近似重複・施設/親施設クールダウンを通過済み（B/Cはここに渡さない）。')
-  s += line('  最終選定はA/B/Cの値を更新しない（この3件表示はあくまで表示専用の選定）。')
-  if (report.morningThreeSlots.picks.length === 0) {
-    s += line('  該当候補なし（安全な候補が1件も無いため、無理に選出していません）。')
+  s += line('■ Stage 3：A候補ボード（最終3本はここでは確定しない・マロンが選ぶ）')
+  s += line('  A判定は既に現在性・既処理・近似重複・施設/親施設クールダウンを通過済み（B/Cはここに出さない）。')
+  s += line('  このボードはA/B/Cを一切変更しない読み取り専用の表示。使用済み（過去に実際に選定済み）のA候補は除外。')
+  s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
+  s += line()
+  s += line(`  ◆ SWEETS（${report.candidateBoard.sweets.length}件・先頭の独立枠）`)
+  if (report.candidateBoard.sweets.length === 0) s += line('    該当候補なし')
+  else for (const e of report.candidateBoard.sweets) s += renderBoardEntry(e)
+  const catKeys = Object.keys(report.candidateBoard.byCategory).sort()
+  if (catKeys.length === 0) {
+    s += line()
+    s += line('  ◆ その他カテゴリー：該当候補なし')
   } else {
-    for (const p of report.morningThreeSlots.picks) {
-      const c = p.candidate
-      const tag = p.satisfiesRequiredCategory ? '［必須カテゴリー該当］' : ''
-      s += line(`  ${p.rank}. DC #${c.discoveredContentId} ${c.displayTitle} ${tag}`)
-      s += line(
-        `      カテゴリー: ${c.digestMeta?.category ?? '不明'} ／ 施設: ${c.digestMeta?.facilityLabel || c.digestMeta?.facilityKey || '（不明）'} ／ 期間: ${c.eventPeriod} ／ URL: ${c.sourceUrl || '（なし）'}`,
-      )
-    }
-    if (report.morningThreeSlots.picks.length < 3) {
-      s += line(`  ※ 安全な候補が${report.morningThreeSlots.picks.length}件のみのため、無理に3件に埋めていません。`)
-    }
-    if (!report.morningThreeSlots.requiredCategorySatisfied) {
-      s += line('  ※ 必須カテゴリー（SWEETS）に該当する安全な候補がありませんでした。')
+    for (const cat of catKeys) {
+      s += line()
+      s += line(`  ◆ ${cat}（${report.candidateBoard.byCategory[cat].length}件）`)
+      for (const e of report.candidateBoard.byCategory[cat]) s += renderBoardEntry(e)
     }
   }
-  if (report.unclassifiedA.length > 0) {
+  if (report.candidateBoard.unclassified.length > 0) {
     s += line()
-    s += line(`  ※ A判定だが18カテゴリーへ分類できない候補（推測で割り当てず未分類のまま。${report.unclassifiedA.length}件）：`)
-    for (const u of report.unclassifiedA) s += line(`    - DC #${u.discoveredContentId} ${u.title}`)
+    s += line(`  ◆ 未分類（推測で割り当てず未分類のまま。${report.candidateBoard.unclassified.length}件・Stage 4選定の対象外）`)
+    for (const e of report.candidateBoard.unclassified) s += renderBoardEntry(e)
   }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')

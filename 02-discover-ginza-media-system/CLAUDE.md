@@ -833,6 +833,32 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-16: 🏗 **朝処理をV1・5段階責任分離へ確定（正本 `MORNING_PIPELINE_V1_SPEC.md`
+  新設。Project 02 commit・push あり／DB更新なし・実行なし・課金0円）**——Stage 1
+  A/B/Cスクリーニング（`assessCandidate.ts`/`targetOrDiscoveryEligibility.ts`、
+  **今回無変更**）→ Stage 2 18カテゴリー分類（同ファイル内、A/B/Cと独立・無変更）
+  → Stage 3 A候補ボード（新規`candidateBoard.ts`、SWEETS独立枠＋その他カテゴリー別
+  ＋未分類、読み取り専用）→ Stage 4 マロンによる3本選定（新規`selectionRecord.ts`＋
+  `./p2 morning-select <date> <dc..>`、`.devlogs/morning/<date>/selection.json`へ
+  記録・SWEETS1本/3本未達は警告のみで自動代替なし）→ Stage 5 選定後note原稿作成
+  （新規`./p2 morning-draft-selected <date> [--yes]`、選定済みDCのみ対象・URL再取得
+  なし・選定時sourceUrlと現在DB値の不整合は再調査せず停止・`curationStatus=approved`
+  未承認はブロック・`--yes`未指定は課金なしの計画表示のみ）。**旧`selectMorningThreeSlots`
+  による自動3本確定は通常経路から削除ではなく外した**（`rankCandidatesByPriority`を
+  抽出しcandidateBoard.tsが再利用、ファイル自体は後方互換のため残置）。**根本修正**：
+  旧`loadPastMorningActivity`が過去`report.json`のtopA/topPresentable（＝候補ボードに
+  表示されただけ）を「既処理」とみなし、施設クールダウン材料にも使っていたため、
+  「本日選ばれなかったAが翌日Aのまま保持される」という新方針と構造的に矛盾していた
+  ——データソースを`.devlogs/morning/<date>/selection.json`（実際にマロンが選定した
+  記録）へ差し替え、`checkAlreadyProcessedByPastMorning`/`buildFacilityActivityFromPastMorning`
+  等の既存関数は無変更のまま再利用（データソースのみ修正）。保存済みデータ（1181件）
+  で候補ボードを1回生成：A=4/B=363/C=814、SWEETS 0件、その他カテゴリー
+  FAMILY 1件・WORKSHOP 1件、未分類2件（DC#59・#438）、usedExcludedCount=0
+  （選定記録が無いため全A候補がそのままボードに表示）。関連テスト120/120 pass
+  （新規`candidateBoard.check.ts`8件・`selectionRecord.check.ts`8件＋既存104件）、
+  `tsc --noEmit`0エラー。Stage 5の`--yes`実行・Claude API呼び出しは一度も行っていない。
+  詳細・10月1日V1運用に残る未達事項は`MORNING_PIPELINE_V1_SPEC.md`§9参照。
+
 - 2026-09-13: 🚀 **Project 02全体の根本改善18項目——松屋銀座のJSレンダリング取得を
   実装し稼働確認、期間表記の抽出漏れ・ハッシュタグ4個統一を修正、承認→記事生成→
   事実検証→note下書きパッケージ保存の一気通貫を実データ（Article #66・非公開）で
@@ -1768,7 +1794,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-09-14
+- **最終更新日**：2026-09-16
 
 ## 13. 運用コスト方針（2026-08-09確定）
 
