@@ -53,6 +53,12 @@ export interface DiscoveredContentLike {
     eventStartAt?: { value?: string | null; confidence?: string | null; source?: string | null } | null
     eventEndAt?: { value?: string | null; confidence?: string | null; source?: string | null } | null
   } | null
+  /**
+   * 【2026-09-16追加】DiscoveredContent.curationStatus（'inbox'|'approved'|'rejected'等）。
+   * 'approved' は既にマロンが判断済み＝「使用済み候補の自動除外」の判定に使う
+   * （assessCandidate.ts）。未設定（旧呼び出し元）は判定対象外として扱う。
+   */
+  curationStatus?: string | null
 }
 
 /**

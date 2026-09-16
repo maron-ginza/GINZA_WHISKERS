@@ -17,6 +17,35 @@ export interface FacilityKeyResult {
   areaKey: string
   /** エリアの表示名 */
   area: string
+  /**
+   * 【2026-09-16追加・マロン指示】親施設キー（複合施設・同一ブランドの表記揺れの束ね）。
+   * 「GINZA SIX内店舗・銀座 蔦屋書店・ginza6.tokyo由来情報」はすべて PARENT_GINZA_SIX、
+   * 「山野楽器（銀座本店・4F等の表記違い含む）」は PARENT_YAMANO_GINZA に統合する。
+   * 該当しなければ null（＝呼び出し元は `parentFacilityKey ?? key` を実質的な
+   * グルーピングキーとして使う）。元の施設名（store/area）は表示用にそのまま保持する。
+   */
+  parentFacilityKey: string | null
+  /** 親施設の表示名（無ければ null） */
+  parentFacilityLabel: string | null
+}
+
+// 親施設（複合施設・同一ブランド）への統合ルール。key／areaKey がこの Set に含まれれば
+// 対応する親キーへ束ねる。表記揺れ（ホスト名・店舗名の文字列差）は resolveFacilityKey が
+// 既に key へ正規化済みのため、ここでは正規化後の key だけを見れば足りる（推測しない）。
+const PARENT_FACILITY_GROUPS: { keys: Set<string>; parentKey: string; parentLabel: string }[] = [
+  { keys: new Set(['ginza-six', 'ginza-tsutaya']), parentKey: 'PARENT_GINZA_SIX', parentLabel: 'GINZA SIX（蔦屋書店含む）' },
+  { keys: new Set(['yamano-music-ginza']), parentKey: 'PARENT_YAMANO_GINZA', parentLabel: '山野楽器 銀座本店' },
+]
+
+// key（個店）だけでなく areaKey（GINZA SIX等の建物）でも判定する——「GINZA SIX内の
+// テナント店舗」（venue に「（GINZA SIX B1F）」等の建物名が明記され、key 自体は個別
+// テナントの slug になるケース）も PARENT_GINZA_SIX へ束ねるため。
+function resolveParentFacility(
+  key: string | null,
+  areaKey?: string | null,
+): { parentFacilityKey: string | null; parentFacilityLabel: string | null } {
+  const g = PARENT_FACILITY_GROUPS.find((g) => (key && g.keys.has(key)) || (areaKey && g.keys.has(areaKey)))
+  return g ? { parentFacilityKey: g.parentKey, parentFacilityLabel: g.parentLabel } : { parentFacilityKey: null, parentFacilityLabel: null }
 }
 
 function slug(s: string): string {
@@ -126,6 +155,12 @@ function hostOf(url: string | null | undefined): string {
   }
 }
 
+type FacilityKeyCore = Omit<FacilityKeyResult, 'parentFacilityKey' | 'parentFacilityLabel'>
+
+function withParent(core: FacilityKeyCore): FacilityKeyResult {
+  return { ...core, ...resolveParentFacility(core.key, core.areaKey) }
+}
+
 /**
  * 会場が空でも、SOURCE LEDGER の情報源名・公式 URL・タイトルの【店名】から
  * 施設キーを **決定的に** 解決する（推測はしない・明記された情報だけ）。
@@ -139,9 +174,18 @@ export function resolveFacilityKey(input: {
   sourceUrl?: string | null
   title?: string | null
 }): FacilityKeyResult {
+  return withParent(resolveFacilityKeyCore(input))
+}
+
+function resolveFacilityKeyCore(input: {
+  venue?: string | null
+  sourceName?: string | null
+  sourceUrl?: string | null
+  title?: string | null
+}): FacilityKeyCore {
   const venue = (input.venue ?? '').trim()
   if (venue) {
-    const fromVenue = facilityKeyFromVenue(venue)
+    const fromVenue = facilityKeyFromVenueCore(venue)
     if (fromVenue.key) return fromVenue
   }
 
@@ -175,7 +219,7 @@ export function resolveFacilityKey(input: {
 
   // 3) venue から店名だけ拾えた場合（key は付かなかったが店名テキストはある）
   if (venue) {
-    const fromVenue = facilityKeyFromVenue(venue)
+    const fromVenue = facilityKeyFromVenueCore(venue)
     if (fromVenue.store) return fromVenue
   }
 
@@ -185,9 +229,13 @@ export function resolveFacilityKey(input: {
 /**
  * 会場テキスト → 施設キー／エリアキー。
  * 例：「銀座 蔦屋書店 文具売り場（GINZA SIX 6F）」→
- *     { key: 'ginza-tsutaya', store: '銀座 蔦屋書店', areaKey: 'ginza-six', area: 'GINZA SIX' }
+ *     { key: 'ginza-tsutaya', store: '銀座 蔦屋書店', areaKey: 'ginza-six', area: 'GINZA SIX', parentFacilityKey: 'PARENT_GINZA_SIX', … }
  */
 export function facilityKeyFromVenue(venue: string | null | undefined): FacilityKeyResult {
+  return withParent(facilityKeyFromVenueCore(venue))
+}
+
+function facilityKeyFromVenueCore(venue: string | null | undefined): FacilityKeyCore {
   const raw = (venue ?? '').trim()
   if (!raw) return { key: null, store: '', areaKey: '', area: '' }
 

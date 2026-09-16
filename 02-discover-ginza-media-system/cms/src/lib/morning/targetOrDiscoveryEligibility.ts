@@ -23,7 +23,9 @@
 //      eventStartAt/eventEndAt）が確認でき終了していないこと、商品・メニューは公式
 //      ページで「発売中」「販売中」「提供中」等の現在性の明記語が確認できること。
 //      新規性語（3.のsignal）だけでは満たさない。期間・販売状況を確認できない候補、
-//      過去月・過去季節の言及のみの候補はB。
+//      過去月・過去季節の言及のみの候補はB。タイトルに明示された過去の年月日
+//      （西暦4桁を含む表記）は「受付中」等の語より優先し、last_checked_at
+//      （再クロール日時）は有効期限の根拠にしない（2026-09-16追加）。
 //   8. 【2026-09-16追加】過去の報告・メディア掲載系（「掲載されました」「メディア掲載」
 //      「開催報告」「終了報告」「過去の紹介」）ではない——過去の出来事の記録は旬の候補
 //      ではない。
@@ -78,6 +80,39 @@ function hasExplicitPeriodSignal(eventStartAt: string | null, eventEndAt: string
   return !!(eventStartAt || eventEndAt)
 }
 
+// タイトル中の明示的な年月日（西暦4桁を含むもののみ・推測しない）を検出する
+// （2026-09-16追加・マロン指示）。DC#40「新春浅草歌舞伎"お好み弁当"ネット予約受付中！
+// 2025.12.14」のように、last_checked_at（再クロール日時）は新しくても、タイトル自体が
+// 明確に過去の日付を指しているケースを「受付中」等の語だけで現在有効と誤判定しないため。
+// YYYY.MM.DD／YYYY-MM-DD／YYYY/MM/DD／YYYY年M月D日、のいずれかの表記のみを対象とする
+// （年の無い「M月D日」「今月」等は対象外＝過去と断定できないため推測しない）。
+const EXPLICIT_FULL_DATE_RE = /(20\d{2})[.\-/年](\d{1,2})[.\-/月](\d{1,2})日?/g
+
+export interface PastDateSignalResult {
+  found: boolean
+  /** 検出した日付（YYYY-MM-DD）。見つからなければ null */
+  date: string | null
+}
+
+/** タイトルに明示された過去の年月日があるか（西暦4桁を含む表記のみ・推測しない） */
+export function findExplicitPastDateInTitle(title: string | null, now: Date): PastDateSignalResult {
+  const text = title ?? ''
+  const re = new RegExp(EXPLICIT_FULL_DATE_RE)
+  let m: RegExpExecArray | null
+  // eslint-disable-next-line no-cond-assign
+  while ((m = re.exec(text))) {
+    const y = Number(m[1])
+    const mo = Number(m[2])
+    const d = Number(m[3])
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) continue
+    const dt = new Date(Date.UTC(y, mo - 1, d, 23, 59, 59))
+    if (dt.getTime() < now.getTime()) {
+      return { found: true, date: `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}` }
+    }
+  }
+  return { found: false, date: null }
+}
+
 export interface CurrencyConfirmationResult {
   confirmed: boolean
   reason: string
@@ -100,9 +135,20 @@ export function evaluateCurrencyConfirmation(
   title: string | null,
   eventStartAt: string | null,
   eventEndAt: string | null,
+  now: Date = new Date(),
 ): CurrencyConfirmationResult {
   if (hasExplicitPeriodSignal(eventStartAt, eventEndAt)) {
     return { confirmed: true, reason: '開催・販売期間を公式情報で確認済み（構造化データ）' }
+  }
+  // 2026-09-16追加：last_checked_at（再クロール日時）は有効期限の根拠にしない。タイトルに
+  // 明示された過去の年月日があれば、「受付中」等の語より優先して現在性なしと判定する
+  // （DC#40クラス：クロールが最近でも記載内容自体が過去のケース）。
+  const pastDate = findExplicitPastDateInTitle(title, now)
+  if (pastDate.found) {
+    return {
+      confirmed: false,
+      reason: `タイトルに過去の年月日（${pastDate.date}）が明記されており、現在性の明記語（受付中等）より優先して現在性なしと判定`,
+    }
   }
   if (CURRENT_AVAILABILITY_RE.test(title ?? '')) {
     return { confirmed: true, reason: '現在性の明記語を確認（発売中／販売中／提供中等）' }
@@ -209,7 +255,7 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   // 確認できることのいずれかを満たさない限りAにしない——新規性語（discovery signal）だけでは
   // 「今も入手・体験できるか」の確認にはならない（DC#34「8月」の過去月言及、DC#119「SPRING
   // 2026」、DC#743・DC#1132の販売状況未確認、が実際にAになっていた事例を受けて）。
-  const currency = evaluateCurrencyConfirmation(input.title, input.eventStartAt, input.eventEndAt)
+  const currency = evaluateCurrencyConfirmation(input.title, input.eventStartAt, input.eventEndAt, now)
   if (!currency.confirmed) blockers.push(currency.reason)
 
   // 2. 公式情報で銀座の場所と提供状況を確認できる

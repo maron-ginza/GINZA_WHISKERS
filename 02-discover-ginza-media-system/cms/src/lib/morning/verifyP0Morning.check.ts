@@ -536,6 +536,86 @@ const cases: CheckCase[] = [
     },
   },
 
+  // ---------- 現在性判定の恒久化（2026-09-16追加・マロン指示） ----------
+  // last_checked_at（再クロール日時）を有効期限として使わず、タイトルに明示された
+  // 過去の年月日を「受付中」等の語より優先する。
+  {
+    // 実例＝DC#40「新春浅草歌舞伎"お好み弁当"ネット予約受付中！ 2025.12.14」（歌舞伎座）。
+    // last_checked_atは再クロールにより2026-09-16時点でも「新しい」が、タイトル自体に
+    // 明示された日付2025.12.14は判定日（2026-09-16基準）より過去——「受付中」の語だけで
+    // 現在有効と判定しない。
+    name: 'B（必須回帰・2026-09-16追加）: DC#40クラス——タイトルに明示された過去の年月日は「受付中」等の語より優先しBにする（last_checked_atを有効期限にしない）',
+    fn: () => {
+      const NOW_0916 = new Date('2026-09-16T00:00:00Z')
+      const dc40 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: 'お食事 新春浅草歌舞伎“お好み弁当”ネット予約受付中！ 2025.12.14',
+            excerpt: null,
+            eventStartAt: null,
+            eventEndAt: null,
+            // last_checked_at は re-crawl で「新しく」なっている想定（DC#40の実データと同じ状況）
+            lastCheckedAt: '2026-09-15T21:41:36.966Z',
+          }),
+          now: NOW_0916,
+        }),
+      )
+      assert(dc40.verdict !== 'A', `DC#40クラスは期待 B（実際 ${dc40.verdict}）`)
+      assert(
+        dc40.reasons.some((r) => r.includes('過去の年月日')),
+        'タイトルに過去の年月日がある旨が理由に明記される',
+      )
+
+      // 対照：年を含まない「M月D日」等の表記だけでは過去と断定しない（推測しない）
+      const noYear = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '9月17日から新発売の季節限定スイーツ',
+            eventStartAt: null,
+            eventEndAt: null,
+            lastCheckedAt: '2026-09-15T21:00:00Z',
+          }),
+          now: NOW_0916,
+        }),
+      )
+      assert(noYear.verdict === 'A', `年の無い日付表記は過去と断定しない・現在性語「新発売」でA（実際 ${noYear.verdict}）`)
+    },
+  },
+
+  // ---------- 使用済み候補の自動除外（2026-09-16追加・マロン指示） ----------
+  // マロンによる投稿済み設定・施設設定・手動台帳登録を前提にせず、DiscoveredContent.
+  // curationStatus（既存データ）と、呼び出し元が既存データから機械的に判定した
+  // alreadyProcessed のみで判定する。
+  {
+    name: 'C（必須回帰・2026-09-16追加）: curationStatus=approved は使用済み候補として自動除外（alreadyProcessed）',
+    fn: () => {
+      const a = assessCandidate(mk({ dc: baseDc({ curationStatus: 'approved' }) }))
+      assert(a.verdict === 'C', `承認済みは期待 C / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('alreadyProcessed')), 'alreadyProcessedとして理由に記録される')
+    },
+  },
+  {
+    name: 'C（必須回帰・2026-09-16追加）: 過去の朝刊レポートで提示済み（alreadyProcessed）も使用済み候補として自動除外',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          dc: baseDc(),
+          alreadyProcessed: { isProcessed: true, reason: '過去の朝刊レポートで既に候補として提示済み（.devlogs/morning/*/report.json）' },
+        }),
+      )
+      assert(a.verdict === 'C', `過去に提示済みは期待 C / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('alreadyProcessed')), 'alreadyProcessedとして理由に記録される')
+    },
+  },
+  {
+    name: '対照（必須回帰・2026-09-16追加）: curationStatus=inbox・alreadyProcessedなしは通常どおり判定される（過剰除外しない）',
+    fn: () => {
+      const a = assessCandidate(mk({ dc: baseDc({ curationStatus: 'inbox' }) }))
+      assert(a.verdict === 'A', `inbox・未処理は通常どおりA判定される（実際 ${a.verdict}）`)
+    },
+  },
+
   // ---------- 近似重複ルール2（2026-09-15追加・マロン指示） ----------
   // 直近14日以内に同一ブランド・同一会場の既投稿記事があれば、URL・タイトルが一致しなくても
   // Aへ昇格させずBのまま保留する。実例＝DC#246「花西子 FLORASIS」（2026-09-15）。

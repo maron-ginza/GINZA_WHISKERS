@@ -81,6 +81,18 @@ export interface AssessCandidateInput {
     matchedArticleId?: number
     reason: string
   }
+  /**
+   * 【2026-09-16追加・マロン指示】使用済み候補の自動除外。呼び出し元
+   * （morningRun.ts）が「過去の朝刊レポート（.devlogs/morning/*\/report.json）で
+   * 既に候補として提示済みか」を、Project 02 内の既存データ（ArticleFactsではなく
+   * 過去の朝刊出力そのもの）から機械的に判定して渡す。マロンが個別に設定するフラグでは
+   * ない。isProcessed:true のときは verdict を C とし、reasons に alreadyProcessed
+   * （このフィールド名）を含める。
+   */
+  alreadyProcessed?: {
+    isProcessed: boolean
+    reason: string
+  }
 }
 
 
@@ -229,6 +241,19 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   } else if (!hasTraceableSource) {
     verdict = 'C'
     reasons.push('追跡可能な公式出典 URL が無い')
+  } else if (dc.curationStatus === 'approved') {
+    // 使用済み候補の自動除外（2026-09-16・マロン指示）：承認済み＝マロンが既に判断済み
+    // であり、朝の「新規候補」ではない。publishedAt 等の別途設定を前提にせず、
+    // DiscoveredContent.curationStatus という既存データだけで機械的に判定する。
+    verdict = 'C'
+    reasons.push('alreadyProcessed（承認済み。マロンが既に判断済みのため新規候補としては扱わない）')
+  } else if (input.alreadyProcessed?.isProcessed) {
+    // 使用済み候補の自動除外（続き）：Articleが作成済み・note-draft.json生成済みは
+    // dedup.duplicate（既存ロジック）で C 判定済みのため、ここでは「過去の朝刊レポートで
+    // 既に候補として提示済みか」を .devlogs/morning/*/report.json という既存データから
+    // 機械的に判定した結果のみを受け取る（マロンの追加設定は不要）。
+    verdict = 'C'
+    reasons.push(`alreadyProcessed（${input.alreadyProcessed.reason}）`)
   } else {
     // 18カテゴリー共通・目的型／発見型のA判定（2026-09-15、マロン指示で全面改訂）。
     // ArticleFacts.enrichmentStatus='ready'（人間の事前手入力）はここでは判定条件にしない

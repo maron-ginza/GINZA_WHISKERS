@@ -18,6 +18,7 @@
 
 import type { CandidateAssessment, MorningReport } from './types'
 import { selectMorningThreeSlots } from './selectMorningThreeSlots'
+import type { FacilityActivityRecord } from './facilityActivityHistory'
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -45,7 +46,7 @@ export function rankAssessments(list: CandidateAssessment[]): CandidateAssessmen
 
 export function buildMorningReport(
   assessments: CandidateAssessment[],
-  opts: { now?: Date; topN?: number } = {},
+  opts: { now?: Date; topN?: number; facilityHistory?: FacilityActivityRecord[] } = {},
 ): MorningReport {
   const now = opts.now ?? new Date()
   const topN = opts.topN ?? 5
@@ -82,7 +83,7 @@ export function buildMorningReport(
     facilityCapSkips,
     b: B,
     c: C,
-    morningThreeSlots: selectMorningThreeSlots(assessments),
+    morningThreeSlots: selectMorningThreeSlots(assessments, { facilityHistory: opts.facilityHistory, now }),
   }
 }
 
@@ -212,6 +213,11 @@ export function renderMorningReport(report: MorningReport): string {
     } else {
       s += line(`  ・${slot.bucketLabel}: 該当なし（${slot.emptyReason ?? '不明'}）`)
     }
+  }
+  if (report.morningThreeSlots.facilityCooldownSkips.length > 0) {
+    s += line('  ※ 施設14日間クールダウンにより繰り上げ対象となった候補（削除はしていない）：')
+    for (const sk of report.morningThreeSlots.facilityCooldownSkips)
+      s += line(`    - DC #${sk.discoveredContentId}（${sk.bucketKey}）: ${sk.reason}`)
   }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')

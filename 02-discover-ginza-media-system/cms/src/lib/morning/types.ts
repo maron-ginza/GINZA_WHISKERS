@@ -499,6 +499,9 @@ export interface DigestMeta {
   priceHint: string | null
   facilityKey: string | null
   facilityLabel: string
+  /** 【2026-09-16追加】親施設キー（GINZA SIX・山野楽器等の表記揺れ統合。無ければ null） */
+  parentFacilityKey?: string | null
+  parentFacilityLabel?: string | null
   /** 18カテゴリーの暫定判定（deriveProvisionalCategory 由来） */
   category: string | null
   categoryBasis: 'primaryCategory' | 'title' | 'templateType' | null

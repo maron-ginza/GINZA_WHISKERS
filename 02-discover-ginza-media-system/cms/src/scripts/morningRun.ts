@@ -54,6 +54,18 @@ import {
 import type { CandidateAssessment, FinalCandidateDigest, OfficialPageSignals } from '../lib/morning/types'
 import type { DiscoveredContentLike } from '../lib/template/mapDiscoveredContentToEventFields'
 import { resolveFacilityKey } from '../lib/curation/facilityKey'
+import {
+  buildFacilityActivityFromArticles,
+  buildFacilityActivityFromApproved,
+  buildFacilityActivityFromNoteDrafts,
+  buildFacilityActivityFromPastMorning,
+  checkAlreadyProcessedByPastMorning,
+  type FacilityActivityRecord,
+  type RawArticleActivity,
+  type RawApprovedActivity,
+  type RawNoteDraftActivity,
+  type RawPastMorningActivity,
+} from '../lib/morning/facilityActivityHistory'
 import { deriveProvisionalCategory, isCategoryResolved } from '../lib/pipeline/provisionalCategory'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
@@ -150,6 +162,7 @@ function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
     lastCheckedAt: (dc.lastCheckedAt as string | null) ?? null,
     detectedAt: (dc.detectedAt as string | null) ?? null,
     dateExtraction: (dc.dateExtraction as DiscoveredContentLike['dateExtraction']) ?? null,
+    curationStatus: (dc.curationStatus as string | null) ?? null,
   }
 }
 
@@ -326,6 +339,7 @@ export async function loadArticleRecords(
       eventDates: [],
       venueHints: [...new Set(venueHints)],
       recentDate,
+      createdAt: (a.createdAt as string | null) ?? null,
     })
   }
   return out
@@ -401,6 +415,98 @@ export function buildNoteRecords(): DedupNoteRecord[] {
     /* skip */
   }
   return recs
+}
+
+// ── 施設単位の14日間クールダウン・使用済み候補の自動除外（2026-09-16追加・マロン指示） ──
+//    大前提：マロンによる投稿済み設定・施設設定・手動台帳登録を一切前提にしない。
+//    Project 02 内の既存データ（note-draft.json の フォルダ日付・過去の朝刊レポート
+//    report.json）だけから機械的に導く。
+
+/** note-draft.json（buildNoteRecords の path から日付を取り出す）を施設活動レコードへ変換する材料に */
+export function buildNoteDraftActivityInputs(noteRecords: DedupNoteRecord[]): RawNoteDraftActivity[] {
+  const out: RawNoteDraftActivity[] = []
+  for (const n of noteRecords) {
+    if (n.kind !== 'note-draft') continue
+    // path 例： .devlogs/night/queue/2026-09-11/63/note-draft.json
+    const m = n.path.match(/queue\/(\d{4}-\d{2}-\d{2})\//)
+    out.push({
+      path: n.path,
+      venue: n.venue,
+      sourceUrl: n.sourceUrls[0] ?? null,
+      date: m ? `${m[1]}T00:00:00.000Z` : null,
+    })
+  }
+  return out
+}
+
+/**
+ * .devlogs/morning/<YYYY-MM-DD>/report.json（日付名ディレクトリのみ・auto/brief/
+ * candidate-review/review/sweets-today等は対象外）を読み、①過去に朝刊候補として
+ * 提示済みのDC ID集合と②施設活動レコード材料を返す（読み取り専用・DB非依存）。
+ */
+export function loadPastMorningActivity(withinDays = 60): { dcIds: Set<number>; raw: RawPastMorningActivity[] } {
+  const dcIds = new Set<number>()
+  const raw: RawPastMorningActivity[] = []
+  const root = resolve(process.cwd(), '..', '.devlogs', 'morning')
+  if (!existsSync(root)) return { dcIds, raw }
+  const cutoff = Date.now() - withinDays * 24 * 60 * 60 * 1000
+  let dirs: string[]
+  try {
+    dirs = readdirSync(root)
+  } catch {
+    return { dcIds, raw }
+  }
+  for (const d of dirs) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue // 日付名ディレクトリのみ（auto/brief等を除外）
+    const reportPath = resolve(root, d, 'report.json')
+    if (!existsSync(reportPath)) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(readFileSync(reportPath, 'utf8'))
+    } catch {
+      continue
+    }
+    const obj = parsed as Record<string, unknown>
+    const report = (obj.report as Record<string, unknown> | undefined) ?? obj
+    const generatedAt = (report?.generatedAt as string | undefined) ?? `${d}T00:00:00.000Z`
+    const t = Date.parse(generatedAt)
+    if (!Number.isNaN(t) && t < cutoff) continue
+    const lists = [report?.topA, report?.topPresentable].filter(Array.isArray) as Array<Array<Record<string, unknown>>>
+    for (const list of lists) {
+      for (const item of list) {
+        const id = Number(item.discoveredContentId)
+        if (!Number.isInteger(id) || id <= 0) continue
+        dcIds.add(id)
+        raw.push({
+          discoveredContentId: id,
+          sourceName: (item.sourceName as string | null) ?? null,
+          sourceUrl: (item.sourceUrl as string | null) ?? null,
+          venue: (item.digestMeta as Record<string, unknown> | undefined)?.venue as string | null ?? null,
+          generatedAt,
+        })
+      }
+    }
+  }
+  return { dcIds, raw }
+}
+
+/** 承認済み（approved）DiscoveredContent から施設活動レコード材料を作る（既に取得済みの approved.docs を再利用） */
+export function buildApprovedActivityInputs(docs: Array<Record<string, unknown>>): RawApprovedActivity[] {
+  const out: RawApprovedActivity[] = []
+  for (const raw of docs) {
+    if (raw.curationStatus !== 'approved') continue
+    const ss = raw.sourceSite
+    const sourceName =
+      ss && typeof ss === 'object' ? ((ss as { name?: string | null }).name ?? null) : ((ss as string | null) ?? null)
+    out.push({
+      discoveredContentId: Number(raw.id),
+      venue: (raw.venue as string | null) ?? null,
+      sourceName,
+      sourceUrl: (raw.articleUrl as string | null) ?? null,
+      decisionAt: (raw.decisionAt as string | null) ?? null,
+    })
+  }
+  return out
 }
 
 /** 6:00 収集の完了確認（.devlogs/trial/run_<date>.jsonl に score exitCode:0 があるか）。実行はしない。 */
@@ -515,6 +621,28 @@ async function main(): Promise<void> {
       sort: '-updatedAt',
     })
     mark('loadApproved', step)
+
+    // 3.5 施設単位の14日間クールダウン・使用済み候補の自動除外（2026-09-16追加・マロン指示）。
+    //     マロンによる投稿済み設定・施設設定・手動台帳登録は一切前提にせず、Project 02 内の
+    //     既存データ（Articles・承認済みDC・note-draft.json・過去の朝刊report.json）だけから
+    //     機械的に導く。
+    const pastMorning = loadPastMorningActivity()
+    const articleActivityInputs: RawArticleActivity[] = articleRecords.map((a) => ({
+      articleId: a.id,
+      sourceUrl: a.provenanceSourceUrls[0] ?? null,
+      venueHint: a.venueHints[0] ?? null,
+      date: a.createdAt ?? a.recentDate ?? null,
+    }))
+    const approvedActivityInputs: RawApprovedActivity[] = buildApprovedActivityInputs(
+      approved.docs as unknown as Array<Record<string, unknown>>,
+    )
+    const noteDraftActivityInputs: RawNoteDraftActivity[] = buildNoteDraftActivityInputs(noteRecords)
+    const facilityHistory: FacilityActivityRecord[] = [
+      ...buildFacilityActivityFromArticles(articleActivityInputs),
+      ...buildFacilityActivityFromApproved(approvedActivityInputs),
+      ...buildFacilityActivityFromNoteDrafts(noteDraftActivityInputs),
+      ...buildFacilityActivityFromPastMorning(pastMorning.raw),
+    ]
 
     // 4. 候補ごとの評価（1件失敗で全体を止めない）
     step = Date.now()
@@ -726,6 +854,7 @@ async function main(): Promise<void> {
           factKind,
           officialFetchOutcome: signals?.fetchOutcome ?? (signals ? (signals.ok ? 'ok' : 'unknown') : undefined),
           recentBrandVenueDuplicate,
+          alreadyProcessed: checkAlreadyProcessedByPastMorning(dcId, pastMorning.dcIds),
         })
         a.factKind = factKind
         a.factKindClassification = classification
@@ -822,6 +951,8 @@ async function main(): Promise<void> {
             priceHint: extractPriceHint(signals?.bodyText).price,
             facilityKey: facility.key,
             facilityLabel: facility.store || facility.area || '',
+            parentFacilityKey: facility.parentFacilityKey,
+            parentFacilityLabel: facility.parentFacilityLabel,
             category: provisionalCategory.category,
             categoryBasis: provisionalCategory.basis,
             publishedAt: factKind === 'event' ? (a.extraction?.fields.publishedAt ?? null) : null,
@@ -1133,6 +1264,8 @@ async function main(): Promise<void> {
               priceHint: extractPriceHint(signals?.bodyText).price,
               facilityKey: facility.key,
               facilityLabel: facility.store || facility.area || '',
+              parentFacilityKey: facility.parentFacilityKey,
+              parentFacilityLabel: facility.parentFacilityLabel,
               category: provisionalCategory.category,
               categoryBasis: provisionalCategory.basis,
               publishedAt: factKind === 'event' ? (a.extraction?.fields.publishedAt ?? null) : null,
@@ -1159,7 +1292,7 @@ async function main(): Promise<void> {
 
     // 5. レポート
     step = Date.now()
-    const report = buildMorningReport(assessments, { now })
+    const report = buildMorningReport(assessments, { now, facilityHistory })
     mark('buildReport', step)
 
     const totalMs = Date.now() - t0

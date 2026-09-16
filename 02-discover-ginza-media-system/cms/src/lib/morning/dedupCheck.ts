@@ -36,6 +36,8 @@ export interface DedupArticleRecord {
    * checkRecentBrandVenueDuplicate 側で「対象外」として扱う。
    */
   recentDate?: string | null
+  /** 【2026-09-16追加】Article.createdAt。施設単位の14日間クールダウン判定に使う。 */
+  createdAt?: string | null
 }
 
 export interface DedupNoteRecord {

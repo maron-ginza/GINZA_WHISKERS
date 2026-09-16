@@ -7,6 +7,7 @@ import { assessCandidate, type AssessCandidateInput } from './assessCandidate'
 import { selectMorningThreeSlots } from './selectMorningThreeSlots'
 import type { CandidateAssessment } from './types'
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
+import type { FacilityActivityRecord } from './facilityActivityHistory'
 
 const NOW = new Date('2026-09-16T00:00:00Z')
 const FUTURE_ISO = '2026-10-25T04:00:00Z'
@@ -42,6 +43,7 @@ function mkA(
   category: string | null,
   facilityKey: string | null,
   over: Partial<AssessCandidateInput> = {},
+  parentFacilityKey: string | null = null,
 ): CandidateAssessment {
   const a = assessCandidate({
     dc: baseDc({ id, ...over.dc }),
@@ -58,6 +60,8 @@ function mkA(
     priceHint: null,
     facilityKey,
     facilityLabel: facilityKey ?? '',
+    parentFacilityKey,
+    parentFacilityLabel: parentFacilityKey,
     category,
     categoryBasis: category ? 'title' : null,
     publishedAt: null,
@@ -145,6 +149,94 @@ const cases: CheckCase[] = [
       const r = selectMorningThreeSlots([unconfirmed, confirmed])
       const artSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
       assert(artSlot?.candidate?.discoveredContentId === 61, '期間確認済みの61が優先される')
+    },
+  },
+
+  // ---------- 施設単位の14日間抑制（2026-09-16追加・マロン指示） ----------
+  {
+    // 実例＝DC#313（GINZA SIXの「アクシージア×mika ninagawaコラボ」）。GINZA SIX施設で
+    // 直近にArticleが作成されている場合、facilityCooldownSkipとして繰り上げ対象になる
+    // （候補自体は削除しない・次点候補が選ばれる）。
+    name: 'DC#313回帰: GINZA SIX施設で直近にArticle作成があれば facilityCooldownSkip（同カテゴリーの次点が繰り上がる）',
+    fn: () => {
+      const dc313 = mkA(313, 'SHOPPING', 'ginza-six', {}, 'PARENT_GINZA_SIX')
+      const altBeauty = mkA(999, 'BEAUTY', 'wako-ginza')
+      const history: FacilityActivityRecord[] = [
+        {
+          groupKey: 'PARENT_GINZA_SIX',
+          facilityKey: 'ginza-six',
+          facilityLabel: 'GINZA SIX',
+          date: '2026-09-14T00:00:00.000Z', // NOW=2026-09-16の2日前
+          source: 'article',
+          detail: 'Article #70 作成',
+        },
+      ]
+      const r = selectMorningThreeSlots([dc313, altBeauty], { facilityHistory: history, now: NOW })
+      const slot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
+      assert(slot?.candidate?.discoveredContentId === 999, `DC#313は抑制され次点999が選ばれる（実際 ${slot?.candidate?.discoveredContentId}）`)
+      assert(
+        r.facilityCooldownSkips.some((s) => s.discoveredContentId === 313),
+        'DC#313はfacilityCooldownSkipとして理由付きで記録される（削除はしない）',
+      )
+    },
+  },
+  {
+    // 実例＝DC#532（山野楽器「ASTURIASクラシックギターフェア」）。同じ山野楽器
+    // （parentFacilityKey='PARENT_YAMANO_GINZA'）で5日前にArticle作成済み（Article #63
+    // 「弦楽器フェア2026」）→ facilityCooldownSkip。
+    name: 'DC#532回帰: 山野楽器の5日前のArticle作成によりfacilityCooldownSkip（parentFacilityKeyで一致判定）',
+    fn: () => {
+      const dc532 = mkA(532, 'MUSIC', 'yamano-music-ginza', {}, 'PARENT_YAMANO_GINZA')
+      const altArt = mkA(998, 'ART', 'ginza-tsutaya')
+      const history: FacilityActivityRecord[] = [
+        {
+          groupKey: 'PARENT_YAMANO_GINZA',
+          facilityKey: 'yamano-music-ginza',
+          facilityLabel: '山野楽器 銀座本店',
+          date: '2026-09-11T01:12:04.668Z', // NOW=2026-09-16の5日前（Article #63実績）
+          source: 'article',
+          detail: 'Article #63 作成',
+        },
+      ]
+      const r = selectMorningThreeSlots([dc532, altArt], { facilityHistory: history, now: NOW })
+      const slot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
+      assert(slot?.candidate?.discoveredContentId === 998, `DC#532は抑制され次点998が選ばれる（実際 ${slot?.candidate?.discoveredContentId}）`)
+      assert(
+        r.facilityCooldownSkips.some((s) => s.discoveredContentId === 532 && s.reason.includes('山野楽器')),
+        'DC#532はfacilityCooldownSkipとして理由（山野楽器）付きで記録される',
+      )
+    },
+  },
+  {
+    name: '施設クールダウンは14日を超えると解除される（15日前の活動は抑制しない）',
+    fn: () => {
+      const dc = mkA(41, 'ART', 'ginza-tsutaya', {}, 'PARENT_GINZA_SIX')
+      const history: FacilityActivityRecord[] = [
+        {
+          groupKey: 'PARENT_GINZA_SIX',
+          facilityKey: 'ginza-six',
+          facilityLabel: 'GINZA SIX',
+          date: '2026-09-01T00:00:00.000Z', // NOW=2026-09-16の15日前
+          source: 'article',
+          detail: 'Article #1 作成',
+        },
+      ]
+      const r = selectMorningThreeSlots([dc], { facilityHistory: history, now: NOW })
+      const slot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
+      assert(slot?.candidate?.discoveredContentId === 41, `15日前は抑制対象外（実際 ${slot?.candidate?.discoveredContentId}）`)
+      assert(r.facilityCooldownSkips.length === 0, '15日前はfacilityCooldownSkipに記録されない')
+    },
+  },
+  {
+    name: '同一親施設（parentFacilityKey）も3枠を通じて1件まで——facilityKeyが異なっても同一親なら2件目はスキップ',
+    fn: () => {
+      // ginza-six と ginza-tsutaya は facilityKey は別だが同じ PARENT_GINZA_SIX
+      const beauty = mkA(71, 'BEAUTY', 'ginza-six', {}, 'PARENT_GINZA_SIX')
+      const art = mkA(72, 'ART', 'ginza-tsutaya', {}, 'PARENT_GINZA_SIX')
+      const altArt = mkA(73, 'ART', 'kabukiza')
+      const r = selectMorningThreeSlots([beauty, art, altArt])
+      const artSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
+      assert(artSlot?.candidate?.discoveredContentId === 73, `同一親施設72はスキップされ73が選ばれる（実際 ${artSlot?.candidate?.discoveredContentId}）`)
     },
   },
 ]
