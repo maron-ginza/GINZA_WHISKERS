@@ -30,6 +30,7 @@ import { extractMitsukoshiGinzaFoodEvents } from '../lib/crawler/extractMitsukos
 import { extractExplicitPeriod } from '../lib/pipeline/extractExplicitPeriod'
 import { classifyContentType } from '../lib/crawler/classifyContentType'
 import { classifyUxType } from '../lib/curation/uxType'
+import { decideMitsukoshiFetchGate } from '../lib/crawler/mitsukoshiFetchGate'
 
 const DRY = process.argv.includes('--dry-run')
 const SOURCE_ID = 'mitsukoshi-ginza'
@@ -91,12 +92,16 @@ async function main() {
   const sourceDoc = sourceDocs.docs[0] as unknown as { id: number | string; healthStatus?: string; healthNote?: string } | undefined
   if (!sourceDoc) throw new Error(`SOURCE_LEDGERに ${SOURCE_ID} が見つかりません`)
 
-  if (sourceDoc.healthStatus === 'unreachable') {
+  // 【2026-09-17改訂・マロン指示：取得障害時の安全動作】決定的ゲート（純粋関数・
+  // mitsukoshiFetchGate.ts、単体テスト済み）で判定する。「該当情報0件」と
+  // 「sourceUnavailable（取得不能で確認できていない）」を明確に区別するため、
+  // ゲートで止めた場合は非0件的な「0件検出」を装わず、その旨を明示して終了する。
+  const gate = decideMitsukoshiFetchGate(sourceDoc)
+  if (!gate.proceed) {
     console.log(
-      `銀座三越（mistore.jp）は healthStatus=unreachable のため候補を生成しません` +
-        `（既存の記録: ${sourceDoc.healthNote ?? '(理由未記録)'}）。` +
+      `銀座三越（mistore.jp）は sourceUnavailable のため候補を生成しません（${gate.reason}）。` +
         `先に ./p2 mitsukoshi-health-check で最新の到達可否を確認してください。` +
-        `非公式情報・推測データによる補完はしません。`,
+        `非公式情報・推測データによる補完はしません（fixtureデータも本番候補には使用しません）。`,
     )
     process.exit(0)
   }

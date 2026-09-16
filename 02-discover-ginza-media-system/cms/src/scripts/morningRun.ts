@@ -51,7 +51,7 @@ import {
   type ArticleFactsWrite,
   type RegisterResult,
 } from '../lib/morning/registerArticleFacts'
-import type { CandidateAssessment, FinalCandidateDigest, OfficialPageSignals } from '../lib/morning/types'
+import type { CandidateAssessment, FinalCandidateDigest, OfficialPageSignals, SourceAvailability } from '../lib/morning/types'
 import type { DiscoveredContentLike } from '../lib/template/mapDiscoveredContentToEventFields'
 import { resolveFacilityKey } from '../lib/curation/facilityKey'
 import {
@@ -199,9 +199,22 @@ async function buildImageInventory(payload: Awaited<ReturnType<typeof getPayload
  */
 async function buildSourceLedgerMaps(
   payload: Awaited<ReturnType<typeof getPayload>>,
-): Promise<{ allowedHosts: string[]; typeById: Map<number, string> }> {
+): Promise<{
+  allowedHosts: string[]
+  typeById: Map<number, string>
+  /**
+   * 【2026-09-17追加・マロン指示：取得障害時の安全動作】healthStatus='unreachable'
+   * （確認済みの取得不能。既定値'unknown'＝未確認は含めない）の情報源一覧。
+   * 候補ボード・7:10レポートに「取得失敗した公式収集元」として表示し、
+   * 「該当情報0件」と「収集元へ到達できず確認不能」を区別するために使う。
+   * 取得失敗を理由に既存の有効なA候補を削除・降格することはしない
+   * （この一覧は表示専用・A/B/C判定には使わない）。
+   */
+  unavailableSources: SourceAvailability[]
+}> {
   const hosts = new Set<string>()
   const typeById = new Map<number, string>()
+  const unavailableSources: SourceAvailability[] = []
   try {
     const res = await payload.find({ collection: 'source-ledger', limit: 200, depth: 0, overrideAccess: true })
     for (const d of res.docs as unknown as Array<Record<string, unknown>>) {
@@ -215,11 +228,24 @@ async function buildSourceLedgerMaps(
       }
       const st = d.sourceType ?? d.source_type
       if (typeof d.id === 'number' && typeof st === 'string') typeById.set(d.id, st)
+      // 【2026-09-17】healthStatusの既定値は'unknown'（未確認・専用の取得経路を
+      // 持たない一般crawl対象サイトの通常状態）——これは失敗ではない。表示するのは
+      // 確認済みの取得不能（'unreachable'）のみ（推測で「未確認」まで警告扱いしない）。
+      const healthStatus = d.healthStatus as string | undefined
+      if (healthStatus === 'unreachable') {
+        unavailableSources.push({
+          sourceId: String(d.sourceId ?? ''),
+          name: String(d.name ?? d.sourceId ?? '（名称未登録）'),
+          healthStatus,
+          healthCheckedAt: (d.healthCheckedAt as string | null) ?? null,
+          healthNote: (d.healthNote as string | null) ?? null,
+        })
+      }
     }
   } catch {
     /* コレクション未定義でも継続（＝許可リスト空＝全 URL 拒否） */
   }
-  return { allowedHosts: [...hosts], typeById }
+  return { allowedHosts: [...hosts], typeById, unavailableSources }
 }
 
 /**
@@ -625,7 +651,7 @@ async function main(): Promise<void> {
     //    使う（この読み込み自体はrejectedのみを除外し、inbox/approved両方を評価する）。
     step = Date.now()
     const imageInventory = await buildImageInventory(payload)
-    const { allowedHosts, typeById: sourceLedgerTypeById } = await buildSourceLedgerMaps(payload)
+    const { allowedHosts, typeById: sourceLedgerTypeById, unavailableSources } = await buildSourceLedgerMaps(payload)
     const articleRecords = await loadArticleRecords(payload)
     const noteRecords = buildNoteRecords()
     const approved = await payload.find({
@@ -861,16 +887,32 @@ async function main(): Promise<void> {
         const candidateVenueKey = normalizeVenueKey(candidateVenues[0]?.place, candidateVenues[0]?.name)
         const recentBrandVenueDuplicate = checkRecentBrandVenueDuplicate(candidateVenueKey, articleRecords, now)
 
-        // 施設単位の14日間クールダウン（2026-09-16続き3追加・マロン指示）：A/B/C判定
-        // 本体で使うため、digestMeta用の resolveFacilityKey 呼び出しをここへ前倒しし、
-        // 同じ facility を digestMeta 側でも再利用する（二重実装・二重計算をしない）。
+        // 施設単位の14日間クールダウン（2026-09-16続き3追加・2026-09-17改訂）：
+        // 【2026-09-17改訂・マロン指示】A/B/C判定には使わない——候補ボード上の
+        // 注意情報（facilityNotice）としてのみ assessCandidate.ts へ渡す。
+        // digestMeta用の resolveFacilityKey 呼び出しをここへ前倒しし、同じ facility を
+        // digestMeta 側でも再利用する（二重実装・二重計算をしない）。
         const facility = resolveFacilityKey({
           venue: dcLike.venue,
           sourceName: dcLike.sourceSiteName,
           sourceUrl: dcLike.articleUrl,
           title: dcLike.title,
         })
-        const facilityCooldown = checkFacilityCooldown(facility.key, facility.parentFacilityKey, facilityHistory, now)
+        const facilityCooldownRaw = checkFacilityCooldown(facility.key, facility.parentFacilityKey, facilityHistory, now)
+        // 表示用に親施設名・一致した過去活動の詳細（記事IDを含む）を補って渡す
+        // （assessCandidate.ts はこれを facilityNotice へそのまま写すだけ・A/B/C判定には使わない）。
+        const facilityCooldown = {
+          ...facilityCooldownRaw,
+          parentFacilityLabel: facility.parentFacilityLabel ?? facility.store ?? facility.area ?? null,
+          matched: facilityCooldownRaw.matched
+            ? {
+                date: facilityCooldownRaw.matched.date,
+                facilityLabel: facilityCooldownRaw.matched.facilityLabel,
+                articleId: facilityCooldownRaw.matched.articleId,
+                source: facilityCooldownRaw.matched.source,
+              }
+            : null,
+        }
 
         // --- ArticleFacts 自動導出・自動ready化（2026-09-16続き7追加・マロン指示：
         //     A判定とArticleFactsの矛盾を解消） ---
@@ -1392,7 +1434,7 @@ async function main(): Promise<void> {
 
     // 5. レポート
     step = Date.now()
-    const report = buildMorningReport(assessments, { now, usedDcIds: pastMorning.dcIds })
+    const report = buildMorningReport(assessments, { now, usedDcIds: pastMorning.dcIds, unavailableSources })
     mark('buildReport', step)
 
     const totalMs = Date.now() - t0

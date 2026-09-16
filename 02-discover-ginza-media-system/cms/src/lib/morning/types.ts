@@ -180,6 +180,26 @@ export interface CandidateAssessment {
   ginzaRelevanceBasis?: string
   /** 追跡可能な公式 URL を持つか */
   hasTraceableSource: boolean
+  /**
+   * 【2026-09-17追加・マロン指示：A判定と施設クールダウンの責務分離】
+   * 施設14日間クールダウン（同一施設・同一親施設が直近に使用されたか）の注意情報。
+   * A/B/C判定には一切影響しない——verdictに関わらず、施設クールダウン中の候補にだけ
+   * 設定される（該当なしは undefined）。プログラムはこの情報を表示するだけで、
+   * 自動除外・自動降格・自動選定は行わない。最終3本への採否はマロンが判断する。
+   */
+  facilityNotice?: {
+    recentlyUsed: true
+    /** 表示用の親施設名（無ければ null） */
+    parentFacilityLabel: string | null
+    /** 前回使用日（ISO日時。無ければ null） */
+    lastUsedDate: string | null
+    /** 前回の記事ID（前回の活動がArticle作成由来のときのみ。それ以外は null＝推測しない） */
+    lastArticleId: number | null
+    /** 経過日数（前回使用日からの日数。算出できなければ null） */
+    daysSince: number | null
+    /** 表示用の注意文 */
+    message: string
+  }
   /** ArticleFacts の状態 */
   factsSource: 'none' | 'draft' | 'withdrawn' | 'ready'
   templateEligible: boolean
@@ -461,6 +481,23 @@ export interface MorningReport {
    * selectMorningThreeSlots.ts 自体は削除せず残置——後方互換・単体テスト用）。
    */
   candidateBoard: import('./candidateBoard').CandidateBoard
+  /**
+   * 【2026-09-17追加・マロン指示：取得障害時の安全動作】SOURCE_LEDGER.healthStatus=
+   * 'unreachable'（確認済みの取得不能。既定値'unknown'＝未確認は含めない）の
+   * 公式収集元一覧。「該当情報0件」と「収集元へ到達できず確認不能」を区別する
+   * ために表示する。取得失敗を理由に既存の有効なA候補を削除・降格することは
+   * しない（表示専用・A/B/C判定には使わない）。未指定なら空配列。
+   */
+  sourceAvailability: SourceAvailability[]
+}
+
+/** 【2026-09-17追加】公式収集元の取得可否（SOURCE_LEDGER.healthStatusの写し）。 */
+export interface SourceAvailability {
+  sourceId: string
+  name: string
+  healthStatus: string
+  healthCheckedAt: string | null
+  healthNote: string | null
 }
 
 // ─────────────────────────────────────────────────────────────

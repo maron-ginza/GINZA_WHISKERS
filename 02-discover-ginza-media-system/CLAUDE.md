@@ -833,6 +833,69 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-16/17 続き9: 🎯 **A判定と施設クールダウンの責務分離（続き8の直接の続き）――
+  facilityCooldown／parentFacilityCooldownをA/B/C判定から完全に切り離し、候補ボード上の
+  注意情報（facilityNotice）へ移動。銀座三越のUA起因WAF遮断を特定（production未変更）。
+  松屋銀座3件（DC#1190〜1192）を再判定し実データで全件Aを確認（Project 02 commit・push
+  あり／DB書き込みなし＝am-runは既にready化済みの既存ArticleFactsを読むだけの冪等実行、
+  SOURCE_LEDGERのmitsukoshi-ginza行のhealthNote更新のみ／実AI呼び出し0回・追加費用0円）**
+  ——**背景**：続き8でDC#1190〜1192（松屋銀座GINZAスイート週替わり催事）は正しくSWEETSに
+  分類・現在性確認済みだったが、同一施設（松屋銀座）で直近14日以内にArticle #69が作成済み
+  という理由でfacilityCooldownがB判定へ降格させていた。マロン指示：「同一施設が直近に
+  使用されたことは情報の正確性・裏どり状態とは別問題」——A判定の定義（公式情報の裏どり完了）
+  と施設の使用頻度管理（最終3本選定時の多様性判断）を混同しない設計へ是正。
+  **①責務分離**：`targetOrDiscoveryEligibility.ts`のブロッカー判定からfacilityCooldownを
+  完全削除（A判定の必須条件は7条件に整理、旧項目7・8を撤去）。`assessCandidate.ts`は
+  facilityCooldownをverdict決定に一切使わず、代わりに新規`CandidateAssessment.facilityNotice`
+  （`recentlyUsed`／`parentFacilityLabel`／`lastUsedDate`／`lastArticleId`〈前回活動が
+  Article作成由来のときのみ・それ以外はnull＝推測しない〉／`daysSince`／`message`）を
+  verdictと無関係に付与。`facilityActivityHistory.ts`の`FacilityActivityRecord`に
+  `articleId`（source==='article'のときのみ）を追加し前回記事IDを構造的に取得可能に。
+  `morningRun.ts`は`checkFacilityCooldown`の結果へ`parentFacilityLabel`（`resolveFacilityKey`
+  由来）・`matched`詳細を付与してassessCandidateへ渡すのみ（判定ロジックは無変更）。
+  `candidateBoard.ts`の`BoardEntry`・`buildMorningReport.ts`の`renderBoardEntry`へ
+  facilityNotice表示（⚠マーク・親施設・前回使用日・前回記事ID・経過日数・
+  「A判定は維持・最終3本への採否はマロンが判断」の明記）を追加。**同一URL／同一商品・
+  催事／近似重複／既投稿記事／現在性未確認／裏どり不足のC/B判定は無変更**（今回の変更対象外）。
+  **②松屋銀座3件の再判定**：実データDC#1190〜1192を`./p2 am-run`で再判定——**3件とも
+  facilityCooldownを除いた既存条件（開催期間・出典・現在性・ArticleFacts ready・重複なし）を
+  すべて満たしA判定**（facilityNotice付き、Aを強制していない——他候補で同様に施設対象外の
+  DC#1193〈松屋銀座かき氷コレクション〉も同じ理由でA）。**③銀座三越のライブ取得経路**：
+  DNS解決・TCP接続・TLSハンドシェイク・HTTPリクエスト送信まで正常に完了するが応答が
+  返らない（サイレントドロップ）ことを`curl -v`で確認したうえで、**Node fetch（プロジェクト
+  識別User-Agent付き）でも同一結果を再現**し、**識別UA（`GinzaWhiskersDiscoverGinzaBot`等の
+  自己申告的UA・curl既定UA含む）を送った場合にのみ発生し、UAを送らない場合・一般的な
+  ブラウザUAを送った場合は同一URLがHTTP 200で実コンテンツ（食料品イベントスケジュール等の
+  本文）を返す**ことを確認——**Akamai Bot Manager等によるUAベースのアプリケーション層遮断**
+  であり、従来記録していた「IP/ネットワーク層の遮断」という診断は不正確だったと判明。
+  **この診断結果への対応（今回は変更しない）**：識別UAを変更・省略すれば応答を得られる
+  可能性が高いことは確認したが、これは「別の公式経路を探す」（松屋銀座のStoryblok API採用と
+  同種）とは性質が異なり、WAF/Bot Managerの識別・判定を意図的に迂回する行為に当たりうる
+  ——本プロジェクトの既存方針（実ブラウザへのなりすましをしない）の精神と隣接する論点の
+  ため、**production側のUSER_AGENT定数は変更せず、診断結果のみ`mitsukoshiGinzaHealthCheck.ts`
+  の新設`diag-default-ua`（healthStatus判定には使わない）として記録するに留めた**——採用する
+  かどうかはマロンの判断を仰ぐ。**④取得障害時の安全動作**：SOURCE_LEDGER.healthStatusは
+  既存の仕組み（'unknown'＝未確認〈既定値・一般crawl対象サイトの通常状態〉／'ok'／
+  'unreachable'〈確認済みの取得不能〉の3値）をそのまま使用。新規`morningRun.ts`の
+  `buildSourceLedgerMaps`拡張・`MorningReport.sourceAvailability`（新規`SourceAvailability`
+  型）で**healthStatus='unreachable'の情報源のみ**（'unknown'は含めない——未確認を失敗と
+  混同しない）を7:10レポートへ「■ 取得失敗した公式収集元（確認不能）」として表示、
+  「該当情報0件」と「収集元へ到達できず確認不能」を明示的に区別。銀座三越
+  （mistore.jp）は`healthStatus='unreachable'`のままのため`mitsukoshiGinzaFoodEventsFetch.ts`
+  は新規`decideMitsukoshiFetchGate`（純粋関数、単体テスト済み）により候補を一切生成しない
+  （fixtureデータによる代替も一切なし）。**⑤検証**：新規テスト
+  `mitsukoshiFetchGate.check.ts`（7件、取得成功・sourceUnavailable区別・fixture不使用の
+  静的確認含む）・`verifyP0Morning.check.ts`のfacilityCooldown関連2テストをA判定維持へ
+  改訂＋松屋銀座3件専用の実データ回帰テスト新規追加・`candidateBoard.check.ts`に
+  facilityNotice表示テスト2件追加。`run-all.ts` **844 passed 0 failed**（+10）、
+  `tsc --noEmit` 0エラー。**実行結果**：`./p2 am-run --no-write`実データ確認で
+  A=10/B=41/C=29、SWEETS候補4件（DC#1190〜1193、全件facilityNotice付き・全件A維持）、
+  ART候補にもGINZA SIX由来のfacilityNotice表示を確認（前回記事IDがnote-draft由来のため
+  `null`＝推測しないことも確認）。DB書き込みは`article_facts`（116件・不変）・
+  `discovered_content`（1191件・不変）・`articles`（35件・不変）——am-runは冪等（続き8で
+  既にready化済み）のため今回の再実行では新規書き込み0件、SOURCE_LEDGERの
+  mitsukoshi-ginza行のhealthNoteのみ更新。外部有料API呼び出し0回・追加費用0円。
+  詳細は`DECISION_LOG_02.md` 2026-09-16/17続き9参照。
 - 2026-09-16/17 続き8: 🍰 **SWEETS 0件の直接原因を特定・撤回——「データ不足」ではなく
   銀座三越・松屋銀座デパ地下の収集経路の上流不備。松屋銀座は実データで検証済みの
   複数の不具合修正込みで収集を復旧し実際にSWEETS候補を投入、銀座三越は
@@ -1922,7 +1985,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-09-16
+- **最終更新日**：2026-09-17
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

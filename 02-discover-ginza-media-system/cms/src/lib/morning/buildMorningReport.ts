@@ -16,7 +16,7 @@
 // 優先順位（決定的）：A を B より先に（生成即応性が高い順）、各tier内は
 // 開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
 
-import type { CandidateAssessment, MorningReport } from './types'
+import type { CandidateAssessment, MorningReport, SourceAvailability } from './types'
 import { buildCandidateBoard, type BoardEntry } from './candidateBoard'
 
 function eventSortKey(a: CandidateAssessment): number {
@@ -45,7 +45,7 @@ export function rankAssessments(list: CandidateAssessment[]): CandidateAssessmen
 
 export function buildMorningReport(
   assessments: CandidateAssessment[],
-  opts: { now?: Date; topN?: number; usedDcIds?: ReadonlySet<number> } = {},
+  opts: { now?: Date; topN?: number; usedDcIds?: ReadonlySet<number>; unavailableSources?: SourceAvailability[] } = {},
 ): MorningReport {
   const now = opts.now ?? new Date()
   const topN = opts.topN ?? 5
@@ -86,6 +86,7 @@ export function buildMorningReport(
     // マロンが実際に選定したDC」の集合（呼び出し元が selectionRecord.collectUsedDcIds
     // で用意する。未指定なら空集合＝除外なし）。
     candidateBoard: buildCandidateBoard(assessments, opts.usedDcIds ?? new Set()),
+    sourceAvailability: opts.unavailableSources ?? [],
   }
 }
 
@@ -201,6 +202,14 @@ function renderBoardEntry(e: BoardEntry): string {
   s += line(`    - DC #${e.discoveredContentId} ${e.title}`)
   s += line(`        施設: ${e.facilityLabel ?? '（不明）'} ／ 期間: ${e.eventPeriod} ／ URL: ${e.sourceUrl || '（なし）'}`)
   s += line(`        A判定理由: ${e.reasons.join(' / ')}`)
+  if (e.facilityNotice) {
+    const n = e.facilityNotice
+    s += line(
+      `        ⚠ ${n.message} ／ 親施設: ${n.parentFacilityLabel ?? '（不明）'} ／ 前回使用日: ${n.lastUsedDate ?? '（不明）'} ／ ` +
+        `前回の記事ID: ${n.lastArticleId != null ? `#${n.lastArticleId}` : '（該当なし）'} ／ 経過日数: ${n.daysSince != null ? `${n.daysSince}日` : '（不明）'}`,
+    )
+    s += line(`        → A判定は維持（施設クールダウンはA/B/C判定に影響しない）。最終3本への採否はマロンが判断。`)
+  }
   return s
 }
 
@@ -213,8 +222,21 @@ export function renderMorningReport(report: MorningReport): string {
   s += line(`  内訳: A=${report.counts.A} / B=${report.counts.B} / C=${report.counts.C}`)
   s += line('════════════════════════════════════════════════')
   s += line()
+  if (report.sourceAvailability.length > 0) {
+    s += line('■ 取得失敗した公式収集元（確認不能・2026-09-17追加）')
+    s += line('  「該当情報0件」と「収集元へ到達できず確認不能」は異なる——以下の収集元は取得できていないだけで、')
+    s += line('  実際には情報が存在する可能性がある。取得失敗を理由に既存の有効なA候補を削除・降格してはいない。')
+    for (const src of report.sourceAvailability) {
+      s += line(`    - ${src.name}（${src.sourceId}） [${src.healthStatus}] 確認日時: ${src.healthCheckedAt ?? '（未記録）'}`)
+      if (src.healthNote) s += line(`        ${src.healthNote}`)
+    }
+    s += line()
+  }
   s += line('■ Stage 3：A候補ボード（最終3本はここでは確定しない・マロンが選ぶ）')
-  s += line('  A判定は既に現在性・既処理・近似重複・施設/親施設クールダウンを通過済み（B/Cはここに出さない）。')
+  s += line('  A判定は既に現在性・既処理・近似重複を通過済み（B/Cはここに出さない）。')
+  s += line('  【2026-09-17改訂】施設/親施設クールダウンはA/B/C判定には使わない——同一施設が直近に')
+  s += line('  使用されている候補には「⚠」の注意表示を付けるのみで、A判定はそのまま維持する。')
+  s += line('  同一施設を最終3本に採用するかどうかはマロンが判断する（プログラムは自動除外しない）。')
   s += line('  このボードはA/B/Cを一切変更しない読み取り専用の表示。使用済み（過去に実際に選定済み）のA候補は除外。')
   s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
   s += line()

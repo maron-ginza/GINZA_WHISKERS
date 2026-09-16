@@ -698,9 +698,11 @@ const cases: CheckCase[] = [
     },
   },
 
-  // ---------- 施設14日間クールダウンのA/B/C判定本体への統合（2026-09-16続き3・マロン指示） ----------
-  // 「基礎判定をAのまま維持し、朝の3件選定時だけ除外する」誤実装を是正——現在性・既処理・
-  // 近似重複・施設14日間クールダウンまで通過した候補だけをAにする。
+  // ---------- 施設14日間クールダウンとA/B/C判定の責務分離（2026-09-17・マロン指示） ----------
+  // 旧方針（2026-09-16続き3）ではfacilityCooldown/parentFacilityCooldown中はBに降格して
+  // いたが、今回これを撤回した——A判定は「公式情報の裏どりが完了しているか」だけを示し、
+  // 同一施設が直近に使われたかどうかはA/B/C判定に一切影響しない（候補ボード上の注意情報
+  // facilityNoticeへ移動。最終3本への採否はマロンが判断する）。
   {
     // 実例＝DC#313（GINZA SIXの「アクシージア×mika ninagawaコラボ」）。facilityKey自体が
     // GINZA SIX（'ginza-six'）で、履歴側も同じ'ginza-six'（Article#70/DC#246由来）の
@@ -708,27 +710,36 @@ const cases: CheckCase[] = [
     // 一員であるため、実データでは親施設単位のクールダウンとして扱う
     // （matchTypeは facilityKey の完全一致有無で決まる。ここでは同一facilityKeyの
     // 直接一致ケースを明示的に検証する）。
-    name: 'B（必須回帰・2026-09-16続き3）: facilityCooldown中はAにしない（B・reasonsにfacilityCooldownタグ）',
+    name: 'A（必須回帰・2026-09-17改訂）: facilityCooldown中でもAのまま（Bへ降格しない）・facilityNoticeが注意情報として付与される',
     fn: () => {
       const a = assessCandidate(
         mk({
           dc: baseDc(),
           facilityCooldown: {
             onCooldown: true,
-            reason: '過去14日以内に同一施設（GINZA SIX）でnote下書き生成（2026-09-15）',
+            reason: '過去14日以内に同一施設（松屋銀座）でArticle #69 作成（2026-09-14）',
             matchType: 'facility',
+            parentFacilityLabel: '松屋銀座',
+            matched: { date: '2026-09-14T00:00:00Z', facilityLabel: '松屋銀座', articleId: 69, source: 'article' },
           },
         }),
       )
-      assert(a.verdict === 'B', `facilityCooldown中は期待 B / 実際 ${a.verdict}`)
-      assert(a.reasons.some((r) => r.includes('facilityCooldown')), 'facilityCooldownタグが理由に含まれる')
+      assert(a.verdict === 'A', `facilityCooldown中でもAのまま（実際 ${a.verdict}）`)
+      assert(!a.reasons.some((r) => r.includes('facilityCooldown')), 'reasonsにfacilityCooldownタグ（ブロッカー扱い）が含まれない')
+      assert(!!a.facilityNotice, 'facilityNoticeが付与される')
+      assert(a.facilityNotice?.recentlyUsed === true, 'facilityNotice.recentlyUsed:true')
+      assert(a.facilityNotice?.parentFacilityLabel === '松屋銀座', `親施設名が正しく伝わる（実際 ${a.facilityNotice?.parentFacilityLabel}）`)
+      assert(a.facilityNotice?.lastUsedDate === '2026-09-14T00:00:00Z', '前回使用日が伝わる')
+      assert(a.facilityNotice?.lastArticleId === 69, `前回の記事IDが伝わる（実際 ${a.facilityNotice?.lastArticleId}）`)
+      assert(typeof a.facilityNotice?.daysSince === 'number', '経過日数が算出される')
+      assert(a.facilityNotice?.message.includes('同一施設が直近に使用されています'), '注意文が含まれる')
     },
   },
   {
     // 実例＝DC#532（山野楽器「ASTURIASクラシックギターフェア」）・DC#1182〜#1184（銀座
     // 蔦屋書店の各種フェア／展示）。いずれも同一親施設（GINZA SIX／山野楽器）内の
     // 別テナント・別facilityKeyとの一致のため matchType:'parent'。
-    name: 'B（必須回帰・2026-09-16続き3）: parentFacilityCooldown中はAにしない（B・reasonsにparentFacilityCooldownタグ）',
+    name: 'A（必須回帰・2026-09-17改訂）: parentFacilityCooldown中でもAのまま（Bへ降格しない）',
     fn: () => {
       const a = assessCandidate(
         mk({
@@ -737,18 +748,65 @@ const cases: CheckCase[] = [
             onCooldown: true,
             reason: '過去14日以内に同一施設（GINZA SIX）でnote下書き生成（2026-09-15）',
             matchType: 'parent',
+            parentFacilityLabel: 'GINZA SIX（蔦屋書店含む）',
+            matched: { date: '2026-09-15T00:00:00Z', facilityLabel: '銀座 蔦屋書店', source: 'note-draft' },
           },
         }),
       )
-      assert(a.verdict === 'B', `parentFacilityCooldown中は期待 B / 実際 ${a.verdict}`)
-      assert(a.reasons.some((r) => r.includes('parentFacilityCooldown')), 'parentFacilityCooldownタグが理由に含まれる')
+      assert(a.verdict === 'A', `parentFacilityCooldown中でもAのまま（実際 ${a.verdict}）`)
+      assert(!a.reasons.some((r) => r.includes('parentFacilityCooldown')), 'reasonsにparentFacilityCooldownタグ（ブロッカー扱い）が含まれない')
+      assert(a.facilityNotice?.parentFacilityLabel === 'GINZA SIX（蔦屋書店含む）', '親施設名（グルーピング名）が伝わる')
+      // 前回の活動がArticleではなくnote-draft由来のため、記事IDは「該当なし」（推測しない）
+      assert(a.facilityNotice?.lastArticleId === null, `記事作成由来でない場合、記事IDはnull（実際 ${a.facilityNotice?.lastArticleId}）`)
     },
   },
   {
-    name: '対照（必須回帰・2026-09-16続き3）: facilityCooldown未指定・onCooldown:falseは通常どおり判定される（過剰除外しない）',
+    name: '対照（必須回帰・2026-09-17改訂）: facilityCooldown未指定・onCooldown:falseは通常どおり判定され、facilityNoticeも付与されない',
     fn: () => {
       const a = assessCandidate(mk({ dc: baseDc(), facilityCooldown: { onCooldown: false, reason: '施設活動なし' } }))
       assert(a.verdict === 'A', `クールダウン対象外は通常どおりA（実際 ${a.verdict}）`)
+      assert(a.facilityNotice === undefined, 'クールダウン対象外はfacilityNoticeも付与されない')
+    },
+  },
+  {
+    // 2026-09-17回帰：実データ DC#1190〜1192（松屋銀座 GINZAスイート週替わり催事、
+    // 2026-09-16続き8で新規収集）は、facilityCooldown（同一施設 松屋銀座で
+    // Article #69 が2026-09-14に作成済み・14日以内）を理由にBへ降格していたのを
+    // 今回是正した。3件とも施設クールダウン以外の条件（開催期間・出典・現在性・
+    // 近似重複なし）をすべて満たしていればAのまま、facilityNoticeのみ付与される
+    // ことを実データと同じ形で確認する（Aを強制しない——他の条件を満たさない
+    // 場合はB/Cのまま。ここでは満たすケースを検証）。
+    name: '松屋銀座3件の回帰テスト（実データDC#1190〜1192相当）: facilityCooldown中でも3件ともAのまま',
+    fn: () => {
+      const matsuyaFacilityCooldown = {
+        onCooldown: true,
+        reason: '過去14日以内に同一施設（松屋銀座）でArticle #69 作成（2026-09-14）',
+        matchType: 'facility' as const,
+        parentFacilityLabel: '松屋銀座',
+        matched: { date: '2026-09-14T06:17:38.355Z', facilityLabel: '松屋銀座', articleId: 69, source: 'article' as const },
+      }
+      const products = [
+        { title: '松屋銀座 GINZAスイート｜田中屋せんべい総本家 花さそふ', dcId: 1190 },
+        { title: '松屋銀座 GINZAスイート｜カヌレの店 サコ カヌレセット（2個入）', dcId: 1191 },
+        { title: '松屋銀座 GINZAスイート｜江戸久寿餅 Mサイズ', dcId: 1192 },
+      ]
+      for (const p of products) {
+        const a = assessCandidate(
+          mk({
+            dc: baseDc({
+              id: p.dcId,
+              title: p.title,
+              venue: '松屋銀座',
+              eventStartAt: '2026-09-16T00:00:00.000Z',
+              eventEndAt: '2026-09-22T00:00:00.000Z',
+            }),
+            facilityCooldown: matsuyaFacilityCooldown,
+          }),
+        )
+        assert(a.verdict === 'A', `DC#${p.dcId}（${p.title}）は施設クールダウン中でもA（実際 ${a.verdict} / 理由: ${a.reasons.join(' / ')}）`)
+        assert(a.facilityNotice?.parentFacilityLabel === '松屋銀座', `DC#${p.dcId} facilityNotice.parentFacilityLabel=松屋銀座`)
+        assert(a.facilityNotice?.lastArticleId === 69, `DC#${p.dcId} facilityNotice.lastArticleId=69`)
+      }
     },
   },
   {

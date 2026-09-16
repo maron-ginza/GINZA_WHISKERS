@@ -37,6 +37,7 @@ function mkAssessment(over: Partial<CandidateAssessment> & { discoveredContentId
     estimateMinutes: over.estimateMinutes ?? 25,
     bAdditionalMinutes: over.bAdditionalMinutes,
     digestMeta: over.digestMeta,
+    facilityNotice: over.facilityNotice,
   } as CandidateAssessment
 }
 
@@ -153,6 +154,38 @@ const cases: CheckCase[] = [
       assert(typeof e.eventPeriod === 'string', '期間')
       assert(typeof e.sourceUrl === 'string', 'URL')
       assert(Array.isArray(e.reasons) && e.reasons.length > 0, 'A判定理由')
+    },
+  },
+  {
+    // 2026-09-17追加・マロン指示：A判定と施設クールダウンの責務分離。施設クールダウン中でも
+    // A候補はボードに出続け（除外・降格しない）、facilityNoticeが注意情報として表示される。
+    name: '施設クールダウン中のA候補はボードから除外されず、facilityNoticeが注意情報として表示される',
+    fn: () => {
+      const a = withCategory(81, 'SWEETS', 'matsuya-ginza')
+      a.facilityNotice = {
+        recentlyUsed: true,
+        parentFacilityLabel: '松屋銀座',
+        lastUsedDate: '2026-09-14T00:00:00Z',
+        lastArticleId: 69,
+        daysSince: 3,
+        message: '同一施設が直近に使用されています（過去14日以内に同一施設（松屋銀座）でArticle #69 作成（2026-09-14））',
+      }
+      const board = buildCandidateBoard([a])
+      assert(board.sweets.length === 1 && board.sweets[0].discoveredContentId === 81, '施設クールダウン中でもボードに出る（除外しない）')
+      const e = board.sweets[0]
+      assert(!!e.facilityNotice, 'facilityNoticeがBoardEntryに伝わる')
+      assert(e.facilityNotice?.parentFacilityLabel === '松屋銀座', '親施設名が伝わる')
+      assert(e.facilityNotice?.lastArticleId === 69, '前回の記事IDが伝わる')
+      assert(e.facilityNotice?.daysSince === 3, '経過日数が伝わる')
+    },
+  },
+  {
+    name: '施設クールダウン対象外（facilityNotice未設定）のA候補は注意表示なしでボードに出る',
+    fn: () => {
+      const a = withCategory(82, 'ART', 'some-other-facility')
+      const board = buildCandidateBoard([a])
+      const e = board.byCategory.ART[0]
+      assert(e.facilityNotice === undefined, 'facilityNoticeが無ければ表示しない')
     },
   },
 ]

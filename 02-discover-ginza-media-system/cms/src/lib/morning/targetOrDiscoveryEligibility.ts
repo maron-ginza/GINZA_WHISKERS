@@ -26,15 +26,21 @@
 //   5. 既投稿・既記事化・既処理ではない（duplicate は呼び出し元のC判定／alreadyProcessed
 //      は呼び出し元がB判定として先に短絡する——このモジュールには到達しない）
 //   6. 近似重複ではない（recentBrandVenueDuplicate。nearDuplicateタグでB）
-//   7. 過去14日以内に扱った同一施設ではない（facilityCooldown、B）
-//   8. 過去14日以内に扱った同一親施設ではない（parentFacilityCooldown、B。
-//      GINZA SIX・山野楽器等の表記揺れをfacilityKey.tsのparentFacilityKeyで統合）
-//   9. 旬・限定・新規性・銀ブラ途中の発見価値のいずれかがある
+//   7. 旬・限定・新規性・銀ブラ途中の発見価値のいずれかがある
 //      （evaluateDiscoverySignal。無ければevergreenWithoutTimelinessでB）
+//
+// 【2026-09-17改訂・マロン指示：A判定と施設クールダウンの責務分離】旧項目7・8
+// （施設14日間クールダウン／親施設クールダウン）はA判定の条件から削除した。
+// A判定は「公式情報による裏どりが完了し、記事化に必要な事実が揃っている」ことだけを
+// 示す——同じ施設が直近に使用されたことは情報の正確性・裏どり状態とは別問題であり、
+// facilityCooldown／parentFacilityCooldownを理由にA候補をBへ変更してはいけない。
+// 施設クールダウンは候補ボード上の注意情報（CandidateAssessment.facilityNotice、
+// assessCandidate.ts側で付与）として保持するのみで、このモジュール（eligibility本体）
+// は一切参照しない。最終3本に同じ施設を採用するかどうかはマロンが判断する。
 //
 // 銀座限定でない・他地域にも店舗がある・通販でも買える・銀座を訪れる唯一の目的で
 // ない・常設店舗である、はいずれも除外理由にしない。ただし常設商品・常設サービスで
-// 9.のsignalが一切無いもの、または3.の現在性を確認できないものはBのまま（意図的な設計）。
+// 7.のsignalが一切無いもの、または3.の現在性を確認できないものはBのまま（意図的な設計）。
 //
 // 【2026-09-16続き4改訂】18カテゴリーへの分類（deriveProvisionalCategory）は、
 // A判定が確定した「後」に行う付随情報であり、A/B/C判定のブロッカーには**しない**
@@ -51,8 +57,8 @@
 // 【安全条件】AIを使わない・推測しない（書かれている語のみを見る）・既存のC判定
 // （終了済み・重複・銀座関連性なし・出典なし・明確に古い情報）はこのモジュールでは
 // 判定し直さず呼び出し元の結果をそのまま受け取る。facilityCooldown/
-// parentFacilityCooldownはB判定であり削除・恒久ブロックではない——クールダウン
-// 終了後、情報がまだ有効なら次回の再判定でAに戻る。
+// parentFacilityCooldownはA/B/Cいずれの判定にも使わない（2026-09-17改訂。候補
+// ボード上の注意情報としてのみ保持——assessCandidate.ts の facilityNotice 参照）。
 
 import { deriveProvisionalCategory } from '../pipeline/provisionalCategory'
 import { resolveFacilityKey } from '../curation/facilityKey'
@@ -250,14 +256,6 @@ export interface TargetOrDiscoveryInput {
   recentBrandVenueDuplicate: boolean
   /** 情報の確認日時が古い（freshnessDays 超過）。呼び出し元が判定済み（既定 undefined=false 扱い） */
   stale?: boolean
-  /**
-   * 【2026-09-16続き3追加】施設14日間クールダウン（facilityActivityHistory.
-   * checkFacilityCooldown の結果を呼び出し元がそのまま渡す）。onCooldown:true の間は
-   * AにせずBにする（削除・恒久ブロックはしない——クールダウン終了後に情報がまだ
-   * 有効なら次回の再判定でAに戻る）。matchType:'parent' なら
-   * parentFacilityCooldown、'facility'（既定）なら facilityCooldown として理由タグを分ける。
-   */
-  facilityCooldown?: { onCooldown: boolean; reason: string; matchType?: 'facility' | 'parent' }
   now?: Date
 }
 
@@ -292,11 +290,9 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   if (!input.ginzaRelevant) blockers.push('銀座関連性を確認できない')
   if (!input.hasTraceableSource) blockers.push('追跡可能な公式出典URLが無い')
   if (input.stale) blockers.push('情報の確認日時が古く再確認が必要')
-  // 2026-09-16続き3追加：施設14日間クールダウン中はAにしない（削除はしない・B判定）。
-  if (input.facilityCooldown?.onCooldown) {
-    const tag = input.facilityCooldown.matchType === 'parent' ? 'parentFacilityCooldown' : 'facilityCooldown'
-    blockers.push(`${tag}：${input.facilityCooldown.reason}`)
-  }
+  // 【2026-09-17改訂・マロン指示】施設14日間クールダウンはA判定のブロッカーから
+  // 削除した——A/B/C判定には一切使わない。候補ボード上の注意情報としてのみ扱う
+  // （assessCandidate.ts の facilityNotice 参照）。
 
   // 営業告知（短縮営業・休館・メンテナンス・開催中止等）は季節語等の discovery signal の
   // 有無に関わらず除外する（旬の候補ではなく運営上の事務連絡のため）

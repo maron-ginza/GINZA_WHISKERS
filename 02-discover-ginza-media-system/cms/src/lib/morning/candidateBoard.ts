@@ -32,6 +32,13 @@ export interface BoardEntry {
   sourceUrl: string
   /** A判定理由（CandidateAssessment.reasons をそのまま） */
   reasons: string[]
+  /**
+   * 【2026-09-17追加・マロン指示：A判定と施設クールダウンの責務分離】施設クールダウン
+   * の注意情報（CandidateAssessment.facilityNotice をそのまま）。A/B/C判定には
+   * 影響しない——該当候補にだけ設定される表示専用データ（無ければ undefined）。
+   * 最終3本への採否はマロンが判断する（このボードは注意表示のみで自動除外しない）。
+   */
+  facilityNotice?: CandidateAssessment['facilityNotice']
 }
 
 export interface CandidateBoard {
@@ -54,6 +61,7 @@ function toBoardEntry(a: CandidateAssessment): BoardEntry {
     eventPeriod: a.eventPeriod,
     sourceUrl: a.sourceUrl,
     reasons: a.reasons,
+    facilityNotice: a.facilityNotice,
   }
 }
 

@@ -20,6 +20,12 @@ export interface FacilityActivityRecord {
   date: string
   source: 'article' | 'approved' | 'note-draft' | 'morning-selected'
   detail: string
+  /**
+   * 【2026-09-17追加・マロン指示：候補ボード注意表示用】source==='article' の
+   * ときのみ設定される元記事ID（「前回の記事ID」の表示に使う。推測で埋めない
+   * ——articleでない活動〈approved/note-draft/morning-selected〉は undefined のまま）。
+   */
+  articleId?: number
 }
 
 export interface RawArticleActivity {
@@ -62,6 +68,7 @@ function toRecord(
   date: string | null,
   source: FacilityActivityRecord['source'],
   detail: string,
+  articleId?: number,
 ): FacilityActivityRecord | null {
   if (!date) return null
   const f = resolveFacilityKey({ venue: input.venue, sourceName: input.sourceName ?? null, sourceUrl: input.sourceUrl })
@@ -73,13 +80,20 @@ function toRecord(
     date,
     source,
     detail,
+    ...(articleId != null ? { articleId } : {}),
   }
 }
 
 export function buildFacilityActivityFromArticles(rows: RawArticleActivity[]): FacilityActivityRecord[] {
   const out: FacilityActivityRecord[] = []
   for (const r of rows) {
-    const rec = toRecord({ venue: r.venueHint, sourceUrl: r.sourceUrl }, r.date, 'article', `Article #${r.articleId} 作成`)
+    const rec = toRecord(
+      { venue: r.venueHint, sourceUrl: r.sourceUrl },
+      r.date,
+      'article',
+      `Article #${r.articleId} 作成`,
+      r.articleId,
+    )
     if (rec) out.push(rec)
   }
   return out

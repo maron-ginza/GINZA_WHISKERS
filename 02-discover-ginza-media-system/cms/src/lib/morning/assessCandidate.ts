@@ -21,22 +21,30 @@
 //     タイトルに明示された過去の年月日がある。2026-09-16続き3追加・DC#40クラス）。
 //   A（記事化に必要な公式情報の裏どりとArticleFacts保存が完了した候補。18カテゴリー
 //     共通の目的型／発見型ロジック）：
-//     C でない かつ targetOrDiscoveryEligibility.ts の9条件（現在性・18カテゴリー
-//     分類・近似重複なし・施設/親施設クールダウン対象外を含む）をすべて満たし、
-//     かつ **ArticleFacts.enrichmentStatus==='ready'** の候補。
+//     C でない かつ targetOrDiscoveryEligibility.ts の7条件（現在性・近似重複なし等を
+//     含む。2026-09-17改訂で施設/親施設クールダウンは条件から除外——後述）を
+//     すべて満たし、かつ **ArticleFacts.enrichmentStatus==='ready'** の候補。
 //     「銀座限定でない」「他地域にも店舗がある」「通販でも買える」「銀座を
 //     訪れる唯一の目的でない」「常設店舗である」はいずれも除外理由にしない。
 //     A判定の理由に「目的型」または「発見型」を明記する。
 //   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要、または
-//     現在性/既処理/施設クールダウン/ArticleFacts未ready等の理由でAに一時的に
-//     届かない）：
-//       C でも A でもない。facilityCooldown／parentFacilityCooldown／alreadyProcessed／
-//       uncertainCurrentAvailability／missingEventOrSalePeriod／nearDuplicate／
-//       evergreenWithoutTimelinessDetection／**articleFactsNotReady**（続き7追加）
-//       のいずれか（reasonsに英語タグを明記）。
-//       **削除しない**——施設クールダウン終了後や情報の状況が変われば、次回の
-//       再判定で自動的にAへ戻る。ArticleFactsが未readyのBも同様——翌日以降の
-//       6時処理で自動導出が成功すればAに昇格しうる。
+//     現在性/既処理/ArticleFacts未ready等の理由でAに一時的に届かない）：
+//       C でも A でもない。alreadyProcessed／uncertainCurrentAvailability／
+//       missingEventOrSalePeriod／nearDuplicate／evergreenWithoutTimelinessDetection／
+//       articleFactsNotReady（続き7追加）のいずれか（reasonsに英語タグを明記）。
+//       **削除しない**——情報の状況が変われば、次回の再判定で自動的にAへ戻る。
+//       ArticleFactsが未readyのBも同様——翌日以降の6時処理で自動導出が成功すれば
+//       Aに昇格しうる。
+//
+// 【2026-09-17改訂・マロン指示：A判定と施設クールダウンの責務分離】施設14日間
+// クールダウン（facilityCooldown／parentFacilityCooldown）はA/B/C判定から完全に
+// 切り離した——同じ施設が直近に使用されたことは、情報の正確性・裏どり状態とは
+// 別問題であり、これを理由にA候補をBへ変更しない（旧方針ではB判定の理由の一つ
+// だったが、今回はB判定にすらしない）。代わりに CandidateAssessment.facilityNotice
+// （候補ボード表示専用の注意情報）として保持する。プログラムは注意表示のみを行い、
+// 自動除外・自動降格・自動選定は行わない——同一施設を最終3本に採用するかどうかは
+// マロンが判断する。ただし同一URL・同一商品/催事・近似重複・既投稿記事・現在性
+// 未確認・裏どり不足は引き続きB/Cとして除外する（この節の対象外）。
 //
 // 未確認情報は推測で埋めない——missing / unconfirmed に列挙するだけ。
 
@@ -105,15 +113,25 @@ export interface AssessCandidateInput {
     reason: string
   }
   /**
-   * 【2026-09-16続き3追加・マロン指示】施設14日間クールダウン。呼び出し元
-   * （morningRun.ts）が facilityActivityHistory.checkFacilityCooldown() の結果を
-   * そのまま渡す。onCooldown:true のときは verdict を B とする（削除・恒久ブロックでは
-   * ない——クールダウン終了後、情報が有効なら次回の再判定でAに戻る）。
+   * 【2026-09-16続き3追加・2026-09-17改訂（マロン指示：A/B/C判定と施設クールダウンの
+   * 責務分離）】施設14日間クールダウン。呼び出し元（morningRun.ts）が
+   * facilityActivityHistory.checkFacilityCooldown() の結果をそのまま渡す。
+   * **A/B/C判定には一切使わない**——候補ボード上の注意情報
+   * （CandidateAssessment.facilityNotice）としてのみ保持する。
    */
   facilityCooldown?: {
     onCooldown: boolean
     reason: string
     matchType?: 'facility' | 'parent'
+    /** 表示用の親施設名（呼び出し元が resolveFacilityKey の結果から渡す。無ければ null） */
+    parentFacilityLabel?: string | null
+    /** 一致した過去活動の詳細（表示用。無ければ null） */
+    matched?: {
+      date: string
+      facilityLabel: string
+      articleId?: number
+      source: 'article' | 'approved' | 'note-draft' | 'morning-selected'
+    } | null
   }
   /**
    * 【2026-09-16続き7追加・マロン指示】呼び出し元（morningRun.ts）が
@@ -332,7 +350,8 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       duplicate: dedup.duplicate,
       recentBrandVenueDuplicate: recentDupBlocks,
       stale,
-      facilityCooldown: input.facilityCooldown,
+      // 【2026-09-17改訂】facilityCooldownはA判定のブロッカーとして渡さない
+      // （施設クールダウンはA/B/C判定から切り離した。下の facilityNotice を参照）。
       now,
     })
 
@@ -404,6 +423,24 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   if (dedup.externalUnverified)
     unconfirmed.push('外部公開記録は未確認・マロン最終確認（システムは外部 note を巡回しない。8:00 の人間選定が最終ゲート）')
 
+  // --- 施設クールダウン注意情報（2026-09-17・マロン指示：A/B/C判定から切り離す） ---
+  // verdictには一切影響しない。候補ボード（A候補のみ表示）向けの表示専用データ。
+  let facilityNotice: CandidateAssessment['facilityNotice']
+  if (input.facilityCooldown?.onCooldown) {
+    const m = input.facilityCooldown.matched
+    const matchedDate = m?.date ?? null
+    const matchedD = matchedDate ? toDate(matchedDate) : null
+    const daysSince = matchedD ? Math.round(daysBetween(now, matchedD)) : null
+    facilityNotice = {
+      recentlyUsed: true,
+      parentFacilityLabel: input.facilityCooldown.parentFacilityLabel ?? null,
+      lastUsedDate: matchedDate,
+      lastArticleId: m?.source === 'article' && m.articleId != null ? m.articleId : null,
+      daysSince,
+      message: `同一施設が直近に使用されています（${input.facilityCooldown.reason}）`,
+    }
+  }
+
   // --- 所要時間 ---
   const A_MIN = 25 // 20〜30 の中央
   let estimateMinutes = A_MIN
@@ -435,6 +472,7 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     ginzaRelevant,
     ginzaRelevanceBasis,
     hasTraceableSource,
+    facilityNotice,
     factKind: input.factKind ?? 'event',
     // event 用 mapper の値は event 記事にのみ意味がある
     // factsSource は event/product_news なら常に mapper の実値（none/draft/withdrawn/ready）を
