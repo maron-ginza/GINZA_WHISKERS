@@ -757,11 +757,11 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '必須回帰（2026-09-16続き3）: 18カテゴリーへ分類できない候補はAにしない（B）',
+    name: '必須回帰（2026-09-16続き4）: 18カテゴリーへ分類できない候補でも、他の条件を満たせばA（カテゴリー分類だけを理由にBへ変更しない）',
     fn: () => {
       const a = assessCandidate(mk({ dc: baseDc({ title: '銀座◯◯まつり 開催のお知らせ' }) })) // カテゴリー語を含まない汎用タイトル
-      assert(a.verdict === 'B', `未分類は期待 B / 実際 ${a.verdict}`)
-      assert(a.reasons.some((r) => r.includes('18カテゴリーへ分類できない')), '分類不能の理由が明記される')
+      assert(a.verdict === 'A', `未分類でも他条件を満たせば期待 A / 実際 ${a.verdict}（reasons=${a.reasons.join('|')}）`)
+      assert(a.digestMeta?.category == null, '未分類のまま（推測で割り当てない）')
     },
   },
 

@@ -106,26 +106,27 @@ function mkB(id: number, category: string | null, facilityKey: string | null): C
 
 const cases: CheckCase[] = [
   {
-    name: '18カテゴリー全体から最も価値の高い最大3件を選ぶ（固定枠なし）。自然な上位3件が最低1件の必須カテゴリーを含む場合はそのまま',
+    name: '18カテゴリー全体から最も価値の高い最大3件を選ぶ（固定枠なし）。自然な上位3件が必須カテゴリー（SWEETS）を含む場合はそのまま',
     fn: () => {
-      const beauty = mkA(1, 'BEAUTY', 'shiseido-ginza')
+      const sweets = mkA(1, 'SWEETS', 'ginza-motoji')
       const art = mkA(2, 'ART', 'ginza-tsutaya')
       const music = mkA(3, 'MUSIC', 'yamano-music-ginza')
-      const r = selectMorningThreeSlots([beauty, art, music])
+      const r = selectMorningThreeSlots([sweets, art, music])
       assert(r.picks.length === 3, `3件選出（実際 ${r.picks.length}）`)
       assert(r.picks.map((p) => p.candidate.discoveredContentId).join(',') === '1,2,3', 'id昇順（価値の代理指標）で1,2,3が選ばれる')
-      assert(r.requiredCategorySatisfied === true, '必須カテゴリー（BEAUTY）を含む')
+      assert(r.requiredCategorySatisfied === true, '必須カテゴリー（SWEETS）を含む')
     },
   },
   {
-    name: '文化・アートは必須にしない——ART候補が無くても3件選出できる',
+    name: '文化・アートは必須にしない——ART候補が無くても3件選出できる。SHOPPINGは第2枠として固定しない',
     fn: () => {
-      const beauty = mkA(11, 'BEAUTY', 'shiseido-ginza')
-      const food = mkA(12, 'FOOD', 'ginza-motoji')
-      const shopping = mkA(13, 'SHOPPING', 'wako-ginza')
-      const r = selectMorningThreeSlots([beauty, food, shopping])
+      const sweets = mkA(11, 'SWEETS', 'ginza-motoji')
+      const food = mkA(12, 'FOOD', 'ginza-kikunoya')
+      const beauty = mkA(13, 'BEAUTY', 'shiseido-ginza')
+      const r = selectMorningThreeSlots([sweets, food, beauty])
       assert(r.picks.length === 3, `ART無しでも3件（実際 ${r.picks.length}）`)
       assert(!r.picks.some((p) => p.candidate.digestMeta?.category === 'ART'), 'ARTは含まれない')
+      assert(!r.picks.some((p) => p.candidate.digestMeta?.category === 'SHOPPING'), 'SHOPPINGを第2枠として強制しない（候補に無ければ含まれない）')
     },
   },
   {

@@ -10,7 +10,7 @@
 // 「銀座関連性なし」385件——いずれもArticleFacts手入力の有無や記事タイプ2分類の
 // 都合であり、「銀座限定でないか」「常設店舗か」等の条件は実際には効いていなかった）。
 //
-// 【A判定の必須条件（2026-09-16続き3改訂：マロン指示「Aは今日提示できる状態」で全面整理）】
+// 【A判定の必須条件（2026-09-16続き4改訂：マロン指示「A/B/C判定と最終選定の分離」で修正）】
 // 【最重要定義】Aは「今日、マロンへ記事候補として提示できる状態」——単なる候補プール
 // ではない。以下をすべて満たす場合だけAとする（1つでも欠けばB、安全条件違反はC）。
 //   1. 銀座で体験・購入・参加できる（＝終了済みでない。expired は呼び出し元のC判定）
@@ -29,13 +29,22 @@
 //   7. 過去14日以内に扱った同一施設ではない（facilityCooldown、B）
 //   8. 過去14日以内に扱った同一親施設ではない（parentFacilityCooldown、B。
 //      GINZA SIX・山野楽器等の表記揺れをfacilityKey.tsのparentFacilityKeyで統合）
-//   9. 18カテゴリーのいずれかに該当する（deriveProvisionalCategory）
-//   10. 旬・限定・新規性・銀ブラ途中の発見価値のいずれかがある
+//   9. 旬・限定・新規性・銀ブラ途中の発見価値のいずれかがある
 //      （evaluateDiscoverySignal。無ければevergreenWithoutTimelinessでB）
 //
 // 銀座限定でない・他地域にも店舗がある・通販でも買える・銀座を訪れる唯一の目的で
 // ない・常設店舗である、はいずれも除外理由にしない。ただし常設商品・常設サービスで
-// 10.のsignalが一切無いもの、または3.の現在性を確認できないものはBのまま（意図的な設計）。
+// 9.のsignalが一切無いもの、または3.の現在性を確認できないものはBのまま（意図的な設計）。
+//
+// 【2026-09-16続き4改訂】18カテゴリーへの分類（deriveProvisionalCategory）は、
+// A判定が確定した「後」に行う付随情報であり、A/B/C判定のブロッカーには**しない**
+// （マロン指示：「カテゴリー分類だけを理由にAからBへ変更しない」）。category は
+// A判定の可否とは無関係に呼び出し元へ返し、推測でも割り当てない——判定できない
+// 場合は null のまま返し、呼び出し元（selectMorningThreeSlots／buildMorningReport）
+// が「未分類」として件数・DC番号を報告する。旧2026-09-16続き3改訂ではこれを
+// A判定のブロッカーへ戻していたが、その結果A判定候補が過剰に少なくなり
+// （2026-09-15データで37→1、選定条件〈カテゴリーの偏り対策〉と本来のA/B/C判定
+// 〈今日提示できる状態か〉を混同していたため）、今回是正した。
 //
 // mode（目的型／発見型）はA判定の条件ではなく、A判定後の分類・表示用。
 //
@@ -321,17 +330,15 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   if (!locationConfirmed) blockers.push('公式情報で銀座の場所・提供状況を確認できない')
 
   // 18カテゴリーへの分類（タイトル/会場の明記語のみ）。
-  // 【2026-09-16続き3改訂】2026-09-15改訂ではA判定のブロッカーから外していたが、
-  // 今回のマロン指示「18カテゴリーのいずれかに該当する」で再びA判定の必須条件へ戻す。
-  // 実務上は selectMorningThreeSlots 側で既に「未分類は選定しない」フィルターが
-  // 掛かっていたため、A判定自体をこの条件に揃えることで two-tier の不整合を解消する。
+  // 【2026-09-16続き4改訂】A判定確定後の付随情報として算出するのみで、ブロッカーには
+  // しない（マロン指示：カテゴリー分類だけを理由にAからBへ変更しない。判断できない
+  // カテゴリーを推測で割り当てず、未分類は呼び出し元が件数・DC番号として報告する）。
   const provisional = deriveProvisionalCategory({
     title: input.title,
     venue: input.venue,
     contentType: input.contentType,
   })
   const category = provisional.category
-  if (!category) blockers.push('18カテゴリーへ分類できない')
 
   // 3. 季節性・新規性・期間性・話題性・発見性のいずれかがある
   const discovery = evaluateDiscoverySignal(input.title, input.excerpt, input.eventStartAt, input.eventEndAt, now)

@@ -71,6 +71,13 @@ export function buildMorningReport(
     topPresentable.push(a)
   }
 
+  // 【2026-09-16続き4追加】A判定だが18カテゴリーへ分類できない候補（推測で割り当てない・
+  // 未分類のまま件数とDC番号を報告する。カテゴリー分類はA/B/C判定のブロッカーではない）。
+  const unclassifiedA = A.filter((a) => !a.digestMeta?.category).map((a) => ({
+    discoveredContentId: a.discoveredContentId,
+    title: a.displayTitle,
+  }))
+
   return {
     generatedAt: now.toISOString(),
     assessed: assessments.length,
@@ -83,6 +90,7 @@ export function buildMorningReport(
     b: B,
     c: C,
     morningThreeSlots: selectMorningThreeSlots(assessments),
+    unclassifiedA,
   }
 }
 
@@ -203,8 +211,9 @@ export function renderMorningReport(report: MorningReport): string {
   s += line('════════════════════════════════════════════════')
   s += line()
   s += line('■ 朝の候補（18カテゴリー全体から最大3件・固定枠は廃止）')
-  s += line('  最低1件はBEAUTY/SHOPPING（美容・ファッション）/FOOD/CAFE/SWEETSのいずれかを含める。')
+  s += line('  3件のうちSWEETSを必ず1件含める。残り2件はSHOPPING固定枠にせず18カテゴリー全体から選ぶ。')
   s += line('  A判定は既に現在性・既処理・近似重複・施設/親施設クールダウンを通過済み（B/Cはここに渡さない）。')
+  s += line('  最終選定はA/B/Cの値を更新しない（この3件表示はあくまで表示専用の選定）。')
   if (report.morningThreeSlots.picks.length === 0) {
     s += line('  該当候補なし（安全な候補が1件も無いため、無理に選出していません）。')
   } else {
@@ -220,8 +229,13 @@ export function renderMorningReport(report: MorningReport): string {
       s += line(`  ※ 安全な候補が${report.morningThreeSlots.picks.length}件のみのため、無理に3件に埋めていません。`)
     }
     if (!report.morningThreeSlots.requiredCategorySatisfied) {
-      s += line('  ※ 必須カテゴリー（BEAUTY/SHOPPING/FOOD/CAFE/SWEETS）に該当する安全な候補がありませんでした。')
+      s += line('  ※ 必須カテゴリー（SWEETS）に該当する安全な候補がありませんでした。')
     }
+  }
+  if (report.unclassifiedA.length > 0) {
+    s += line()
+    s += line(`  ※ A判定だが18カテゴリーへ分類できない候補（推測で割り当てず未分類のまま。${report.unclassifiedA.length}件）：`)
+    for (const u of report.unclassifiedA) s += line(`    - DC #${u.discoveredContentId} ${u.title}`)
   }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')
