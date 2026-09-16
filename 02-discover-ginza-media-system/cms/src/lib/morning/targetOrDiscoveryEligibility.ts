@@ -10,7 +10,7 @@
 // 「銀座関連性なし」385件——いずれもArticleFacts手入力の有無や記事タイプ2分類の
 // 都合であり、「銀座限定でないか」「常設店舗か」等の条件は実際には効いていなかった）。
 //
-// 【新しいA判定（18カテゴリー共通・目的型／発見型）】
+// 【新しいA判定（18カテゴリー共通・目的型／発見型。2026-09-16、品質補正で条件7・8を追加）】
 // A：以下をすべて満たす候補。
 //   1. 銀座で現在または近い将来に購入・飲食・鑑賞・利用・体験できる
 //      （＝終了済みでない。C判定の安全条件は呼び出し元でそのまま維持）
@@ -19,10 +19,18 @@
 //   4. 既投稿・近似記事ではない（duplicate/近似重複。呼び出し元の判定をそのまま使う）
 //   5. 終了済みではない（同上）
 //   6. 読者に具体的な行動を提案できる（＝18カテゴリーへ分類できる）
+//   7. 【2026-09-16追加】現在性を確認できる——イベント・催事は有効な開催期間（構造化
+//      eventStartAt/eventEndAt）が確認でき終了していないこと、商品・メニューは公式
+//      ページで「発売中」「販売中」「提供中」等の現在性の明記語が確認できること。
+//      新規性語（3.のsignal）だけでは満たさない。期間・販売状況を確認できない候補、
+//      過去月・過去季節の言及のみの候補はB。
+//   8. 【2026-09-16追加】過去の報告・メディア掲載系（「掲載されました」「メディア掲載」
+//      「開催報告」「終了報告」「過去の紹介」）ではない——過去の出来事の記録は旬の候補
+//      ではない。
 //
 // 銀座限定でない・他地域にも店舗がある・通販でも買える・銀座を訪れる唯一の目的で
 // ない・常設店舗である、はいずれも除外理由にしない。ただし常設商品・常設サービスで
-// 3の signal が一切無いものは B のまま（意図的な設計）。
+// 3の signal が一切無いもの、または7の現在性を確認できないものは B のまま（意図的な設計）。
 //
 // mode（目的型／発見型）はA判定の条件ではなく、A判定後の分類・表示用。
 //
@@ -52,9 +60,54 @@ const TOPIC_OR_EXPERIENCE_SIGNAL_RE =
 const OPERATIONAL_NOTICE_RE =
   /短縮営業|営業時間変更|営業時間の変更|臨時休業|休業のお知らせ|休館|メンテナンスのお知らせ|システムメンテナンス|開催中止|中止のお知らせ|営業日変更|定休日変更|一部休業|閉店時間変更|時間変更のお知らせ|臨時休館/
 
+// 過去の報告・メディア掲載系の記事は、旬の候補ではなく「過去の出来事の記録」であり
+// 目的型／発見型のいずれにも該当しない——2026-09-16追加（マロン指示。DC#1017
+// 「ディープトウキョウマガジンに掲載されました」がAになっていた実例を受けて）。
+const PAST_REPORT_OR_MEDIA_RE = /掲載されました|メディア掲載|開催報告|終了報告|過去の紹介/
+
+// 現在性の確認語（2026-09-16追加・マロン指示）。「新商品」「限定」等の新規性語（discovery
+// signal）だけでは「今も入手・体験できるか」を確認したことにならないため、以下のいずれかを
+// 満たす場合のみ現在性ありとする。あえて単独の「発売」「販売」は含めない——「発売しました」
+// 「〜を販売しております」等の**過去の告知文でも一致してしまう**ため、確実に現在進行を
+// 示す語尾（「中」）または明確な現在性の定型句に限定する（推測しない・明記語のみ）。
+const CURRENT_AVAILABILITY_RE =
+  /発売中|新発売|好評発売中|ただいま発売中|販売中|提供中|営業中|予約受付中|受付中|開催中|取扱中|販売開始/
+
 /** 明記された開催・販売期間があるか（推測しない。構造化日付のいずれかがあれば true） */
 function hasExplicitPeriodSignal(eventStartAt: string | null, eventEndAt: string | null): boolean {
   return !!(eventStartAt || eventEndAt)
+}
+
+export interface CurrencyConfirmationResult {
+  confirmed: boolean
+  reason: string
+}
+
+/**
+ * 現在性（開催中・販売中・提供中）を確認できるか（明記語・構造化日付のみ・推測しない）。
+ * イベント／催事＝構造化された開催・販売期間（eventStartAt/eventEndAt）が明記されていること。
+ * 商品・メニュー＝公式ページ本文に「発売中」「販売中」「提供中」等の現在性の明記語があること。
+ * どちらか一方を満たせばよい（events は期間、products はテキスト、を主に想定するが排他ではない）。
+ *
+ * 【タイトルのみを見る・excerptは使わない】excerptはサイト共通ナビ・他キャンペーンの
+ * バナー文言を大量に含むことが多く（deriveProvisionalCategory が category 判定に
+ * excerpt を使わない理由と同じ）、「無関係な別キャンペーンの『開催中』がexcerptに
+ * 混入し誤って現在性ありと判定される」実例（DC#119「SPRING 2026」のexcerptに別の
+ * 「夏のプレゼントキャンペーン開催中」というナビ文言が混入していた）を2026-09-16の
+ * 検証で発見したため、確実性の高いタイトルのみを対象とする。
+ */
+export function evaluateCurrencyConfirmation(
+  title: string | null,
+  eventStartAt: string | null,
+  eventEndAt: string | null,
+): CurrencyConfirmationResult {
+  if (hasExplicitPeriodSignal(eventStartAt, eventEndAt)) {
+    return { confirmed: true, reason: '開催・販売期間を公式情報で確認済み（構造化データ）' }
+  }
+  if (CURRENT_AVAILABILITY_RE.test(title ?? '')) {
+    return { confirmed: true, reason: '現在性の明記語を確認（発売中／販売中／提供中等）' }
+  }
+  return { confirmed: false, reason: '開催期間・販売状況を公式情報で確認できない（過去の月・季節の言及のみ等）' }
 }
 
 export interface DiscoverySignalResult {
@@ -145,6 +198,20 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
     blockers.push('営業時間変更・休業・中止等の運営告知（旬の候補として扱わない）')
   }
 
+  // 過去の報告・メディア掲載系（「掲載されました」「開催報告」等）は discovery signal の
+  // 有無に関わらず除外する（過去の出来事の記録であり旬の候補ではないため。2026-09-16追加）
+  if (PAST_REPORT_OR_MEDIA_RE.test(noticeText)) {
+    blockers.push('過去の報告・メディア掲載系の記事（旬の候補として扱わない）')
+  }
+
+  // 現在性の必須化（2026-09-16追加・マロン指示）：イベント・催事は有効な開催期間が確認でき
+  // 終了していないこと、商品・メニューは公式ページで現在性（発売中・販売中・提供中等）を
+  // 確認できることのいずれかを満たさない限りAにしない——新規性語（discovery signal）だけでは
+  // 「今も入手・体験できるか」の確認にはならない（DC#34「8月」の過去月言及、DC#119「SPRING
+  // 2026」、DC#743・DC#1132の販売状況未確認、が実際にAになっていた事例を受けて）。
+  const currency = evaluateCurrencyConfirmation(input.title, input.eventStartAt, input.eventEndAt)
+  if (!currency.confirmed) blockers.push(currency.reason)
+
   // 2. 公式情報で銀座の場所と提供状況を確認できる
   const facility = resolveFacilityKey({
     venue: input.venue,
@@ -182,7 +249,7 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
     eligible: true,
     mode,
     category,
-    reasons: [discovery.reason],
+    reasons: [discovery.reason, currency.reason],
     blockers: [],
   }
 }

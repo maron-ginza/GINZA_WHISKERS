@@ -17,6 +17,7 @@
 // 開催が近い順 → 情報の確認日時が新しい順 → id 昇順。
 
 import type { CandidateAssessment, MorningReport } from './types'
+import { selectMorningThreeSlots } from './selectMorningThreeSlots'
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -81,6 +82,7 @@ export function buildMorningReport(
     facilityCapSkips,
     b: B,
     c: C,
+    morningThreeSlots: selectMorningThreeSlots(assessments),
   }
 }
 
@@ -199,6 +201,18 @@ export function renderMorningReport(report: MorningReport): string {
   s += line(`  評価: DiscoveredContent ${report.assessed} 件（inbox＋approved。承認前情報も含む）`)
   s += line(`  内訳: A=${report.counts.A} / B=${report.counts.B} / C=${report.counts.C}`)
   s += line('════════════════════════════════════════════════')
+  s += line()
+  s += line('■ 朝の3枠（ビューティー・ファッション／グルメ・スウィーツ／文化・アート、各1件）')
+  s += line('  A判定（18カテゴリー全体）の中から表示用に3枠へ絞る。未分類はこの3枠には入れない。')
+  for (const slot of report.morningThreeSlots.slots) {
+    if (slot.candidate) {
+      const c = slot.candidate
+      s += line(`  ・${slot.bucketLabel}: DC #${c.discoveredContentId} ${c.displayTitle}`)
+      s += line(`      施設: ${c.digestMeta?.facilityLabel || c.digestMeta?.facilityKey || '（不明）'} ／ 期間: ${c.eventPeriod} ／ URL: ${c.sourceUrl || '（なし）'}`)
+    } else {
+      s += line(`  ・${slot.bucketLabel}: 該当なし（${slot.emptyReason ?? '不明'}）`)
+    }
+  }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')
   s += line('  A＝公式情報だけで記事生成可能 ／ B＝旬の候補として提示可能・記事生成前に不足項目の公式確認が必要')

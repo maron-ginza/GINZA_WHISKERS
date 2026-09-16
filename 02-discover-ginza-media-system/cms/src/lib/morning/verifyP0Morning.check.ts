@@ -325,14 +325,18 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'A（必須回帰）: 銀ブラ途中の発見型候補（新商品・季節限定の明記語のみ、期間未確定）もA',
+    // 2026-09-16改訂：現在性の必須化（下記「必須回帰」節）に伴い、期間未確定の場合は
+    // 新規性語だけでなく現在性の明記語（販売中等）も必要になったため、fixtureへ追加。
+    // 現在性の明記語判定はタイトルのみを見る（excerptはナビ文言混入によるDC#119型の
+    // 誤検出を避けるため対象外——下記「必須回帰」節参照）。
+    name: 'A（必須回帰）: 銀ブラ途中の発見型候補（新商品・季節限定＋現在性の明記語、期間未確定）もA',
     fn: () => {
       const a = assessCandidate(
         mk({
           factKind: 'product_news',
           dc: baseDc({
-            title: '銀座三丁目の路面店に新作スイーツが新登場',
-            excerpt: '店頭に立ち寄って気軽に楽しめる、季節限定の新商品です。',
+            title: '銀座三丁目の路面店に新作スイーツが新登場・店頭で販売中',
+            excerpt: '立ち寄って気軽に楽しめる、季節限定の新商品です。',
             eventStartAt: null,
             eventEndAt: null,
           }),
@@ -397,6 +401,138 @@ const cases: CheckCase[] = [
         }),
       )
       assert(normalNew.verdict === 'A', `運営告知語が無い通常の新商品告知は引き続きA（実際 ${normalNew.verdict}）`)
+    },
+  },
+
+  // ---------- 現在性の必須化（2026-09-16追加・マロン指示） ----------
+  // イベント・催事は有効な開催期間が確認でき終了していない場合のみA。商品・メニューは
+  // 公式ページで現在性（発売中／販売中／提供中等）を確認できる場合のみA。新規性語
+  // （新商品・限定等）だけでは満たさない。期間・販売状況を確認できない候補、過去月・
+  // 過去季節の言及のみの候補はB。
+  {
+    // 実例＝DC#34「8月「歌舞伎座アフタヌーンティー」のご紹介」（2026-09-16、9月データの
+    // 再判定で発見）。構造化された開催・販売期間が無く、タイトルは過去月「8月」を指すのみ。
+    name: 'B（必須回帰・2026-09-16追加）: DC#34クラス——期間未確定・過去月の言及のみはAにしない',
+    fn: () => {
+      const dc34 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '8月「歌舞伎座アフタヌーンティー」のご紹介',
+            excerpt: '歌舞伎座では、昨年に続き8月「歌舞伎座アフタヌーンティー」のお申し込みをはじめております。',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+          factKind: 'unknown',
+        }),
+      )
+      assert(dc34.verdict !== 'A', `DC#34クラスは期待 B（実際 ${dc34.verdict}）`)
+      assert(
+        dc34.reasons.some((r) => r.includes('確認できない')),
+        '期間・販売状況を確認できない旨が理由に明記される',
+      )
+    },
+  },
+  {
+    // 実例＝DC#119「SPRING 2026」（和光オンラインブティック）。季節名のみのキャンペーン
+    // タイトルで、構造化期間も現在性の明記語も無い。実データのexcerptには無関係な別
+    // キャンペーンのナビ文言「夏のプレゼントキャンペーン開催中」が混入しており、
+    // excerptも判定対象にすると誤ってAになっていた（2026-09-16、再判定時に発見）——
+    // 現在性判定をタイトルのみに限定して修正済み（本テストはexcerptにナビ文言混入を
+    // 再現し、正しくBのままであることを確認する）。
+    name: 'B（必須回帰・2026-09-16追加）: DC#119クラス——季節名のみのタイトルで期間・現在性未確認はAにしない（excerptのナビ文言混入に惑わされない）',
+    fn: () => {
+      const dc119 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: 'SPRING 2026',
+            // 実データ相当：別キャンペーンの「開催中」がナビ文言として混入
+            excerpt: 'WAKO公式オンラインブティック 配送料金 期間限定割引のご案内 【会員様限定】夏のプレゼントキャンペーン開催中',
+            sourceSiteName: '銀座・和光',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+        }),
+      )
+      assert(dc119.verdict !== 'A', `DC#119クラスは期待 B（実際 ${dc119.verdict}）`)
+      assert(
+        dc119.reasons.some((r) => r.includes('確認できない')),
+        '現在性を確認できない旨が理由に明記される（excerpt中の「開催中」には惑わされない）',
+      )
+    },
+  },
+  {
+    // 実例＝DC#743「和栗のキャラメルチーズケーキ」（銀座カフェーパウリスタ）・
+    // DC#1132「ミッフィーどら焼き」（木挽町よしや）。季節語（栗等）や期間限定語はあるが
+    // 現在も販売中であることを公式に確認できない——現在販売中と確認できない限りB。
+    name: 'B（必須回帰・2026-09-16追加）: DC#743・DC#1132クラス——季節語はあるが現在販売中を確認できない商品はB',
+    fn: () => {
+      const dc743 = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '【クール便】和栗のキャラメルチーズケーキ',
+            excerpt: 'コーヒー 品名から探す 森のコーヒー パウリスタオールド',
+            sourceSiteName: 'CAFE PAULISTA（銀座カフェーパウリスタ）',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+        }),
+      )
+      assert(dc743.verdict !== 'A', `DC#743クラスは現在販売中を確認できないため期待 B（実際 ${dc743.verdict}）`)
+
+      const dc1132 = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '松屋銀座にて「ミッフィーどら焼き」販売',
+            excerpt: '4月22日（水）~5月11日（日）まで、松屋銀座にて「ミッフィーどら焼き」を期間限定で販売しております。',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+        }),
+      )
+      assert(dc1132.verdict !== 'A', `DC#1132クラスは現在販売中を確認できないため期待 B（実際 ${dc1132.verdict}）`)
+
+      // 対照：同種の商品でも「発売中」「販売中」等の現在性の明記語がタイトルにあればA
+      // （現在性判定はタイトルのみを見る。excerptのナビ文言混入によるDC#119型誤検出を
+      // 避けるため——下記「必須回帰」節参照）
+      const confirmedOnSale = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: '和栗のキャラメルチーズケーキ 季節限定・只今発売中',
+            excerpt: '和栗を使った濃厚な味わいです。',
+            eventStartAt: null,
+            eventEndAt: null,
+          }),
+        }),
+      )
+      assert(confirmedOnSale.verdict === 'A', `現在性の明記語があれば期待 A（実際 ${confirmedOnSale.verdict}）`)
+    },
+  },
+  {
+    // 実例＝DC#1017「ディープトウキョウマガジンに掲載されました」（銀座菊廼舎）。
+    // メディア掲載の告知は過去の出来事の記録であり旬の候補ではない。
+    name: 'B（必須回帰・2026-09-16追加）: DC#1017クラス——「掲載されました」等の過去の報告・メディア掲載はAにしない',
+    fn: () => {
+      const dc1017 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: 'ディープトウキョウマガジンに掲載されました',
+            excerpt: 'ディープトウキョウマガジン創刊号にて紹介していただきました。',
+          }),
+        }),
+      )
+      assert(dc1017.verdict !== 'A', `DC#1017クラスは期待 B（実際 ${dc1017.verdict}）`)
+      assert(
+        dc1017.reasons.some((r) => r.includes('過去の報告') || r.includes('メディア掲載')),
+        '過去の報告・メディア掲載である旨が理由に明記される',
+      )
+
+      const other1 = assessCandidate(mk({ dc: baseDc({ title: '銀座で開催報告：秋の物産展を終えて' }) }))
+      assert(other1.verdict !== 'A', `開催報告は期待 B（実際 ${other1.verdict}）`)
+      const other2 = assessCandidate(mk({ dc: baseDc({ title: '秋の企画展 終了報告' }) }))
+      assert(other2.verdict !== 'A', `終了報告は期待 B（実際 ${other2.verdict}）`)
     },
   },
 
@@ -487,7 +623,11 @@ const cases: CheckCase[] = [
 
       const dcWithoutDup = baseDc({
         id: 246,
-        title: '【花西子 FLORASIS】待望のUV機能付ファンデーション登場！',
+        // 現在性の必須化（2026-09-16）に対応：実データの saleAvailability='ongoing_no_end_stated'
+        // （公式本文に「発売中・継続販売中」等の明記）に相当する現在性の明記語をタイトルに反映
+        // （現在性判定はタイトルのみを見る。excerptはナビ文言混入によるDC#119型の誤検出を
+        // 避けるため対象外——上記「必須回帰」節参照）。
+        title: '【花西子 FLORASIS】待望のUV機能付ファンデーション、店頭にて販売中',
         articleUrl: 'https://ginza6.tokyo/news/detail/shopnews/224118',
         sourceSiteName: 'GINZA SIX',
         contentType: 'news',

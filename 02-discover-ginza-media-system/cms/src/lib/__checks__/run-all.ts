@@ -52,6 +52,7 @@ import { suite as extractProductNewsFacts } from './extractProductNewsFacts.chec
 import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
 import { suite as factVerification, runFetchOutcomeTests } from './factVerification.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
+import { suite as morningThreeSlots } from '../morning/selectMorningThreeSlots.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
@@ -108,6 +109,7 @@ const results: SuiteResult[] = [
   ginzaSixAutoResolve(),
   factVerification(),
   p0Morning(),
+  morningThreeSlots(),
   chromeExtensionManifest(),
   noteTransferUrlMatch(),
   noteTransferState(),

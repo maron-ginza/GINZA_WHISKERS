@@ -451,6 +451,12 @@ export interface MorningReport {
   b: CandidateAssessment[]
   /** C判定（除外理由つき） */
   c: CandidateAssessment[]
+  /**
+   * 【2026-09-16追加・マロン指示】朝の候補表示を3枠（ビューティー・ファッション／
+   * グルメ・スウィーツ／文化・アート）に絞った選出結果。A判定（18カテゴリー全体を対象）
+   * の中から表示用に選ぶだけであり、A判定の可否そのものには影響しない。
+   */
+  morningThreeSlots: import('./selectMorningThreeSlots').ThreeSlotsResult
 }
 
 // ─────────────────────────────────────────────────────────────
