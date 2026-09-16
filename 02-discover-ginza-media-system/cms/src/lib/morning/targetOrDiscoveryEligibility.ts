@@ -10,38 +10,40 @@
 // 「銀座関連性なし」385件——いずれもArticleFacts手入力の有無や記事タイプ2分類の
 // 都合であり、「銀座限定でないか」「常設店舗か」等の条件は実際には効いていなかった）。
 //
-// 【新しいA判定（18カテゴリー共通・目的型／発見型。2026-09-16、品質補正で条件7・8を追加）】
-// A：以下をすべて満たす候補。
-//   1. 銀座で現在または近い将来に購入・飲食・鑑賞・利用・体験できる
-//      （＝終了済みでない。C判定の安全条件は呼び出し元でそのまま維持）
+// 【A判定の必須条件（2026-09-16続き3改訂：マロン指示「Aは今日提示できる状態」で全面整理）】
+// 【最重要定義】Aは「今日、マロンへ記事候補として提示できる状態」——単なる候補プール
+// ではない。以下をすべて満たす場合だけAとする（1つでも欠けばB、安全条件違反はC）。
+//   1. 銀座で体験・購入・参加できる（＝終了済みでない。expired は呼び出し元のC判定）
 //   2. 公式情報で銀座の場所と提供状況を確認できる（venue/facilityKeyのいずれか）
-//   3. 季節性・新規性・期間性・話題性・発見性のいずれかがある
-//   4. 既投稿・近似記事ではない（duplicate/近似重複。呼び出し元の判定をそのまま使う）
-//   5. 終了済みではない（同上）
-//   6. 読者に具体的な行動を提案できる（＝18カテゴリーへ分類できる）
-//   7. 【2026-09-16追加】現在性を確認できる——イベント・催事は有効な開催期間（構造化
-//      eventStartAt/eventEndAt）が確認でき終了していないこと、商品・メニューは公式
-//      ページで「発売中」「販売中」「提供中」等の現在性の明記語が確認できること。
-//      新規性語（3.のsignal）だけでは満たさない。期間・販売状況を確認できない候補、
-//      過去月・過去季節の言及のみの候補はB。タイトルに明示された過去の年月日
-//      （西暦4桁を含む表記）は「受付中」等の語より優先し、last_checked_at
-//      （再クロール日時）は有効期限の根拠にしない（2026-09-16追加）。「予約受付中」
-//      「ネット予約」「観劇弁当」「公演」「イベント」「フェア」「講演」の語は、
-//      構造化期間かタイトル中の具体的な年月日が無い限り語だけではAにしない
-//      （2026-09-16続き追加。DC#1167クラス）。
-//   8. 【2026-09-16追加】過去の報告・メディア掲載系（「掲載されました」「メディア掲載」
-//      「開催報告」「終了報告」「過去の紹介」）ではない——過去の出来事の記録は旬の候補
-//      ではない。
+//   3. 開催日・販売期間・現在の提供状況が明確——構造化eventStartAt/eventEndAt、または
+//      タイトルに明示された具体的な年月日（西暦4桁を含む表記）のいずれかを確認できること。
+//      「開催中」「販売中」「受付中」等の明記語だけでは現在性を認めない
+//      （evaluateCurrencyConfirmation。不確実 → uncertainCurrentAvailability／
+//      missingEventOrSalePeriod でB）。last_checked_at（再クロール日時）は根拠にしない。
+//      タイトルに明示された**過去**の年月日は、この関数に到達する前に
+//      assessCandidate.ts が「明確に古い情報」としてCへ振り分ける。
+//   4. 終了していない（同上・呼び出し元のC判定）
+//   5. 既投稿・既記事化・既処理ではない（duplicate は呼び出し元のC判定／alreadyProcessed
+//      は呼び出し元がB判定として先に短絡する——このモジュールには到達しない）
+//   6. 近似重複ではない（recentBrandVenueDuplicate。nearDuplicateタグでB）
+//   7. 過去14日以内に扱った同一施設ではない（facilityCooldown、B）
+//   8. 過去14日以内に扱った同一親施設ではない（parentFacilityCooldown、B。
+//      GINZA SIX・山野楽器等の表記揺れをfacilityKey.tsのparentFacilityKeyで統合）
+//   9. 18カテゴリーのいずれかに該当する（deriveProvisionalCategory）
+//   10. 旬・限定・新規性・銀ブラ途中の発見価値のいずれかがある
+//      （evaluateDiscoverySignal。無ければevergreenWithoutTimelinessでB）
 //
 // 銀座限定でない・他地域にも店舗がある・通販でも買える・銀座を訪れる唯一の目的で
 // ない・常設店舗である、はいずれも除外理由にしない。ただし常設商品・常設サービスで
-// 3の signal が一切無いもの、または7の現在性を確認できないものは B のまま（意図的な設計）。
+// 10.のsignalが一切無いもの、または3.の現在性を確認できないものはBのまま（意図的な設計）。
 //
 // mode（目的型／発見型）はA判定の条件ではなく、A判定後の分類・表示用。
 //
 // 【安全条件】AIを使わない・推測しない（書かれている語のみを見る）・既存のC判定
-// （終了済み・重複・銀座関連性なし・出典なし）はこのモジュールでは判定し直さず
-// 呼び出し元の結果をそのまま受け取る。
+// （終了済み・重複・銀座関連性なし・出典なし・明確に古い情報）はこのモジュールでは
+// 判定し直さず呼び出し元の結果をそのまま受け取る。facilityCooldown/
+// parentFacilityCooldownはB判定であり削除・恒久ブロックではない——クールダウン
+// 終了後、情報がまだ有効なら次回の再判定でAに戻る。
 
 import { deriveProvisionalCategory } from '../pipeline/provisionalCategory'
 import { resolveFacilityKey } from '../curation/facilityKey'
@@ -160,39 +162,37 @@ export function evaluateCurrencyConfirmation(
   title: string | null,
   eventStartAt: string | null,
   eventEndAt: string | null,
-  now: Date = new Date(),
 ): CurrencyConfirmationResult {
   if (hasExplicitPeriodSignal(eventStartAt, eventEndAt)) {
     return { confirmed: true, reason: '開催・販売期間を公式情報で確認済み（構造化データ）' }
   }
-  // 2026-09-16追加：last_checked_at（再クロール日時）は有効期限の根拠にしない。タイトルに
-  // 明示された過去の年月日があれば、「受付中」等の語より優先して現在性なしと判定する
-  // （DC#40クラス：クロールが最近でも記載内容自体が過去のケース）。
-  const pastDate = findExplicitPastDateInTitle(title, now)
-  if (pastDate.found) {
-    return {
-      confirmed: false,
-      reason: `タイトルに過去の年月日（${pastDate.date}）が明記されており、現在性の明記語（受付中等）より優先して現在性なしと判定`,
-    }
+  // 2026-09-16続き3改訂：タイトルに明示された過去の年月日（EXPLICIT_FULL_DATE_RE）は
+  // ここでは判定しない——「明確に古い情報」はB（不確実）ではなくC（対象外）として
+  // assessCandidate.ts側で先に判定済みのため、この関数に到達する時点では
+  // findExplicitDateInTitle が見つける日付は（あれば）未来／当日のものに限られる。
+  const anyDate = findExplicitDateInTitle(title)
+  if (anyDate.found) {
+    return { confirmed: true, reason: `タイトルに明示された具体的な開催日（${anyDate.date}）を確認` }
   }
-  // 2026-09-16続き追加：予約・イベント系の語（予約受付中／ネット予約／観劇弁当／公演／
-  // イベント／フェア／講演）は、語だけでは現在性ありとしない——具体的な開催日
-  // （構造化データは既に確認済み〈上でreturn済み〉のため、ここではタイトルに明示された
-  // 年月日）が無い限りBにする（DC#1167クラス：日付の無い「ネット予約受付中！」告知）。
+  // 2026-09-16続き3改訂：単語（「開催中」「販売中」「受付中」等）だけでは現在性ありと
+  // しない——構造化データかタイトル中の具体的な年月日のいずれかが無い限りBにする
+  // （旧版は CURRENT_AVAILABILITY_RE の一致だけでAにしていたが、DC#294「好評開催中！」
+  // のように実際には現在性が確認できないケースを取りこぼしていたため撤廃）。
   if (EVENT_RESERVATION_TRIGGER_RE.test(title ?? '')) {
-    const anyDate = findExplicitDateInTitle(title)
-    if (anyDate.found) {
-      return { confirmed: true, reason: `予約・イベント系の語だが具体的な開催日（${anyDate.date}）をタイトルで確認` }
-    }
     return {
       confirmed: false,
-      reason: '予約受付中／公演／イベント／フェア／講演等の語のみで具体的な開催日を確認できない（last_checked_atは根拠にしない）',
+      reason:
+        'missingEventOrSalePeriod：予約受付中／公演／イベント／フェア／講演等の語のみで具体的な開催日を確認できない（last_checked_atは根拠にしない）',
     }
   }
   if (CURRENT_AVAILABILITY_RE.test(title ?? '')) {
-    return { confirmed: true, reason: '現在性の明記語を確認（発売中／販売中／提供中等）' }
+    return {
+      confirmed: false,
+      reason:
+        'uncertainCurrentAvailability：現在性の明記語（発売中／販売中／受付中／開催中等）はあるが具体的な開催日・販売期間を確認できない',
+    }
   }
-  return { confirmed: false, reason: '開催期間・販売状況を公式情報で確認できない（過去の月・季節の言及のみ等）' }
+  return { confirmed: false, reason: 'uncertainCurrentAvailability：開催期間・販売状況を確認できない（過去の月・季節の言及のみ等）' }
 }
 
 export interface DiscoverySignalResult {
@@ -220,7 +220,7 @@ export function evaluateDiscoverySignal(
   if (TOPIC_OR_EXPERIENCE_SIGNAL_RE.test(text)) {
     return { has: true, reason: '話題性・発見性・体験性の明記語を確認（個展／企画展／催し／コラボ等）' }
   }
-  return { has: false, reason: '季節性・新規性・期間性・話題性・発見性のいずれも確認できない（常設情報のみ）' }
+  return { has: false, reason: 'evergreenWithoutTimeliness：季節性・新規性・期間性・話題性・発見性のいずれも確認できない（常設情報のみ）' }
 }
 
 export interface TargetOrDiscoveryInput {
@@ -241,6 +241,14 @@ export interface TargetOrDiscoveryInput {
   recentBrandVenueDuplicate: boolean
   /** 情報の確認日時が古い（freshnessDays 超過）。呼び出し元が判定済み（既定 undefined=false 扱い） */
   stale?: boolean
+  /**
+   * 【2026-09-16続き3追加】施設14日間クールダウン（facilityActivityHistory.
+   * checkFacilityCooldown の結果を呼び出し元がそのまま渡す）。onCooldown:true の間は
+   * AにせずBにする（削除・恒久ブロックはしない——クールダウン終了後に情報がまだ
+   * 有効なら次回の再判定でAに戻る）。matchType:'parent' なら
+   * parentFacilityCooldown、'facility'（既定）なら facilityCooldown として理由タグを分ける。
+   */
+  facilityCooldown?: { onCooldown: boolean; reason: string; matchType?: 'facility' | 'parent' }
   now?: Date
 }
 
@@ -271,10 +279,15 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   //    （このモジュールでは判定し直さない・安全条件を緩めない）。
   if (input.expired) blockers.push('終了済み')
   if (input.duplicate) blockers.push('既投稿と重複')
-  if (input.recentBrandVenueDuplicate) blockers.push('近似重複（同一ブランド・同一会場、直近14日以内）')
+  if (input.recentBrandVenueDuplicate) blockers.push('nearDuplicate：近似重複（同一ブランド・同一会場、直近14日以内）')
   if (!input.ginzaRelevant) blockers.push('銀座関連性を確認できない')
   if (!input.hasTraceableSource) blockers.push('追跡可能な公式出典URLが無い')
   if (input.stale) blockers.push('情報の確認日時が古く再確認が必要')
+  // 2026-09-16続き3追加：施設14日間クールダウン中はAにしない（削除はしない・B判定）。
+  if (input.facilityCooldown?.onCooldown) {
+    const tag = input.facilityCooldown.matchType === 'parent' ? 'parentFacilityCooldown' : 'facilityCooldown'
+    blockers.push(`${tag}：${input.facilityCooldown.reason}`)
+  }
 
   // 営業告知（短縮営業・休館・メンテナンス・開催中止等）は季節語等の discovery signal の
   // 有無に関わらず除外する（旬の候補ではなく運営上の事務連絡のため）
@@ -289,12 +302,12 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
     blockers.push('過去の報告・メディア掲載系の記事（旬の候補として扱わない）')
   }
 
-  // 現在性の必須化（2026-09-16追加・マロン指示）：イベント・催事は有効な開催期間が確認でき
-  // 終了していないこと、商品・メニューは公式ページで現在性（発売中・販売中・提供中等）を
-  // 確認できることのいずれかを満たさない限りAにしない——新規性語（discovery signal）だけでは
-  // 「今も入手・体験できるか」の確認にはならない（DC#34「8月」の過去月言及、DC#119「SPRING
-  // 2026」、DC#743・DC#1132の販売状況未確認、が実際にAになっていた事例を受けて）。
-  const currency = evaluateCurrencyConfirmation(input.title, input.eventStartAt, input.eventEndAt, now)
+  // 現在性の必須化（2026-09-16追加・マロン指示、続き3改訂で単語のみの確認を撤廃）：
+  // 構造化開催期間かタイトルに明示された具体的な開催日のいずれかを確認できない限り
+  // Aにしない——「開催中」「販売中」「受付中」等の明記語だけでは現在性を認めない
+  // （DC#294「好評開催中！」のような、実際には現在性が確認できないケースを取りこぼして
+  // いたため）。
+  const currency = evaluateCurrencyConfirmation(input.title, input.eventStartAt, input.eventEndAt)
   if (!currency.confirmed) blockers.push(currency.reason)
 
   // 2. 公式情報で銀座の場所と提供状況を確認できる
@@ -307,16 +320,18 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   const locationConfirmed = !!(input.venue && input.venue.trim()) || !!facility.key
   if (!locationConfirmed) blockers.push('公式情報で銀座の場所・提供状況を確認できない')
 
-  // 18カテゴリーへの分類（タイトル/会場の明記語のみ。表示・mode振り分け用の付随情報であり、
-  // 2026-09-15改訂でA判定のブロッカーからは外した——「未分類＝提示不可」にすると、
-  // 一般的な祭事・催事等の生の情報源タイトルが分類語を偶然含まないだけでB化してしまい、
-  // 過剰な足切りになるため（原因調査④で確認）。category は null のままでも A になりうる。
+  // 18カテゴリーへの分類（タイトル/会場の明記語のみ）。
+  // 【2026-09-16続き3改訂】2026-09-15改訂ではA判定のブロッカーから外していたが、
+  // 今回のマロン指示「18カテゴリーのいずれかに該当する」で再びA判定の必須条件へ戻す。
+  // 実務上は selectMorningThreeSlots 側で既に「未分類は選定しない」フィルターが
+  // 掛かっていたため、A判定自体をこの条件に揃えることで two-tier の不整合を解消する。
   const provisional = deriveProvisionalCategory({
     title: input.title,
     venue: input.venue,
     contentType: input.contentType,
   })
   const category = provisional.category
+  if (!category) blockers.push('18カテゴリーへ分類できない')
 
   // 3. 季節性・新規性・期間性・話題性・発見性のいずれかがある
   const discovery = evaluateDiscoverySignal(input.title, input.excerpt, input.eventStartAt, input.eventEndAt, now)

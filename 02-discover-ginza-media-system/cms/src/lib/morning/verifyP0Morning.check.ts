@@ -57,7 +57,10 @@ function assert(cond: unknown, msg: string): void {
 function baseDc(over: Partial<DiscoveredContentLike> = {}): DiscoveredContentLike {
   return {
     id: 999,
-    title: '銀座◯◯まつり 開催のお知らせ',
+    // 2026-09-16続き3改訂：A判定に18カテゴリー分類が必須になったため、デフォルトの
+    // タイトルにも分類可能な明記語（「アート」＝ARTカテゴリー）を含める
+    // （「フェア」「イベント」等はEVENT_RESERVATION_TRIGGER_REとも重なるため避ける）。
+    title: '銀座アートまつり 開催のお知らせ',
     excerpt: '銀座の各所で開かれる催しです。',
     articleUrl: 'https://www.ginza.jp/event/99999',
     sourceSiteName: 'GINZA OFFICIAL',
@@ -314,7 +317,7 @@ const cases: CheckCase[] = [
         mk({
           factKind: 'product_news',
           dc: baseDc({
-            title: '【全国の百貨店・オンラインストアでも販売中】銀座店では季節限定パッケージが先行販売',
+            title: '【全国の百貨店・オンラインストアでも販売中】銀座店では季節限定の新作パッケージが先行販売',
             excerpt: '銀座本店以外にも全国の店舗・公式通販サイトでお取り扱いがございます。',
           }),
           facts: undefined,
@@ -329,13 +332,15 @@ const cases: CheckCase[] = [
     // 新規性語だけでなく現在性の明記語（販売中等）も必要になったため、fixtureへ追加。
     // 現在性の明記語判定はタイトルのみを見る（excerptはナビ文言混入によるDC#119型の
     // 誤検出を避けるため対象外——下記「必須回帰」節参照）。
-    name: 'A（必須回帰）: 銀ブラ途中の発見型候補（新商品・季節限定＋現在性の明記語、期間未確定）もA',
+    // 2026-09-16続き3改訂：現在性の明記語（販売中等）だけではAにしないため、タイトルに
+    // 具体的な年月日を明記したfixtureへ変更（構造化期間は無いケースのまま維持）。
+    name: 'A（必須回帰）: 銀ブラ途中の発見型候補（新商品・季節限定＋タイトルに具体的な開催日、構造化期間は無し）もA',
     fn: () => {
       const a = assessCandidate(
         mk({
           factKind: 'product_news',
           dc: baseDc({
-            title: '銀座三丁目の路面店に新作スイーツが新登場・店頭で販売中',
+            title: '銀座三丁目の路面店に新作スイーツが新登場・2026.10.05より店頭で販売中',
             excerpt: '立ち寄って気軽に楽しめる、季節限定の新商品です。',
             eventStartAt: null,
             eventEndAt: null,
@@ -496,18 +501,20 @@ const cases: CheckCase[] = [
       // 対照：同種の商品でも「発売中」「販売中」等の現在性の明記語がタイトルにあればA
       // （現在性判定はタイトルのみを見る。excerptのナビ文言混入によるDC#119型誤検出を
       // 避けるため——下記「必須回帰」節参照）
+      // 2026-09-16続き3改訂：「発売中」等の明記語だけではAにしないため、タイトルに
+      // 具体的な年月日を明記したfixtureへ変更。
       const confirmedOnSale = assessCandidate(
         mk({
           factKind: 'product_news',
           dc: baseDc({
-            title: '和栗のキャラメルチーズケーキ 季節限定・只今発売中',
+            title: '和栗のキャラメルチーズケーキ 季節限定・2026.10.05より発売中',
             excerpt: '和栗を使った濃厚な味わいです。',
             eventStartAt: null,
             eventEndAt: null,
           }),
         }),
       )
-      assert(confirmedOnSale.verdict === 'A', `現在性の明記語があれば期待 A（実際 ${confirmedOnSale.verdict}）`)
+      assert(confirmedOnSale.verdict === 'A', `具体的な開催日が明記されていれば期待 A（実際 ${confirmedOnSale.verdict} reasons=${confirmedOnSale.reasons.join('|')}）`)
     },
   },
   {
@@ -544,7 +551,10 @@ const cases: CheckCase[] = [
     // last_checked_atは再クロールにより2026-09-16時点でも「新しい」が、タイトル自体に
     // 明示された日付2025.12.14は判定日（2026-09-16基準）より過去——「受付中」の語だけで
     // 現在有効と判定しない。
-    name: 'B（必須回帰・2026-09-16追加）: DC#40クラス——タイトルに明示された過去の年月日は「受付中」等の語より優先しBにする（last_checked_atを有効期限にしない）',
+    // 2026-09-16続き3改訂：構造化期間が無くタイトルに明示された過去の年月日がある場合は
+    // 「明確に古い情報」としてC（対象外・安全条件）にする——旧版はBだったが、続き3で
+    // A/B/C判定構造を是正した際にCへ格上げした（必須回帰：DC#40はBまたはC・Aは禁止）。
+    name: 'B/C（必須回帰・2026-09-16続き3）: DC#40クラス——タイトルに明示された過去の年月日は「受付中」等の語より優先（AにはしないCまたはB。last_checked_atを有効期限にしない）',
     fn: () => {
       const NOW_0916 = new Date('2026-09-16T00:00:00Z')
       const dc40 = assessCandidate(
@@ -560,13 +570,15 @@ const cases: CheckCase[] = [
           now: NOW_0916,
         }),
       )
-      assert(dc40.verdict !== 'A', `DC#40クラスは期待 B（実際 ${dc40.verdict}）`)
+      assert(dc40.verdict === 'B' || dc40.verdict === 'C', `DC#40クラスは期待 BまたはC・Aは禁止（実際 ${dc40.verdict}）`)
       assert(
         dc40.reasons.some((r) => r.includes('過去の年月日')),
         'タイトルに過去の年月日がある旨が理由に明記される',
       )
 
-      // 対照：年を含まない「M月D日」等の表記だけでは過去と断定しない（推測しない）
+      // 対照：年を含まない「M月D日」等の表記だけでは過去と断定しない（推測しない）——
+      // 2026-09-16続き3改訂で「新発売」等の明記語単独ではAにもしなくなったため、
+      // 期待値はA（誤って古いと断定されない）からB（不確実だが除外〈C〉でもない）へ変更。
       const noYear = assessCandidate(
         mk({
           factKind: 'product_news',
@@ -579,7 +591,8 @@ const cases: CheckCase[] = [
           now: NOW_0916,
         }),
       )
-      assert(noYear.verdict === 'A', `年の無い日付表記は過去と断定しない・現在性語「新発売」でA（実際 ${noYear.verdict}）`)
+      assert(noYear.verdict === 'B', `年の無い日付表記は過去と断定しない（Cにはしない）が、明記語単独では現在性未確認でB（実際 ${noYear.verdict}）`)
+      assert(noYear.reasons.some((r) => r.includes('uncertainCurrentAvailability')), 'uncertainCurrentAvailabilityタグが付く')
     },
   },
   {
@@ -630,7 +643,7 @@ const cases: CheckCase[] = [
       const withTitleDate = assessCandidate(
         mk({
           dc: baseDc({
-            title: '秋の特別フェア 2026.10.05開催のご案内',
+            title: '秋の特別アートフェア 2026.10.05開催のご案内',
             eventStartAt: null,
             eventEndAt: null,
             lastCheckedAt: '2026-09-15T21:00:00Z',
@@ -642,20 +655,20 @@ const cases: CheckCase[] = [
     },
   },
 
-  // ---------- 使用済み候補の自動除外（2026-09-16追加・マロン指示） ----------
+  // ---------- 使用済み候補の自動除外（2026-09-16追加・マロン指示、続き3改訂でC→B） ----------
   // マロンによる投稿済み設定・施設設定・手動台帳登録を前提にせず、DiscoveredContent.
   // curationStatus（既存データ）と、呼び出し元が既存データから機械的に判定した
-  // alreadyProcessed のみで判定する。
+  // alreadyProcessed のみで判定する。削除せずB（再判定でAに戻りうる）とする。
   {
-    name: 'C（必須回帰・2026-09-16追加）: curationStatus=approved は使用済み候補として自動除外（alreadyProcessed）',
+    name: 'B（必須回帰・2026-09-16続き3改訂）: curationStatus=approved は使用済み候補としてB（alreadyProcessed。削除しない）',
     fn: () => {
       const a = assessCandidate(mk({ dc: baseDc({ curationStatus: 'approved' }) }))
-      assert(a.verdict === 'C', `承認済みは期待 C / 実際 ${a.verdict}`)
+      assert(a.verdict === 'B', `承認済みは期待 B / 実際 ${a.verdict}`)
       assert(a.reasons.some((r) => r.includes('alreadyProcessed')), 'alreadyProcessedとして理由に記録される')
     },
   },
   {
-    name: 'C（必須回帰・2026-09-16追加）: 過去の朝刊レポートで提示済み（alreadyProcessed）も使用済み候補として自動除外',
+    name: 'B（必須回帰・2026-09-16続き3改訂）: 過去の朝刊レポートで提示済み（alreadyProcessed）も使用済み候補としてB',
     fn: () => {
       const a = assessCandidate(
         mk({
@@ -663,7 +676,7 @@ const cases: CheckCase[] = [
           alreadyProcessed: { isProcessed: true, reason: '過去の朝刊レポートで既に候補として提示済み（.devlogs/morning/*/report.json）' },
         }),
       )
-      assert(a.verdict === 'C', `過去に提示済みは期待 C / 実際 ${a.verdict}`)
+      assert(a.verdict === 'B', `過去に提示済みは期待 B / 実際 ${a.verdict}`)
       assert(a.reasons.some((r) => r.includes('alreadyProcessed')), 'alreadyProcessedとして理由に記録される')
     },
   },
@@ -672,6 +685,83 @@ const cases: CheckCase[] = [
     fn: () => {
       const a = assessCandidate(mk({ dc: baseDc({ curationStatus: 'inbox' }) }))
       assert(a.verdict === 'A', `inbox・未処理は通常どおりA判定される（実際 ${a.verdict}）`)
+    },
+  },
+
+  // ---------- 施設14日間クールダウンのA/B/C判定本体への統合（2026-09-16続き3・マロン指示） ----------
+  // 「基礎判定をAのまま維持し、朝の3件選定時だけ除外する」誤実装を是正——現在性・既処理・
+  // 近似重複・施設14日間クールダウンまで通過した候補だけをAにする。
+  {
+    // 実例＝DC#313（GINZA SIXの「アクシージア×mika ninagawaコラボ」）。facilityKey自体が
+    // GINZA SIX（'ginza-six'）で、履歴側も同じ'ginza-six'（Article#70/DC#246由来）の
+    // 完全一致——ただしどちらもparentFacilityKey='PARENT_GINZA_SIX'を持つグルーピングの
+    // 一員であるため、実データでは親施設単位のクールダウンとして扱う
+    // （matchTypeは facilityKey の完全一致有無で決まる。ここでは同一facilityKeyの
+    // 直接一致ケースを明示的に検証する）。
+    name: 'B（必須回帰・2026-09-16続き3）: facilityCooldown中はAにしない（B・reasonsにfacilityCooldownタグ）',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          dc: baseDc(),
+          facilityCooldown: {
+            onCooldown: true,
+            reason: '過去14日以内に同一施設（GINZA SIX）でnote下書き生成（2026-09-15）',
+            matchType: 'facility',
+          },
+        }),
+      )
+      assert(a.verdict === 'B', `facilityCooldown中は期待 B / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('facilityCooldown')), 'facilityCooldownタグが理由に含まれる')
+    },
+  },
+  {
+    // 実例＝DC#532（山野楽器「ASTURIASクラシックギターフェア」）・DC#1182〜#1184（銀座
+    // 蔦屋書店の各種フェア／展示）。いずれも同一親施設（GINZA SIX／山野楽器）内の
+    // 別テナント・別facilityKeyとの一致のため matchType:'parent'。
+    name: 'B（必須回帰・2026-09-16続き3）: parentFacilityCooldown中はAにしない（B・reasonsにparentFacilityCooldownタグ）',
+    fn: () => {
+      const a = assessCandidate(
+        mk({
+          dc: baseDc(),
+          facilityCooldown: {
+            onCooldown: true,
+            reason: '過去14日以内に同一施設（GINZA SIX）でnote下書き生成（2026-09-15）',
+            matchType: 'parent',
+          },
+        }),
+      )
+      assert(a.verdict === 'B', `parentFacilityCooldown中は期待 B / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('parentFacilityCooldown')), 'parentFacilityCooldownタグが理由に含まれる')
+    },
+  },
+  {
+    name: '対照（必須回帰・2026-09-16続き3）: facilityCooldown未指定・onCooldown:falseは通常どおり判定される（過剰除外しない）',
+    fn: () => {
+      const a = assessCandidate(mk({ dc: baseDc(), facilityCooldown: { onCooldown: false, reason: '施設活動なし' } }))
+      assert(a.verdict === 'A', `クールダウン対象外は通常どおりA（実際 ${a.verdict}）`)
+    },
+  },
+  {
+    // 実例＝DC#294「好評開催中！「北海道物産展」のおすすめ品」。現在性の根拠が「開催中」の
+    // 明記語のみ（構造化期間もタイトル中の具体的な年月日も無い）ため、続き3改訂で
+    // A/B/C判定本体からもAにならない（旧実装は選定層だけで除外していたが、判定本体へ統合）。
+    name: 'B（必須回帰・2026-09-16続き3）: DC#294クラス——現在性の根拠が明記語のみはA/B/C判定本体でB（uncertainCurrentAvailability）',
+    fn: () => {
+      const dc294 = assessCandidate(
+        mk({
+          dc: baseDc({ title: '好評開催中！「北海道物産展」のおすすめ品', excerpt: null, eventStartAt: null, eventEndAt: null }),
+        }),
+      )
+      assert(dc294.verdict === 'B', `DC#294クラスは期待 B / 実際 ${dc294.verdict}`)
+      assert(dc294.reasons.some((r) => r.includes('uncertainCurrentAvailability')), 'uncertainCurrentAvailabilityタグが理由に含まれる')
+    },
+  },
+  {
+    name: '必須回帰（2026-09-16続き3）: 18カテゴリーへ分類できない候補はAにしない（B）',
+    fn: () => {
+      const a = assessCandidate(mk({ dc: baseDc({ title: '銀座◯◯まつり 開催のお知らせ' }) })) // カテゴリー語を含まない汎用タイトル
+      assert(a.verdict === 'B', `未分類は期待 B / 実際 ${a.verdict}`)
+      assert(a.reasons.some((r) => r.includes('18カテゴリーへ分類できない')), '分類不能の理由が明記される')
     },
   },
 
@@ -766,7 +856,9 @@ const cases: CheckCase[] = [
         // （公式本文に「発売中・継続販売中」等の明記）に相当する現在性の明記語をタイトルに反映
         // （現在性判定はタイトルのみを見る。excerptはナビ文言混入によるDC#119型の誤検出を
         // 避けるため対象外——上記「必須回帰」節参照）。
-        title: '【花西子 FLORASIS】待望のUV機能付ファンデーション、店頭にて販売中',
+        // 現在性の必須化・続き3改訂：「販売中」の明記語だけではAにしないため、
+        // タイトルに具体的な年月日（now246=2026-09-15より後）を明記したfixtureへ更新。
+        title: '【花西子 FLORASIS】待望のUV機能付ファンデーション、2026.09.20より店頭にて販売中',
         articleUrl: 'https://ginza6.tokyo/news/detail/shopnews/224118',
         sourceSiteName: 'GINZA SIX',
         contentType: 'news',

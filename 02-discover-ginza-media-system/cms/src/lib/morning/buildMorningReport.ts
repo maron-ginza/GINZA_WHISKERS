@@ -18,7 +18,6 @@
 
 import type { CandidateAssessment, MorningReport } from './types'
 import { selectMorningThreeSlots } from './selectMorningThreeSlots'
-import type { FacilityActivityRecord } from './facilityActivityHistory'
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -46,7 +45,7 @@ export function rankAssessments(list: CandidateAssessment[]): CandidateAssessmen
 
 export function buildMorningReport(
   assessments: CandidateAssessment[],
-  opts: { now?: Date; topN?: number; facilityHistory?: FacilityActivityRecord[] } = {},
+  opts: { now?: Date; topN?: number } = {},
 ): MorningReport {
   const now = opts.now ?? new Date()
   const topN = opts.topN ?? 5
@@ -83,7 +82,7 @@ export function buildMorningReport(
     facilityCapSkips,
     b: B,
     c: C,
-    morningThreeSlots: selectMorningThreeSlots(assessments, { facilityHistory: opts.facilityHistory, now }),
+    morningThreeSlots: selectMorningThreeSlots(assessments),
   }
 }
 
@@ -205,7 +204,7 @@ export function renderMorningReport(report: MorningReport): string {
   s += line()
   s += line('■ 朝の候補（18カテゴリー全体から最大3件・固定枠は廃止）')
   s += line('  最低1件はBEAUTY/SHOPPING（美容・ファッション）/FOOD/CAFE/SWEETSのいずれかを含める。')
-  s += line('  未分類・現在性の根拠が明記語のみ（開催中/販売中/受付中等）の候補はこの選定の対象外。')
+  s += line('  A判定は既に現在性・既処理・近似重複・施設/親施設クールダウンを通過済み（B/Cはここに渡さない）。')
   if (report.morningThreeSlots.picks.length === 0) {
     s += line('  該当候補なし（安全な候補が1件も無いため、無理に選出していません）。')
   } else {
@@ -223,16 +222,6 @@ export function renderMorningReport(report: MorningReport): string {
     if (!report.morningThreeSlots.requiredCategorySatisfied) {
       s += line('  ※ 必須カテゴリー（BEAUTY/SHOPPING/FOOD/CAFE/SWEETS）に該当する安全な候補がありませんでした。')
     }
-  }
-  if (report.morningThreeSlots.unsafeSkips.length > 0) {
-    s += line(`  ※ 現在性の根拠が明記語のみ等のため選定対象から除外した候補（削除はしていない・${report.morningThreeSlots.unsafeSkips.length}件）：`)
-    for (const sk of report.morningThreeSlots.unsafeSkips.slice(0, 10))
-      s += line(`    - DC #${sk.discoveredContentId}: ${sk.reason}`)
-  }
-  if (report.morningThreeSlots.facilityCooldownSkips.length > 0) {
-    s += line('  ※ 施設14日間クールダウンにより除外した候補（削除はしていない）：')
-    for (const sk of report.morningThreeSlots.facilityCooldownSkips)
-      s += line(`    - DC #${sk.discoveredContentId}（${sk.groupKey}）: ${sk.reason}`)
   }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')

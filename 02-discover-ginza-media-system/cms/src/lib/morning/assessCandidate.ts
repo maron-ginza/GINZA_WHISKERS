@@ -1,25 +1,33 @@
-// GINZA WHISKERS / Project 02 P0 改善（2026-09-02、2026-09-15 A判定候補不足の是正で全面改訂）
+// GINZA WHISKERS / Project 02 P0 改善（2026-09-02〜2026-09-16続き3、A/B/C判定構造の是正）
 // — A/B/C 判定（純粋関数・AI なし）。
 //
-// 【判定基準（2026-09-15改訂・マロン指示）】
-//   C（候補提示不可・安全条件。変更なし）: 開催終了 / 既投稿と重複 / 銀座関連性を
-//                      確認できない / 追跡可能な公式出典が無い
-//   A（旬の候補として提示可能。18カテゴリー共通の目的型／発見型ロジック）：
-//     C でない かつ target­OrDiscoveryEligibility.ts の6条件をすべて満たす候補
-//     （銀座で購入・飲食・鑑賞・利用・体験できる／公式情報で場所・提供状況を確認
-//     できる／季節性・新規性・期間性・話題性・発見性のいずれかがある／非重複／
-//     非終了／18カテゴリーへ分類できる）。**ArticleFacts.enrichmentStatus='ready'
-//     （人間による事前データ入力）はA判定の必須条件にしない**——これは「記事
-//     生成の準備が整っているか」の判定であり「候補として提示する価値があるか」
-//     の判定ではないため（2026-09-15、実データでA=0の根本原因と特定）。
+// 【最重要定義（2026-09-16続き3・マロン指示）】Aは「今日、マロンへ記事候補として
+// 提示できる状態」——単なる候補プールではない。現在性・既処理・近似重複・施設14日間
+// クールダウンまで通過した候補だけをAにする（従来は基礎判定をAのまま維持し、朝の
+// 選定処理側だけでfacilityCooldownSkip等として除外していたが、これを是正）。
+//
+// 【判定基準】
+//   C（候補提示不可・対象外。安全条件）: 開催終了 / 既投稿と重複 / 銀座関連性を
+//     確認できない / 追跡可能な公式出典が無い / 明確に古い情報（構造化期間が無く、
+//     タイトルに明示された過去の年月日がある。2026-09-16続き3追加・DC#40クラス）。
+//   A（今日、記事候補として提示できる状態。18カテゴリー共通の目的型／発見型ロジック）：
+//     C でない かつ targetOrDiscoveryEligibility.ts の10条件をすべて満たす候補
+//     （詳細は同ファイルのヘッダーコメント参照。現在性・18カテゴリー分類・近似重複
+//     なし・施設/親施設クールダウン対象外を含む）。**ArticleFacts.enrichmentStatus=
+//     'ready'（人間による事前データ入力）はA判定の必須条件にしない**——これは
+//     「記事生成の準備が整っているか」の判定であり「候補として提示する価値が
+//     あるか」の判定ではないため（2026-09-15、実データでA=0の根本原因と特定）。
 //     「銀座限定でない」「他地域にも店舗がある」「通販でも買える」「銀座を
 //     訪れる唯一の目的でない」「常設店舗である」はいずれも除外理由にしない。
 //     A判定の理由に「目的型」または「発見型」を明記する。
-//   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要）:
-//       C でも A でもない。ArticleFacts が未作成／draft／期間未確認であっても、
-//       銀座関連性・追跡可能な出典・非終了が確認できればBとして候補提示する。
-//       常設商品・常設サービスで季節性等のsignalが一切無いものはBのまま
-//       （意図的な設計。新規性なき常設情報を無理にAへ引き上げない）。
+//   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要、または
+//     現在性/既処理/施設クールダウン等の理由でAに一時的に届かない）：
+//       C でも A でもない。facilityCooldown／parentFacilityCooldown／alreadyProcessed／
+//       uncertainCurrentAvailability／missingEventOrSalePeriod／nearDuplicate／
+//       evergreenWithoutTimelinessのいずれか（reasonsに英語タグを明記）。
+//       **削除しない**——施設クールダウン終了後や情報の状況が変われば、次回の
+//       再判定で自動的にAへ戻る（2026-09-16続き3改訂：alreadyProcessedは従来C
+//       だったが、削除ではなく再評価可能なBへ変更）。
 //       記事生成・CMS保存に進む際にArticleFactsのreadyゲート・Articles.
 //       beforeChangeの人間承認ゲートを通す必要がある点は無変更（生成readiness＝
 //       genReady として理由に併記する。A判定自体とは分離する）。
@@ -38,7 +46,7 @@ import { assessGinzaRelevance, isSingleGinzaVenueSource } from './ginzaRelevance
 import { imagePreflight } from './imagePreflight'
 import { isPastEventEnd } from '../curation/eventEndBoundary'
 import { toTokyoDateString } from '../util/businessDate'
-import { evaluateTargetOrDiscoveryEligibility } from './targetOrDiscoveryEligibility'
+import { evaluateTargetOrDiscoveryEligibility, findExplicitPastDateInTitle } from './targetOrDiscoveryEligibility'
 import type { CandidateAssessment, FactKind } from './types'
 
 export interface AssessCandidateInput {
@@ -82,16 +90,27 @@ export interface AssessCandidateInput {
     reason: string
   }
   /**
-   * 【2026-09-16追加・マロン指示】使用済み候補の自動除外。呼び出し元
-   * （morningRun.ts）が「過去の朝刊レポート（.devlogs/morning/*\/report.json）で
+   * 【2026-09-16追加・マロン指示、続き3改訂でC→Bへ変更】使用済み候補の自動除外。
+   * 呼び出し元（morningRun.ts）が「過去の朝刊レポート（.devlogs/morning/*\/report.json）で
    * 既に候補として提示済みか」を、Project 02 内の既存データ（ArticleFactsではなく
    * 過去の朝刊出力そのもの）から機械的に判定して渡す。マロンが個別に設定するフラグでは
-   * ない。isProcessed:true のときは verdict を C とし、reasons に alreadyProcessed
-   * （このフィールド名）を含める。
+   * ない。isProcessed:true のときは verdict を B とし（削除しない・恒久除外ではない）、
+   * reasons に alreadyProcessed（このフィールド名）を含める。
    */
   alreadyProcessed?: {
     isProcessed: boolean
     reason: string
+  }
+  /**
+   * 【2026-09-16続き3追加・マロン指示】施設14日間クールダウン。呼び出し元
+   * （morningRun.ts）が facilityActivityHistory.checkFacilityCooldown() の結果を
+   * そのまま渡す。onCooldown:true のときは verdict を B とする（削除・恒久ブロックでは
+   * ない——クールダウン終了後、情報が有効なら次回の再判定でAに戻る）。
+   */
+  facilityCooldown?: {
+    onCooldown: boolean
+    reason: string
+    matchType?: 'facility' | 'parent'
   }
 }
 
@@ -241,18 +260,28 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   } else if (!hasTraceableSource) {
     verdict = 'C'
     reasons.push('追跡可能な公式出典 URL が無い')
+  } else if (!dc.eventStartAt && !dc.eventEndAt && findExplicitPastDateInTitle(dc.title ?? null, now).found) {
+    // 【2026-09-16続き3追加・マロン指示】明確に古い情報はC（安全条件・非対象）。
+    // 構造化開催期間が無く、タイトルに明示された年月日（西暦4桁を含む表記）が判定日より
+    // 過去の場合のみ——構造化期間がある場合はそちらを優先し（endD/expiredで別途判定済み）、
+    // タイトルの数字列を誤って古い情報と断定しない（DC#40クラスの実例を受けて）。
+    verdict = 'C'
+    const pd = findExplicitPastDateInTitle(dc.title ?? null, now)
+    reasons.push(`明確に古い情報（タイトルに過去の年月日 ${pd.date} が明記されている。last_checked_atは根拠にしない）`)
   } else if (dc.curationStatus === 'approved') {
-    // 使用済み候補の自動除外（2026-09-16・マロン指示）：承認済み＝マロンが既に判断済み
-    // であり、朝の「新規候補」ではない。publishedAt 等の別途設定を前提にせず、
+    // 使用済み候補の自動除外（2026-09-16・マロン指示、続き3改訂でC→Bへ変更）：
+    // 承認済み＝マロンが既に判断済みであり、朝の「新規候補」ではない——ただし完全に
+    // 除外するのではなくB（参考情報）として残す。publishedAt等の別途設定を前提にせず、
     // DiscoveredContent.curationStatus という既存データだけで機械的に判定する。
-    verdict = 'C'
-    reasons.push('alreadyProcessed（承認済み。マロンが既に判断済みのため新規候補としては扱わない）')
+    verdict = 'B'
+    reasons.push('alreadyProcessed（承認済み。マロンが既に判断済みのため朝の新規候補としては渡さない）')
   } else if (input.alreadyProcessed?.isProcessed) {
-    // 使用済み候補の自動除外（続き）：Articleが作成済み・note-draft.json生成済みは
-    // dedup.duplicate（既存ロジック）で C 判定済みのため、ここでは「過去の朝刊レポートで
-    // 既に候補として提示済みか」を .devlogs/morning/*/report.json という既存データから
-    // 機械的に判定した結果のみを受け取る（マロンの追加設定は不要）。
-    verdict = 'C'
+    // 使用済み候補の自動除外（続き、続き3改訂でC→Bへ変更）：Articleが作成済み・
+    // note-draft.json生成済みは dedup.duplicate（既存ロジック）で C 判定済みのため、
+    // ここでは「過去の朝刊レポートで既に候補として提示済みか」を
+    // .devlogs/morning/*/report.json という既存データから機械的に判定した結果のみを
+    // 受け取る（マロンの追加設定は不要）。Bとして残す（削除・恒久除外ではない）。
+    verdict = 'B'
     reasons.push(`alreadyProcessed（${input.alreadyProcessed.reason}）`)
   } else {
     // 18カテゴリー共通・目的型／発見型のA判定（2026-09-15、マロン指示で全面改訂）。
@@ -277,6 +306,7 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       duplicate: dedup.duplicate,
       recentBrandVenueDuplicate: recentDupBlocks,
       stale,
+      facilityCooldown: input.facilityCooldown,
       now,
     })
 

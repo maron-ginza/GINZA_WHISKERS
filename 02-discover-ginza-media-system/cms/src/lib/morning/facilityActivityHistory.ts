@@ -126,13 +126,21 @@ export interface FacilityCooldownResult {
   onCooldown: boolean
   reason: string
   matched?: FacilityActivityRecord
+  /**
+   * 【2026-09-16続き3追加】一致が facilityKey の完全一致によるものか（'facility'）、
+   * parentFacilityKey（グルーピングキー）のみの一致か（'parent'）。呼び出し元
+   * （assessCandidate）が B判定の理由タグ（facilityCooldown／parentFacilityCooldown）を
+   * 決めるために使う。
+   */
+  matchType?: 'facility' | 'parent'
 }
 
 /**
- * 施設単位の14日間抑制（2026-09-16追加）。facilityKey／parentFacilityKey いずれかの
- * グルーピングキーが一致する活動が windowDays 以内にあれば onCooldown:true。
- * 候補自体は除外しない——呼び出し元（selectMorningThreeSlots）が
- * facilityCooldownSkip として理由付きで残し、代替候補を繰り上げる。
+ * 施設単位の14日間抑制（2026-09-16追加、続き3でA/B/C判定本体へ統合）。facilityKey／
+ * parentFacilityKey いずれかのグルーピングキーが一致する活動が windowDays 以内に
+ * あれば onCooldown:true。候補自体は除外しない——呼び出し元（assessCandidate）が
+ * このクールダウン中はAにせずB判定にする（理由タグつき）。施設クールダウン終了後、
+ * 情報が引き続き有効なら次回の再判定でAに戻る（削除・恒久ブロックはしない）。
  */
 export function checkFacilityCooldown(
   facilityKey: string | null,
@@ -152,10 +160,12 @@ export function checkFacilityCooldown(
     if (!best || t > Date.parse(best.date)) best = h
   }
   if (best) {
+    const matchType: 'facility' | 'parent' = facilityKey && best.facilityKey === facilityKey ? 'facility' : 'parent'
     return {
       onCooldown: true,
       reason: `過去${windowDays}日以内に同一施設（${best.facilityLabel}）で${best.detail}（${best.date.slice(0, 10)}）`,
       matched: best,
+      matchType,
     }
   }
   return { onCooldown: false, reason: `過去${windowDays}日以内の同一施設の活動なし` }

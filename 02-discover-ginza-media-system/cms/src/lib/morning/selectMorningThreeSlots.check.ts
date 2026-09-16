@@ -7,7 +7,6 @@ import { assessCandidate, type AssessCandidateInput } from './assessCandidate'
 import { selectMorningThreeSlots } from './selectMorningThreeSlots'
 import type { CandidateAssessment } from './types'
 import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
-import type { FacilityActivityRecord } from './facilityActivityHistory'
 
 const NOW = new Date('2026-09-16T00:00:00Z')
 const FUTURE_ISO = '2026-10-25T04:00:00Z'
@@ -72,9 +71,9 @@ function mkA(
   return a
 }
 
-/** 現在性の根拠が「明記語のみ」（構造化データなし・タイトルに具体的な年月日なし）の
- *  “unsafe” な A 判定候補を作る（DC#294クラス：「好評開催中！」のような文言）。 */
-function mkUnsafeA(id: number, category: string | null, facilityKey: string | null): CandidateAssessment {
+/** 確実に verdict='B' になる CandidateAssessment を作る（現在性の根拠が明記語のみ等、
+ *  A/B/C判定側〈assessCandidate.ts〉で既にAから除外されるケースの代表例）。 */
+function mkB(id: number, category: string | null, facilityKey: string | null): CandidateAssessment {
   const a = assessCandidate({
     dc: baseDc({
       id,
@@ -88,8 +87,7 @@ function mkUnsafeA(id: number, category: string | null, facilityKey: string | nu
     imageInventory: [],
     now: NOW,
   })
-  if (a.verdict !== 'A') throw new Error(`fixture 前提が崩れている: id=${id} は A のはずが ${a.verdict}（reasons=${a.reasons.join('|')}）`)
-  assert(!a.reasons.some((r) => r.includes('構造化データ') || r.includes('具体的な開催日')), `unsafe fixture のはずが date-backed になっている: ${a.reasons.join('|')}`)
+  if (a.verdict !== 'B') throw new Error(`fixture 前提が崩れている: id=${id} は B のはずが ${a.verdict}（reasons=${a.reasons.join('|')}）`)
   a.digestMeta = {
     venue: null,
     officialFetch: null,
@@ -166,34 +164,10 @@ const cases: CheckCase[] = [
     },
   },
   {
-    // 実例＝DC#294「好評開催中！「北海道物産展」のおすすめ品」。現在性の根拠が
-    // 「開催中」の明記語のみ（構造化期間もタイトル中の具体的な年月日も無い）ため、
-    // A判定候補ではあるが選定対象から除外する（unsafeSkips）。
-    name: 'DC#294回帰: 現在性の根拠が明記語のみ（構造化データ・具体的な開催日いずれも無し）の候補は選定対象外（unsafeSkips）',
-    fn: () => {
-      const unsafe = mkUnsafeA(294, 'ART', 'kabukiza')
-      const safe = mkA(50, 'ART', 'ginza-tsutaya')
-      const r = selectMorningThreeSlots([unsafe, safe])
-      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 294), 'DC#294は選定対象から除外される')
-      assert(r.picks.some((p) => p.candidate.discoveredContentId === 50), '構造化データを持つ50は選定される')
-      assert(r.unsafeSkips.some((s) => s.discoveredContentId === 294), 'DC#294はunsafeSkipsに理由付きで記録される（削除はしない）')
-    },
-  },
-  {
-    name: '施設14日間クールダウン中の候補は選定対象外（facilityCooldownSkips・削除はしない）',
-    fn: () => {
-      const onCooldown = mkA(61, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
-      const alt = mkA(62, 'ART', 'kabukiza')
-      const history: FacilityActivityRecord[] = [
-        { groupKey: 'PARENT_GINZA_SIX', facilityKey: 'ginza-six', facilityLabel: 'GINZA SIX', date: '2026-09-14T00:00:00.000Z', source: 'article', detail: 'Article #70 作成' },
-      ]
-      const r = selectMorningThreeSlots([onCooldown, alt], { facilityHistory: history, now: NOW })
-      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 61), 'DC#61はクールダウンで除外される')
-      assert(r.picks.some((p) => p.candidate.discoveredContentId === 62), '代替の62は選定される')
-      assert(r.facilityCooldownSkips.some((s) => s.discoveredContentId === 61), 'facilityCooldownSkipsに記録される')
-    },
-  },
-  {
+    // 【2026-09-16続き3改訂】DC#294（現在性の根拠が明記語のみ）・施設14日間クールダウンの
+    // 判定は assessCandidate.ts/targetOrDiscoveryEligibility.ts のA/B/C判定本体へ移設した
+    // （verifyP0Morning.check.ts 側で回帰確認）。このファイルは「B/C判定の候補は
+    // 選定対象外」であることの確認のみを担う（下記テスト参照）。
     name: '同一（親）施設は3件を通じて1件まで',
     fn: () => {
       const a1 = mkA(71, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
@@ -217,8 +191,8 @@ const cases: CheckCase[] = [
   {
     name: '安全な候補が0件なら空配列を返す（無理に選出しない）',
     fn: () => {
-      const unsafe = mkUnsafeA(295, 'ART', 'kabukiza')
-      const r = selectMorningThreeSlots([unsafe])
+      const b = mkB(295, 'ART', 'kabukiza')
+      const r = selectMorningThreeSlots([b])
       assert(r.picks.length === 0, `0件（実際 ${r.picks.length}）`)
       assert(r.requiredCategorySatisfied === false, '必須カテゴリーも当然false')
     },

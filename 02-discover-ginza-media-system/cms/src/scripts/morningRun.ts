@@ -60,6 +60,7 @@ import {
   buildFacilityActivityFromNoteDrafts,
   buildFacilityActivityFromPastMorning,
   checkAlreadyProcessedByPastMorning,
+  checkFacilityCooldown,
   type FacilityActivityRecord,
   type RawArticleActivity,
   type RawApprovedActivity,
@@ -845,6 +846,17 @@ async function main(): Promise<void> {
         const candidateVenueKey = normalizeVenueKey(candidateVenues[0]?.place, candidateVenues[0]?.name)
         const recentBrandVenueDuplicate = checkRecentBrandVenueDuplicate(candidateVenueKey, articleRecords, now)
 
+        // 施設単位の14日間クールダウン（2026-09-16続き3追加・マロン指示）：A/B/C判定
+        // 本体で使うため、digestMeta用の resolveFacilityKey 呼び出しをここへ前倒しし、
+        // 同じ facility を digestMeta 側でも再利用する（二重実装・二重計算をしない）。
+        const facility = resolveFacilityKey({
+          venue: dcLike.venue,
+          sourceName: dcLike.sourceSiteName,
+          sourceUrl: dcLike.articleUrl,
+          title: dcLike.title,
+        })
+        const facilityCooldown = checkFacilityCooldown(facility.key, facility.parentFacilityKey, facilityHistory, now)
+
         const a = assessCandidate({
           dc: dcLike,
           facts: toFactsLike(factsDoc),
@@ -855,6 +867,7 @@ async function main(): Promise<void> {
           officialFetchOutcome: signals?.fetchOutcome ?? (signals ? (signals.ok ? 'ok' : 'unknown') : undefined),
           recentBrandVenueDuplicate,
           alreadyProcessed: checkAlreadyProcessedByPastMorning(dcId, pastMorning.dcIds),
+          facilityCooldown,
         })
         a.factKind = factKind
         a.factKindClassification = classification
@@ -926,12 +939,7 @@ async function main(): Promise<void> {
           contentType: dcLike.contentType,
         })
         {
-          const facility = resolveFacilityKey({
-            venue: dcLike.venue,
-            sourceName: dcLike.sourceSiteName,
-            sourceUrl: dcLike.articleUrl,
-            title: dcLike.title,
-          })
+          // facility は近似重複・施設クールダウン判定用に既に上で計算済み（再利用・二重計算しない）。
           const rfv = readyFactsVenueParts(factsDoc)
           a.digestMeta = {
             venue: dcLike.venue ?? null,
@@ -1292,7 +1300,7 @@ async function main(): Promise<void> {
 
     // 5. レポート
     step = Date.now()
-    const report = buildMorningReport(assessments, { now, facilityHistory })
+    const report = buildMorningReport(assessments, { now })
     mark('buildReport', step)
 
     const totalMs = Date.now() - t0
