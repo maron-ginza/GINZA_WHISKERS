@@ -1,4 +1,4 @@
-// GINZA WHISKERS / Project 02（2026-09-16）— 朝の3枠選出（純粋関数）の回帰テスト。
+// GINZA WHISKERS / Project 02（2026-09-16続き2）— 朝候補選定（純粋関数）の回帰テスト。
 //
 //   node --import=tsx/esm src/lib/morning/selectMorningThreeSlots.check.ts
 
@@ -37,7 +37,9 @@ function baseDc(over: Partial<DiscoveredContentLike> = {}): DiscoveredContentLik
   }
 }
 
-/** 確実に verdict='A' になる CandidateAssessment を作り、digestMeta（category/facilityKey）を上書きする */
+/** 確実に verdict='A' になる CandidateAssessment を作り、digestMeta（category/facilityKey）を上書きする。
+ *  既定では baseDc() の構造化 eventStartAt/eventEndAt により「現在性の根拠=構造化データ」の
+ *  安全な候補になる（isDateBackedCurrency:true）。 */
 function mkA(
   id: number,
   category: string | null,
@@ -70,226 +72,164 @@ function mkA(
   return a
 }
 
+/** 現在性の根拠が「明記語のみ」（構造化データなし・タイトルに具体的な年月日なし）の
+ *  “unsafe” な A 判定候補を作る（DC#294クラス：「好評開催中！」のような文言）。 */
+function mkUnsafeA(id: number, category: string | null, facilityKey: string | null): CandidateAssessment {
+  const a = assessCandidate({
+    dc: baseDc({
+      id,
+      title: '好評開催中！新商品のご案内',
+      excerpt: null,
+      eventStartAt: null,
+      eventEndAt: null,
+    }),
+    facts: undefined,
+    dedup: { duplicate: false },
+    imageInventory: [],
+    now: NOW,
+  })
+  if (a.verdict !== 'A') throw new Error(`fixture 前提が崩れている: id=${id} は A のはずが ${a.verdict}（reasons=${a.reasons.join('|')}）`)
+  assert(!a.reasons.some((r) => r.includes('構造化データ') || r.includes('具体的な開催日')), `unsafe fixture のはずが date-backed になっている: ${a.reasons.join('|')}`)
+  a.digestMeta = {
+    venue: null,
+    officialFetch: null,
+    priceHint: null,
+    facilityKey,
+    facilityLabel: facilityKey ?? '',
+    parentFacilityKey: null,
+    parentFacilityLabel: null,
+    category,
+    categoryBasis: category ? 'title' : null,
+    publishedAt: null,
+    origin: 'approved',
+  }
+  return a
+}
+
 const cases: CheckCase[] = [
   {
-    name: '各バケットから1件ずつ選ばれる（3枠すべて埋まる）',
+    name: '18カテゴリー全体から最も価値の高い最大3件を選ぶ（固定枠なし）。自然な上位3件が最低1件の必須カテゴリーを含む場合はそのまま',
     fn: () => {
       const beauty = mkA(1, 'BEAUTY', 'shiseido-ginza')
-      const gourmet = mkA(2, 'SWEETS', 'kyobunkwan-ginza')
-      const art = mkA(3, 'ART', 'ginza-tsutaya')
-      const r = selectMorningThreeSlots([beauty, gourmet, art])
-      assert(r.slots.length === 3, '3枠')
-      assert(r.slots[0].bucketKey === 'BEAUTY_FASHION' && r.slots[0].candidate?.discoveredContentId === 1, 'ビューティー・ファッション枠')
-      assert(r.slots[1].bucketKey === 'GOURMET_SWEETS' && r.slots[1].candidate?.discoveredContentId === 2, 'グルメ・スウィーツ枠')
-      assert(r.slots[2].bucketKey === 'CULTURE_ART' && r.slots[2].candidate?.discoveredContentId === 3, '文化・アート枠')
+      const art = mkA(2, 'ART', 'ginza-tsutaya')
+      const music = mkA(3, 'MUSIC', 'yamano-music-ginza')
+      const r = selectMorningThreeSlots([beauty, art, music])
+      assert(r.picks.length === 3, `3件選出（実際 ${r.picks.length}）`)
+      assert(r.picks.map((p) => p.candidate.discoveredContentId).join(',') === '1,2,3', 'id昇順（価値の代理指標）で1,2,3が選ばれる')
+      assert(r.requiredCategorySatisfied === true, '必須カテゴリー（BEAUTY）を含む')
     },
   },
   {
-    name: 'SHOPPING はビューティー・ファッション枠、FOOD/CAFE はグルメ・スウィーツ枠、PHOTO/MUSIC は文化・アート枠に入る',
+    name: '文化・アートは必須にしない——ART候補が無くても3件選出できる',
     fn: () => {
-      const shopping = mkA(11, 'SHOPPING', 'wako-ginza')
+      const beauty = mkA(11, 'BEAUTY', 'shiseido-ginza')
       const food = mkA(12, 'FOOD', 'ginza-motoji')
-      const photo = mkA(13, 'PHOTO', 'pola-annex-ginza')
-      const r = selectMorningThreeSlots([shopping, food, photo])
-      assert(r.slots[0].candidate?.discoveredContentId === 11, 'SHOPPING→ビューティー・ファッション')
-      assert(r.slots[1].candidate?.discoveredContentId === 12, 'FOOD→グルメ・スウィーツ')
-      assert(r.slots[2].candidate?.discoveredContentId === 13, 'PHOTO→文化・アート')
+      const shopping = mkA(13, 'SHOPPING', 'wako-ginza')
+      const r = selectMorningThreeSlots([beauty, food, shopping])
+      assert(r.picks.length === 3, `ART無しでも3件（実際 ${r.picks.length}）`)
+      assert(!r.picks.some((p) => p.candidate.digestMeta?.category === 'ART'), 'ARTは含まれない')
     },
   },
   {
-    name: '未分類（category null）はA判定でも3枠に入らない（推測で分類しない）',
+    name: '自然な上位3件に必須カテゴリー（BEAUTY/SHOPPING/FOOD/CAFE/SWEETS）が無ければ、最良の該当候補を1件確保する',
     fn: () => {
-      const unclassified = mkA(21, null, 'some-facility')
-      const art = mkA(22, 'ART', 'ginza-tsutaya')
+      // 上位3件を占めるのは ART/MUSIC/PHOTO（id 21,22,23）。必須カテゴリーのSWEETS(id 24)は
+      // idが一番大きい＝価値の代理指標では最下位だが、必須枠確保のため優先的に含まれるはず。
+      const art = mkA(21, 'ART', 'ginza-tsutaya')
+      const music = mkA(22, 'MUSIC', 'yamano-music-ginza')
+      const photo = mkA(23, 'PHOTO', 'pola-annex-ginza')
+      const sweets = mkA(24, 'SWEETS', 'ginza-kikunoya')
+      const r = selectMorningThreeSlots([art, music, photo, sweets])
+      assert(r.picks.length === 3, `3件選出（実際 ${r.picks.length}）`)
+      assert(r.requiredCategorySatisfied === true, '必須カテゴリーを満たす')
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 24), `SWEETS(24)が確保される（実際 ${r.picks.map((p) => p.candidate.discoveredContentId)}）`)
+    },
+  },
+  {
+    name: '必須カテゴリーに該当する安全な候補が1件も無ければ requiredCategorySatisfied:false のまま（無理に作らない）',
+    fn: () => {
+      const art = mkA(31, 'ART', 'ginza-tsutaya')
+      const music = mkA(32, 'MUSIC', 'yamano-music-ginza')
+      const r = selectMorningThreeSlots([art, music])
+      assert(r.picks.length === 2, `2件のみ選出（実際 ${r.picks.length}）`)
+      assert(r.requiredCategorySatisfied === false, '必須カテゴリー該当候補が無いのでfalse')
+    },
+  },
+  {
+    name: '未分類（category null）は選定対象外',
+    fn: () => {
+      const unclassified = mkA(41, null, 'some-facility')
+      const art = mkA(42, 'ART', 'ginza-tsutaya')
       const r = selectMorningThreeSlots([unclassified, art])
-      assert(r.slots[2].candidate?.discoveredContentId === 22, '文化・アートにはARTが入る')
-      assert(!r.slots.some((s) => s.candidate?.discoveredContentId === 21), '未分類候補はどの枠にも入らない')
+      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 41), '未分類は選ばれない')
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 42), '分類済みは選ばれる')
     },
   },
   {
-    name: '同一施設は3枠を通じて1件まで——2枠目の同施設候補はスキップし次点を選ぶ',
+    // 実例＝DC#294「好評開催中！「北海道物産展」のおすすめ品」。現在性の根拠が
+    // 「開催中」の明記語のみ（構造化期間もタイトル中の具体的な年月日も無い）ため、
+    // A判定候補ではあるが選定対象から除外する（unsafeSkips）。
+    name: 'DC#294回帰: 現在性の根拠が明記語のみ（構造化データ・具体的な開催日いずれも無し）の候補は選定対象外（unsafeSkips）',
     fn: () => {
-      const beauty = mkA(31, 'BEAUTY', 'ginza-six')
-      // ART候補がginza-six施設で先に来る（idが小さい）が、BEAUTYが既にginza-sixを使用済みなのでスキップされ、
-      // 次点の別施設ART候補が選ばれるはず
-      const artSameFacility = mkA(32, 'ART', 'ginza-six')
-      const artOtherFacility = mkA(33, 'ART', 'kabukiza')
-      const r = selectMorningThreeSlots([beauty, artSameFacility, artOtherFacility])
-      assert(r.slots[0].candidate?.discoveredContentId === 31, 'ビューティー・ファッションは31')
-      assert(r.slots[2].candidate?.discoveredContentId === 33, '文化・アートは同一施設32をスキップし33を選ぶ')
+      const unsafe = mkUnsafeA(294, 'ART', 'kabukiza')
+      const safe = mkA(50, 'ART', 'ginza-tsutaya')
+      const r = selectMorningThreeSlots([unsafe, safe])
+      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 294), 'DC#294は選定対象から除外される')
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 50), '構造化データを持つ50は選定される')
+      assert(r.unsafeSkips.some((s) => s.discoveredContentId === 294), 'DC#294はunsafeSkipsに理由付きで記録される（削除はしない）')
     },
   },
   {
-    name: '該当A候補が無いバケットは candidate:null・emptyReason つきで返す（Bで埋めない）',
+    name: '施設14日間クールダウン中の候補は選定対象外（facilityCooldownSkips・削除はしない）',
     fn: () => {
-      const art = mkA(41, 'ART', 'ginza-tsutaya')
-      const r = selectMorningThreeSlots([art])
-      const beautySlot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
-      assert(beautySlot?.candidate === null, 'ビューティー・ファッションは該当なし')
-      assert(!!beautySlot?.emptyReason, 'emptyReason が付く')
-    },
-  },
-  {
-    name: 'B・C判定の候補は3枠の対象外（Aのみ対象）',
-    fn: () => {
-      const bCandidate = mkA(51, 'ART', 'ginza-tsutaya')
-      bCandidate.verdict = 'B' // 疑似的にB化
-      const r = selectMorningThreeSlots([bCandidate])
-      const artSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(artSlot?.candidate === null, 'B判定はA専用の3枠には入らない')
-    },
-  },
-  {
-    name: '開催・販売期間が構造化データで確認済みの候補を優先する（eventPeriod!==不明を優先）',
-    fn: () => {
-      const confirmed = mkA(61, 'ART', 'a-facility')
-      confirmed.eventPeriod = '2026-10-01'
-      const unconfirmed = mkA(62, 'ART', 'b-facility')
-      unconfirmed.eventPeriod = '不明'
-      const r = selectMorningThreeSlots([unconfirmed, confirmed])
-      const artSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(artSlot?.candidate?.discoveredContentId === 61, '期間確認済みの61が優先される')
-    },
-  },
-
-  // ---------- 施設単位の14日間抑制（2026-09-16追加・マロン指示） ----------
-  {
-    // 実例＝DC#313（GINZA SIXの「アクシージア×mika ninagawaコラボ」）。GINZA SIX施設で
-    // 直近にArticleが作成されている場合、facilityCooldownSkipとして繰り上げ対象になる
-    // （候補自体は削除しない・次点候補が選ばれる）。
-    name: 'DC#313回帰: GINZA SIX施設で直近にArticle作成があれば facilityCooldownSkip（同カテゴリーの次点が繰り上がる）',
-    fn: () => {
-      const dc313 = mkA(313, 'SHOPPING', 'ginza-six', {}, 'PARENT_GINZA_SIX')
-      const altBeauty = mkA(999, 'BEAUTY', 'wako-ginza')
+      const onCooldown = mkA(61, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
+      const alt = mkA(62, 'ART', 'kabukiza')
       const history: FacilityActivityRecord[] = [
-        {
-          groupKey: 'PARENT_GINZA_SIX',
-          facilityKey: 'ginza-six',
-          facilityLabel: 'GINZA SIX',
-          date: '2026-09-14T00:00:00.000Z', // NOW=2026-09-16の2日前
-          source: 'article',
-          detail: 'Article #70 作成',
-        },
+        { groupKey: 'PARENT_GINZA_SIX', facilityKey: 'ginza-six', facilityLabel: 'GINZA SIX', date: '2026-09-14T00:00:00.000Z', source: 'article', detail: 'Article #70 作成' },
       ]
-      const r = selectMorningThreeSlots([dc313, altBeauty], { facilityHistory: history, now: NOW })
-      const slot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
-      assert(slot?.candidate?.discoveredContentId === 999, `DC#313は抑制され次点999が選ばれる（実際 ${slot?.candidate?.discoveredContentId}）`)
-      assert(
-        r.facilityCooldownSkips.some((s) => s.discoveredContentId === 313),
-        'DC#313はfacilityCooldownSkipとして理由付きで記録される（削除はしない）',
-      )
+      const r = selectMorningThreeSlots([onCooldown, alt], { facilityHistory: history, now: NOW })
+      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 61), 'DC#61はクールダウンで除外される')
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 62), '代替の62は選定される')
+      assert(r.facilityCooldownSkips.some((s) => s.discoveredContentId === 61), 'facilityCooldownSkipsに記録される')
     },
   },
   {
-    // 実例＝DC#532（山野楽器「ASTURIASクラシックギターフェア」）。同じ山野楽器
-    // （parentFacilityKey='PARENT_YAMANO_GINZA'）で5日前にArticle作成済み（Article #63
-    // 「弦楽器フェア2026」）→ facilityCooldownSkip。
-    name: 'DC#532回帰: 山野楽器の5日前のArticle作成によりfacilityCooldownSkip（parentFacilityKeyで一致判定）',
+    name: '同一（親）施設は3件を通じて1件まで',
     fn: () => {
-      const dc532 = mkA(532, 'MUSIC', 'yamano-music-ginza', {}, 'PARENT_YAMANO_GINZA')
-      const altArt = mkA(998, 'ART', 'ginza-tsutaya')
-      const history: FacilityActivityRecord[] = [
-        {
-          groupKey: 'PARENT_YAMANO_GINZA',
-          facilityKey: 'yamano-music-ginza',
-          facilityLabel: '山野楽器 銀座本店',
-          date: '2026-09-11T01:12:04.668Z', // NOW=2026-09-16の5日前（Article #63実績）
-          source: 'article',
-          detail: 'Article #63 作成',
-        },
-      ]
-      const r = selectMorningThreeSlots([dc532, altArt], { facilityHistory: history, now: NOW })
-      const slot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(slot?.candidate?.discoveredContentId === 998, `DC#532は抑制され次点998が選ばれる（実際 ${slot?.candidate?.discoveredContentId}）`)
-      assert(
-        r.facilityCooldownSkips.some((s) => s.discoveredContentId === 532 && s.reason.includes('山野楽器')),
-        'DC#532はfacilityCooldownSkipとして理由（山野楽器）付きで記録される',
-      )
+      const a1 = mkA(71, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
+      const a2 = mkA(72, 'MUSIC', 'ginza-tsutaya', {}, 'PARENT_GINZA_SIX')
+      const a3 = mkA(73, 'PHOTO', 'kabukiza')
+      const r = selectMorningThreeSlots([a1, a2, a3])
+      assert(r.picks.length === 2, `同一親施設72は除外され2件のみ（実際 ${r.picks.length}）`)
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 71), '71は選ばれる')
+      assert(!r.picks.some((p) => p.candidate.discoveredContentId === 72), '同一親施設の72は選ばれない')
+      assert(r.picks.some((p) => p.candidate.discoveredContentId === 73), '73は選ばれる')
     },
   },
   {
-    name: '施設クールダウンは14日を超えると解除される（15日前の活動は抑制しない）',
+    name: '安全な候補が3件未満なら無理に埋めない',
     fn: () => {
-      const dc = mkA(41, 'ART', 'ginza-tsutaya', {}, 'PARENT_GINZA_SIX')
-      const history: FacilityActivityRecord[] = [
-        {
-          groupKey: 'PARENT_GINZA_SIX',
-          facilityKey: 'ginza-six',
-          facilityLabel: 'GINZA SIX',
-          date: '2026-09-01T00:00:00.000Z', // NOW=2026-09-16の15日前
-          source: 'article',
-          detail: 'Article #1 作成',
-        },
-      ]
-      const r = selectMorningThreeSlots([dc], { facilityHistory: history, now: NOW })
-      const slot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(slot?.candidate?.discoveredContentId === 41, `15日前は抑制対象外（実際 ${slot?.candidate?.discoveredContentId}）`)
-      assert(r.facilityCooldownSkips.length === 0, '15日前はfacilityCooldownSkipに記録されない')
-    },
-  },
-  {
-    name: '同一親施設（parentFacilityKey）も3枠を通じて1件まで——facilityKeyが異なっても同一親なら2件目はスキップ',
-    fn: () => {
-      // ginza-six と ginza-tsutaya は facilityKey は別だが同じ PARENT_GINZA_SIX
-      const beauty = mkA(71, 'BEAUTY', 'ginza-six', {}, 'PARENT_GINZA_SIX')
-      const art = mkA(72, 'ART', 'ginza-tsutaya', {}, 'PARENT_GINZA_SIX')
-      const altArt = mkA(73, 'ART', 'kabukiza')
-      const r = selectMorningThreeSlots([beauty, art, altArt])
-      const artSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(artSlot?.candidate?.discoveredContentId === 73, `同一親施設72はスキップされ73が選ばれる（実際 ${artSlot?.candidate?.discoveredContentId}）`)
-    },
-  },
-
-  // ---------- 18カテゴリーの別カテゴリーからの代替選定（2026-09-16続き追加・マロン指示） ----------
-  {
-    name: '自カテゴリーに安全な候補が無いバケットは、18カテゴリーの別カテゴリーから次点を繰り上げる（isFallback:true）',
-    fn: () => {
-      // BEAUTY/SHOPPING・FOOD/CAFE/SWEETS候補が無く、ARTのみ2件ある状況
-      const art1 = mkA(81, 'ART', 'ginza-tsutaya')
-      const art2 = mkA(82, 'ART', 'kabukiza')
-      const r = selectMorningThreeSlots([art1, art2])
-      const cultureSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      assert(cultureSlot?.candidate?.discoveredContentId === 81, '文化・アートは自カテゴリーの81が優先される')
-      assert(cultureSlot?.isFallback === false, '自カテゴリー選出はisFallback:false')
-
-      const beautySlot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
-      assert(beautySlot?.candidate?.discoveredContentId === 82, `ビューティー・ファッションは他カテゴリーの82が繰り上がる（実際 ${beautySlot?.candidate?.discoveredContentId}）`)
-      assert(beautySlot?.isFallback === true, '他カテゴリーからの繰り上げはisFallback:true')
-    },
-  },
-  {
-    name: '代替候補（fallback）も施設クールダウン・使用済み・同一親施設の判定は通常どおり適用される',
-    fn: () => {
-      const art1 = mkA(91, 'ART', 'ginza-six', {}, 'PARENT_GINZA_SIX')
-      const history: FacilityActivityRecord[] = [
-        {
-          groupKey: 'PARENT_GINZA_SIX',
-          facilityKey: 'ginza-six',
-          facilityLabel: 'GINZA SIX',
-          date: '2026-09-14T00:00:00.000Z',
-          source: 'article',
-          detail: 'Article #1 作成',
-        },
-      ]
-      const r = selectMorningThreeSlots([art1], { facilityHistory: history, now: NOW })
-      // 文化・アート（自カテゴリー）もビューティー・ファッション（fallback候補としても）も
-      // 同じGINZA SIXクールダウンで抑制され、該当なしになるはず
-      const cultureSlot = r.slots.find((s) => s.bucketKey === 'CULTURE_ART')
-      const beautySlot = r.slots.find((s) => s.bucketKey === 'BEAUTY_FASHION')
-      assert(cultureSlot?.candidate === null, '自カテゴリーもクールダウンで該当なし')
-      assert(beautySlot?.candidate === null, 'fallbackもクールダウンで該当なし（安全な候補が無ければ無理に埋めない）')
-    },
-  },
-  {
-    name: '安全な候補が1件しか無い場合は3件を無理に埋めず、埋まらない枠は該当なしのまま残す',
-    fn: () => {
-      const only = mkA(101, 'SWEETS', 'ginza-motoji')
+      const only = mkA(81, 'SWEETS', 'ginza-motoji')
       const r = selectMorningThreeSlots([only])
-      const filled = r.slots.filter((s) => s.candidate != null)
-      assert(filled.length === 1, `埋まる枠は1件のみ（実際 ${filled.length}）`)
-      assert(filled[0].candidate?.discoveredContentId === 101, 'グルメ・スウィーツに101が入る')
-      const emptySlots = r.slots.filter((s) => s.candidate == null)
-      assert(emptySlots.length === 2 && emptySlots.every((s) => !!s.emptyReason), '残り2枠は理由付きで該当なしのまま（無理に埋めない）')
+      assert(r.picks.length === 1, `1件のみ（実際 ${r.picks.length}）`)
+    },
+  },
+  {
+    name: '安全な候補が0件なら空配列を返す（無理に選出しない）',
+    fn: () => {
+      const unsafe = mkUnsafeA(295, 'ART', 'kabukiza')
+      const r = selectMorningThreeSlots([unsafe])
+      assert(r.picks.length === 0, `0件（実際 ${r.picks.length}）`)
+      assert(r.requiredCategorySatisfied === false, '必須カテゴリーも当然false')
+    },
+  },
+  {
+    name: 'B・C判定の候補は選定対象外（Aのみ対象・A/B/C判定ロジック自体は呼び出さない）',
+    fn: () => {
+      const bCandidate = mkA(91, 'ART', 'ginza-tsutaya')
+      bCandidate.verdict = 'B' // 疑似的にB化（判定ロジックは変更しない・表示専用フィルターのテスト）
+      const r = selectMorningThreeSlots([bCandidate])
+      assert(r.picks.length === 0, 'B判定は選定対象に入らない')
     },
   },
 ]

@@ -203,22 +203,36 @@ export function renderMorningReport(report: MorningReport): string {
   s += line(`  内訳: A=${report.counts.A} / B=${report.counts.B} / C=${report.counts.C}`)
   s += line('════════════════════════════════════════════════')
   s += line()
-  s += line('■ 朝の3枠（ビューティー・ファッション／グルメ・スウィーツ／文化・アート、各1件）')
-  s += line('  A判定（18カテゴリー全体）の中から表示用に3枠へ絞る。未分類はこの3枠には入れない。')
-  for (const slot of report.morningThreeSlots.slots) {
-    if (slot.candidate) {
-      const c = slot.candidate
-      const tag = slot.isFallback ? `［他カテゴリーからの代替・実カテゴリー: ${c.digestMeta?.category ?? '不明'}］` : ''
-      s += line(`  ・${slot.bucketLabel}: DC #${c.discoveredContentId} ${c.displayTitle} ${tag}`)
-      s += line(`      施設: ${c.digestMeta?.facilityLabel || c.digestMeta?.facilityKey || '（不明）'} ／ 期間: ${c.eventPeriod} ／ URL: ${c.sourceUrl || '（なし）'}`)
-    } else {
-      s += line(`  ・${slot.bucketLabel}: 該当なし（${slot.emptyReason ?? '不明'}）`)
+  s += line('■ 朝の候補（18カテゴリー全体から最大3件・固定枠は廃止）')
+  s += line('  最低1件はBEAUTY/SHOPPING（美容・ファッション）/FOOD/CAFE/SWEETSのいずれかを含める。')
+  s += line('  未分類・現在性の根拠が明記語のみ（開催中/販売中/受付中等）の候補はこの選定の対象外。')
+  if (report.morningThreeSlots.picks.length === 0) {
+    s += line('  該当候補なし（安全な候補が1件も無いため、無理に選出していません）。')
+  } else {
+    for (const p of report.morningThreeSlots.picks) {
+      const c = p.candidate
+      const tag = p.satisfiesRequiredCategory ? '［必須カテゴリー該当］' : ''
+      s += line(`  ${p.rank}. DC #${c.discoveredContentId} ${c.displayTitle} ${tag}`)
+      s += line(
+        `      カテゴリー: ${c.digestMeta?.category ?? '不明'} ／ 施設: ${c.digestMeta?.facilityLabel || c.digestMeta?.facilityKey || '（不明）'} ／ 期間: ${c.eventPeriod} ／ URL: ${c.sourceUrl || '（なし）'}`,
+      )
+    }
+    if (report.morningThreeSlots.picks.length < 3) {
+      s += line(`  ※ 安全な候補が${report.morningThreeSlots.picks.length}件のみのため、無理に3件に埋めていません。`)
+    }
+    if (!report.morningThreeSlots.requiredCategorySatisfied) {
+      s += line('  ※ 必須カテゴリー（BEAUTY/SHOPPING/FOOD/CAFE/SWEETS）に該当する安全な候補がありませんでした。')
     }
   }
+  if (report.morningThreeSlots.unsafeSkips.length > 0) {
+    s += line(`  ※ 現在性の根拠が明記語のみ等のため選定対象から除外した候補（削除はしていない・${report.morningThreeSlots.unsafeSkips.length}件）：`)
+    for (const sk of report.morningThreeSlots.unsafeSkips.slice(0, 10))
+      s += line(`    - DC #${sk.discoveredContentId}: ${sk.reason}`)
+  }
   if (report.morningThreeSlots.facilityCooldownSkips.length > 0) {
-    s += line('  ※ 施設14日間クールダウンにより繰り上げ対象となった候補（削除はしていない）：')
+    s += line('  ※ 施設14日間クールダウンにより除外した候補（削除はしていない）：')
     for (const sk of report.morningThreeSlots.facilityCooldownSkips)
-      s += line(`    - DC #${sk.discoveredContentId}（${sk.bucketKey}）: ${sk.reason}`)
+      s += line(`    - DC #${sk.discoveredContentId}（${sk.groupKey}）: ${sk.reason}`)
   }
   s += line()
   s += line('■ 候補一覧（A＋B・優先順位順・最大5）')
