@@ -68,6 +68,7 @@ import {
   type RawPastMorningActivity,
 } from '../lib/morning/facilityActivityHistory'
 import { deriveProvisionalCategory, isCategoryResolved } from '../lib/pipeline/provisionalCategory'
+import { deriveAutoArticleFacts } from '../lib/morning/autoArticleFacts'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
 import { collectUsedDcIds, type MorningSelectionRecord } from '../lib/morning/selectionRecord'
@@ -871,9 +872,86 @@ async function main(): Promise<void> {
         })
         const facilityCooldown = checkFacilityCooldown(facility.key, facility.parentFacilityKey, facilityHistory, now)
 
+        // --- ArticleFacts 自動導出・自動ready化（2026-09-16続き7追加・マロン指示：
+        //     A判定とArticleFactsの矛盾を解消） ---
+        //   DC保存済みの公式情報だけから決定論的に導出する（autoArticleFacts.ts・
+        //   推測しない）。既にready済みのArticleFactsは一切変更しない（人間が
+        //   確認済みのready状態を上書きしない）。enteredBy／humanReviewedAt が
+        //   設定済み（＝人間が既に触れた行）も上書きしない——このスクリプトは
+        //   「人間の入力を前提にしない新規導出」だけを行い、既存の人間操作を
+        //   自動生成で消さない。--no-write のときは書き込まず（読み取り専用実行を
+        //   維持）、factsDoc は既存のまま assessCandidate へ渡す——この場合
+        //   factsSource!=='ready' な候補は articleFactsNotReady で B になる
+        //   （推測でAにしない）。
+        let effectiveFactsDoc = factsDoc
+        let articleFactsAutoMissing: string[] | undefined
+        const factsTouchedByHuman = !!factsDoc?.enteredBy || !!factsDoc?.humanReviewedAt
+        if (args.write && String(factsDoc?.enrichmentStatus ?? '') !== 'ready' && !factsTouchedByHuman) {
+          const autoCategory = deriveProvisionalCategory({
+            title: dcLike.title,
+            venue: dcLike.venue,
+            contentType: dcLike.contentType,
+          }).category
+          const auto = deriveAutoArticleFacts({
+            title: dcLike.title ?? null,
+            articleUrl: dcLike.articleUrl ?? null,
+            eventStartAt: dcLike.eventStartAt ?? null,
+            eventEndAt: dcLike.eventEndAt ?? null,
+            category: autoCategory,
+          })
+          if (auto.eligible && auto.payload) {
+            try {
+              const updatedDoc =
+                factsDoc?.id != null
+                  ? await payload.update({
+                      collection: 'article-facts',
+                      id: factsDoc.id as string | number,
+                      data: auto.payload as never,
+                      overrideAccess: true,
+                      context: { autoReadyFromSavedDcFacts: true },
+                    })
+                  : await payload.create({
+                      collection: 'article-facts',
+                      data: { discoveredContent: dcId, ...auto.payload } as never,
+                      overrideAccess: true,
+                      context: { autoReadyFromSavedDcFacts: true },
+                    })
+              effectiveFactsDoc = updatedDoc as unknown as Record<string, unknown>
+              factsAudit.push({
+                at: now.toISOString(),
+                kind: 'autoArticleFacts',
+                discoveredContentId: dcId,
+                status: 'ready',
+                derivedFrom: auto.derivedFrom,
+              })
+            } catch (err) {
+              // evaluateReadyGate 等での reject。推測せず未readyのまま次へ進める（B）。
+              const msg = err instanceof Error ? err.message : String(err)
+              articleFactsAutoMissing = [msg]
+              factsAudit.push({
+                at: now.toISOString(),
+                kind: 'autoArticleFacts',
+                discoveredContentId: dcId,
+                status: 'rejected',
+                error: msg,
+              })
+            }
+          } else {
+            articleFactsAutoMissing = auto.missing
+            factsAudit.push({
+              at: now.toISOString(),
+              kind: 'autoArticleFacts',
+              discoveredContentId: dcId,
+              status: 'ineligible',
+              missing: auto.missing,
+            })
+          }
+        }
+
         const a = assessCandidate({
           dc: dcLike,
-          facts: toFactsLike(factsDoc),
+          facts: toFactsLike(effectiveFactsDoc),
+          articleFactsAutoMissing,
           dedup,
           imageInventory,
           now,

@@ -1,41 +1,44 @@
-// GINZA WHISKERS / Project 02 P0 改善（2026-09-02〜2026-09-16続き3、A/B/C判定構造の是正）
+// GINZA WHISKERS / Project 02 P0 改善（2026-09-02〜2026-09-16続き7、A/B/C判定構造の是正）
 // — A/B/C 判定（純粋関数・AI なし）。
 //
-// 【最重要定義（2026-09-16続き3・マロン指示）】Aは「今日、マロンへ記事候補として
-// 提示できる状態」——単なる候補プールではない。現在性・既処理・近似重複・施設14日間
-// クールダウンまで通過した候補だけをAにする（従来は基礎判定をAのまま維持し、朝の
-// 選定処理側だけでfacilityCooldownSkip等として除外していたが、これを是正）。
+// 【最重要定義（2026-09-16続き7・マロン指示：A判定とArticleFactsの矛盾を解消）】
+// Aは「記事化に必要な公式情報の裏どりとArticleFacts保存が完了した候補」——単なる
+// 候補プールではない。現在性・既処理・近似重複・施設14日間クールダウン**に加えて
+// ArticleFacts.enrichmentStatus='ready'** まで通過した候補だけをAにする。
+//
+// 【2026-09-15〜続き3時点の旧方針からの反転】2026-09-15時点では「ArticleFacts
+// readyはA判定の必須条件にしない」としていた（記事生成readinessと候補提示を分離
+// する設計）。続き7でこれを明示的に反転した——V1のStage 4（マロンが候補ボードから
+// 3本選定）→Stage 5（選定直後にnote原稿を自動生成）という運用では、選定後に人間が
+// ArticleFactsを追加入力する工程を挟めない（挟むこと自体を禁止）ため、A＝「今すぐ
+// 原稿化できる状態」まで前倒しする必要があった。ready化は6時処理内で
+// autoArticleFacts.ts（DC保存済みの公式情報だけから決定論的に導出。推測しない）
+// が自動的に行う——**マロン選定後の人間による追加入力を運用前提にしない**。
 //
 // 【判定基準】
 //   C（候補提示不可・対象外。安全条件）: 開催終了 / 既投稿と重複 / 銀座関連性を
 //     確認できない / 追跡可能な公式出典が無い / 明確に古い情報（構造化期間が無く、
 //     タイトルに明示された過去の年月日がある。2026-09-16続き3追加・DC#40クラス）。
-//   A（今日、記事候補として提示できる状態。18カテゴリー共通の目的型／発見型ロジック）：
-//     C でない かつ targetOrDiscoveryEligibility.ts の10条件をすべて満たす候補
-//     （詳細は同ファイルのヘッダーコメント参照。現在性・18カテゴリー分類・近似重複
-//     なし・施設/親施設クールダウン対象外を含む）。**ArticleFacts.enrichmentStatus=
-//     'ready'（人間による事前データ入力）はA判定の必須条件にしない**——これは
-//     「記事生成の準備が整っているか」の判定であり「候補として提示する価値が
-//     あるか」の判定ではないため（2026-09-15、実データでA=0の根本原因と特定）。
+//   A（記事化に必要な公式情報の裏どりとArticleFacts保存が完了した候補。18カテゴリー
+//     共通の目的型／発見型ロジック）：
+//     C でない かつ targetOrDiscoveryEligibility.ts の9条件（現在性・18カテゴリー
+//     分類・近似重複なし・施設/親施設クールダウン対象外を含む）をすべて満たし、
+//     かつ **ArticleFacts.enrichmentStatus==='ready'** の候補。
 //     「銀座限定でない」「他地域にも店舗がある」「通販でも買える」「銀座を
 //     訪れる唯一の目的でない」「常設店舗である」はいずれも除外理由にしない。
 //     A判定の理由に「目的型」または「発見型」を明記する。
 //   B（旬の候補としてマロンへ提示可能・記事生成前に不足項目の公式確認が必要、または
-//     現在性/既処理/施設クールダウン等の理由でAに一時的に届かない）：
+//     現在性/既処理/施設クールダウン/ArticleFacts未ready等の理由でAに一時的に
+//     届かない）：
 //       C でも A でもない。facilityCooldown／parentFacilityCooldown／alreadyProcessed／
 //       uncertainCurrentAvailability／missingEventOrSalePeriod／nearDuplicate／
-//       evergreenWithoutTimelinessのいずれか（reasonsに英語タグを明記）。
+//       evergreenWithoutTimelinessDetection／**articleFactsNotReady**（続き7追加）
+//       のいずれか（reasonsに英語タグを明記）。
 //       **削除しない**——施設クールダウン終了後や情報の状況が変われば、次回の
-//       再判定で自動的にAへ戻る（2026-09-16続き3改訂：alreadyProcessedは従来C
-//       だったが、削除ではなく再評価可能なBへ変更）。
-//       記事生成・CMS保存に進む際にArticleFactsのreadyゲート・Articles.
-//       beforeChangeの人間承認ゲートを通す必要がある点は無変更（生成readiness＝
-//       genReady として理由に併記する。A判定自体とは分離する）。
+//       再判定で自動的にAへ戻る。ArticleFactsが未readyのBも同様——翌日以降の
+//       6時処理で自動導出が成功すればAに昇格しうる。
 //
-// 「完璧」＝必須項目を確認できた案件だけを A とする、という旧基準は
-// 「記事生成readiness」の判定としては維持しつつ、候補「提示」のA判定からは
-// 分離した（2026-09-15）。未確認情報は推測で埋めない——missing / unconfirmed
-// に列挙するだけ。
+// 未確認情報は推測で埋めない——missing / unconfirmed に列挙するだけ。
 
 import {
   mapDiscoveredContentToEventFields,
@@ -112,6 +115,12 @@ export interface AssessCandidateInput {
     reason: string
     matchType?: 'facility' | 'parent'
   }
+  /**
+   * 【2026-09-16続き7追加・マロン指示】呼び出し元（morningRun.ts）が
+   * autoArticleFacts.deriveAutoArticleFacts() の結果（不足項目）をそのまま渡す。
+   * map.factsSource!=='ready' でBになる際の理由文に使うのみ——推測で埋めない。
+   */
+  articleFactsAutoMissing?: string[]
 }
 
 
@@ -283,6 +292,23 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     // 受け取る（マロンの追加設定は不要）。Bとして残す（削除・恒久除外ではない）。
     verdict = 'B'
     reasons.push(`alreadyProcessed（${input.alreadyProcessed.reason}）`)
+  } else if (map.factsSource !== 'ready') {
+    // 【2026-09-16続き7追加・マロン指示】A判定は「記事化に必要な公式情報の裏どりと
+    // ArticleFacts保存が完了した候補」——ArticleFactsがreadyでなければAにしない
+    // （2026-09-15の「ArticleFacts readyはA判定の必須条件にしない」方針を、V1の
+    // Stage 4/5（マロン選定→即note原稿作成）運用のため明示的に反転した）。
+    // ready化は6時処理内でDC保存済み公式情報から決定論的に自動導出する
+    // （autoArticleFacts.ts／ArticleFacts.applyArticleFactsReadyGateのreq.context
+    // 経由の自動導出経路）——**マロン選定後の人間による追加入力は前提にしない**。
+    // 不足項目は呼び出し元（morningRun.ts）がautoArticleFacts.tsの出力からそのまま
+    // 渡す（推測で埋めない）。
+    verdict = 'B'
+    const missingText = input.articleFactsAutoMissing?.length
+      ? input.articleFactsAutoMissing.join(' / ')
+      : map.factsSource === 'none'
+        ? 'ArticleFactsが未作成（保存済み公式情報からの自動導出でも必須項目が不足）'
+        : `ArticleFactsがready化されていません（現在: ${map.factsSource}）`
+    reasons.push(`articleFactsNotReady（${missingText}）`)
   } else {
     // 18カテゴリー共通・目的型／発見型のA判定（2026-09-15、マロン指示で全面改訂）。
     // ArticleFacts.enrichmentStatus='ready'（人間の事前手入力）はここでは判定条件にしない
@@ -317,22 +343,15 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     if (input.factKind === 'unknown') {
       genReadyNote = '記事タイプ未判定のため記事生成readiness未評価（推測分類はしない）'
     } else if (input.factKind === 'product_news') {
-      // enrichmentStatus='ready' は ArticleFacts.beforeChange がログイン済み人間の操作でしか
-      // 設定できないため、ready かつ humanReviewedAt 済みであれば人間確認は担保されている。
+      // 【2026-09-16続き7】map.factsSource==='ready' はこの分岐へ来る時点で既に確定済み
+      // （上のarticleFactsNotReady分岐で!=='ready'はB化されている）が、humanReviewedAtは
+      // 別の安全条件（2026-09-06・人間確認なしの自動A昇格禁止）としてそのまま残す——
+      // 6時処理の自動導出経路（autoArticleFacts.ts）はhumanReviewedAtを設定しないため、
+      // genReady（記事生成readinessの参考情報。verdict自体には影響しない）はfalseのまま
+      // 「human_reviewed_at が未設定」を明示する。
       const saleAvailabilityConfirmed = isSaleAvailabilityConfirmed(facts?.saleAvailability)
-      genReady =
-        map.templateEligible &&
-        map.factsSource === 'ready' &&
-        !!facts?.humanReviewedAt &&
-        saleAvailabilityConfirmed &&
-        !recentDupBlocks &&
-        !stale
-      if (map.factsSource === 'none') genReadyNote = 'ArticleFacts が未作成（必須項目が構造化されていない）'
-      else if (map.factsSource === 'draft')
-        genReadyNote =
-          'ArticleFacts が draft（商品名・価格・販売期間・購入条件・出典を公式で人間が確定入力し、human_reviewed で ready にする必要あり）'
-      else if (map.factsSource === 'withdrawn') genReadyNote = 'ArticleFacts が withdrawn'
-      else if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
+      genReady = map.templateEligible && !!facts?.humanReviewedAt && saleAvailabilityConfirmed && !recentDupBlocks && !stale
+      if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
       else if (!facts?.humanReviewedAt) genReadyNote = 'human_reviewed_at が未設定（人間レビュー未確認）'
       else if (!saleAvailabilityConfirmed) {
         genReadyNote = `現在の販売状況が公式に確認できていない（saleAvailability=${facts?.saleAvailability ?? '未設定'}）`
@@ -342,12 +361,9 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       } else if (recentDupBlocks) genReadyNote = `近似重複のため生成保留（${input.recentBrandVenueDuplicate?.reason}）`
       else if (stale) genReadyNote = '情報の確認日時が古く再確認が必要'
     } else {
-      // event（未指定は後方互換で event 扱い）
-      genReady = map.templateEligible && map.factsSource === 'ready' && !recentDupBlocks && !stale
-      if (map.factsSource === 'none') genReadyNote = 'ArticleFacts が未作成（必須項目が構造化されていない）'
-      else if (map.factsSource === 'draft') genReadyNote = 'ArticleFacts が draft（human_reviewed で ready にする必要あり）'
-      else if (map.factsSource === 'withdrawn') genReadyNote = 'ArticleFacts が withdrawn'
-      else if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
+      // event（未指定は後方互換で event 扱い）。factsSource==='ready' は確定済み（上記同様）。
+      genReady = map.templateEligible && !recentDupBlocks && !stale
+      if (!map.templateEligible) genReadyNote = '必須項目に不足あり（下記 missing）'
       else if (recentDupBlocks) genReadyNote = `近似重複のため生成保留（${input.recentBrandVenueDuplicate?.reason}）`
       else if (stale) genReadyNote = '情報の確認日時が古く再確認が必要'
     }

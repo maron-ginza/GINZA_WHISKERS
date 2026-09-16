@@ -57,6 +57,7 @@ import { suite as candidateBoard } from '../morning/candidateBoard.check'
 import { suite as selectionRecord } from '../morning/selectionRecord.check'
 import { suite as noteDraftFromSelection } from '../morning/noteDraftFromSelection.check'
 import { suite as atomicWrite } from '../util/atomicWrite.check'
+import { suite as autoArticleFacts } from '../morning/autoArticleFacts.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
@@ -118,6 +119,7 @@ const results: SuiteResult[] = [
   selectionRecord(),
   noteDraftFromSelection(),
   atomicWrite(),
+  autoArticleFacts(),
   chromeExtensionManifest(),
   noteTransferUrlMatch(),
   noteTransferState(),

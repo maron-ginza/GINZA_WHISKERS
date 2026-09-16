@@ -6,7 +6,7 @@ import { runSuite, type CheckCase } from '../__checks__/_harness'
 import { assessCandidate, type AssessCandidateInput } from './assessCandidate'
 import { selectMorningThreeSlots } from './selectMorningThreeSlots'
 import type { CandidateAssessment } from './types'
-import type { DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
+import type { ArticleFactsLike, DiscoveredContentLike } from '../template/mapDiscoveredContentToEventFields'
 
 const NOW = new Date('2026-09-16T00:00:00Z')
 const FUTURE_ISO = '2026-10-25T04:00:00Z'
@@ -36,6 +36,23 @@ function baseDc(over: Partial<DiscoveredContentLike> = {}): DiscoveredContentLik
   }
 }
 
+/** 2026-09-16続き7：A判定にArticleFacts readyが必須になったため、mkA()の既定facts。 */
+function readyFacts(over: Partial<ArticleFactsLike> = {}): ArticleFactsLike {
+  return {
+    enrichmentStatus: 'ready',
+    eventName: '銀座で新作コレクション発売',
+    whatHappens: '銀座で新作コレクションを発売する催しです。',
+    eventDate: '2026年10月25日',
+    eventDateISO: FUTURE_ISO,
+    officialInfoNote: '詳細は公式サイトでご確認ください。',
+    hashtags: [{ tag: '#銀座' }],
+    sourceProvenanceFacts: [
+      { fact: '開催・販売期間は2026年10月25日', sourceType: 'official', factType: 'date', verificationStatus: 'confirmed' },
+    ],
+    ...over,
+  }
+}
+
 /** 確実に verdict='A' になる CandidateAssessment を作り、digestMeta（category/facilityKey）を上書きする。
  *  既定では baseDc() の構造化 eventStartAt/eventEndAt により「現在性の根拠=構造化データ」の
  *  安全な候補になる（isDateBackedCurrency:true）。 */
@@ -48,7 +65,7 @@ function mkA(
 ): CandidateAssessment {
   const a = assessCandidate({
     dc: baseDc({ id, ...over.dc }),
-    facts: undefined,
+    facts: readyFacts(),
     dedup: { duplicate: false },
     imageInventory: [],
     now: NOW,

@@ -833,6 +833,52 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-16 続き7: 🔑 **A判定とArticleFactsの矛盾を解消——ArticleFacts readyをA判定の
+  必須条件に反転し、6時処理で保存済みDC公式情報から決定論的に自動ready化する
+  Stage 0を新設（正本 `MORNING_PIPELINE_V1_SPEC.md` §2・§3改訂。Project 02
+  commit・push あり／実DB書き込みあり〈article_facts +39件、うち現行A候補4件は
+  ready化成功〉／Claude・OpenAI等の有料API呼び出し0回・追加費用0円）**——
+  **背景**：V1のStage 4（マロン選定）→Stage 5（即note原稿生成）運用では選定後に
+  人間がArticleFactsを追加入力する工程を挟めない（禁止）。従来「ArticleFacts
+  readyはA判定の必須条件にしない」（2026-09-15決定）としていたためA候補に
+  ArticleFacts未readyのものが混在し、Stage 5が原理的に停止する構造的矛盾が
+  あった——今回これを反転し、A＝「記事化に必要な公式情報の裏どりとArticleFacts
+  保存（ready）が完了した候補」へ再定義。**Stage 0（新規`autoArticleFacts.ts`）**：
+  DC保存済みのtitle/articleUrl/eventStartAt/eventEndAt＋Stage 2確定済みカテゴリー
+  **だけ**から、`templateType:'generic'`（venues/eventTime/areaLead/audienceNote/
+  paidを要求しない最小フォールバック）でArticleFactsを導出。新しい事実は主張
+  せず、既に確認済みの値の言い換えのみ（eventName/whatHappens←DC.title整形版、
+  eventDate←構造化日付、sourceProvenanceFacts←同じ日付をconfirmed 1件、
+  hashtags←#銀座＋カテゴリー、officialInfoNote←個別事実を含まない固定定型文）。
+  タイトル・公式URL・構造化期間のいずれか欠落なら**推測せずeligible:false**。
+  **`ArticleFacts.ts`のready化ゲート**（`applyArticleFactsReadyGate`へ切り出し・
+  単体テスト化）に、`req.context.autoReadyFromSavedDcFacts:true`
+  （Payload Local APIのサーバー側専用機構、admin画面・REST/GraphQL等の外部経路
+  からは到達不可）経由の自動導出パスを追加——「AI・自動化スクリプトからの直接
+  遷移は不可」という既存安全設計は外部経路に対しては無変更のまま維持、
+  `evaluateReadyGate`の完全性チェック自体も人間経路と完全に同一（チェックは
+  緩めていない）。自動導出はhumanReviewedBy/Atを設定せず、notesへ
+  `[auto:readyFromSavedDcFacts]`と機械記録（人間レビュー済みを装わない）。
+  **assessCandidate.ts**：`map.factsSource!=='ready'`をB／`articleFactsNotReady`
+  として新設（既存のalreadyProcessed/facilityCooldown等と同じ設計＝削除ではなく
+  再評価可能なB、翌日以降Stage0の自動導出が成功すればAに戻る）。**実データ検証**：
+  事前バックアップ`_backups/article_facts_before_auto_ready_20260916.sql`
+  （31→70件）ののち`./p2 am-run`相当を書き込みありで1回実行——現行A候補4件
+  （DC#59・#438・#441・#779）全件が`enrichmentStatus='ready'`・
+  `templateType='generic'`で自動ready化に成功したことをDB実測で確認
+  （`humanReviewedBy`はいずれもNULL）。A/B/C件数は自動化前後で不変
+  （A=4/B=363/C=814、assessed=1181）——旧ロジックで既にAだった4件が新ロジックでも
+  Stage0の自動導出により引き続きAになることを実証。**回帰修正**：ArticleFacts
+  readyを既定に含めたことで既存テスト22件が新方針と不整合になり、
+  `verifyP0Morning.check.ts`のmk()既定facts（`readyFacts()`）変更＋個別修正
+  （ginzaRelevant判定がfacts.eventName/areaLeadも参照するため「新宿」シナリオ2件は
+  facts:undefinedへ明示戻し）、`selectMorningThreeSlots.check.ts`のmkA()にも
+  同様のreadyFacts()追加、product_news genReadyロジックで誤って欠落させていた
+  humanReviewedAt必須チェックを復元。関連テスト147/147 pass（新規
+  `autoArticleFacts.check.ts`12件含む）、`tsc --noEmit`0エラー。詳細・10月1日
+  運用への影響は`MORNING_PIPELINE_V1_SPEC.md`§10参照（venue等の構造化フィールド
+  欠如によりgeneric以外のテンプレート種別は引き続き自動導出対象外）。
+
 - 2026-09-16 続き6: 🎯 **V1 Stage 4／5を完成——選定は厳格ゲート＋atomic write、
   note原稿作成はAI不使用の決定論的テンプレート生成へ全面置き換え（正本
   `MORNING_PIPELINE_V1_SPEC.md` §5・6・10改訂。Project 02 commit・push あり／

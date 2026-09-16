@@ -17,10 +17,17 @@ import { buildArticleFactsReviewSummary } from '../lib/template/buildArticleFact
 // ——現行の「templateEligible:false → human_review」経路をそのまま維持する。
 //
 // 【安全設計】
-// - enrichmentStatus を 'ready' にできるのはログイン済みの人間のみ
-//   （DiscoveredContent.curationStatus の人間ゲートと同型）。AI・自動化は不可。
+// - enrichmentStatus を 'ready' にできるのは、ログイン済みの人間（req.user）、
+//   または6時処理の決定論的自動導出（autoArticleFacts.ts、req.context 経由。
+//   2026-09-16続き7・マロン指示：「A候補をマロンが選定した後に人間がArticleFactsを
+//   追加入力する運用は禁止」で追加）のいずれかに限る。req.context は Payload の
+//   Local API からサーバー側コードだけが設定できる値で、管理画面・REST/GraphQL
+//   経由の外部リクエストからは到達できない——「AI・自動化スクリプトからの直接
+//   遷移は不可」という原則は、この2つの信頼された経路以外に対しては無変更。
 // - 'ready' への遷移時に必須項目の充足を beforeChange で検査し、未充足なら reject
-//   （「ready＝完全」を DB 側でも保証。Stage 2 の mapper eligible 判定の双子）。
+//   （「ready＝完全」を DB 側でも保証。Stage 2 の mapper eligible 判定の双子。
+//   このチェック自体は人間経路・自動導出経路で完全に同一——ready化条件を緩めては
+//   いない）。
 // - 出典URL・確認日はここに持たせない。DiscoveredContent の機械確認値を使う
 //   （sourceProvenanceFacts は「どの事実が confirmed か」だけを人間が記録）。
 // - Postgres 識別子63文字制限（Articles.editorialProvenance の実機エラー教訓）
@@ -133,6 +140,111 @@ function toIsoString(v: unknown): string {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : v.toISOString()
   if (typeof v === 'string') return v.trim()
   return ''
+}
+
+export interface ArticleFactsReadyGateArgs {
+  data: Record<string, unknown>
+  originalDoc?: Record<string, unknown> | null
+  operation: 'create' | 'update' | string
+  /** req.user?.id 相当（ログイン済み人間の操作のときのみ設定） */
+  userId?: string | number | null
+  /**
+   * 【2026-09-16続き7追加・マロン指示】req.context 相当。Payload の Local API
+   * からサーバー側コードだけが設定できる値（REST/GraphQL/管理画面からは設定不可）。
+   * `autoReadyFromSavedDcFacts:true` のときのみ、req.user 無しでの ready 遷移を
+   * 許可する——6時処理で保存済みDC公式情報から決定論的に自動導出した
+   * ArticleFacts（autoArticleFacts.ts）専用の経路。「AI・自動化スクリプトからの
+   * 直接遷移は不可」という既存の安全設計は、admin画面・REST/GraphQL API等の
+   * 外部経路に対しては無変更のまま維持する（req.context はこれらの経路からは
+   * 到達できない）。ready化に必要な必須項目の完全性チェック（evaluateReadyGate）は
+   * 人間経路と完全に同一のまま——チェックを緩めるのではなく、「誰が/何が
+   * チェック済みの状態を確定させてよいか」だけを広げる。
+   */
+  context?: { autoReadyFromSavedDcFacts?: boolean } | null
+}
+
+/**
+ * ArticleFacts.beforeChange の ready ゲート本体（Payload の HookArgs から切り離した
+ * 純粋関数。DB・ネットワークなし。単体テスト用に export）。戻り値は変更後の data。
+ */
+export function applyArticleFactsReadyGate(args: ArticleFactsReadyGateArgs): Record<string, unknown> {
+  const { data, originalDoc, operation, userId, context } = args
+
+  if (operation === 'create' && userId != null && !data.enteredBy) {
+    data.enteredBy = userId
+  }
+
+  const prevStatus: string | undefined = (originalDoc?.enrichmentStatus as string | undefined) ?? undefined
+  const nextStatus: string | undefined = (data.enrichmentStatus as string | undefined) ?? prevStatus
+  const enteringReady = nextStatus === 'ready' && prevStatus !== 'ready'
+
+  if (enteringReady) {
+    const isAutoDerived = context?.autoReadyFromSavedDcFacts === true
+    if (userId == null && !isAutoDerived) {
+      throw new Error(
+        'enrichmentStatus を「ready」にするには、ログイン済みの人間による操作、または6時処理の決定論的自動導出（保存済みDC公式情報のみを根拠とする）のいずれかが必要です',
+      )
+    }
+
+    // 「ready＝完全」を保証する（記事種別ごとの必須項目・本文構造は
+    // evaluateReadyGate に一本化。人間経路・自動導出経路で完全性チェックは同一）。
+    const get = (k: string): unknown =>
+      (data as Record<string, unknown>)[k] ?? (originalDoc as Record<string, unknown> | undefined)?.[k]
+
+    const templateType = (isNonEmptyString(get('templateType'))
+      ? (get('templateType') as string)
+      : 'unknown') as TemplateType
+
+    const facts: CommonArticleFacts = {
+      primaryCategory: (get('primaryCategory') as string | null) ?? null,
+      templateType,
+      contentTitle: (get('eventName') as string | null) ?? null,
+      contentSummary: (get('whatHappens') as string | null) ?? null,
+      availablePeriod: (get('eventDate') as string | null) ?? null,
+      eventDateISO: toIsoString(get('eventDateISO')),
+      eventTime: (get('eventTime') as string | null) ?? null,
+      venues: (get('venues') as CommonArticleFacts['venues']) ?? null,
+      priceText: (get('priceText') as string | null) ?? null,
+      saleAvailability: (get('saleAvailability') as string | null) ?? null,
+      admissionApplicable: (get('admissionApplicable') as string | null) ?? null,
+      paid: (get('paid') as string | null) ?? null,
+      applyRequired: (get('applyRequired') as string | null) ?? null,
+      applyDeadline: (get('applyDeadline') as string | null) ?? null,
+      resultDate: (get('resultDate') as string | null) ?? null,
+      resultRule: (get('resultRule') as string | null) ?? null,
+      applyRule: (get('applyRule') as string | null) ?? null,
+      officialInfoNote: (get('officialInfoNote') as string | null) ?? null,
+      editionLabel: (get('editionLabel') as string | null) ?? null,
+      theme: (get('theme') as string | null) ?? null,
+      areaLead: (get('areaLead') as string | null) ?? null,
+      audienceNote: (get('audienceNote') as string | null) ?? null,
+      hashtags: (get('hashtags') as CommonArticleFacts['hashtags']) ?? null,
+      // confirmed 以外の事実は本文にも ready 判定にも使わない（readyGate 側で除外）。
+      sourceProvenanceFacts:
+        (get('sourceProvenanceFacts') as CommonArticleFacts['sourceProvenanceFacts']) ?? null,
+      enrichmentStatus: 'ready',
+    }
+
+    const gate = evaluateReadyGate(facts, templateType)
+    if (!gate.eligible) {
+      throw new Error(
+        `記事種別「${templateType}」を ready にできません（必須未充足）: ${gate.missing.join(' / ')}`,
+      )
+    }
+
+    if (userId != null) {
+      data.humanReviewedBy = userId
+      data.humanReviewedAt = new Date().toISOString()
+    } else {
+      // 自動導出経路：人間レビュー済みを装わない（humanReviewedBy/At は空のまま）。
+      // 監査のため notes へ機械記録を追記する（誰が読んでも「自動」と分かるように）。
+      const prevNotes = ((data.notes as string | undefined) ?? (originalDoc?.notes as string | undefined) ?? '').trim()
+      const stamp = `[auto:readyFromSavedDcFacts] ${new Date().toISOString()} 6時処理の保存済みDC公式情報から決定論的に自動ready化（人間未入力）`
+      data.notes = prevNotes ? `${prevNotes}\n${stamp}` : stamp
+    }
+  }
+
+  return data
 }
 
 export const ArticleFacts: CollectionConfig = {
@@ -427,77 +539,17 @@ export const ArticleFacts: CollectionConfig = {
     { name: 'notes', label: '内部メモ（本文には出ない）', type: 'textarea' },
   ],
   hooks: {
-    // DiscoveredContent.curationStatus の人間ゲートと同型。
+    // DiscoveredContent.curationStatus の人間ゲートと同型（2026-09-16続き7で
+    // applyArticleFactsReadyGate へ切り出し、req.context 経由の自動導出経路を追加）。
     beforeChange: [
-      async ({ data, originalDoc, req, operation }) => {
-        if (operation === 'create' && req.user && !data.enteredBy) {
-          data.enteredBy = req.user.id
-        }
-
-        const prevStatus: string | undefined = originalDoc?.enrichmentStatus
-        const nextStatus: string | undefined = data.enrichmentStatus ?? prevStatus
-        const enteringReady = nextStatus === 'ready' && prevStatus !== 'ready'
-
-        if (enteringReady) {
-          if (!req.user) {
-            throw new Error(
-              'enrichmentStatus を「ready」にするには、ログイン済みの人間による操作が必要です（AI・自動化スクリプトからの直接遷移は不可）',
-            )
-          }
-
-          // 「ready＝完全」を保証する（記事種別ごとの必須項目・本文構造は
-          // evaluateReadyGate に一本化。event 固定の必須判定は廃止した。2026-09-03）。
-          const get = (k: string): unknown =>
-            (data as Record<string, unknown>)[k] ??
-            (originalDoc as Record<string, unknown> | undefined)?.[k]
-
-          const templateType = (isNonEmptyString(get('templateType'))
-            ? (get('templateType') as string)
-            : 'unknown') as TemplateType
-
-          const facts: CommonArticleFacts = {
-            primaryCategory: (get('primaryCategory') as string | null) ?? null,
-            templateType,
-            contentTitle: (get('eventName') as string | null) ?? null,
-            contentSummary: (get('whatHappens') as string | null) ?? null,
-            availablePeriod: (get('eventDate') as string | null) ?? null,
-            eventDateISO: toIsoString(get('eventDateISO')),
-            eventTime: (get('eventTime') as string | null) ?? null,
-            venues: (get('venues') as CommonArticleFacts['venues']) ?? null,
-            priceText: (get('priceText') as string | null) ?? null,
-            saleAvailability: (get('saleAvailability') as string | null) ?? null,
-            admissionApplicable: (get('admissionApplicable') as string | null) ?? null,
-            paid: (get('paid') as string | null) ?? null,
-            applyRequired: (get('applyRequired') as string | null) ?? null,
-            applyDeadline: (get('applyDeadline') as string | null) ?? null,
-            resultDate: (get('resultDate') as string | null) ?? null,
-            resultRule: (get('resultRule') as string | null) ?? null,
-            applyRule: (get('applyRule') as string | null) ?? null,
-            officialInfoNote: (get('officialInfoNote') as string | null) ?? null,
-            editionLabel: (get('editionLabel') as string | null) ?? null,
-            theme: (get('theme') as string | null) ?? null,
-            areaLead: (get('areaLead') as string | null) ?? null,
-            audienceNote: (get('audienceNote') as string | null) ?? null,
-            hashtags: (get('hashtags') as CommonArticleFacts['hashtags']) ?? null,
-            // confirmed 以外の事実は本文にも ready 判定にも使わない（readyGate 側で除外）。
-            sourceProvenanceFacts:
-              (get('sourceProvenanceFacts') as CommonArticleFacts['sourceProvenanceFacts']) ?? null,
-            enrichmentStatus: 'ready',
-          }
-
-          const gate = evaluateReadyGate(facts, templateType)
-          if (!gate.eligible) {
-            throw new Error(
-              `記事種別「${templateType}」を ready にできません（必須未充足）: ${gate.missing.join(' / ')}`,
-            )
-          }
-
-          data.humanReviewedBy = req.user.id
-          data.humanReviewedAt = new Date().toISOString()
-        }
-
-        return data
-      },
+      async ({ data, originalDoc, req, operation }) =>
+        applyArticleFactsReadyGate({
+          data: data as Record<string, unknown>,
+          originalDoc: originalDoc as Record<string, unknown> | undefined,
+          operation,
+          userId: req.user?.id ?? null,
+          context: req.context as { autoReadyFromSavedDcFacts?: boolean } | null | undefined,
+        }),
     ],
   },
   timestamps: true,

@@ -18,7 +18,8 @@ Project 02・V1プログラミング改善の最終日として判定ロジッ�
 
 | Stage | 名称 | 実装 | 責務 |
 |---|---|---|---|
-| 1 | A/B/Cスクリーニング | `assessCandidate.ts` / `targetOrDiscoveryEligibility.ts`（無変更） | 記事化に必要な裏どりが完了した候補をAとする |
+| 0 | ArticleFacts自動導出 | `autoArticleFacts.ts`（新規）＋ `morningRun.ts`（DC保存済み公式情報からの自動書き込み） | Stage 1より前に、保存済みDC公式情報だけからArticleFactsを決定論的に導出しready化する。人間の追加入力は前提にしない |
+| 1 | A/B/Cスクリーニング | `assessCandidate.ts` / `targetOrDiscoveryEligibility.ts`（2026-09-16続き7でArticleFacts readyを必須条件に追加） | 記事化に必要な公式情報の裏どりとArticleFacts保存（ready）が完了した候補をAとする |
 | 2 | 18カテゴリー分類 | `targetOrDiscoveryEligibility.ts`（無変更、`deriveProvisionalCategory`） | A候補を18カテゴリーへ分類する。A/B/Cとは独立 |
 | 3 | A候補ボード作成 | `candidateBoard.ts`（新規） | Aかつ未選定の候補をSWEETS独立枠＋その他カテゴリー別＋未分類、に整理して表示する。最終3本は確定しない |
 | 4 | マロンによる3本選定 | `selectionRecord.ts`（新規）＋ `./p2 morning-select` | 候補ボードから人間が3本を選ぶ。A/B/Cとは別の記録として保存する |
@@ -27,9 +28,44 @@ Project 02・V1プログラミング改善の最終日として判定ロジッ�
 いずれの段階も、**後段の都合で前段の判定結果（A/B/C・カテゴリー）を書き換えない**。
 これが V1 の中核原則。
 
-## 2. Stage 1：A/B/Cスクリーニング
+## 2. Stage 0：ArticleFacts自動導出（`autoArticleFacts.ts`）
 
-実装は既存のまま固定する（今回の作業では変更していない）。
+**2026-09-16続き7・マロン指示で新設**：「A候補をマロンが選定した後に、ArticleFactsを
+人間が追加入力する運用は禁止」——admin画面での手入力・ready化は運用前提に**しない**。
+Stage 1（A/B/C判定）より前に、DC保存済みの公式情報だけからArticleFactsを決定論的に
+導出し、可能ならその場でready化する。
+
+- 対象：`enrichmentStatus`が`ready`でなく、かつ人間が触れていない
+  （`enteredBy`・`humanReviewedAt`のいずれも未設定の）候補。既に人間が入力・レビュー
+  したArticleFactsは一切上書きしない
+- 使うのは `DiscoveredContent.title` / `articleUrl` / `eventStartAt` / `eventEndAt` /
+  Stage 2で確定済みの18カテゴリー、のみ（外部fetch・再クロール・AIは使わない）
+- `templateType:'generic'`（専用テンプレのない種別向けの最小フォールバック。
+  `venues`/`eventTime`/`areaLead`/`audienceNote`/`paid`を要求しない）に固定して導出——
+  DiscoveredContentには`venue`等の構造化フィールドが無いため、これらを必須とする
+  他テンプレート種別（exhibition/recurring_event等）では自動導出できない
+- 導出する値は「既に確認済みの値の言い換え」のみ（新しい事実を主張しない）：
+  `eventName`/`whatHappens`はDC.titleの整形版を再利用、`eventDate`はDC.eventStartAt/
+  eventEndAtから整形、`sourceProvenanceFacts`は同じ日付を`confirmed`な出典事実として
+  1件記録、`hashtags`は`#銀座`＋18カテゴリー、`officialInfoNote`は個別事実を含まない
+  固定の定型文（「詳細・最新情報は公式サイトでご確認ください。」）
+- タイトルが空・公式URLが無い・構造化開催期間（eventStartAt/eventEndAt）が無い、の
+  いずれかに該当する場合は導出不能——**推測で埋めず**、不足項目を記録してStage 1へ渡す
+  （Stage 1側は`articleFactsNotReady`としてB判定にする）
+- 書き込みは `ArticleFacts.beforeChange`（`collections/ArticleFacts.ts`）の
+  `applyArticleFactsReadyGate` を、`req.context.autoReadyFromSavedDcFacts:true` 経由で
+  通す——この経路は Payload の Local API からサーバー側コードだけが設定できる
+  `req.context` を使うため、admin画面・REST/GraphQL等の外部リクエストからは到達
+  できない（「AI・自動化スクリプトからの直接遷移は不可」という既存の安全設計は
+  外部経路に対しては無変更のまま）。ready化に必要な完全性チェック
+  （`evaluateReadyGate`）自体は人間経路と完全に同一——チェックを緩めてはいない
+- 自動導出でready化した行は `humanReviewedBy`/`humanReviewedAt` を設定しない
+  （人間レビュー済みを装わない）。かわりに `notes` へ
+  `[auto:readyFromSavedDcFacts] <日時> ...` と機械記録する（監査可能にする）
+- `./p2 am-run`（Stage 1〜3の一括実行）の中で自動的に実行される（`--no-write`指定時は
+  書き込まない＝読み取り専用実行を維持）
+
+## 3. Stage 1：A/B/Cスクリーニング
 
 **Aの必須条件**（すべて満たす）：
 1. 公式情報である
@@ -38,13 +74,17 @@ Project 02・V1プログラミング改善の最終日として判定ロジッ�
 4. 開催・販売・提供の現在性が確認できる（構造化期間、またはタイトルに明示された
    具体的な年月日。「開催中」等の語だけでは現在性を認めない）
 5. 終了済みではない（`expired`）
-6. 記事に必要な事実がDBへ保存されている（DiscoveredContentの構造化フィールド由来）
+6. **ArticleFacts.enrichmentStatus==='ready'**（2026-09-16続き7追加。Stage 0の自動導出、
+   または人間によるレビューのいずれかで到達した状態。「記事に必要な事実がDBへ保存
+   されている」をArticleFactsという実体を伴う条件として明確化した）
 7. 近似重複ではない（`recentBrandVenueDuplicate`）
 8. 施設・親施設クールダウン（14日間）に該当しない
 
-**B**：現在性不明・開催期間不明・近似重複・施設/親施設クールダウン・裏どり不足など、
-「現段階では安全に記事候補として提示できない」状態。**削除しない**——条件を満たせば
-次回の再判定で自動的にAへ戻る。
+**B**：現在性不明・開催期間不明・近似重複・施設/親施設クールダウン・
+**ArticleFacts未ready**（`articleFactsNotReady`）など、「現段階では安全に記事候補
+として提示できない」状態。**削除しない**——条件を満たせば次回の再判定で自動的に
+Aへ戻る（ArticleFacts未readyも同様——翌日以降のStage 0再実行で自動導出が成功すれば
+Aに昇格しうる）。
 
 **C**：終了済み・銀座対象外・公式情報なし・明確に古い情報・記事候補として利用不可。
 
@@ -53,15 +93,18 @@ Project 02・V1プログラミング改善の最終日として判定ロジッ�
 - 本日選ばれなかったAは、翌日も有効条件を満たす限りAのまま保持する
 - A/B/Cを目標件数へ合わせない・DC番号や件数をハードコードしない
 - 不明点を推測で補完しない・不明な候補を追加調査で追い続けずBとして次へ進める
+- **ArticleFactsのready化はStage 0の自動導出（またはStage 0以前に人間が済ませていた
+  レビュー）に限る——A候補をマロンが選定した「後」に、admin画面で人間がArticleFacts
+  を追加入力する運用は行わない**
 
-## 3. Stage 2：18カテゴリー分類
+## 4. Stage 2：18カテゴリー分類
 
 `targetOrDiscoveryEligibility.ts` 内で `deriveProvisionalCategory` により算出する。
 **A/B/Cが確定した後の付随情報**であり、分類結果によってA/B/Cを書き換えない。
 分類できない候補は推測せず `category: null`（未分類）のまま返す——未分類であること
 だけを理由にAからBへ変更することもしない（2026-09-16続き4で確定済み）。
 
-## 4. Stage 3：A候補ボード（`candidateBoard.ts`）
+## 5. Stage 3：A候補ボード（`candidateBoard.ts`）
 
 ```ts
 buildCandidateBoard(assessments: CandidateAssessment[], usedDcIds: ReadonlySet<number>): CandidateBoard
@@ -85,7 +128,7 @@ buildCandidateBoard(assessments: CandidateAssessment[], usedDcIds: ReadonlySet<n
 （`buildMorningReport.ts`）からは外した。後方互換・単体テスト・将来の再利用のために
 保持する。
 
-## 5. Stage 4：マロンによる3本選定（`selectionRecord.ts` / `./p2 morning-select`）
+## 6. Stage 4：マロンによる3本選定（`selectionRecord.ts` / `./p2 morning-select`）
 
 ```
 ./p2 morning-select <date> <dc1> <dc2> <dc3> [--by=<名前>] [--force]
@@ -113,7 +156,7 @@ buildCandidateBoard(assessments: CandidateAssessment[], usedDcIds: ReadonlySet<n
   （`./p2 morning-select`）は必ず `validateSelectionForCommit` 経由で呼ぶため、
   この緩い経路が実運用のファイル保存に使われることはない
 
-## 6. Stage 5：選定後のnote原稿作成（`./p2 morning-draft-selected`）
+## 7. Stage 5：選定後のnote原稿作成（`./p2 morning-draft-selected`）
 
 ```
 ./p2 morning-draft-selected <date> [--force]
@@ -152,7 +195,7 @@ prepareNoteDraftFromSelection`（純粋関数・AI/DB/外部fetchなし）経由
   （フラグ不要——コストゲートとしての `--yes` は廃止した。`--force` は「二重生成の
   上書き許可」のみを意味する）
 
-## 7. データ形式
+## 8. データ形式
 
 - `.devlogs/morning/<date>/report.json`：`report.candidateBoard` に Stage 3 の
   ボードを保持（既存の `report.json` 保存処理は変更していない・追加のみ）
@@ -167,21 +210,30 @@ prepareNoteDraftFromSelection`（純粋関数・AI/DB/外部fetchなし）経由
   `facilityLabel` / `sourceUrl`)）。**noteへの転記・投稿・公開はしない**——この
   ファイルはマロンが確認したうえで手動転記するための下書きデータ
 
-## 8. CLI コマンド一覧
+## 9. CLI コマンド一覧
 
 | コマンド | 段階 | 費用 |
 |---|---|---|
-| `./p2 am-run` / `./p2 morning` | Stage 1〜3（判定・分類・ボード保存） | 0円（--fetch時のみ許可ドメインへのGETのみ） |
+| `./p2 am-run` / `./p2 morning` | Stage 0〜3（ArticleFacts自動導出・判定・分類・ボード保存） | 0円（--fetch時のみ許可ドメインへのGETのみ。`--no-write`でStage 0の書き込みも抑止） |
 | `./p2 morning-select <date> <dc1> <dc2> <dc3>` | Stage 4 | 0円（ファイルI/Oのみ） |
 | `./p2 morning-draft-selected <date>` | Stage 5 | 0円（有料APIを一切呼ばない決定論的生成） |
 
-## 9. 10月1日V1運用に残る具体的な未達事項
+## 10. 10月1日V1運用に残る具体的な未達事項
 
-- Stage 5 は決定論的テンプレート生成のため、**ArticleFactsが`ready`化されていない
-  候補は必ず停止する**（推測で埋めない設計上の帰結）。本日のA候補（A=4件）は
-  いずれも`ArticleFacts`が未作成／未readyのため、今夜時点で実際に3本選定→
-  Stage 5を実行しても全件停止になる見込み——admin画面での`ArticleFacts`人間入力
-  ・ready化が明日の運用における実質的な前提条件になる
+- **2026-09-16続き7で解消**：ArticleFactsのready化は「人間が事後入力する」運用を
+  廃止し、Stage 0（`autoArticleFacts.ts`）による自動導出へ全面置き換えた。実データ
+  （2026-09-16保存済みDB、1181件）で実際に`./p2 am-run`（書き込みあり）を1回実行し
+  検証：**現行A候補4件（DC#59・#438・#441・#779）はすべて自動ready化に成功**
+  （`templateType:'generic'`、`humanReviewedBy`は未設定のまま・`notes`に
+  `[auto:readyFromSavedDcFacts]`の機械記録あり）。この実行で対象条件を満たす
+  候補39件のArticleFactsが新規作成された（B判定のまま残る候補にも他の理由
+  〈facilityCooldown等〉とは独立にArticleFacts自体は導出・保存される設計のため）。
+  DB検証用の事前バックアップは`_backups/article_facts_before_auto_ready_20260916.sql`。
+  **ただしDiscoveredContentに`venue`等の構造化フィールドが無いため、導出できる
+  ArticleFactsは`templateType:'generic'`（最小構成）に限られる**——venues／
+  eventTime／areaLead／audienceNoteを要求するexhibition/recurring_event等の
+  リッチなテンプレートは自動導出の対象外のまま（DC側に該当フィールドが増えない
+  限り、これらの種別は引き続き未ready＝Bにとどまる）
 - SWEETS・その他カテゴリーの母数不足（本日の保存済みデータでは A=4、SWEETS
   候補0件）——収集・スコアリング側の改善が必要（本V1確定作業のスコープ外）
 - 複数日にまたがる選定記録のスキャン範囲（既定400日）が運用上十分か、実運用で
@@ -196,7 +248,7 @@ prepareNoteDraftFromSelection`（純粋関数・AI/DB/外部fetchなし）経由
   自動化・手順書化していない（マロンが `note-drafts.json` の `noteBody` を見て
   手動転記する）
 
-## 10. 明朝（2026-09-17）の運用手順
+## 11. 明朝（2026-09-17）の運用手順
 
 各段階の実行コマンド・成功時表示・失敗時の停止理由をこの順で実行する。
 
@@ -209,11 +261,15 @@ prepareNoteDraftFromSelection`（純粋関数・AI/DB/外部fetchなし）経由
 - **失敗時の停止理由**：収集ジョブ未実行／DB未起動——`./p2 start` でDocker/Postgres/
   Payloadを起動してから再確認する
 
-### ② 候補ボード生成
+### ② 候補ボード生成（Stage 0のArticleFacts自動導出を含む）
 
 ```
-./p2 am-run --limit=1500 --json --no-write
+./p2 am-run --limit=1500 --json
 ```
+- `--no-write` を付けない——Stage 0（ArticleFacts自動導出・DC保存済み公式情報だけ
+  からの決定論的な書き込みのみ、追加課金なし）を実行するため。読み取り専用の
+  事前確認だけしたい場合は `--no-write` を付けてよいが、その場合Stage 0は
+  スキップされ、既存のArticleFactsだけでA/B/C判定される
 - **成功時**：標準出力の `[machine]` 行に `counts:{A,B,C}` と
   `.devlogs/morning/2026-09-17/report.json`（`report.candidateBoard` を含む）の
   保存パスが表示される
@@ -249,9 +305,15 @@ SWEETS枠・その他カテゴリー別に並んでいるDC番号から3件（SW
   作成される
 - **失敗時の停止理由**：選定した3件のいずれかで①選定時と現在のDB値が食い違う
   （データ不整合）②`ArticleFacts` が `ready` 化されていない／必須項目が不足、の
-  いずれか——`stopped` の一覧に理由が出るので、該当DCの `ArticleFacts` を admin
-  画面で確認・ready化してから再実行する（`--force` は「二重生成の上書き許可」のみで、
-  データ不足そのものは解消しない）
+  いずれか——`stopped` の一覧に理由が出る。②は候補ボードに載った時点（Stage 1の
+  A判定がArticleFacts readyを必須条件にしているため）で通常は発生しないが、
+  ②の候補ボード生成から⑤の実行までの間にデータが変わった場合の保険として
+  存在する。人間がArticleFactsを手動入力してready化する運用は行わない——
+  発生した場合は ②（`./p2 am-run`）を再実行してStage 0の自動導出をやり直し、
+  それでも解消しなければDiscoveredContent側の情報（タイトル・公式URL・
+  開催/販売期間）が自動導出に必要な最低限を満たしていない（`autoArticleFacts.ts`
+  の対象外）と判断し、その3件目の選定をやり直す（`--force`は「二重生成の上書き
+  許可」のみで、データ不足そのものは解消しない）
 
 ### ⑥ 生成内容をマロンが確認
 
