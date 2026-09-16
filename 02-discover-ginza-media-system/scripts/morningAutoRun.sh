@@ -1,23 +1,40 @@
 #!/bin/bash
-# GINZA WHISKERS / Project 02 — 朝刊自動化オーケストレーター（2026-09-12）。
+# GINZA WHISKERS / Project 02 — 朝刊自動化オーケストレーター（2026-09-12、2026-09-17改訂）。
 #
 # マロンが毎朝 `./p2 morning-brief` を手入力する運用をやめ、以下を毎朝6:00に
 # launchd から無人実行する（scripts/launchd/com.ginzawhiskers.p2-morning-auto.plist.template）。
 #
 #   ① Docker/PostgreSQL 起動確認（既存 wait_docker/start_db と同じ方式・自動再試行込み）
-#   ② ./p2 crawl              … 公式情報源の巡回＋一覧ページ発見＋個別ページ取得
+#   ② ./p2 crawl              … SOURCE_LEDGER（唯一の収集元台帳）でenabled:trueかつ
+#        extractionMethod=generic_html（既定・大多数）の情報源の巡回＋一覧ページ発見＋
+#        個別ページ取得。extractionMethod≠generic_htmlの情報源（下記③.5／③.7）は
+#        ここで自動的にスキップされる（二重取得防止、runCrawl.ts参照）。
 #   ③ ./p2 sweets-detail-fetch … crawl共有予算切れで未取得のまま残った候補の追加取得
-#   ③.5 ./p2 matsuya-sweets-fetch … 松屋銀座（JSレンダリングが必要なSPA、2026-09-14新設）
-#        の週替わりGINZAスイート催事を取得。Chromeが無い環境では自動スキップ（失敗にしない）。
+#   ③.5 ./p2 matsuya-sweets-fetch … 松屋銀座（extractionMethod=storyblok_api、
+#        JSレンダリングが必要なSPA、2026-09-14新設）の週替わりGINZAスイート催事を取得。
+#   ③.6 ./p2 matsuya-gourmet-fetch … 松屋銀座「グルメ」一覧からの個別催事ページ収集
+#        （2026-09-16続き8新設・2026-09-17に6時処理へ接続）。
+#   ③.7 ./p2 mitsukoshi-health-check … 銀座三越（extractionMethod=html_listing_blocks）
+#        の取得可否確認。healthStatus=unreachableの間は次のフェーズが候補を生成しない。
+#   ③.8 ./p2 mitsukoshi-food-events-fetch … 銀座三越 食料品催事・ショップニュースの
+#        店舗単位収集（2026-09-16続き8新設・2026-09-17に6時処理へ接続）。
 #   ④ ./p2 am-run --fetch --register-facts --write-facts
 #        … 公開済み重複除外・ArticleFacts抽出・登録（enrichmentStatus:draftのみ、
 #          ready化は引き続き人間が行う）
-#   ⑤ ./p2 morning-brief --json … ①ビューティー②グルメ・スイーツ③文化・アート
-#        各1件の候補選定＋レポート生成（.devlogs/morning/brief/<date>.{txt,json}）
+#   ⑤ ./p2 morning-brief --json … 4領域（ビューティー／グルメ・スイーツ／文化・アート
+#        ／その他）の候補選定＋レポート生成（.devlogs/morning/brief/<date>.{txt,json}）。
+#        【重要】これはamRun／candidateBoardとは別のEditorial Compassベースの
+#        補助的な提案ツールであり、ArticleFacts readyを要求しない——正式なA候補全件・
+#        Stage 4選定の対象は`./p2 am-candidates`のcandidateBoardが唯一の正本
+#        （2026-09-17確定、詳細はCLAUDE.md参照）。
 #
 # 新しいパイプラインロジックは実装していない——既存の、個別にテスト済みの
 # ./p2 サブコマンドをこの順で自動的に呼ぶだけ（item 1「既存の実行基盤を確認し、
-# 最適な既存方式で」を最も安全に満たす設計）。
+# 最適な既存方式で」を最も安全に満たす設計）。店舗を追加するたびにこのスクリプトへ
+# 専用フェーズを継ぎ足す構造は禁止——新規店舗はSOURCE_LEDGERへの登録のみで
+# extractionMethod=generic_html（既定）の場合は②cralwへ自動的に含まれる。
+# ページ構造が異なる情報源（現状は松屋銀座・銀座三越の2件のみ）だけがこの
+# ファイルへの専用フェーズ追加を必要とする。
 #
 # 各フェーズは失敗時に間隔を空けて自動再試行する（既定3回・180秒間隔）。
 # Docker/PostgreSQL起動そのものが失敗した場合は、以降のフェーズが全滅すると
@@ -135,11 +152,21 @@ if [ "$DB_OK" -ne 1 ]; then
   exit 1
 fi
 
-# ①〜④は個別に失敗しても後続フェーズを試す（1件失敗で全体を止めない、既存方針を踏襲）。
+# 各フェーズは個別に失敗しても後続フェーズを試す（1件失敗で全体を止めない、既存方針を踏襲）。
+#
+# 【2026-09-17改訂・マロン指示：朝処理の統合】収集元台帳（SOURCE_LEDGER）を唯一の
+# 巡回元とする：generic_html（既定・大多数）は`crawl`が担当し、専用の抽出方式
+# （extractionMethod）を持つ情報源（松屋銀座＝storyblok_api、銀座三越＝
+# html_listing_blocks）は`crawl`側で自動的にスキップされる（二重取得防止、
+# runCrawl.ts参照）ため、それぞれの専用アダプターをここで個別フェーズとして
+# 追加する。matsuya_gourmet_fetch・mitsukoshi_food_events_fetchは
+# 2026-09-16続き8で新設されながら6時処理へ未接続だったスクリプトの接続。
 run_phase "crawl" ./p2 crawl
 run_phase "sweets_detail_fetch" ./p2 sweets-detail-fetch
 run_phase "matsuya_sweets_fetch" ./p2 matsuya-sweets-fetch
+run_phase "matsuya_gourmet_fetch" ./p2 matsuya-gourmet-fetch
 run_phase "mitsukoshi_health_check" ./p2 mitsukoshi-health-check
+run_phase "mitsukoshi_food_events_fetch" ./p2 mitsukoshi-food-events-fetch
 run_phase "am_run" ./p2 am-run --fetch --register-facts --write-facts
 run_phase "morning_brief" ./p2 morning-brief --json
 

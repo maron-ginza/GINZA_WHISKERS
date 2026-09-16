@@ -8,6 +8,7 @@ import { normalizeArticleUrl } from './normalizeUrl'
 import { processDiscoveredLinks, type ProcessLinksStats } from './processDiscoveredLinks'
 import type { ListingPageCandidate } from './discoverListingPages'
 import { discoverFeedCandidates } from './discoverFeedCandidates'
+import { decideExtractionDispatch } from '../sourceLedger/extractionDispatch'
 
 // スウィーツ公式情報Discovery層拡張（2026-09-12）の対象情報源（sourceId、明示allowlist）。
 // classifySweetsSourceFacilityType（sweetsCandidateSelect.ts）は「施設種別のカバレッジ
@@ -239,6 +240,20 @@ export async function runSourceLedgerCrawl(
       continue
     }
 
+    // 【2026-09-17追加・マロン指示：朝処理の統合】extractionMethodがgeneric_html以外
+    // （storyblok_api・html_listing_blocks等）の情報源は、morningAutoRun.sh内の専用
+    // フェーズ（matsuya_sweets_fetch等）が同じ6時収集チェーン内で別途処理する——ここで
+    // 二重取得しない（店舗を追加するたびに朝処理へ専用コードを継ぎ足す構造を避けつつ、
+    // ページ構造が異なる情報源だけアダプターを分ける設計。デフォルトgeneric_htmlは
+    // 通常どおりここで処理）。
+    const dispatch = decideExtractionDispatch(
+      typeof source.extractionMethod === 'string' ? source.extractionMethod : null,
+    )
+    if (!dispatch.handleAsGenericHtml) {
+      skipped.push({ sourceId, name, reason: dispatch.skipReason ?? '専用アダプターで取得' })
+      continue
+    }
+
     try {
       const outcome = await fetchSourceContent(url)
       const fetchedAt = new Date().toISOString()
@@ -309,6 +324,23 @@ export async function runSourceLedgerCrawl(
         // （手動overrideは含めない——あちらは人間が入力した設定であり、
         // discoveredListingPagesは「今回自動発見できたもの」の記録のため）。
         ledgerUpdate.discoveredListingPages = outcome.listingPageCandidates
+
+        // 【2026-09-17追加・マロン指示：取得障害時の安全動作を全収集元へ統一】
+        // 従来healthStatusは松屋銀座・銀座三越等の専用経路（extractionMethod≠generic_html）
+        // だけが更新していたが、「該当情報0件」と「収集元へ到達できず確認不能」の区別を
+        // 全収集元で一律に行うため、通常HTML取得（このループ本体）でも書き込む。
+        if (diffStatus === 'fetch_error') {
+          ledgerUpdate.healthStatus = 'unreachable'
+          ledgerUpdate.healthCheckedAt = fetchedAt
+          ledgerUpdate.healthNote =
+            `通常HTML取得で失敗（${fetchedAt}）: httpStatus=${outcome.httpStatus ?? '(なし)'}` +
+            `${outcome.blockedByRobots ? ' / robots.txtによりブロック' : ''}` +
+            `${outcome.errorMessage ? ` / ${outcome.errorMessage}` : ''}`
+        } else {
+          ledgerUpdate.healthStatus = 'ok'
+          ledgerUpdate.healthCheckedAt = fetchedAt
+          ledgerUpdate.healthNote = `通常HTML取得で成功（${fetchedAt}）: HTTP ${outcome.httpStatus ?? '(不明)'} ／ diffStatus=${diffStatus}`
+        }
 
         await payload.update({
           collection: 'source-ledger',

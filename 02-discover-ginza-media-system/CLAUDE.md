@@ -833,6 +833,88 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-17 続き10: 🏛 **朝処理を「唯一の企画仕様」（15項目）へ統合——収集元台帳の一本化
+  （百貨店／個別店舗を同一台帳・同一extractionMethod切替で管理）、6時自動チェーンへの
+  未接続処理2件の接続、通常HTML収集の二重取得防止、候補ボードの「直近50件」上限を
+  撤廃しDB全件ページングへ変更（Project 02 commit・push あり／実DB書き込みあり
+  〈SourceLedger新規1件・メタデータ更新33件、crawlによるDiscoveredContent新規7件・
+  SourceLedger healthStatus更新49件〉／実AI・有料API呼び出し0回・追加費用0円）**――
+  **①収集元台帳の一本化**：`SourceLedger`スキーマへ`venueKind`（百貨店・デパ地下／
+  個別店舗・ブランド／催事・イベント会場／その他）・`parentFacilityLabel`・
+  `article18Categories`（対応カテゴリーのヒント、分類そのものには使わない）・
+  `extractionMethod`（generic_html既定／storyblok_api＝松屋銀座／html_listing_blocks＝
+  銀座三越）を追加（新規`cms/src/lib/pipeline/articleCategories.ts`＝18カテゴリー正本
+  一覧、既存`noteMasthead.ts`のCATEGORY_ICONSと値を一致させ複製ではなく書き写し）。
+  新規`backfillSourceLedgerMetadata.ts`で既存52件（51件＋後述1件追加）へ後付け適用
+  （venueKind: department_store 3／individual_shop 30／other 16、extractionMethod:
+  storyblok_api 1／html_listing_blocks 1／generic_html 47）。**②SWEETS収集範囲の
+  個別店舗確認**：資生堂パーラー・アンリ・シャルパンティエ・銀座コージーコーナー・
+  源吉兆庵（宗家源吉兆庵）は既存登録済みと確認（重複追加なし）。キル フェ ボンのみ
+  未登録と判明——WebSearch/WebFetchで実在確認（グランメゾン銀座、銀座2-5-4
+  ファサード銀座1F・B1F）のうえ公式お知らせ一覧URLを新規登録
+  （`kil-fe-bon-ginza`、seedData.ts追加＋seed実行、実クロールで新規Source #395として
+  検出済み）。全国ブランドのトップページのみを根拠に銀座販売を推定しない方針は
+  ginzaRelevance.ts側の既存判定に委ね、このシード追加自体は判定条件を変更していない。
+  **③6時自動チェーンへの統合**：`runSourceLedgerCrawl`（既存の汎用HTML巡回、48→47件へ
+  自動的にスキップ対象を除外）が`extractionMethod`を参照し、generic_html以外
+  （松屋銀座・銀座三越）を二重取得しないよう自動スキップ（新規純粋関数
+  `extractionDispatch.ts`・`decideExtractionDispatch`に分離、単体テスト5件）。実クロールで
+  「松屋銀座・銀座三越はスキップ（二重取得防止）」を実測確認——**従来はgeneric巡回ループが
+  この2件も無条件に叩いており、専用アダプターとの二重取得が実際に発生していたことを
+  確認**（今回の統合で解消）。前回セッションで新設されながら`morningAutoRun.sh`へ
+  未接続だった`matsuya-gourmet-fetch`・`mitsukoshi-food-events-fetch`を新規フェーズとして
+  追加接続（既存4フェーズ→6フェーズ、既存のフェーズ単位リトライ・分離実行は維持）。
+  **④取得成功/失敗の全収集元統一**：従来`healthStatus`は松屋銀座・銀座三越の専用経路
+  のみが更新していたが、`runSourceLedgerCrawl`の通常HTML取得ループでも
+  diffStatus由来で`healthStatus`/`healthCheckedAt`/`healthNote`を書き込むよう拡張——
+  実クロールで49件中46件`ok`・3件`unreachable`（東京メトロ・銀座三越・**新規判明：
+  山野楽器銀座本店**）・3件`unknown`（別経路の例外で未記録、既知の残課題）を確認。
+  `MorningReport.sourceAvailability`（新規`SourceAvailability`型）は
+  healthStatus='unreachable'（確認済みの取得不能、既定値'unknown'＝未確認は含めない）
+  のみを7:10レポートへ表示。**⑤候補ボードの直近50件上限撤廃**：`morningRun.ts`の
+  DiscoveredContent読み込みを`limit:args.limit`（既定50）から、curationStatus条件のみで
+  DB全件をページング取得する方式へ変更（`--limit=N`明示指定時のみ手動テスト用に打ち切り）。
+  終了日によるDB側事前フィルタは、日付のみ格納・時刻情報なしの候補を誤って過剰除外する
+  リスクを避けるため採用せず、既存の`isPastEventEnd`判定（assessCandidate側）にそのまま
+  委ねた。**実データでassessed=50→1238へ、A候補=3→39へ拡大**（SWEETS 5・ART 16・
+  SHOPPING 9・MUSIC/WORKSHOP/FAMILY/PHOTO各1・未分類5）——従来の直近50件制限下では
+  松屋銀座SWEETS 3件しかA候補が存在せず「SWEETS＋他2カテゴリー」の日次構成が
+  ボードだけでは組めなかった構造的欠陥を解消。**⑥A/B/C・18カテゴリー分類の一元化を
+  確認**：新規`abcSingleSource.check.ts`で`assessInboxPool.ts`が独自のverdict計算を
+  持たず`assessCandidate`を呼ぶこと・`candidateBoard.ts`/`buildMorningReport.ts`が
+  verdictを読むだけで代入しないことを静的検証。`selectRecommendedThemes.ts`の
+  `verdict_c`/`expired`/`duplicate`等は事前計算済みフィールドの参照のみで独自の安全
+  条件を複製していないことをコード確認（変更なし）。18カテゴリー分類は
+  `deriveProvisionalCategory`一本（SWEETSも他17カテゴリーと同じ判定経路、
+  candidateBoardでの先頭表示は表示順の並べ替えのみで再分類ではない、無変更）。
+  **⑦マロン選定・原稿生成の既存実装は仕様どおりと確認（無変更）**：
+  `selectionRecord.validateSelectionForCommit`は既に3件指定・全件A（候補ボード
+  実在チェック）・SWEETS最低1件・重複指定拒否のみを検証し施設/カテゴリーを制約
+  しない設計済み、`noteDraftFromSelection.ts`は既存ArticleFactsのみ使用し外部fetch・
+  AI呼び出しなしの決定的テンプレート生成のまま——いずれも変更不要と判断。
+  **⑧重複・未接続経路の棚卸し結果（重要な発見）**：`candidateReviewServer.ts`
+  （`com.ginzawhiskers.p2-candidate-review`、launchd常駐・**実行中PIDあり**）が
+  `morning-brief`の出力（Editorial Compass・4領域ピック、ArticleFacts readyを要求
+  しない旧選定ロジック）を表示するlocalhost:4600の承認UIで、**「承認」ボタンが実際に
+  Claude API（有料）を呼び出しArticle下書きを即時生成する**——V1 Stage 4/5
+  （`./p2 morning-select`→`./p2 morning-draft-selected`、ArticleFacts ready必須・
+  AI不使用の決定的テンプレート）と**並行して実在する、選定〜原稿生成の別経路**と
+  判明。前者は稼働中でマロンの実運用に使われている可能性が高く、後者が本仕様の
+  想定する正規経路——**どちらを正規経路とするかはマロンの判断が必要な未解決の
+  重複であり、今回はcandidateReviewServer.tsを一切変更していない**（稼働中サービスを
+  実行中に無断で止める判断はしていない、Claude API呼び出しも今回一切発生させて
+  いない）。`selectMorningThreeSlots.ts`の旧自動3本確定ロジックは既に通常経路から
+  外れ単体テストのみで参照されており（2026-09-16続き5で対応済み）、今回追加の
+  対応は不要と判断（削除もしていない）。**⑨変更ファイル**：新規6件
+  （`articleCategories.ts`/`.check.ts`、`extractionDispatch.ts`/`.check.ts`、
+  `abcSingleSource.check.ts`、`backfillSourceLedgerMetadata.ts`）、変更8件
+  （`SourceLedger.ts`／`sourceLedger/types.ts`／`sourceLedger/seedData.ts`／
+  `runCrawl.ts`／`morningRun.ts`／`morningAutoRun.sh`／`scripts/project02`／
+  `run-all.ts`）。**⑩検証**：`run-all.ts` **857 passed 0 failed**（+13）、
+  `tsc --noEmit` 0エラー、実クロール1回・実am-run複数回（読み取り専用中心、
+  Stage 0のArticleFacts自動導出のみ実書き込み・既存の安全設計内）で確認。
+  **10月1日運用に残る最大の未決事項＝⑧の二重経路の一本化**（詳細は次回作業へ
+  引き継ぎ）。詳細は`DECISION_LOG_02.md` 2026-09-17続き10参照。
 - 2026-09-16/17 続き9: 🎯 **A判定と施設クールダウンの責務分離（続き8の直接の続き）――
   facilityCooldown／parentFacilityCooldownをA/B/C判定から完全に切り離し、候補ボード上の
   注意情報（facilityNotice）へ移動。銀座三越のUA起因WAF遮断を特定（production未変更）。

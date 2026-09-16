@@ -1032,4 +1032,29 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       'news一覧ページが見つからずreliability=medium・URLは暫定でトップページ、' +
       'sitemap/RSS探索（Discovery層）での補完に期待する。',
   },
+  {
+    // 2026-09-17追加・マロン指示：朝処理の統合（SWEETS収集範囲の個別店舗確認）。
+    // WebSearch/WebFetchで実在確認済み（グランメゾン銀座、東京都中央区銀座2-5-4
+    // ファサード銀座1F・B1F）。お知らせ一覧ページはグランメゾン銀座を含む複数店舗の
+    // 新商品告知を掲載するナショナルブランドの公式ページのため、全国トップページの
+    // 情報だけで銀座販売と推定しない——個別候補ごとに本文でグランメゾン銀座の明記が
+    // あるかをginzaRelevance.ts側の既存判定でそのつど確認する（このシード追加では
+    // 判定条件を一切変更しない）。
+    id: 'kil-fe-bon-ginza',
+    name: 'キル フェ ボン グランメゾン銀座',
+    url: 'https://www.quil-fait-bon.com/blogs/news',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'グランメゾン銀座（銀座2-5-4 ファサード銀座 1F・B1F、銀座一丁目駅5出口徒歩0分）' +
+      'を実在確認済み。公式お知らせ一覧（複数店舗共通）にグランメゾン銀座の明記のある' +
+      '記事のみ採用する——全国ブランドのトップページだけを根拠に銀座販売を推定しない。',
+  },
 ]

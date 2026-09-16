@@ -3037,6 +3037,28 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/mitsukoshiGinzaFoodEventsFetch.ts "$@" )
     ;;
+  seed-source-ledger)
+    shift
+    # SOURCE_LEDGER初期データ（seedData.ts）をDBへ投入。sourceIdキーで冪等——
+    # 既存レコードはスキップし上書きしない（管理画面での手動調整を壊さない）。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/seedSourceLedger.ts "$@" )
+    ;;
+  backfill-source-ledger-metadata)
+    shift
+    # 2026-09-17新設：既存SOURCE_LEDGERへvenueKind／extractionMethod／
+    # article18Categories（ヒントのみ）を後付けする。冪等・新規情報源は追加しない。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/backfillSourceLedgerMetadata.ts "$@" )
+    ;;
   mitsukoshi-health-check)
     shift
     # 2026-09-14新設：銀座三越（mistore.jp）公式情報源の取得可否を、sitemap・RSS・
@@ -3196,6 +3218,10 @@ case "${1:-status}" in
     echo "  ./p2 sweets-detail-fetch [--dry-run]  スウィーツ情報源の詳細ページ追跡（Stage2補完）：crawl共有予算切れで内容/会場/日付が未取得のまま残っている候補だけ対象に1回だけ追加取得（JSON-LD/meta description等の既存汎用抽出器を再利用）。crawlの再実行はしない"
     echo "  ./p2 matsuya-sweets-fetch [--dry-run]  松屋銀座「今週のGINZAスイート」（2026-09-14新設・同日改訂）の週替わり催事を、Storyblok公開Content Delivery API（公開配信用トークンを直接fetch、ブラウザ不要・Railway等でも動作）経由で取得し、店舗・商品・価格・開催期間をDiscoveredContentへ反映。取得不能時はSOURCE_LEDGER.healthStatusへunreachableを記録し候補は生成しない"
     echo "  ./p2 mitsukoshi-health-check  銀座三越（mistore.jp、2026-09-14新設）の取得可否をsitemap/RSS/トップページ/内部APIの順に検証しSOURCE_LEDGER.healthStatusへ記録（読み取り専用・非公式情報による補完なし）"
+    echo "  ./p2 matsuya-gourmet-fetch [--dry-run]  松屋銀座「グルメ」一覧ページ（2026-09-16続き8新設・2026-09-17に6時自動チェーンへ接続）から個別催事・フェアページを発見し、一覧全体ではなく個別ページ単位でDiscoveredContentへ保存"
+    echo "  ./p2 mitsukoshi-food-events-fetch [--dry-run]  銀座三越 食料品催事・ショップニュースの店舗単位収集（2026-09-16続き8新設・2026-09-17に6時自動チェーンへ接続）。SOURCE_LEDGER.healthStatusがunreachableの間は候補を一切生成しない（fixtureデータによる代替もしない）"
+    echo "  ./p2 seed-source-ledger  SOURCE_LEDGER初期データ（seedData.ts）をDBへ投入。sourceIdキーで冪等（既存レコードはスキップ・上書きしない）"
+    echo "  ./p2 backfill-source-ledger-metadata [--dry-run]  2026-09-17新設：既存SOURCE_LEDGERへvenueKind（百貨店／個別店舗等）・extractionMethod（抽出アダプター種別）・article18Categories（対応カテゴリーのヒント）を後付けする。冪等・新規情報源の追加はしない"
     echo "  ./p2 note-transfer serve [--port=4601]  note下書き自動転記サーバー（2026-09-14新設）を起動：承認済みArticleのnote-draft.jsonをChrome拡張（chrome-extension/）へ配信し、成功/失敗をChrome拡張から受け取り二重転記・3回超のリトライを防止する。127.0.0.1限定。公開ボタンには一切触れない（下書き保存のみ）"
     echo "  ./p2 note-transfer status  note下書き自動転記の状態を表示（.devlogs/night/transfer-state.json、読み取り専用）"
     echo "  ./p2 publishlog add --dc=<id> [--title=] [--event=] [--venue=] [--period=] [--url=] [--published-at=] [--source=]  既公開テーマ台帳（PUBLISHED_REGISTRY）への追記：DB自動照合で検知できない、DB外で公開されたとマロンが確認した案件を登録。--url指定時は該当ArticleのpublishHistoryへも書き戻しを試みる（ベストエフォート）。台帳＝MANUAL_PUBLISHED_SEEDの緊急用補助であり主経路ではない"

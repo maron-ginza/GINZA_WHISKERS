@@ -94,6 +94,34 @@ export const SOURCE_LEDGER_CRAWL_FREQUENCY_LABELS: Record<SourceLedgerCrawlFrequ
   manual: '手動のみ',
 }
 
+// 【2026-09-17新設・マロン指示：朝処理の統合】百貨店・デパ地下と個別店舗・ブランドを
+// 同じ台帳で管理するための種別（item 3「百貨店／個別店舗／催事などの種別」）。
+export const SOURCE_LEDGER_VENUE_KINDS = ['department_store', 'individual_shop', 'event_venue', 'other'] as const
+export type SourceLedgerVenueKind = (typeof SOURCE_LEDGER_VENUE_KINDS)[number]
+
+export const SOURCE_LEDGER_VENUE_KIND_LABELS: Record<SourceLedgerVenueKind, string> = {
+  department_store: '百貨店・デパ地下',
+  individual_shop: '個別店舗・ブランド',
+  event_venue: '催事・イベント会場',
+  other: 'その他（メディア・行政・交通等）',
+}
+
+// 【2026-09-17新設・マロン指示：朝処理の統合】6時収集がこの情報源をどの抽出方式で
+// 取得するか。店舗を追加するたびに朝処理へ専用コードを継ぎ足す構造を禁止する代わりに、
+// 「ページ構造が異なる場合だけ抽出アダプターを分ける」ための切り替えキー
+// （collectAll.ts が sourceId をハードコードせずこの値で分岐する）。
+//   generic_html      … 通常のHTML取得＋一覧ページ発見（runSourceLedgerCrawl、既定・大多数）
+//   storyblok_api     … Storyblok公開Content Delivery API（松屋銀座、JSレンダリングSPA対応）
+//   html_listing_blocks … 空行区切りの催事ブロック抽出（銀座三越、専用HTML構造）
+export const SOURCE_LEDGER_EXTRACTION_METHODS = ['generic_html', 'storyblok_api', 'html_listing_blocks'] as const
+export type SourceLedgerExtractionMethod = (typeof SOURCE_LEDGER_EXTRACTION_METHODS)[number]
+
+export const SOURCE_LEDGER_EXTRACTION_METHOD_LABELS: Record<SourceLedgerExtractionMethod, string> = {
+  generic_html: '通常HTML取得（既定）',
+  storyblok_api: 'Storyblok公開API（松屋銀座専用）',
+  html_listing_blocks: 'HTML催事ブロック抽出（銀座三越専用）',
+}
+
 export interface SourceLedgerEntry {
   /**
    * 安定した英数字ID（kebab-case）。Payload側では一意な`sourceId`フィールドとして保持する

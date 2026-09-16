@@ -654,14 +654,39 @@ async function main(): Promise<void> {
     const { allowedHosts, typeById: sourceLedgerTypeById, unavailableSources } = await buildSourceLedgerMaps(payload)
     const articleRecords = await loadArticleRecords(payload)
     const noteRecords = buildNoteRecords()
-    const approved = await payload.find({
-      collection: 'discovered-content',
-      where: { curationStatus: { in: ['inbox', 'approved'] } },
-      limit: args.limit,
-      depth: 1,
-      overrideAccess: true,
-      sort: '-updatedAt',
-    })
+    // 【2026-09-17改訂・マロン指示：朝処理の統合】候補ボードを「更新日時順の直近N件」で
+    // 打ち切らない——DB側でcurationStatus（inbox/approved）だけを条件抽出し、残り全件を
+    // ページングして読み込む（取得上限による切り捨てをしない）。現在性（開催終了済みか）の
+    // 判定は既存のassessCandidate側（isPastEventEnd、日付なしの候補も含めて扱う既存ロジック）
+    // に委ねる——DB側で終了日フィルタを重ねると、日付のみ格納・時刻情報なしの候補を
+    // 誤って過剰除外するリスクがあるため、ここでは行わない。
+    // --limit=N が明示指定された場合のみ、手動テスト用に総件数をその値で打ち切る
+    // （既定値50は「打ち切り」の意味を持たなくなったため、未指定時は打ち切らない）。
+    const limitExplicitlySet = process.argv.some((a) => a.startsWith('--limit='))
+    const PAGE_SIZE = 200
+    const approvedDocs: Array<Record<string, unknown>> = []
+    {
+      let page = 1
+      for (;;) {
+        const batch = await payload.find({
+          collection: 'discovered-content',
+          where: { curationStatus: { in: ['inbox', 'approved'] } },
+          limit: PAGE_SIZE,
+          page,
+          depth: 1,
+          overrideAccess: true,
+          sort: '-updatedAt',
+        })
+        approvedDocs.push(...(batch.docs as unknown as Array<Record<string, unknown>>))
+        if (limitExplicitlySet && approvedDocs.length >= args.limit) break
+        if (!batch.hasNextPage || batch.docs.length === 0) break
+        page += 1
+      }
+    }
+    const approved = {
+      docs: limitExplicitlySet ? approvedDocs.slice(0, args.limit) : approvedDocs,
+      totalDocs: approvedDocs.length,
+    }
     mark('loadApproved', step)
 
     // 3.5 施設単位の14日間クールダウン・使用済み候補の自動除外（2026-09-16追加・マロン指示）。

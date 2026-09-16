@@ -17,7 +17,12 @@ import {
   SOURCE_LEDGER_SOURCE_TYPE_LABELS,
   SOURCE_LEDGER_TIERS,
   SOURCE_LEDGER_TIER_LABELS,
+  SOURCE_LEDGER_VENUE_KINDS,
+  SOURCE_LEDGER_VENUE_KIND_LABELS,
+  SOURCE_LEDGER_EXTRACTION_METHODS,
+  SOURCE_LEDGER_EXTRACTION_METHOD_LABELS,
 } from '../lib/sourceLedger/types'
+import { ARTICLE_18_CATEGORIES, ARTICLE_18_CATEGORY_LABELS } from '../lib/pipeline/articleCategories'
 
 function toOptions<T extends string>(values: readonly T[], labels: Record<T, string>) {
   return values.map((value) => ({ label: labels[value], value }))
@@ -121,6 +126,51 @@ export const SourceLedger: CollectionConfig = {
       options: toOptions(SOURCE_LEDGER_CRAWL_FREQUENCIES, SOURCE_LEDGER_CRAWL_FREQUENCY_LABELS),
     },
     {
+      name: 'venueKind',
+      label: '種別（2026-09-17新設）',
+      type: 'select',
+      defaultValue: 'other',
+      options: toOptions(SOURCE_LEDGER_VENUE_KINDS, SOURCE_LEDGER_VENUE_KIND_LABELS),
+      admin: {
+        description: '百貨店・デパ地下と個別店舗・ブランドを同じ台帳で管理するための種別。既存18カテゴリーの収集元を削除・縮小する目的では使わない。',
+      },
+    },
+    {
+      name: 'parentFacilityLabel',
+      label: '親施設（2026-09-17新設）',
+      type: 'text',
+      admin: {
+        description: '複合施設のテナント店舗である場合の親施設名（例：GINZA SIX内テナント→「GINZA SIX」）。単独路面店舗は空欄のままでよい（推測で埋めない）。',
+      },
+    },
+    {
+      name: 'article18Categories',
+      label: '対応カテゴリー（2026-09-17新設・ヒントのみ）',
+      type: 'select',
+      hasMany: true,
+      options: toOptions(ARTICLE_18_CATEGORIES, ARTICLE_18_CATEGORY_LABELS),
+      admin: {
+        description:
+          'この情報源が典型的にどの18カテゴリーの候補を生むかのヒント（任意・複数可）。' +
+          '実際の分類はderiveProvisionalCategoryが候補ごとの明記語から行う——この値で' +
+          '分類を上書き・強制しない（分類不能な候補を無理にここへ寄せない）。',
+      },
+    },
+    {
+      name: 'extractionMethod',
+      label: '抽出方式（2026-09-17新設）',
+      type: 'select',
+      defaultValue: 'generic_html',
+      options: toOptions(SOURCE_LEDGER_EXTRACTION_METHODS, SOURCE_LEDGER_EXTRACTION_METHOD_LABELS),
+      admin: {
+        description:
+          '6時収集がこの情報源をどの取得経路で処理するか。店舗追加のたびに朝処理へ' +
+          '専用コードを継ぎ足さず、ページ構造が異なる場合だけこの値でアダプターを' +
+          '切り替える（collectAll.ts参照）。generic_html以外はrunSourceLedgerCrawlの' +
+          '対象から除外され、二重取得を防ぐ。',
+      },
+    },
+    {
       name: 'enabled',
       type: 'checkbox',
       required: true,
@@ -161,11 +211,11 @@ export const SourceLedger: CollectionConfig = {
       ],
       admin: {
         description:
-          '専用の取得経路（Storyblok公開API・埋め込みJSON・sitemap等）を持つ情報源' +
-          '（松屋銀座・銀座三越等）について、直近の取得試行が成功したかを記録する。' +
-          '取得不能な情報源から候補を生成しない（推測で埋めない）ためのゲートとして' +
-          '呼び出し元スクリプトが参照・更新する。一般のcrawl対象サイトは既存の' +
-          'lastCheckedAt/notesで足りるため既定は未確認のまま運用に影響しない。',
+          '【2026-09-17改訂】直近の取得試行が成功したかを記録する。取得不能な情報源から' +
+          '候補を生成しない（推測で埋めない）ためのゲートとして呼び出し元が参照・更新する。' +
+          '2026-09-17より、通常HTML取得（generic_html）の情報源もrunSourceLedgerCrawlが' +
+          '巡回のたびにここへ書き込む（従来は松屋銀座・銀座三越等の専用経路のみだったが、' +
+          '「該当情報0件」と「収集元へ到達できず確認不能」を全収集元で一律に区別するため統一した）。',
       },
     },
     {
