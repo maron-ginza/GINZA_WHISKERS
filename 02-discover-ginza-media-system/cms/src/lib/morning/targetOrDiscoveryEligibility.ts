@@ -45,6 +45,13 @@ import type { FactKind } from './types'
 const TOPIC_OR_EXPERIENCE_SIGNAL_RE =
   /話題|人気|注目|初出店|初上陸|初開催|オープン|グランドオープン|リニューアル|コラボ(?:レーション)?|個展|企画展|展覧会|展示販売|体験会|ワークショップ|トークイベント|トークショー|サイン会|公演|ライブ|催し物|フェア|物産展|登場|待望/
 
+// 営業告知（短縮営業・営業時間変更・臨時休業・休館・メンテナンス・開催中止等）は運営上の
+// 事務連絡であり、季節語・新規性語を偶然含んでいても「旬の候補」（目的型／発見型のいずれ
+// にも該当しない）——DC#419（教文館「短縮営業のお知らせ」が季節語「秋」の誤検出でAに
+// なった実例）を受けて2026-09-15追加。discovery signal のあるなしに関わらず優先して除外する。
+const OPERATIONAL_NOTICE_RE =
+  /短縮営業|営業時間変更|営業時間の変更|臨時休業|休業のお知らせ|休館|メンテナンスのお知らせ|システムメンテナンス|開催中止|中止のお知らせ|営業日変更|定休日変更|一部休業|閉店時間変更|時間変更のお知らせ|臨時休館/
+
 /** 明記された開催・販売期間があるか（推測しない。構造化日付のいずれかがあれば true） */
 function hasExplicitPeriodSignal(eventStartAt: string | null, eventEndAt: string | null): boolean {
   return !!(eventStartAt || eventEndAt)
@@ -130,6 +137,13 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
   if (!input.ginzaRelevant) blockers.push('銀座関連性を確認できない')
   if (!input.hasTraceableSource) blockers.push('追跡可能な公式出典URLが無い')
   if (input.stale) blockers.push('情報の確認日時が古く再確認が必要')
+
+  // 営業告知（短縮営業・休館・メンテナンス・開催中止等）は季節語等の discovery signal の
+  // 有無に関わらず除外する（旬の候補ではなく運営上の事務連絡のため）
+  const noticeText = `${input.title ?? ''} ${(input.excerpt ?? '').slice(0, 300)}`
+  if (OPERATIONAL_NOTICE_RE.test(noticeText)) {
+    blockers.push('営業時間変更・休業・中止等の運営告知（旬の候補として扱わない）')
+  }
 
   // 2. 公式情報で銀座の場所と提供状況を確認できる
   const facility = resolveFacilityKey({

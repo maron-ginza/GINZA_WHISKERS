@@ -356,6 +356,49 @@ const cases: CheckCase[] = [
       assert(notGinza.verdict === 'C', `銀座で利用不可は期待 C / 実際 ${notGinza.verdict}`)
     },
   },
+  {
+    // 実例＝DC#419「教文館 短縮営業のお知らせ（17時閉店）」。excerpt中の季節語「秋」（例：
+    // 「秋の営業時間について」等）が新規性シグナルと誤検出され、運営上の事務連絡がAに
+    // なっていた（2026-09-15、9月データの再判定で発見）。営業告知は discovery signal の
+    // 有無に関わらずAにしない。
+    name: 'B（必須回帰・2026-09-15追加）: 短縮営業・休館・メンテナンス等の運営告知は季節語を含んでもAにしない（DC#419クラス）',
+    fn: () => {
+      const notice419 = assessCandidate(
+        mk({
+          dc: baseDc({
+            title: '【短縮営業のお知らせ】（17時閉店）',
+            excerpt: '秋の営業時間変更について、下記のとおりご案内いたします。',
+            sourceSiteName: '教文館',
+          }),
+          factKind: 'unknown',
+        }),
+      )
+      assert(notice419.verdict !== 'A', `短縮営業告知は期待 B（Aにしない） / 実際 ${notice419.verdict}`)
+      assert(
+        notice419.reasons.some((r) => r.includes('運営告知')),
+        '運営告知である旨が理由に明記される',
+      )
+
+      const closure = assessCandidate(
+        mk({ dc: baseDc({ title: '臨時休業のお知らせ', excerpt: '誠に勝手ながら臨時休業いたします。季節の変わり目のため。' }) }),
+      )
+      assert(closure.verdict !== 'A', `臨時休業告知は期待 B（実際 ${closure.verdict}）`)
+
+      const maintenance = assessCandidate(
+        mk({ dc: baseDc({ title: 'システムメンテナンスのお知らせ', excerpt: '秋のシステムメンテナンスを実施いたします。' }) }),
+      )
+      assert(maintenance.verdict !== 'A', `メンテナンス告知は期待 B（実際 ${maintenance.verdict}）`)
+
+      // 対照：運営告知語を含まない通常の新商品告知（季節語含む）は引き続きA
+      const normalNew = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({ title: '秋の新作コレクション発売', excerpt: '季節限定の新商品を発売いたします。' }),
+        }),
+      )
+      assert(normalNew.verdict === 'A', `運営告知語が無い通常の新商品告知は引き続きA（実際 ${normalNew.verdict}）`)
+    },
+  },
 
   // ---------- 近似重複ルール2（2026-09-15追加・マロン指示） ----------
   // 直近14日以内に同一ブランド・同一会場の既投稿記事があれば、URL・タイトルが一致しなくても
