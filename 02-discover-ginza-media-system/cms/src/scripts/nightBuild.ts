@@ -1,12 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { tokyoBusinessDate } from '../lib/util/businessDate'
+import { writePackage, upsertQueueIndex } from '../lib/night/queueWriter'
 
-import type {
-  SameDayReviewQueueIndex,
-  SameDayReviewQueueItem,
-  NoteDraftPackage,
-} from '../lib/night/types'
+import type { SameDayReviewQueueIndex } from '../lib/night/types'
 
 // `./p2 night <run|review|status|package>` の CLI 実装（2026-08-31、Night Automation Layer）。
 //
@@ -101,68 +98,8 @@ function runStatus(): void {
 }
 
 // ---- パッケージ書き出し ---------------------------------------------------
-
-function writePackage(date: string, pkg: NoteDraftPackage): string {
-  const dir = path.join(QUEUE_ROOT, date, String(pkg.articleId))
-  ensureDir(dir)
-  writeFileSync(path.join(dir, 'note-draft.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf8')
-  writeFileSync(path.join(dir, 'note-body.txt'), pkg.body, 'utf8')
-  if (pkg.validation.blockers.length > 0 || pkg.status === 'error') {
-    const lines = [
-      `Article #${pkg.articleId}  ${pkg.title}`,
-      `status: ${pkg.status}`,
-      '',
-      'BLOCKERS:',
-      ...pkg.validation.blockers.map((b) => `  - [${b.code}] ${b.message}`),
-      '',
-      'この項目は note 下書きに進めず、Same-day Review でマロンが判断してください。',
-      '',
-    ]
-    writeFileSync(path.join(dir, 'ERROR.txt'), lines.join('\n'), 'utf8')
-  }
-  return dir
-}
-
-function upsertQueueIndex(
-  date: string,
-  runId: string,
-  packages: NoteDraftPackage[],
-  dirs: Record<number, string>,
-  unprocessed: SameDayReviewQueueIndex['unprocessed'],
-  reviewStatusByArticle: Record<number, string>,
-): string {
-  const idxPath = path.join(QUEUE_ROOT, date, '_index.json')
-  const existing = readJsonIfExists<SameDayReviewQueueIndex>(idxPath)
-  const items: SameDayReviewQueueItem[] = existing?.items ? [...existing.items] : []
-
-  for (const pkg of packages) {
-    const item: SameDayReviewQueueItem = {
-      articleId: pkg.articleId,
-      discoveredContentId: pkg.discoveredContentId,
-      title: pkg.title,
-      status: pkg.status,
-      blockerCount: pkg.validation.blockers.length,
-      warningCount: pkg.validation.warnings.length,
-      packageDir: path.relative(ROOT, dirs[pkg.articleId] ?? ''),
-      reviewStatus: reviewStatusByArticle[pkg.articleId] ?? 'draft',
-      createdAt: pkg.generatedAt,
-    }
-    const at = items.findIndex((i) => i.articleId === pkg.articleId)
-    if (at >= 0) items[at] = item
-    else items.push(item)
-  }
-
-  const idx: SameDayReviewQueueIndex = {
-    date,
-    updatedAt: new Date().toISOString(),
-    runs: [...(existing?.runs ?? []), runId],
-    items,
-    unprocessed: [...(existing?.unprocessed ?? []), ...unprocessed],
-  }
-  ensureDir(path.join(QUEUE_ROOT, date))
-  writeFileSync(idxPath, JSON.stringify(idx, null, 2) + '\n', 'utf8')
-  return idxPath
-}
+// writePackage / upsertQueueIndex の実体は lib/night/queueWriter.ts へ移設した
+// （2026-09-18。挙動は無変更、上で import 済み）。
 
 // ---- run（DB 必要） ----------------------------------------------------------
 

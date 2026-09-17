@@ -56,6 +56,7 @@ import { suite as morningThreeSlots } from '../morning/selectMorningThreeSlots.c
 import { suite as candidateBoard } from '../morning/candidateBoard.check'
 import { suite as selectionRecord } from '../morning/selectionRecord.check'
 import { suite as noteDraftFromSelection } from '../morning/noteDraftFromSelection.check'
+import { suite as bridgeNoteDraftsToArticles } from '../morning/bridgeNoteDraftsToArticles.check'
 import { suite as atomicWrite } from '../util/atomicWrite.check'
 import { suite as autoArticleFacts } from '../morning/autoArticleFacts.check'
 import { suite as parseMatsuyaSitemap } from '../crawler/parseMatsuyaSitemap.check'
@@ -126,6 +127,7 @@ const results: SuiteResult[] = [
   candidateBoard(),
   selectionRecord(),
   noteDraftFromSelection(),
+  bridgeNoteDraftsToArticles(),
   atomicWrite(),
   autoArticleFacts(),
   parseMatsuyaSitemap(),

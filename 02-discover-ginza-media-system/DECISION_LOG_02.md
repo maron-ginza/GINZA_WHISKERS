@@ -10076,3 +10076,117 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   呼び出し0回・追加費用0円、のすべてを確認した。同一施設（GINZA SIX
   系列）への偏りは技術的な不具合ではないが、マロンの選定判断材料として
   申し送る。詳細は`CLAUDE.md`2026-09-17続き12（本エントリと対応）参照。
+
+## 2026-09-18: V1 Stage 5 → 既存Chrome拡張の転記経路への最小限の自動ブリッジ
+
+**背景・指示**：マロン指示「Project02の運用方針は、自動化・省力化を最優先とし、
+マロンは最終判断だけを行う。毎日3本を手動コピーする運用は採用しない。既存構造を
+継ぎ足しで複雑化させず、note-drafts.jsonから既存Chrome拡張の転記経路へ渡す
+最小限の自動ブリッジを実装する」。9月18日選定分3件（DC#1191 カヌレの店サコ
+カヌレセット／DC#779 ドミニク・ローク氏来日記念講演／DC#1171 Sutta POP UP
+STORE〈SHOPPING、続き13の手動修正済み〉）を実例に使用。
+
+**投資前の調査（5点、実装前に完了）**：
+1. `MORNING_PIPELINE_V1_SPEC.md`のStage 5以降を確認——note.comへの実転記は
+   「マロンが手動でnoteBodyを見て転記する」想定のままコード化されていないと
+   明記されていた（本作業で解消）。
+2. 既存Chrome拡張（`chrome-extension/`）が読み取るのは`Articles`コレクションの
+   `reviewStatus`（`approved`が`/api/note-transfer/pending`の必須条件、
+   `noteTransferServer.ts`の`findPendingTransfer`で確認）であり、`title`/
+   `body`（Lexical）/`pillars`（必須・minRows:1）/`editorialProvenance`/
+   `socialCopy`/`slug`（UNIQUE）等が実質的な必須フィールドと判明。
+3. `buildNoteDraftPackage.ts`（433行を全文確認）とnote-drafts.json（Stage 5
+   出力）の項目対応を精査——`noteBody`（フラット文字列）はあるが、Lexical
+   body構築に必要な構造化`blocks`が`PreparedNoteDraft`に露出していなかった
+   （`renderArticleFromTemplate`は既に`result.blocks`を計算済みだが
+   `noteDraftFromSelection.ts`のラッパーが握りつぶしていた）。
+4. pillar／SEO／カテゴリー／4ハッシュタグ／本文／公式URL／画像欄の扱いを
+   精査——画像は`buildNoteDraftPackage`側で`images[0]`をcategory_iconスロット
+   として常に合成し実ファイル未添付を許容する設計と判明（今回追加実装不要）。
+   カテゴリーは`buildNoteDraftPackage`が`ArticleFacts.primaryCategory`を一切
+   参照せず、Article自身の`title`/`venue`/`pillarJa`からderiveProvisional
+   Categoryで再導出する設計と判明——ここがDC#1171のSHOPPING一貫性を脅かす
+   構造的な穴だった（後述）。
+5. 二重登録防止の識別方法として、`createDraftFromProductSweetsTemplate.ts`が
+   既に採用している「`editorialProvenance.discoveredContentSource`の逆引き
+   ＋`aiGeneratedBy`の固有prefix判定」パターンを踏襲することに決定
+   （新規の識別子体系を作らない）。
+
+**カテゴリー正確性の根本原因と対応**：`deriveProvisionalCategory`のART判定
+規則（`/【\s*フェア\s*】/`等）は文字列アンカーなしの`.test()`検索のため、
+Stage 5が生成するタイトル文字列（例：`秋の銀座の話題——「【フェア】Sutta POP
+UP STORE」`、括弧が文中に埋め込まれる）のどこにあっても発火する。実機で
+`node --import=tsx/esm`によるワンライナー検証を行い、`raw`＝ART・
+`【フェア】`除去後の`stripped`＝SHOPPINGとなることを確認したうえで、
+Article.title／slug構成時だけ`stripInternalBracketTag()`（角括弧タグを
+文字列中どこでも除去）を適用する対応で確定した。**`deriveProvisionalCategory`
+本体・`slugify.ts`・note-drafts.json自体・selection.json・
+ArticleFacts.primaryCategoryはいずれも無変更**——ブリッジ内の限定的な
+正規化のみで対応し、既存の他Article・既存の公開済み記事・既存の分類ロジックに
+一切影響しない設計とした。
+
+**実装**：
+- `cms/src/lib/morning/noteDraftFromSelection.ts`：`PreparedNoteDraft`へ
+  `blocks: TextBlock[]`を追加し`renderArticleFromTemplate`の`result.blocks`を
+  そのまま通す（既存呼び出し元への影響なしの追加フィールド）。
+- `cms/src/lib/night/queueWriter.ts`（新規）：`nightBuild.ts`から
+  `writePackage`/`upsertQueueIndex`（挙動無変更）を移設。`nightBuild.ts`の
+  `main()`が`import.meta.url`ガード無しで無条件自己実行されるため、他モジュール
+  から`nightBuild.ts`を直接importすると意図しないCLI実行が走る問題を発見し、
+  副作用のない専用モジュールへ抽出することで回避した。
+- `cms/src/scripts/nightBuild.ts`：上記2関数の定義を削除し`queueWriter.ts`から
+  import（未使用となった`SameDayReviewQueueItem`/`NoteDraftPackage`型import・
+  `mkdirSync`の扱いも整理。挙動は完全に無変更）。
+- `cms/src/lib/morning/bridgeNoteDraftsToArticles.ts`（新規）：note-drafts.json
+  のdrafts配列から、idempotency判定→pillar解決（`CONTENT_TYPE_TO_PILLAR_NAME`
+  再利用）→タイトル/slug構成（角括弧タグ除去）→`blocksToLexicalState`で
+  body構築→`Articles`作成（`reviewStatus:'draft'`ハードコード）→
+  `buildNoteDraftPackage`＋`queueWriter`でキュー書き出し、までを行う。
+  `createDraftFromProductSweetsTemplate.ts`と同じdry-run既定・idempotency
+  設計を踏襲。
+- `cms/src/scripts/morningBridgeArticles.ts`（新規）：CLI薄ラッパー
+  `./p2 morning-bridge-articles <date> [--yes] [--dry-run]`。note-drafts.json
+  に`blocks`が無い場合は明示エラーで停止（推測補完しない）。
+- `scripts/project02`：`morning-bridge-articles)`ディスパッチを
+  `morning-draft-selected)`の直後に追加（DB起動チェック込み）。
+
+**検証**：
+- 単体テスト新規9件（`bridgeNoteDraftsToArticles.check.ts`）：既定dry-run・
+  角括弧タグ除去・idempotency（dry-run/live双方）・他経路既存Articleの
+  非ブロック・pillar未検出・live作成・provenance伝播・AI/ネットワーク非依存・
+  reviewStatus昇格コード不在、を検証。`run-all.ts` **874 passed 0 failed**
+  （865→874）。`tsc --noEmit`（cms）0エラー。
+- dry-run実行→3件とも`would_create`、DC#1171のtitleが
+  `秋の銀座の話題——「Sutta POP UP STORE」`（`【フェア】`除去済み）であることを
+  確認。
+- live実行（`--yes`）→**Article #72（DC#1191・SWEETS）・#73（DC#779・
+  WORKSHOP）・#74（DC#1171・SHOPPING）を作成**。3件とも`reviewStatus=draft`・
+  `package.status=warning`（`missingCallToAction`のみ、公式記載に無い項目を
+  捏造しない設計どおり）・BLOCKER 0件。
+- 同一コマンドを再実行→3件とも`already_drafted`（同一articleId）で
+  `payload.create`を再度呼ばないことを実行結果で確認（二重生成なし）。
+- キュー書き出し実機確認：`.devlogs/night/queue/2026-09-18/{72,73,74}/
+  note-draft.json`の`hashtags`が note-drafts.json の4個と完全一致。
+  **Article #74の`masthead.categoryIcon`が`category:"SHOPPING"`
+  （`iconFile:"03_shopping.jpg"`）として解決される**ことを実データで確認——
+  角括弧タグ除去がキュー書き出しの実出力まで正しく伝播することを検証した。
+- `noteTransferServer.ts`は未起動だったため`./p2 note-transfer serve`で
+  起動（127.0.0.1限定）し、`curl http://localhost:4601/api/note-transfer/
+  pending`が`{"ok":true,"item":null}`を返すことを確認——3記事はキューに
+  正しく載っているが、`reviewStatus`が`draft`のまま（`approved`未満）の
+  ため転記対象に含まれていない、という設計どおりの状態を実機で検証した。
+
+**残る手動工程（意図的に自動化していない）**：マロンがCMS管理画面で
+Article #72/#73/#74の`reviewStatus`を`draft`→`approved`へ更新する（＝
+「マロンは最終判断だけを行う」の実装）。承認後、マロンの実ブラウザ
+（拡張ロード済み・note.com/editor.note.comタブを開いた状態）が
+`noteTransferServer.ts`をポーリングし、既存の自動転記フロー
+（タイトル・本文・ハッシュタグ・下書き保存、「投稿する」等は絶対に押さない
+既存の安全境界を無変更のまま維持）へそのまま合流する。note.comへの実際の
+下書き保存は、このセッションでは（マロンの実ブラウザ操作が必要なため）
+未実施。自動公開・reviewStatusのapproved昇格はこのブリッジでは一切行って
+いない。
+
+**費用**：Claude/OpenAI等の有料API呼び出し0回・追加費用0円
+（note-drafts.jsonは既に決定的生成済みで、このブリッジはDB書き込みと
+ファイルI/Oのみ）。

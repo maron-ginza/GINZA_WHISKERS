@@ -2946,6 +2946,22 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningDraftSelected.ts "$@" )
     ;;
+  morning-bridge-articles)
+    shift
+    # 2026-09-18新設（マロン指示）：Stage 5が生成したnote-drafts.jsonから、
+    # 既存Chrome拡張の転記経路（buildNoteDraftPackage → .devlogs/night/queue/
+    # →noteTransferServer.ts）が読み取れるArticles(reviewStatus:draft)を自動作成する。
+    # 追加費用0円（Claude/OpenAI等の有料APIを一切呼ばない）。既定dry-run、--yesで
+    # 実際に作成。二重生成防止（idempotent）。reviewStatusはdraftのまま——承認は
+    # マロンがCMS管理画面で行う（既存の人間承認ゲートは変更しない）。
+    #   ./p2 morning-bridge-articles <date> [--yes] [--dry-run]
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningBridgeArticles.ts "$@" )
+    ;;
   review-today)
     shift
     # 本日記事レビュー画面：本日生成した記事下書きを1画面（承認／修正／保留）で表示（localhost）。

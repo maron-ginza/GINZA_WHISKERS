@@ -833,6 +833,51 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-18: 🌉 **V1 Stage 5（note-drafts.json）→ 既存Chrome拡張の転記経路への
+  最小限の自動ブリッジを新設（Project 02 commit・push あり／DB更新は
+  Article #72・#73・#74 の新規作成のみ〈すべて`reviewStatus=draft`〉・
+  Claude/OpenAI等の有料API呼び出し0回・追加費用0円）**——マロン指示：
+  「Project02の運用方針は、自動化・省力化を最優先とし、マロンは最終判断だけを
+  行う。毎日3本を手動コピーする運用は採用しない」を受け、9月18日選定分3件
+  （カヌレの店サコ／ドミニク・ローク氏来日記念講演／Sutta POP UP STORE）を
+  実例に、Stage 5の`note-drafts.json`（決定的テンプレート生成、AI/DB/外部fetch
+  なし）から、既存Chrome拡張が読み取れる`Articles(reviewStatus:draft)`を自動
+  作成する新規`bridgeNoteDraftsToArticles.ts`＋`./p2 morning-bridge-articles
+  <date> [--yes]`を実装。**二重生成防止**：`aiGeneratedBy`が
+  `bridge:note-drafts:dc#`で始まる既存Articleがあれば再作成しない
+  （`createDraftFromProductSweetsTemplate.ts`と同じ設計、他経路の既存Article
+  はブロック要因にしない）。**カテゴリー正確性の根本修正**：
+  `deriveProvisionalCategory`のART判定規則（`【フェア】`等の全角角括弧タグを
+  文字列中どこでも検出する）が、Stage 5生成タイトルに混入した内部ラベルで
+  誤判定を起こす実例（DC#1171 Sutta POP UP STOREがARTに誤判定）を実機で確認
+  したため、Article.title／slug構成時だけ角括弧タグを除去する処理を追加
+  （`deriveProvisionalCategory`本体・note-drafts.json・selection.json・
+  ArticleFacts.primaryCategoryは無変更。ブリッジ内の限定的な正規化のみ）。
+  実データで検証：Article #74の生成物を確認し、note転記キューの
+  `masthead.categoryIcon`が意図どおりSHOPPING（旧ARTではない）へ解決される
+  ことを確認した。**既存Chrome拡張の転記経路は再実装せず再利用**：
+  `buildNoteDraftPackage`・キュー書き出し（`.devlogs/night/queue/<date>/
+  <articleId>/note-draft.json`＋`_index.json`）はnightBuild.tsから
+  副作用のない新規`lib/night/queueWriter.ts`へ抽出（挙動無変更の移設。
+  nightBuild.tsの`main()`にimport.meta.urlガードが無く、他モジュールから直接
+  importすると意図しないCLI実行が走る問題を回避するための抽出）。
+  `noteDraftFromSelection.ts`の`PreparedNoteDraft`に`blocks: TextBlock[]`を
+  追加（`renderArticleFromTemplate`が既に計算済みの値をそのまま露出する
+  だけの後方互換な追加）し、`blocksToLexicalState`（既存共有関数）で
+  Article.bodyを構築——Lexical構築ロジックを独自実装していない。
+  **reviewStatusは`draft`のまま昇格させない**——`approved`への遷移は本ブリッジ
+  では一切行わず、マロンがCMS管理画面で承認した時点で初めて既存の
+  `noteTransferServer.ts`（`./p2 note-transfer serve`、未起動だったため本作業
+  内で起動・127.0.0.1限定）が`/api/note-transfer/pending`へ含める設計を
+  維持（既存の人間承認ゲートを変更しない）。起動後`curl`で`/pending`が
+  `{"item":null}`を返すことを確認——3記事が正しくキューに乗りつつ、
+  未承認のため転記対象に含まれていない状態（設計どおり）を実機で検証した。
+  note.comへの実際の下書き保存は、承認後にマロンの実ブラウザ（拡張ロード済み・
+  note.com/editor.note.comタブを開いた状態）が必要なため本セッションでは
+  未実施・自動公開は一切行っていない。関連テスト新規9件、`run-all.ts`
+  **874 passed 0 failed**（865→874）、`tsc --noEmit`0エラー。詳細は
+  `DECISION_LOG_02.md` 2026-09-18参照。
+
 - 2026-09-17 続き12: 🏁 **朝処理の統合最終確認——V1 Stage 4/5を恒久的な正規経路
   として`MORNING_PIPELINE_V1_SPEC.md`へ確定記録し、10月1日運用準備完了と判定
   （Project 02 commitなし・新規経路追加なし・実データ変更なし）**――正本
@@ -2175,7 +2220,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-09-17
+- **最終更新日**：2026-09-18
 
 ## 13. 運用コスト方針（2026-08-09確定）
 

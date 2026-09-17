@@ -24,11 +24,21 @@ import {
   type ArticleFactsLike,
 } from '../template/mapDiscoveredContentToEventFields'
 import { renderArticleFromTemplate } from '../template/renderArticleFromTemplate'
+import type { TextBlock } from '../ai/lexical'
 
 export interface PreparedNoteDraft {
   discoveredContentId: number
   title: string
   titleCandidates: string[]
+  /**
+   * 読者向け本文ブロック（内部マーカー・画像指示を含まない、
+   * renderArticleFromTemplate の result.blocks をそのまま通す）。
+   * 2026-09-18、マロン指示：note-drafts.json → Articles ブリッジ
+   * （bridgeNoteDraftsToArticles.ts）が blocksToLexicalState で
+   * Article.body を組み立てるために追加。noteBody（フラット文字列）は
+   * 既存の note 転記プレビュー用途のまま無変更で残す。
+   */
+  blocks: TextBlock[]
   noteBody: string
   charCount: number
   hashtags: string[]
@@ -86,6 +96,7 @@ export function prepareNoteDraftFromSelection(params: {
       discoveredContentId: pick.discoveredContentId,
       title: result.title,
       titleCandidates: result.titleCandidates,
+      blocks: result.blocks,
       noteBody: result.noteBody,
       charCount: result.charCount,
       hashtags: result.hashtags,
