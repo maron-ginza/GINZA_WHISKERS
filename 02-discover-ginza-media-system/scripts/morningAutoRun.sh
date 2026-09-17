@@ -26,7 +26,11 @@
 #        【重要】これはamRun／candidateBoardとは別のEditorial Compassベースの
 #        補助的な提案ツールであり、ArticleFacts readyを要求しない——正式なA候補全件・
 #        Stage 4選定の対象は`./p2 am-candidates`のcandidateBoardが唯一の正本
-#        （2026-09-17確定、詳細はCLAUDE.md参照）。
+#        （2026-09-17確定、詳細はCLAUDE.md参照）。このフェーズ自体はAI/Claude API を
+#        一切呼ばない（純粋な選定・整形ロジックのみ）。2026-09-17改訂：この出力を
+#        表示していた常駐承認UI（candidateReviewServer.ts、「承認」で即時Claude API
+#        課金）はDEPRECATED・launchd常駐は解除済みのため、この出力が自動で有料API
+#        経路へつながることは無くなった。
 #
 # 新しいパイプラインロジックは実装していない——既存の、個別にテスト済みの
 # ./p2 サブコマンドをこの順で自動的に呼ぶだけ（item 1「既存の実行基盤を確認し、
@@ -46,9 +50,14 @@
 # 実行ログ（監視用）: .devlogs/morning/auto/<date>.jsonl（フェーズごとの1行JSON）
 #                     .devlogs/morning/auto/<date>-summary.json（最終サマリ）
 #
-# 記事生成・承認・note転記・外部公開はこのスクリプトでは一切行わない
-# （それらは candidateReviewServer.ts が「マロンの承認クリック」をトリガーに行う、
-# 別の常駐プロセス。詳細は scripts/launchd/com.ginzawhiskers.p2-candidate-review.plist.template）。
+# 記事生成・承認・note転記・外部公開はこのスクリプトでは一切行わない。
+# 【2026-09-17改訂】正規の選定〜原稿生成経路はV1 Stage 4/5
+# （マロンが候補ボードから `./p2 morning-select` で3本選定 → `./p2 morning-draft-selected`
+# が保存済みArticleFactsだけを使う無料の決定的テンプレートで原稿化。外部fetch・
+# AI呼び出しなし）。旧経路（candidateReviewServer.ts＝「承認」クリックで即時Claude API
+# 課金・記事生成する常駐サーバー）はDEPRECATED——launchd常駐は解除・plist削除済みで
+# 自動起動しない（再稼働には明示フラグでの手動実行が必要、詳細は
+# scripts/launchd/com.ginzawhiskers.p2-candidate-review.plist.template参照）。
 
 set -u
 

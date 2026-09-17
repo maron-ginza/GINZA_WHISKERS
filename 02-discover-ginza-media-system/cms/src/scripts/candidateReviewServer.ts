@@ -1,5 +1,18 @@
-// GINZA WHISKERS / Project 02（2026-09-12）— 朝刊候補レビュー画面（常駐サーバー）。
+// GINZA WHISKERS / Project 02（2026-09-12、2026-09-17 DEPRECATED・マロン指示：
+// 朝処理の統合仕上げ・旧Claude API原稿経路の停止）。
 //
+// 【DEPRECATED（2026-09-17）】このファイルの「承認」ボタンが即時にClaude API
+// （有料）を呼び出しArticle下書きを生成する旧経路は、V1 Stage 4/5
+// （candidateBoard→`./p2 morning-select`→`./p2 morning-draft-selected`、
+// ArticleFacts readyのみを使う無料の決定的テンプレート生成）へ統合されたため、
+// 通常運用からは切り離した——launchd登録（`~/Library/LaunchAgents/
+// com.ginzawhiskers.p2-candidate-review.plist`）は削除済み・常駐プロセスは停止済み。
+// **手動で`scripts/launchd/load-candidate-review.sh`を実行しない限り自動起動しない。**
+// ファイル自体は削除していない（他コード・過去ログからの参照・git履歴のため）。
+// V1 Stage 4/5とcandidateReviewServer.tsの二重経路をどちらへ一本化するかは
+// マロンの最終判断が必要な未解決事項として残る（詳細はCLAUDE.md参照）。
+//
+// 【以下は元の設計コメント（2026-09-12、稼働当時の記録として保持）】
 // マロンが毎朝 `./p2 morning-brief` を手入力する運用をやめるための「見る場所」。
 // 6:00の朝刊自動化（scripts/morningAutoRun.sh）が書き出す
 // `.devlogs/morning/brief/<date>.json` を、いつ開いても最新の状態で表示する常駐

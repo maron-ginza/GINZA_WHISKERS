@@ -28,6 +28,28 @@ const COMMERCIAL_AS_DEPARTMENT_STORE = new Set(['ginza-six'])
 // 新規追加ではなくメタデータの後付けのみ）。
 const INDIVIDUAL_SHOP_CATEGORIES = new Set(['food', 'brand'])
 
+// 【2026-09-17続き・マロン指示：朝処理の統合仕上げ】category='brand'の29件中、
+// 実際は菓子・チョコレート専門ブランド（SWEETS）である11件は、初回のbackfillで
+// category==='food'のみを対象にしたため取りこぼしていた（監査で発見・是正）。
+// 各社ともブランド自体が国際的に洋菓子・チョコレート専門店として知られており
+// （ブールミッシュ・DALLOYAU・フレデリック・カッセル・GODIVA・アンリ・シャルパンティエ・
+// JEAN-PAUL HÉVIN・ルノートル・PIERRE HERMÉ＝いずれもパティスリー／ショコラティエ）、
+// 銀座コージーコーナーはseedData.ts notesに「SWEETS（洋菓子、路面店）」と実地確認済みの
+// 記載がある。残りのbrand（AYURA GINZA＝スキンケア、SEIKO HOUSE GINZA＝時計、
+// SHISEIDO THE STORE＝化粧品、和光＝時計・宝飾、銀座若菜＝漬物専門店〈notes記載済み〉）は
+// SWEETS対象外のため意図的にタグを付けない（推測でSWEETSへ寄せない）。
+const SWEETS_BRAND_SOURCE_IDS = new Set([
+  'boulmich-ginza',
+  'dalloyau-japon',
+  'frederic-cassel-japan',
+  'godiva-japan',
+  'henri-charpentier',
+  'jean-paul-hevin-japon',
+  'lenotre-japan',
+  'pierre-herme-paris',
+  'ginza-cozycorner',
+])
+
 async function main() {
   const payload = await getPayload({ config })
   const { docs } = await payload.find({ collection: 'source-ledger', limit: 200, depth: 0, overrideAccess: true })
@@ -51,7 +73,7 @@ async function main() {
       if (doc.venueKind !== 'department_store') data.venueKind = 'department_store'
     } else if (INDIVIDUAL_SHOP_CATEGORIES.has(category)) {
       if (doc.venueKind !== 'individual_shop') data.venueKind = 'individual_shop'
-      if (category === 'food') {
+      if (category === 'food' || SWEETS_BRAND_SOURCE_IDS.has(sourceId)) {
         const existingCats = Array.isArray(doc.article18Categories) ? (doc.article18Categories as string[]) : []
         if (existingCats.length === 0) data.article18Categories = ['SWEETS', 'FOOD']
       }

@@ -833,6 +833,84 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-17 続き11: 🛑 **朝処理の統合仕上げ——稼働中だった旧Claude API即時原稿経路
+  （candidateReviewServer.ts常駐サーバー）を安全停止・launchd自動起動から切り離し、
+  Project 02の通常朝運用から到達可能な有料AI API経路を0本に確認。個別SWEETS収集元
+  30件の全件監査でSWEETS分類ヒントの漏れ9件を発見・是正（Project 02 commit・push
+  あり／実DB書き込みあり〈launchd plist削除・SourceLedgerメタデータ更新9件〉／
+  実AI・有料API呼び出し0回・追加費用0円）**――**①旧Claude API原稿経路の停止**：
+  `launchctl print`で`com.ginzawhiskers.p2-candidate-review`が実行中（PID 25524、
+  09日朝から57分稼働）と確認したうえで、既存の`unload-candidate-review.sh --purge`
+  （事前レビュー済み・plist削除のみでcandidateReviewServer.tsのコード自体は削除
+  しない）で安全停止。Docker・PostgreSQL・Payload・6時収集launchd
+  （p2-morning-auto・p2-trial-collect）・caffeinateはすべて停止前後で稼働継続を
+  実測確認。**candidateReviewServer.ts本体・plistテンプレート・
+  load-candidate-review.sh・`./p2 candidate-review-server`ディスパッチの4箇所へ
+  DEPRECATED明記＋再稼働には明示フラグ
+  （`--i-understand-this-enables-paid-api-approve-button`）を必須化する誤起動防止
+  ガードを追加**（ファイル削除はしていない・git復元可能）。`morningAutoRun.sh`の
+  ヘッダーコメント・morning-briefフェーズの説明も、正規の選定〜原稿生成経路が
+  V1 Stage 4/5（`./p2 morning-select`→`./p2 morning-draft-selected`、ArticleFacts
+  readyのみ使用・AI不使用の決定的テンプレート）であることを明記するよう更新。
+  **②有料API経路の全体監査**：リポジトリ全体を`grep`し、実際にAnthropic API
+  クライアントをインスタンス化・呼び出す6ファイル
+  （`scoreSource.ts`／`generateTnsWeeklyEditionDraft.ts`／`generateArticleDraft.ts`／
+  `generateMultiAngleArticleDrafts.ts`／`evaluateSource.ts`、および
+  `renderArticleFromTemplate.ts`はSDKモジュールロードのみで呼び出しなしと確認）を
+  特定し、それぞれの全呼び出し経路（`createMultiAngleDraftsFromDiscoveredContent`・
+  `createDraftFromSource`・`createCrossCultureDerivativeDrafts`・
+  `createDailyDraftsFromApproved`・`createInterestDrivenDraftsFromThemes`・
+  `evaluateInboxSources`等）を追跡——**いずれも(a)手動`--yes`/`--force`必須のCLI
+  コマンド、(b)HTTPエンドポイント（何も自動POSTしない、手動リクエストのみ到達）、
+  (c)停止済みのcandidateReviewServer.ts、のいずれかであり、`morningAutoRun.sh`の
+  6フェーズ（db／crawl／sweets-detail-fetch／matsuya-sweets-fetch／
+  matsuya-gourmet-fetch／mitsukoshi-health-check／mitsukoshi-food-events-fetch／
+  am-run／morning-brief）には一切含まれないことを確認**。`nightBuild.ts`の
+  `NIGHT_RUN_LIVE_ENABLED`ガードは引き続き`cms/.env`未設定（無効のまま）、
+  `crontab -l`は空（このプロジェクトの定期実行はすべてlaunchd経由）、npm scripts
+  （`cms/package.json`）にAI関連の自動トリガーなしを確認。`morningBrief.ts`・
+  `morningBriefSelect.ts`・`assessInboxPool.ts`・`selectRecommendedThemes.ts`・
+  `dailySelectionSupport.ts`（morning-briefの全呼び出し連鎖）はAI/Anthropic参照
+  ゼロと静的検証（新規`paidApiAutomationAudit.check.ts`、8件）。**Project 02の
+  通常朝運用（morningAutoRun.sh経由）から到達可能な有料AI API経路＝0本**。
+  **③個別SWEETS収集元30件の全件監査**：`venueKind='individual_shop'`の全30件を
+  DBから読み取り、`healthStatus`は全件`ok`（2026-09-17早朝の実クロールで取得成功
+  済み）、`extractionMethod`は全件`generic_html`（専用アダプター無し＝店舗ごとの
+  専用朝処理を新設していないことの直接証拠）と確認。**指定5店舗**（資生堂パーラー・
+  アンリ・シャルパンティエ・銀座コージーコーナー・キル フェ ボン・源吉兆庵）は
+  いずれも登録済み・enabled・銀座店舗の公式言及がseedData.ts notesで確認済み
+  （例：アンリ・シャルパンティエは「銀座メゾン サロン・ド・テ貸切営業のお知らせ」
+  という実記事で銀座メゾン店への直接言及を確認済み、銀座三越の期間限定催事とは
+  別ドメイン・別レコードのため混同なし。資生堂パーラーはparlour.shiseido.co.jp、
+  SHISEIDO THE STOREはthestore.shiseido.co.jpで別施設として完全に分離）——
+  重複登録なし（新規追加は前回セッションのキル フェ ボンのみ、今回は0件追加）。
+  **④監査で発見・是正した実データ上の不整合**：前回セッションのbackfillスクリプトが
+  `article18Categories`のSWEETSヒントを`category='food'`の15件にしか付与しておらず、
+  実際は洋菓子・チョコレート専門ブランドである`category='brand'`の9件
+  （ブールミッシュ・DALLOYAU・フレデリック・カッセル・GODIVA・
+  アンリ・シャルパンティエ・JEAN-PAUL HÉVIN・ルノートル・PIERRE HERMÉ・
+  銀座コージーコーナー〈seedData.ts notesに「SWEETS（洋菓子、路面店）」と実地確認
+  記載あり〉）を取りこぼしていたことを発見・是正（`backfillSourceLedgerMetadata.ts`
+  に`SWEETS_BRAND_SOURCE_IDS`明示リストを追加、再実行で9件更新）。**なお
+  この`article18Categories`はヒント情報のみで実際の候補分類（`deriveProvisionalCategory`）
+  には使わないため、この発見は分類ロジック自体の不具合ではない**——今回の監査精度
+  向上のための是正。AYURA GINZA（スキンケア）・SEIKO HOUSE GINZA（時計）・
+  SHISEIDO THE STORE（化粧品）・和光（時計・宝飾）・銀座若菜（漬物専門店、notesに
+  明記済み）の5件は意図的にSWEETS対象外のまま維持（推測でSWEETSへ寄せていない）。
+  **⑤検証**：新規`paidApiAutomationAudit.check.ts`（8件：朝チェーン全スクリプトの
+  AI参照ゼロ・morningAutoRun.shのフェーズ一覧にAI課金コマンドなし・
+  morningBriefSelect/assessInboxPoolのAI参照ゼロ・candidateReviewServer.tsの
+  DEPRECATED明記＋誤起動防止ガード確認・Stage 5の外部fetch/AI参照ゼロ・指定5店舗の
+  シード重複なし・専用抽出スクリプト新設なし）。`run-all.ts` **865 passed 0
+  failed**（+8）。`tsc --noEmit` 0エラー。**⑥一巡実行時間の実測**：
+  `./p2 crawl --dry-run`（DB書き込みなし、49件の有効generic_html収集元へ実HTTP
+  取得のみ）を`date +%s`前後計測で2回実行——**193秒（3分13秒）**で完走
+  （DiscoveredContent件数1238件で実行前後不変・「新規生成: 0件」を確認、dry-run
+  が実際に無書き込みであることを実測で担保）。専用アダプター2件
+  （松屋銀座・銀座三越）はこのサイクルから二重取得防止のため自動スキップされ、
+  別フェーズ（matsuya-sweets-fetch等）で処理される設計のまま。
+  変更ファイル：8件（新規1・変更7）。詳細は`DECISION_LOG_02.md`
+  2026-09-17続き11参照。
 - 2026-09-17 続き10: 🏛 **朝処理を「唯一の企画仕様」（15項目）へ統合——収集元台帳の一本化
   （百貨店／個別店舗を同一台帳・同一extractionMethod切替で管理）、6時自動チェーンへの
   未接続処理2件の接続、通常HTML収集の二重取得防止、候補ボードの「直近50件」上限を

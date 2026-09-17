@@ -65,6 +65,7 @@ import { suite as mitsukoshiFetchGate } from '../crawler/mitsukoshiFetchGate.che
 import { suite as extractionDispatch } from '../sourceLedger/extractionDispatch.check'
 import { suite as articleCategories } from '../pipeline/articleCategories.check'
 import { suite as abcSingleSource } from '../morning/abcSingleSource.check'
+import { suite as paidApiAutomationAudit } from '../morning/paidApiAutomationAudit.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
 import { suite as noteTransferUrlMatch } from './noteTransferUrlMatch.check'
 import { suite as noteTransferState } from './noteTransferState.check'
@@ -134,6 +135,7 @@ const results: SuiteResult[] = [
   extractionDispatch(),
   articleCategories(),
   abcSingleSource(),
+  paidApiAutomationAudit(),
   chromeExtensionManifest(),
   noteTransferUrlMatch(),
   noteTransferState(),

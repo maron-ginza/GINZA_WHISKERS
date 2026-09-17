@@ -2,7 +2,13 @@
 # GINZA WHISKERS / Project 02 — 朝刊候補レビュー画面 常駐サーバー LaunchAgent を
 # 登録・有効化する。
 #
-# 動作:
+# 【DEPRECATED（2026-09-17・マロン指示：旧Claude API原稿経路の停止）】このサーバーの
+# 「承認」ボタンは即時にClaude API（有料）を呼び出す旧経路——通常運用はV1 Stage 4/5
+# （`./p2 morning-select`→`./p2 morning-draft-selected`、無料の決定的テンプレート）へ
+# 統合済み。誤って習慣的にこのスクリプトを再実行し有料経路を再稼働させないよう、
+# 明示フラグ --i-understand-this-enables-paid-api-approve-button を必須にする。
+#
+# 動作（フラグ指定時）:
 #   1. テンプレート（com.ginzawhiskers.p2-candidate-review.plist.template）の
 #      __REPO__ を実パスへ置換し ~/Library/LaunchAgents/ へ生成
 #   2. launchctl bootstrap で現在のGUIセッションへロード
@@ -12,6 +18,16 @@
 # 解除は scripts/launchd/unload-candidate-review.sh。
 
 set -u
+
+if [ "${1:-}" != "--i-understand-this-enables-paid-api-approve-button" ]; then
+  echo "⚠️  このサーバーはDEPRECATEDです（2026-09-17）。「承認」ボタンがClaude API（有料）を"
+  echo "    即時に呼び出す旧経路のため、通常運用ではV1 Stage 4/5"
+  echo "    （./p2 morning-select → ./p2 morning-draft-selected、無料の決定的テンプレート）を"
+  echo "    使ってください。それでもこの常駐サーバーを再稼働させる場合は、次のフラグを付けて"
+  echo "    再実行してください："
+  echo "      bash $0 --i-understand-this-enables-paid-api-approve-button"
+  exit 1
+fi
 
 LABEL="com.ginzawhiskers.p2-candidate-review"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

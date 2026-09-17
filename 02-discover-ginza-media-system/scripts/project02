@@ -3142,6 +3142,20 @@ case "${1:-status}" in
     ;;
   candidate-review-server)
     shift
+    # 【DEPRECATED（2026-09-17・マロン指示：旧Claude API原稿経路の停止）】このサーバーの
+    # 「承認」ボタンは即時にClaude API（有料）を呼び出す旧経路——通常運用はV1 Stage 4/5
+    # （./p2 morning-select → ./p2 morning-draft-selected、無料の決定的テンプレート）へ
+    # 統合済み。launchd常駐（com.ginzawhiskers.p2-candidate-review）は解除・plist削除済み。
+    # 誤って習慣的にこのコマンドを実行し有料経路を再稼働させないよう、明示フラグを必須にする。
+    if [ "${1:-}" != "--i-understand-this-enables-paid-api-approve-button" ]; then
+      echo "⚠️  DEPRECATED（2026-09-17）：このサーバーの「承認」ボタンはClaude API（有料）を"
+      echo "    即時に呼び出します。通常運用ではV1 Stage 4/5"
+      echo "    （./p2 morning-select → ./p2 morning-draft-selected、無料の決定的テンプレート）を"
+      echo "    使ってください。それでも起動する場合は次のフラグを付けて再実行してください："
+      echo "      ./p2 candidate-review-server --i-understand-this-enables-paid-api-approve-button"
+      return 1 2>/dev/null || exit 1
+    fi
+    shift
     # 朝刊候補レビュー画面（常駐サーバー）を今すぐ1回、フォアグラウンドで起動する
     # （本来はlaunchdが常時起動しっぱなしにする。scripts/launchd/
     # com.ginzawhiskers.p2-candidate-review.plist.template／load-candidate-review.sh）。

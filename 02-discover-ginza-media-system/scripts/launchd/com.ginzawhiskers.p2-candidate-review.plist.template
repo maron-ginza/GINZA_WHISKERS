@@ -2,14 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   GINZA WHISKERS / Project 02 — 朝刊候補レビュー画面 常駐サーバー LaunchAgent
-  （テンプレート、2026-09-12）
+  （テンプレート、2026-09-12、2026-09-17 DEPRECATED）
+
+  【DEPRECATED（2026-09-17・マロン指示：朝処理の統合仕上げ・旧Claude API原稿経路の
+  停止）】このサーバーの「承認」ボタンは即時にClaude API（有料）を呼び出す旧経路
+  ——通常運用はV1 Stage 4/5（`./p2 morning-select`→`./p2 morning-draft-selected`、
+  無料の決定的テンプレート）へ統合済み。インストール済みplist
+  （~/Library/LaunchAgents/配下）は削除済み・常駐プロセスは停止済みのため、通常の
+  ログイン・再起動では自動起動しない。再開する場合は本テンプレートを使い
+  load-candidate-review.shを手動実行すること（マロンの明示判断が必要）。
 
   これは版管理用テンプレート。__REPO__ を実際の絶対パスへ置換したものを
     ~/Library/LaunchAgents/com.ginzawhiskers.p2-candidate-review.plist
   へ配置し、scripts/launchd/load-candidate-review.sh でロードする。
-
-  現時点では **未登録・未有効化**（ファイル整備のみ。OS設定変更のためClaudeは
-  launchctlを実行しない）。
 
   挙動:
     - ログイン時（RunAtLoad=true）に http://localhost:4600 の常駐サーバーを起動し、
