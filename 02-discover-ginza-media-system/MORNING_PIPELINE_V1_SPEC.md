@@ -7,6 +7,30 @@ Project 02・V1プログラミング改善の最終日として判定ロジッ�
 
 ---
 
+## 正規経路の確定（2026-09-17、恒久仕様）
+
+以下をProject 02の**恒久仕様**として確定する。
+
+- **Stage 4**（本ファイル§6）：マロンがA候補ボードから3本を選定する。選定3本には
+  **SWEETSを最低1本含める**。`selectionRecord.validateSelectionForCommit`が
+  3件指定・全件A（候補ボード実在）・SWEETS最低1件・重複指定なし、のみを検証する
+  （施設・カテゴリーの最終判断はマロンが行い、プログラムは制約しない）。
+- **Stage 5**（本ファイル§7）：選定された3本**だけ**を原稿化する。**保存済み
+  ArticleFactsだけ**を使用し、外部fetch・再裏どりは**0回**。Claude API・
+  OpenAI API・有料APIは使用しない（決定的テンプレート生成のみ）。noteへの
+  投稿・公開・転記は行わない（マロンが`note-drafts.json`を見て手動転記）。
+- **旧経路の恒久非推奨**：`candidateReviewServer.ts`（「承認」クリックで即時
+  Claude API課金・記事生成する常駐サーバー、2026-09-12新設）と、それが表示する
+  `morning-brief`（Editorial Compassベースの補助的候補提示、ArticleFacts ready
+  非要求）は、**2026-09-17に停止・自動起動不可へ変更済み**（launchd常駐plist
+  削除、再稼働には明示フラグ`--i-understand-this-enables-paid-api-approve-button`
+  が必須）。ファイル自体は削除せず保持（git復元可能）。両者は自動処理からは
+  到達不能——**Project 02の通常朝運用から到達可能な有料AI API経路は0本**。
+  停止作業・監査の詳細は`CLAUDE.md`2026-09-17続き11、`DECISION_LOG_02.md`同日
+  該当エントリ参照。
+
+---
+
 ## 0. 目的
 
 朝の一連処理（収集後〜note原稿作成前）を、責任がコード上ではっきり分かる5段階へ

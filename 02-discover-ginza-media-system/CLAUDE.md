@@ -833,6 +833,36 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-09-17 続き12: 🏁 **朝処理の統合最終確認——V1 Stage 4/5を恒久的な正規経路
+  として`MORNING_PIPELINE_V1_SPEC.md`へ確定記録し、10月1日運用準備完了と判定
+  （Project 02 commitなし・新規経路追加なし・実データ変更なし）**――正本
+  仕様書冒頭に「正規経路の確定（2026-09-17、恒久仕様）」を新設し、Stage 4
+  （3件選定・SWEETS最低1件）・Stage 5（保存済みArticleFactsのみ・外部fetch/
+  再裏どり0回・有料API不使用・note投稿なし）を恒久仕様として明記、
+  `candidateReviewServer.ts`・旧morning-brief原稿生成経路は自動処理から
+  到達不能であることを明記（新規仕様書は作成せず既存正本への追記のみ）。
+  指定5店舗（資生堂パーラー・アンリ・シャルパンティエ・銀座コージーコーナー・
+  キル フェ ボン・源吉兆庵）は前回から変更なし・重複なしと再確認。個別店舗
+  30件：SWEETS対象25件・healthStatus=ok 30件。**朝処理の工程別所要時間を
+  実測**——2026-09-17 06:00の実チェーンログ（db 1秒・crawl 294秒・
+  sweets-detail-fetch 26秒・matsuya-sweets-fetch 7秒・
+  mitsukoshi-health-check 37秒・am-run 44秒・morning-brief 9秒）に、当日
+  未接続だったmatsuya-gourmet-fetch・mitsukoshi-food-events-fetchの
+  `--dry-run`実測（各5秒・1秒、DB更新・候補追加・判定変更なし）を加算し、
+  **合計約424秒（7分4秒）——70分制限に対し大幅な余裕**と確認。実データ：
+  assessed 1238・A 39・B 349・C 850、Aの18カテゴリー内訳SWEETS 5・
+  ART 16・SHOPPING 9・他4カテゴリー各1・未分類5、SWEETS候補5件
+  （松屋銀座4件・GINZA SIX 1件）。**同一施設偏りを発見・記録**：GINZA SIX
+  系列（facilityKey.tsのPARENT_GINZA_SIXグルーピング、銀座 蔦屋書店含む）
+  がA候補39件中27件（69%）を占める——技術的な不具合ではないが、マロンの
+  最終3本選定時の判断材料として申し送る。取得不能収集元＝銀座三越・
+  東京メトロ・山野楽器銀座本店の3件（既知）。朝6時自動経路から到達可能な
+  有料AI API＝0（前回セッションの監査結果を維持、今回コード変更なし）。
+  今回の変更は正本仕様書へのマークダウン追記のみのためコード変更なし——
+  `run-all.ts`（865件）・`tsc --noEmit`を再実行し前回と同一（0エラー・
+  865 passed 0 failed）であることのみ確認、commit・pushは正本ドキュメント
+  更新分のみ実施。**最終判定：10月1日運用準備完了**。詳細は
+  `DECISION_LOG_02.md` 2026-09-17続き12参照。
 - 2026-09-17 続き11: 🛑 **朝処理の統合仕上げ——稼働中だった旧Claude API即時原稿経路
   （candidateReviewServer.ts常駐サーバー）を安全停止・launchd自動起動から切り離し、
   Project 02の通常朝運用から到達可能な有料AI API経路を0本に確認。個別SWEETS収集元

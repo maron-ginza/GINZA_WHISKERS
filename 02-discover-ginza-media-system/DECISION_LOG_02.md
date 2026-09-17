@@ -10006,3 +10006,73 @@ CLAUDE.mdの肥大化（150,000文字上限超過）を解消するための分�
   いずれも本タスクで変更していない（`daily-second-candidates`実行前後で
   再確認済み）。note転記・公開・ブラウザ操作・有料API呼び出しはいずれも
   行っていない。version更新は前回同様、本タスクの性質上対象なし。
+
+- 2026-09-17（続き12、朝処理の統合・最終確認）: 🏁 **V1 Stage 4/5を恒久的な
+  正規経路として`MORNING_PIPELINE_V1_SPEC.md`へ確定記録（commit
+  3c4dfbf基準）。指定個別SWEETS店舗5件の再確認・重複なし。朝処理の工程別
+  所要時間を実測——6:00開始から7:10までの70分制限に対し実測合計
+  約7分4秒（424秒）で大幅に余裕あり。commitなし（新規経路追加なし、
+  正本ドキュメント1件へのマークダウン追記のみ）**――
+  **①正規経路の確定**：`MORNING_PIPELINE_V1_SPEC.md`冒頭へ「正規経路の
+  確定（2026-09-17、恒久仕様）」節を新設し、Stage 4（3件選定・SWEETS
+  最低1件）・Stage 5（保存済みArticleFactsのみ・外部fetch/再裏どり0回・
+  Claude/OpenAI/有料API不使用・note投稿なし）を恒久仕様として明記、
+  `candidateReviewServer.ts`・旧morning-brief原稿生成経路は
+  2026-09-17に停止・自動起動不可へ変更済みで両者とも自動処理から到達
+  不能であることを明記した（新規仕様書は作成せず既存正本への追記のみ）。
+  **②指定5店舗の再確認**：資生堂パーラー・アンリ・シャルパンティエ・
+  銀座コージーコーナー・キル フェ ボン・源吉兆庵の5件をDBから再読み取り
+  ——前回セッションから変更なし・全件`enabled=true`・
+  `extractionMethod=generic_html`・`healthStatus=ok`・重複登録なしを
+  再確認（登録漏れなし、新規登録は今回0件）。
+  **③個別店舗30件の集計**：総数30・enabled 30・SWEETS対象25・
+  healthStatus=ok 30／unreachable 0／unknown 0（6時チェーン接続済み＝
+  enabled かつ generic_htmlのため実質全30件）。
+  **④朝処理の工程別所要時間の実測**：2026-09-17 06:00の実際の自動
+  チェーンログ（`.devlogs/morning/auto/2026-09-17-summary.json`他、
+  当時はmatsuya-gourmet-fetch・mitsukoshi-food-events-fetch未接続）から
+  db 1秒・crawl 294秒・sweets-detail-fetch 26秒・matsuya-sweets-fetch
+  7秒・mitsukoshi-health-check 37秒・am-run 44秒（`--fetch
+  --register-facts --write-facts`込み）・morning-brief 9秒を確認。
+  前回セッションで新規接続したmatsuya-gourmet-fetch・
+  mitsukoshi-food-events-fetchの2フェーズは当日ログに存在しないため
+  （接続前だったため）、本日DB更新・候補追加・判定変更を一切行わない
+  `--dry-run`で個別に実測——matsuya-gourmet-fetch 5秒・
+  mitsukoshi-food-events-fetch 1秒（sourceUnavailableゲートで即時終了、
+  実ネットワーク到達なし）。**合計（実ログ値＋dry-run実測値の合算）
+  ＝約424秒（7分4秒）**——70分（4200秒）制限に対し大幅な余裕。
+  ArticleFacts生成・候補ボード生成の内部所要時間は、`--fetch`なしの
+  `am-run --no-write`実測（buildReport 1ms・assessLoop
+  1734ms／1238件評価）を参考値として使用——本番の44秒はほぼ全てが
+  `--fetch`の外部公式ページ取得時間であり、ArticleFacts生成・候補ボード
+  組み立て自体は無視できるほど高速であることを確認。「収集元台帳の
+  読み込み」はcrawlの294秒に内包され単独では計測できない
+  （既存ログ・コード双方に専用の計測点が無いため「確認できません」）。
+  **⑤最終候補状態（実データ変更なし）**：assessed 1238・A 39・B 349・
+  C 850。Aの18カテゴリー別：SWEETS 5・ART 16・SHOPPING 9・MUSIC 1・
+  WORKSHOP 1・FAMILY 1・PHOTO 1・未分類5。SWEETS候補5件
+  （DC#1190〜1193＝松屋銀座、DC#353＝GINZA SIX「森の恵みクッキー
+  プティボワ」）。候補ボード対象39件全件がマロンの選定対象——SWEETS
+  1本＋他2カテゴリー（6カテゴリーから選択可）を選べる状態。**同一施設
+  偏りを発見**：GINZA SIX（蔦屋書店含む、facilityKey.tsの
+  PARENT_GINZA_SIX統合）が39件中27件（69%）を占める（うち銀座
+  蔦屋書店単独で16件・ほぼ全てART）——施設クールダウンは正しくA/B/Cを
+  変更していないが、マロンが最終3本を選ぶ際にカテゴリー・施設の分散を
+  意識する必要がある実データ上の傾向として記録。取得不能な収集元＝
+  銀座三越・東京メトロ・山野楽器銀座本店の3件（healthStatus=
+  unreachable、いずれも既知）。
+  **⑥費用確認**：朝6時の自動経路から到達可能なClaude/OpenAI API＝
+  0（前回セッションの監査結果を維持、今回コード変更なしのため再確認は
+  静的スキャンのみ再実施し同一結果）。新規契約・プラン変更・追加費用
+  いずれも0。
+  **⑦検証**：今回の変更はMORNING_PIPELINE_V1_SPEC.mdへのマークダウン
+  追記のみ（コード変更なし）。既存`run-all.ts`（865件）・`tsc --noEmit`
+  を再実行し無変更であることを確認（0エラー・865 passed 0 failed
+  で前回と同一）。
+  **⑧最終判定：10月1日運用準備完了**——百貨店・個別店舗は同一台帳で管理・
+  指定個別SWEETS店舗は確認済み・6時自動チェーンへ接続済み・現在有効な
+  全A候補（39件）を候補ボードへ表示・SWEETSを含む3本をマロンが選べる・
+  70分制限に対し実測7分4秒で大幅に余裕・選定前原稿生成なし・有料API
+  呼び出し0回・追加費用0円、のすべてを確認した。同一施設（GINZA SIX
+  系列）への偏りは技術的な不具合ではないが、マロンの選定判断材料として
+  申し送る。詳細は`CLAUDE.md`2026-09-17続き12（本エントリと対応）参照。
