@@ -45,6 +45,7 @@ import {
   recordFailure,
   recordCompletionAttempt,
   determineTransferMode,
+  findConflictingArticleForDraftUrl,
   MAX_TRANSFER_ATTEMPTS,
   MAX_COMPLETION_ATTEMPTS,
   type TransferState,
@@ -405,6 +406,33 @@ async function main() {
 
           if (body.status === 'success') {
             const draftUrl = typeof body.draftUrl === 'string' ? body.draftUrl : undefined
+
+            // 2026-09-18新設（マロン指示・根本修正）：report されたdraftUrlが
+            // 既に別のarticleIdの記録として使われている場合、success として
+            // 確定させず停止する（誤ったタブ再利用による混在事故の再発防止、
+            // DECISION_LOG_02.md 2026-09-18参照）。
+            const conflictArticleId = findConflictingArticleForDraftUrl(state, articleId, draftUrl)
+            if (conflictArticleId != null) {
+              const conflictError = `stage=draft_url_conflict: 報告されたdraftUrl（${draftUrl}）は既に別記事 #${conflictArticleId} の下書きとして記録されているため success として記録しません（誤ったタブ再利用の疑い。手動確認が必要）`
+              appendDiagnosticLog({
+                source: 'server',
+                event: 'draft_url_conflict_detected',
+                articleId,
+                conflictArticleId,
+                draftUrl,
+              })
+              const { state: nextState, exhausted, attempts } = recordFailure(
+                state,
+                articleId,
+                conflictError,
+                new Date().toISOString(),
+              )
+              saveState(nextState)
+              res.writeHead(200, { 'content-type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, exhausted, attempts, conflict: true }))
+              return
+            }
+
             const needsCompletion = !(body.hashtagsDone === true && body.iconDone === true)
             saveState(recordSuccess(state, articleId, draftUrl, new Date().toISOString(), needsCompletion))
 

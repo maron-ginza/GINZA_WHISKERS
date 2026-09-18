@@ -219,6 +219,34 @@ export function recordCompletionAttempt(
   }
 }
 
+/**
+ * 2026-09-18新設（マロン指示・根本修正）：拡張から報告されたdraftUrlが、
+ * 既に**別の**articleIdの記録として使われていないかを確認する。
+ *
+ * 【背景】#73（新規記事）の転記が、直前に#72が使用したnote編集タブを誤って
+ * 再利用し、#72のdraftUrlと完全に同一のURLをそのまま「成功」として記録して
+ * しまった事故が発生した（実際には#73の内容が#72の下書きへ上書きされていた）。
+ * この関数は success を記録する**前**に呼び出し、衝突があれば
+ * recordSuccess を呼ばず recordFailure へ回す（success として確定させない）。
+ *
+ * 同一articleId自身の既存エントリ（completion再試行等で同じdraftUrlを
+ * 引き続き参照するケース）との一致は衝突とみなさない——別記事の下書きを
+ * 誤って再利用・上書きしていないかだけを見る。
+ */
+export function findConflictingArticleForDraftUrl(
+  state: TransferState,
+  articleId: number,
+  draftUrl: string | undefined,
+): number | null {
+  if (!draftUrl) return null
+  for (const [key, entry] of Object.entries(state)) {
+    const otherId = Number(key)
+    if (otherId === articleId) continue
+    if (entry.draftUrl === draftUrl) return otherId
+  }
+  return null
+}
+
 export interface RecordFailureResult {
   state: TransferState
   exhausted: boolean

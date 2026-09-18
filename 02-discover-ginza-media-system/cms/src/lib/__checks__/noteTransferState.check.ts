@@ -11,6 +11,7 @@ import {
   recordFailure,
   recordCompletionAttempt,
   determineTransferMode,
+  findConflictingArticleForDraftUrl,
   MAX_TRANSFER_ATTEMPTS,
   MAX_COMPLETION_ATTEMPTS,
   STALE_IN_PROGRESS_MS,
@@ -318,6 +319,32 @@ const cases: CheckCase[] = [
       assert.equal(determineTransferMode(undefined), 'full')
       assert.equal(state['68'].completionClaimStarted, undefined, 'fullモードの初回クレームでcompletionClaimStartedがtrueになってしまっている')
       assert.equal(state['68'].activeRunToken, 'token-full', 'fullモードでもactiveRunToken自体は記録されるべき')
+    },
+  },
+  {
+    // 2026-09-18新設（マロン指示・根本修正）：#73が#72のdraftUrlをそのまま
+    // successとして記録してしまった実際の事故の再現・防止テスト。
+    name: '【draftUrl衝突検出】別記事が既に使用中のdraftUrlはconflictとして検出される（実際の事故：#73が#72のdraftUrlを報告）',
+    fn: () => {
+      const state = recordSuccess({}, 72, 'https://editor.note.com/notes/n8ce6303cb407/edit/', '2026-09-17T23:56:12.000Z', false)
+      const conflict = findConflictingArticleForDraftUrl(state, 73, 'https://editor.note.com/notes/n8ce6303cb407/edit/')
+      assert.equal(conflict, 72, '#72が既に使用中のdraftUrlを#73が報告した場合、衝突相手として#72が返るべき')
+    },
+  },
+  {
+    name: '【draftUrl衝突検出】同一articleId自身の既存エントリとの一致は衝突とみなさない（completion再試行等）',
+    fn: () => {
+      const state = recordSuccess({}, 73, 'https://editor.note.com/notes/nabc123/edit/', '2026-09-17T00:00:00.000Z', true)
+      const conflict = findConflictingArticleForDraftUrl(state, 73, 'https://editor.note.com/notes/nabc123/edit/')
+      assert.equal(conflict, null, '自分自身のdraftUrlとの一致を衝突と誤検出している')
+    },
+  },
+  {
+    name: '【draftUrl衝突検出】draftUrl未指定・衝突なしはnull',
+    fn: () => {
+      assert.equal(findConflictingArticleForDraftUrl({}, 73, undefined), null)
+      const state = recordSuccess({}, 72, 'https://editor.note.com/notes/nXXX/edit/', '2026-09-17T00:00:00.000Z', false)
+      assert.equal(findConflictingArticleForDraftUrl(state, 73, 'https://editor.note.com/notes/nYYY/edit/'), null, '別URLなら衝突ではない')
     },
   },
 ]

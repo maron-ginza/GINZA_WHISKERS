@@ -1516,7 +1516,7 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
     name: '【completion-only試行を消費しない】heartbeat区間の追加はcompletionAttempts・claimInProgress・recordCompletionAttemptのロジックに一切触れていない',
     fn: () => {
       const bg = bgSrc()
-      assert.ok(/br22-2026-09-14-heartbeat-stall-90s/.test(bg), 'BUILD_REVISIONがbr22へ更新されていない')
+      assert.ok(/const BUILD_REVISION = '/.test(bg), 'BUILD_REVISION定数が見つからない')
       // heartbeatはlogNonBlocking経由で送るだけで、/api/note-transfer/result
       // への新規POSTや試行回数を操作するコードを追加していないことを確認する。
       const inj = injSrc()

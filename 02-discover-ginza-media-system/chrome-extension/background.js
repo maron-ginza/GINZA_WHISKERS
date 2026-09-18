@@ -80,6 +80,19 @@ function isNoteEditorTargetUrl(url) {
 }
 const NOTE_NEW_DRAFT_URL = (noteUrlMatchNS && noteUrlMatchNS.NOTE_NEW_DRAFT_URL) || 'https://note.com/notes/new'
 
+// 2026-09-18新設（マロン指示・根本修正）：既にnoteId採番済み＝既に特定の記事の
+// 下書きとして使用中のタブかどうかを判定する（urlMatch.js参照）。
+// フォールバックは editor.note.com/notes/{id}/... （idが"new"以外）のみを
+// 採番済みとみなす簡易判定（importScripts失敗時のみ使用）。
+function hasAssignedNoteId(url) {
+  if (noteUrlMatchNS && typeof noteUrlMatchNS.hasAssignedNoteId === 'function') {
+    return noteUrlMatchNS.hasAssignedNoteId(url)
+  }
+  if (typeof url !== 'string') return false
+  const m = /^https:\/\/editor\.note\.com\/notes\/([^/]+)/.exec(url)
+  return !!m && m[1] !== 'new'
+}
+
 // --- 診断ログ（サーバーの .devlogs/night/note-transfer-diagnostic.jsonl へ送信） ---
 function logToServer(event, detail) {
   try {
@@ -102,7 +115,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br22-2026-09-14-heartbeat-stall-90s'
+const BUILD_REVISION = 'br23-2026-09-18-no-cross-article-tab-reuse'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -190,16 +203,29 @@ async function findOrOpenNoteEditorTab(preferredUrl) {
       }
       logToServer('preferred_url_tab_not_found_opening_directly', { preferredUrl, otherCandidateUrls: candidates.map((t) => t.url) })
     } else if (candidates.length > 0) {
-      // preferredUrl指定なし（'full'モード＝新規下書き作成）の場合のみ、
-      // 既存のnote編集タブ（どの記事のものでもよい）を再利用する。
-      candidates.sort((a, b) => {
-        const score = (t) => (new URL(t.url).hostname === 'editor.note.com' ? 0 : 1)
-        return score(a) - score(b)
+      // 2026-09-18（マロン指示・根本修正）：preferredUrl指定なし（'full'モード＝
+      // 新規下書き作成）の場合、既にnoteId採番済み＝既に別記事（または前回の
+      // 自分自身）の下書きとして使用中のタブは絶対に再利用しない。
+      // **実機で発見した事故**：#73（新規記事）の転記が#72の既存下書きタブを
+      // 誤って再利用し内容を上書き、続く#74も同じタブ（この時点で公開設定
+      // 画面へ遷移済み）を再利用して本文欄を発見できず失敗した
+      // （DECISION_LOG_02.md 2026-09-18参照）。
+      // 再利用してよいのは「noteId未採番の空白タブ」（マロンが手動で開いた
+      // 空の編集画面等）のみ——見つからなければ必ず新規タブを開く。
+      const blankCandidates = candidates.filter((t) => !hasAssignedNoteId(t.url))
+      if (blankCandidates.length > 0) {
+        blankCandidates.sort((a, b) => {
+          const score = (t) => (new URL(t.url).hostname === 'editor.note.com' ? 0 : 1)
+          return score(a) - score(b)
+        })
+        const target = blankCandidates[0]
+        await chrome.tabs.reload(target.id)
+        logToServer('existing_blank_tab_reloaded', { tabId: target.id, url: target.url, matchedPreferredUrl: false })
+        return target
+      }
+      logToServer('no_blank_tab_available_opening_new', {
+        candidateUrls: candidates.map((t) => t.url),
       })
-      const target = candidates[0]
-      await chrome.tabs.reload(target.id)
-      logToServer('existing_tab_reloaded', { tabId: target.id, url: target.url, matchedPreferredUrl: false })
-      return target
     }
   } catch (e) {
     console.error('[note-transfer] 既存タブの検索に失敗、新規タブを開きます', e)
