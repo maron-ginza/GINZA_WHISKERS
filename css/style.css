@@ -777,6 +777,20 @@ a.content-card:hover {
   margin: 0 0 1.4em;
 }
 
+/* カード内の制作部門クレジット表記（2026-09-20 追加）。
+   例：GINZA 400 YEARS カード内「Created by GINZA DIGITAL ART LAB」。
+   見出し直下・本文の説明文より上に置く階層ラベルのため、
+   .content-card-body > p の既定スタイルより小さく・ゴールドの
+   イタリックにして本文と区別する（.cc-sublabel と同系の扱い）。 */
+.content-card-credit {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--color-gold-light);
+  margin: 0 0 0.9em;
+}
+
 /* ==========================================================
    入口カードの編集型レイアウト（2026-09-13 追加）
    均一な2列グリッドから、コンテンツごとに比率・配置・ビジュアルの
