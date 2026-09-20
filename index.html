@@ -189,13 +189,13 @@
             <span class="card-cta">noteで読む</span>
           </div>
         </a>
-        <!-- GINZA 400 YEARS：独立した公開URLが未確定。確定時に href を付与し is-pending を削除する。
-             entry-visual--single：cc-span-full（1枚表示）専用の表示規則。2026-09-14、
-             2枚並列カードと同じ cover 規則が全幅表示で画角を切ってしまう不具合の修正。
-             2026-09-20：独立カードだった「GINZA DIGITAL ART LAB」を本カードへ統合し、
-             制作部門名として「Created by GINZA DIGITAL ART LAB」を追加した（PMO方針決定）。
-             既存の画像・説明文・カードリンク（is-pending・href未設定）は無変更。 -->
-        <a class="content-card content-card--visual is-pending cc-span-full" aria-disabled="true">
+        <!-- GINZA 400 YEARS：entry-visual--single は cc-span-full（1枚表示）専用の
+             表示規則（2026-09-14導入）。2026-09-20：独立カードだった「GINZA DIGITAL
+             ART LAB」を本カードへ統合し、制作部門名として「Created by GINZA DIGITAL
+             ART LAB」を追加（PMO方針決定）。同日、詳細ページ 400years.html を新設し、
+             is-pending / aria-disabled を解除してリンクを有効化した。
+             既存の画像・説明文は無変更。 -->
+        <a class="content-card content-card--visual cc-span-full" href="400years.html">
           <div class="entry-visual entry-visual--400years entry-visual--single" aria-hidden="true">
             <img src="images/cards/400years.jpg" width="768" height="384" alt="" loading="lazy">
           </div>
@@ -203,7 +203,7 @@
             <h3>GINZA 400 YEARS</h3>
             <p class="content-card-credit">Created by GINZA DIGITAL ART LAB</p>
             <p>銀座の400年を、歴史・復元・デジタルアートでたどる構想。</p>
-            <span class="card-cta">準備中</span>
+            <span class="card-cta">詳しく見る</span>
           </div>
         </a>
       </div>

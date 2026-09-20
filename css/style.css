@@ -1134,3 +1134,179 @@ a.content-card:hover {
         rgba(11, 11, 12, 0.82) 100%);
   }
 }
+
+/* ==========================================================
+   GINZA 400 YEARS 詳細ページ（400years.html）
+   2026-09-20 追加。既存 .hero / .section / .container / .btn / :root /
+   .eyebrow / .lead を継承し、400years.html 専用の追加セレクタ
+   （.y400-*）のみで構成する。既存ルールは一切変更していない。
+   画像は object-fit を使わず width:100%; height:auto; のみで表示し、
+   元画像の縦横比をそのまま維持する（作品ごとに縦横比が異なるため、
+   固定 aspect-ratio 枠は設けない＝トリミングが発生しない）。
+   モバイル（1カラム・画像が上）を基準に、広い画面のみ2カラム化する。
+   ========================================================== */
+
+.y400-hero {
+  /* サブページのため、トップの .hero（86vh）より低く抑える */
+  min-height: 46vh;
+}
+
+.y400-credit {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: var(--color-gold);
+  margin: 0 0 1.4em;
+}
+
+.y400-artwork:last-of-type {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.y400-artwork-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+.y400-media {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.y400-media-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.y400-year {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--color-gold);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  margin: 0 0 0.3em;
+}
+
+.y400-title {
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  margin: 0 0 0.4em;
+}
+
+.y400-place {
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  margin: 0 0 1.2em;
+}
+
+.y400-desc {
+  color: var(--color-ink-muted);
+  margin: 0 0 1.2em;
+}
+
+.y400-disclaimer {
+  font-style: italic;
+  font-size: 0.78rem;
+  color: var(--color-ink-muted);
+  opacity: 0.8;
+  margin: 0 0 1.6em;
+}
+
+/* 日本語／ENGLISH 切り替えボタン。スマートフォンでも押しやすいよう
+   1ボタンあたり縦方向の実タップ領域を十分に確保する（padding参照）。 */
+.y400-lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--color-border);
+  margin: 0 0 1.6em;
+}
+
+.y400-lang-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  font-family: var(--font-serif);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--color-ink-muted);
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.y400-lang-btn + .y400-lang-btn {
+  border-left: 1px solid var(--color-border);
+}
+
+.y400-lang-btn.is-active {
+  background: var(--color-gold);
+  color: var(--color-bg);
+}
+
+.y400-cta {
+  margin: 0;
+}
+
+.y400-cta-pending {
+  display: inline-block;
+  padding: 14px 36px;
+  border: 1px solid var(--color-border);
+  color: var(--color-ink-muted);
+  font-family: var(--font-serif);
+  font-size: 0.88rem;
+  letter-spacing: 0.18em;
+  cursor: default;
+}
+
+.y400-pending-note {
+  display: block;
+  margin-top: 0.7em;
+  font-size: 0.78rem;
+  color: var(--color-ink-muted);
+  opacity: 0.75;
+}
+
+.y400-edition {
+  text-align: center;
+  border-bottom: none;
+}
+
+.y400-edition-title {
+  letter-spacing: 0.1em;
+}
+
+.y400-edition-status {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--color-gold-light);
+  letter-spacing: 0.14em;
+  font-size: 0.95rem;
+  margin: 0 0 1.2em;
+}
+
+.y400-edition .lead {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* デスクトップ：画像と本文を2カラムに。作品02は画像を右側にして
+   リズムをつける（y400-artwork-grid--reverse）。 */
+@media (min-width: 860px) {
+  .y400-artwork-grid {
+    grid-template-columns: 1.1fr 0.9fr;
+    align-items: center;
+    gap: 48px;
+  }
+
+  .y400-artwork-grid--reverse .y400-media {
+    order: 2;
+  }
+
+  .y400-artwork-grid--reverse .y400-artwork-body {
+    order: 1;
+  }
+}

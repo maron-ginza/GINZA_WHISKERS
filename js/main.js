@@ -31,6 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   initLatestJournal();
+  initEraLangToggles();
 });
 
 // 「最新のジャーナル」：Project 02（Discover GINZA）が公開する疎結合フィード
@@ -136,5 +137,55 @@ function renderLatestCards(container, items) {
     }
 
     container.appendChild(card);
+  });
+}
+
+// GINZA 400 YEARS（400years.html）の日本語／ENGLISH 画像切り替え。
+// .y400-lang-toggle が無いページ（他の全ページ）では何もしないため、
+// 既存機能への影響はない。
+// - 画像は data-src-ja / data-src-en を差し替えるのみ（同一作品の日英版）。
+// - alt テキストは data-alt-ja / data-alt-en があれば併せて差し替える。
+// - 「史料・史実をもとに構成したAI復元イメージです。」の注記のみ、
+//   data-text-ja / data-text-en を持つ要素（.y400-disclaimer）を同時に切り替える。
+// - 作品名・場所表記・説明文・CTA等、英訳が用意されていないテキストは
+//   翻訳を捏造せず、常に日本語表示のまま変更しない。
+function initEraLangToggles() {
+  const toggles = document.querySelectorAll(".y400-lang-toggle[data-target]");
+  if (toggles.length === 0) return;
+
+  toggles.forEach((toggle) => {
+    const img = document.getElementById(toggle.dataset.target);
+    if (!img) return;
+
+    const disclaimer = toggle
+      .closest(".y400-artwork-body")
+      ?.querySelector(".y400-disclaimer");
+
+    const buttons = toggle.querySelectorAll(".y400-lang-btn");
+
+    toggle.addEventListener("click", (event) => {
+      const btn = event.target.closest(".y400-lang-btn");
+      if (!btn || !toggle.contains(btn)) return;
+
+      const lang = btn.dataset.lang === "en" ? "en" : "ja";
+
+      const nextSrc = lang === "en" ? img.dataset.srcEn : img.dataset.srcJa;
+      if (nextSrc) img.src = nextSrc;
+
+      const nextAlt = lang === "en" ? img.dataset.altEn : img.dataset.altJa;
+      if (nextAlt) img.alt = nextAlt;
+
+      if (disclaimer) {
+        const nextText =
+          lang === "en" ? disclaimer.dataset.textEn : disclaimer.dataset.textJa;
+        if (nextText) disclaimer.textContent = nextText;
+      }
+
+      buttons.forEach((b) => {
+        const isActive = b === btn;
+        b.classList.toggle("is-active", isActive);
+        b.setAttribute("aria-pressed", String(isActive));
+      });
+    });
   });
 }
