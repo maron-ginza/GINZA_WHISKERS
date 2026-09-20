@@ -1337,3 +1337,27 @@ a.content-card:hover {
     order: 1;
   }
 }
+
+/* charmant.html 専用：Contactのメールアドレスボタン（cc-contact-email）が
+   390px幅で画面外にはみ出す横スクロールの修正（2026-09-20）。
+   overflow-wrap / max-width は「入り切らない時だけ」効くプロパティのため、
+   PC幅では現状どおり1行表示のまま見た目は変わらない。狭い画面でのみ
+   ボタン内でアドレスを安全に折り返し、省略はしない。index.html 側の
+   #contact-email（同一id）は .cc-contact-email クラスを持たないため
+   無関係——他ページ・他ボタンへは影響しない。 */
+.cc-contact-email {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .cc-contact-email {
+    padding-left: 20px;
+    padding-right: 20px;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+  }
+}

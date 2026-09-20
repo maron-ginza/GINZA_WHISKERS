@@ -200,8 +200,12 @@
            または GINZA WHISKERS 共通 Contact への移行を検討する。移行時は js/main.js の
            生成ロジックと下の <noscript> フォールバックの両方を更新すること。
            （CLAUDE.md 第10章 2026-08-28 の TODO も参照） -->
-      <a id="contact-email" class="btn"></a>
-      <noscript><a href="mailto:ginzashowaromanticclub@gmail.com" class="btn">ginzashowaromanticclub@gmail.com</a></noscript>
+      <!-- cc-contact-email：390px幅でメールアドレスが画面外にはみ出す横スクロール対策
+           （2026-09-20）。index.html 側の #contact-email は同一id/classを使うため、
+           charmant.html 専用のこのクラスでのみ折り返しを許可し、他ページ・他ボタンの
+           見た目（PC含む）には影響させない。href・アドレス自体は無変更。 -->
+      <a id="contact-email" class="btn cc-contact-email"></a>
+      <noscript><a href="mailto:ginzashowaromanticclub@gmail.com" class="btn cc-contact-email">ginzashowaromanticclub@gmail.com</a></noscript>
       <p class="cc-note">
         現在、オンラインでの自動予約は承っておりません。
         いただいたご連絡に、担当者より順次お返事いたします。
