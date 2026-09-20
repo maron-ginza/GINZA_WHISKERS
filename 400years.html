@@ -31,6 +31,10 @@
 </head>
 <body>
 
+<!-- ヘッダーナビの4項目のみ、このページ限定でdata-text-ja/enを付与し
+     ページ共通の言語切替に連動させる（index.html等の遷移先は日本語のまま、
+     他ページのヘッダーマークアップ自体は無変更）。About/Contactは英語表記が
+     日本語表記と同一のため属性なし。 -->
 <header class="site-header">
   <div class="container header-inner">
     <a href="index.html" class="brand">
@@ -41,10 +45,10 @@
     </button>
     <nav class="main-nav">
       <ul>
-        <li><a href="index.html#know">今の銀座</a></li>
-        <li><a href="index.html#feel">銀座の時間</a></li>
-        <li><a href="index.html#experience">銀座を体験</a></li>
-        <li><a href="index.html#your-ginza">自分の銀座</a></li>
+        <li><a href="index.html#know" data-text-ja="今の銀座" data-text-en="Ginza Today">今の銀座</a></li>
+        <li><a href="index.html#feel" data-text-ja="銀座の時間" data-text-en="Stories of Ginza">銀座の時間</a></li>
+        <li><a href="index.html#experience" data-text-ja="銀座を体験" data-text-en="Experience Ginza">銀座を体験</a></li>
+        <li><a href="index.html#your-ginza" data-text-ja="自分の銀座" data-text-en="My Ginza">自分の銀座</a></li>
         <li><a href="about.html">About</a></li>
         <li><a href="index.html#contact">Contact</a></li>
       </ul>
@@ -54,12 +58,25 @@
 
 <main>
 
-  <!-- 1. Hero -->
+  <!-- 1. Hero：ページ共通の日本語／ENGLISH切替（このページで1か所だけ）。
+       クリックで document.documentElement.lang、data-text-ja/en を持つ全要素、
+       data-html-ja/en を持つ要素（hero-lead。<br>を保持するためinnerHTML切替）、
+       2作品の画像（.y400-media-img）を同時に切り替える（js/main.js
+       initY400LangToggle 参照）。localStorage（キー：y400-lang）で
+       次回読み込み時の言語を復元。初期表示（保存値なし・JS未実行時）は
+       常に日本語。 -->
   <section class="hero y400-hero">
     <div class="hero-inner container">
       <h1>GINZA 400 YEARS</h1>
       <p class="y400-credit">Created by GINZA DIGITAL ART LAB</p>
-      <p class="hero-lead">
+      <div id="y400-lang-toggle" class="y400-lang-toggle y400-page-lang-toggle"
+           role="group" aria-label="言語切替 / Language">
+        <button type="button" class="y400-lang-btn is-active" data-lang="ja" aria-pressed="true">日本語</button>
+        <button type="button" class="y400-lang-btn" data-lang="en" aria-pressed="false">ENGLISH</button>
+      </div>
+      <p class="hero-lead"
+         data-html-ja="銀座の400年を、歴史・復元・デジタルアートでたどる。&lt;br&gt;街に残る記録と記憶をもとに、過去・現在・未来の銀座を一つの物語として描きます。"
+         data-html-en="Explore four centuries of Ginza through history, reconstruction, and digital art.&lt;br&gt;Drawing on the records and memories preserved within the city, we portray Ginza&rsquo;s past, present, and future as one continuing story.">
         銀座の400年を、歴史・復元・デジタルアートでたどる。<br>
         街に残る記録と記憶をもとに、過去・現在・未来の銀座を一つの物語として描きます。
       </p>
@@ -79,14 +96,13 @@
                width="1672" height="941" loading="lazy">
         </figure>
         <div class="y400-artwork-body">
-          <div class="y400-lang-toggle" role="group" aria-label="表示言語の切り替え（作品01）" data-target="img-1612">
-            <button type="button" class="y400-lang-btn is-active" data-lang="ja" aria-pressed="true">日本語</button>
-            <button type="button" class="y400-lang-btn" data-lang="en" aria-pressed="false">ENGLISH</button>
-          </div>
           <p class="y400-year">1612</p>
-          <h2 class="y400-title">江戸に、銀座の灯がともる。</h2>
-          <p class="y400-place">1612｜新両替町</p>
-          <p class="y400-desc">
+          <h2 class="y400-title" data-text-ja="江戸に、銀座の灯がともる。"
+              data-text-en="A Light of Ginza Is Kindled in Edo.">江戸に、銀座の灯がともる。</h2>
+          <p class="y400-place" data-text-ja="1612｜新両替町" data-text-en="1612 | Shin-Ryogaecho">1612｜新両替町</p>
+          <p class="y400-desc"
+             data-text-ja="江戸の銀座役所が駿府から移され、新両替町として歩み始めた頃。夕暮れの町に提灯がともり、商いと人の往来が静かに息づく、銀座の原点を描きます。"
+             data-text-en="In 1612, the Ginza silver mint was relocated from Sunpu to Edo, and the district began its history as Shin-Ryogaecho. Lanterns glow across the town at dusk, illuminating the movement of merchants and townspeople—an imagined scene from the origins of Ginza.">
             江戸の銀座役所が駿府から移され、新両替町として歩み始めた頃。夕暮れの町に提灯がともり、商いと人の往来が静かに息づく、銀座の原点を描きます。
           </p>
           <p class="y400-disclaimer" data-text-ja="史料・史実をもとに構成したAI復元イメージです。"
@@ -95,8 +111,10 @@
           </p>
           <!-- note記事URL未確定のため、リンクは設定せず準備中表示のみ。架空URLは作成しない。 -->
           <p class="y400-cta">
-            <span class="y400-cta-pending" aria-disabled="true">この時代の銀座を読む</span>
-            <span class="y400-pending-note">準備中（note記事URL設定待ち）</span>
+            <span class="y400-cta-pending" aria-disabled="true"
+                  data-text-ja="この時代の銀座を読む" data-text-en="Read about Ginza in this era">この時代の銀座を読む</span>
+            <span class="y400-pending-note" data-text-ja="準備中（note記事URL設定待ち）"
+                  data-text-en="Coming Soon">準備中（note記事URL設定待ち）</span>
           </p>
         </div>
       </div>
@@ -116,14 +134,13 @@
                width="1536" height="1024" loading="lazy">
         </figure>
         <div class="y400-artwork-body">
-          <div class="y400-lang-toggle" role="group" aria-label="表示言語の切り替え（作品02）" data-target="img-1882">
-            <button type="button" class="y400-lang-btn is-active" data-lang="ja" aria-pressed="true">日本語</button>
-            <button type="button" class="y400-lang-btn" data-lang="en" aria-pressed="false">ENGLISH</button>
-          </div>
           <p class="y400-year">1882</p>
-          <h2 class="y400-title">銀座に、電気の灯がともる。</h2>
-          <p class="y400-place">1882｜銀座二丁目</p>
-          <p class="y400-desc">
+          <h2 class="y400-title" data-text-ja="銀座に、電気の灯がともる。"
+              data-text-en="Electric Light Comes to Ginza.">銀座に、電気の灯がともる。</h2>
+          <p class="y400-place" data-text-ja="1882｜銀座二丁目" data-text-en="1882 | Ginza 2-chome">1882｜銀座二丁目</p>
+          <p class="y400-desc"
+             data-text-ja="銀座二丁目にアーク灯がともり、ガス灯の時代から電気の光へ。雨に濡れた煉瓦街と複線の馬車鉄道、人々が見上げた文明開化の一夜を描きます。"
+             data-text-en="In 1882, an arc lamp illuminated Ginza 2-chome, marking the transition from gaslight to electric light. The rain-soaked brick streets, double-track horse-drawn railway, and people gazing upward evoke a night when modern civilization transformed Ginza.">
             銀座二丁目にアーク灯がともり、ガス灯の時代から電気の光へ。雨に濡れた煉瓦街と複線の馬車鉄道、人々が見上げた文明開化の一夜を描きます。
           </p>
           <p class="y400-disclaimer" data-text-ja="史料・史実をもとに構成したAI復元イメージです。"
@@ -132,21 +149,26 @@
           </p>
           <!-- note記事URL未確定のため、リンクは設定せず準備中表示のみ。架空URLは作成しない。 -->
           <p class="y400-cta">
-            <span class="y400-cta-pending" aria-disabled="true">この時代の銀座を読む</span>
-            <span class="y400-pending-note">準備中（note記事URL設定待ち）</span>
+            <span class="y400-cta-pending" aria-disabled="true"
+                  data-text-ja="この時代の銀座を読む" data-text-en="Read about Ginza in this era">この時代の銀座を読む</span>
+            <span class="y400-pending-note" data-text-ja="準備中（note記事URL設定待ち）"
+                  data-text-en="Coming Soon">準備中（note記事URL設定待ち）</span>
           </p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 4. Digital Edition：将来の販売機能に備えた独立ブロック。決済・価格・購入ボタンは今回実装しない。 -->
+  <!-- 4. Digital Edition：将来の販売機能に備えた独立ブロック。決済・価格・購入ボタンは今回実装しない。
+       2026-09-20：見出し・状態・説明文とも日英切替に対応（英文が用意されたため）。 -->
   <section id="edition" class="section y400-edition">
     <div class="container narrow">
       <p class="eyebrow">Digital Edition</p>
-      <h2 class="y400-edition-title">DIGITAL EDITION</h2>
-      <p class="y400-edition-status">Coming Soon</p>
-      <p class="lead">
+      <h2 class="y400-edition-title" data-text-ja="デジタル版" data-text-en="DIGITAL EDITION">デジタル版</h2>
+      <p class="y400-edition-status" data-text-ja="準備中" data-text-en="Coming Soon">準備中</p>
+      <p class="lead"
+         data-text-ja="GINZA 400 YEARS の作品は、今後デジタル版としての提供を予定しています。価格・購入方法は、準備が整い次第あらためてご案内します。"
+         data-text-en="Selected works from GINZA 400 YEARS will be released as digital editions in the future. Further details will be announced here.">
         GINZA 400 YEARS の作品は、今後デジタル版としての提供を予定しています。
         価格・購入方法は、準備が整い次第あらためてご案内します。
       </p>
@@ -155,10 +177,20 @@
 
 </main>
 
+<!-- フッターは本ページ限定で日英切替対応。著作権表記はもともと日本語を
+     含まないため無変更（「All Rights Reserved.」はそのまま）。
+     「日本語ページへ」（EN: Japanese Site）は本ページの言語表示を日本語へ
+     戻すための機能ボタン（別URLへは遷移しない。#y400-lang-toggle と同じ
+     applyLang ロジックをjs/main.jsから呼び出す）。id未使用のため
+     他ページの共有フッターには影響しない。 -->
 <footer class="site-footer">
   <div class="container footer-inner">
     <p class="footer-brand">GINZA WHISKERS</p>
-    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-links">
+      <a href="privacy.html" data-text-ja="プライバシーポリシー" data-text-en="Privacy Policy">プライバシーポリシー</a>
+      <button type="button" id="y400-footer-lang" class="y400-footer-lang"
+              data-text-ja="日本語ページへ" data-text-en="Japanese Site">日本語ページへ</button>
+    </p>
     <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
   </div>
 </footer>

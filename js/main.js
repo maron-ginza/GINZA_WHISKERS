@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   initLatestJournal();
-  initEraLangToggles();
+  initY400LangToggle();
 });
 
 // 「最新のジャーナル」：Project 02（Discover GINZA）が公開する疎結合フィード
@@ -140,52 +140,78 @@ function renderLatestCards(container, items) {
   });
 }
 
-// GINZA 400 YEARS（400years.html）の日本語／ENGLISH 画像切り替え。
-// .y400-lang-toggle が無いページ（他の全ページ）では何もしないため、
-// 既存機能への影響はない。
-// - 画像は data-src-ja / data-src-en を差し替えるのみ（同一作品の日英版）。
-// - alt テキストは data-alt-ja / data-alt-en があれば併せて差し替える。
-// - 「史料・史実をもとに構成したAI復元イメージです。」の注記のみ、
-//   data-text-ja / data-text-en を持つ要素（.y400-disclaimer）を同時に切り替える。
-// - 作品名・場所表記・説明文・CTA等、英訳が用意されていないテキストは
-//   翻訳を捏造せず、常に日本語表示のまま変更しない。
-function initEraLangToggles() {
-  const toggles = document.querySelectorAll(".y400-lang-toggle[data-target]");
-  if (toggles.length === 0) return;
+// GINZA 400 YEARS（400years.html）のページ共通 日本語／ENGLISH 切り替え。
+// #y400-lang-toggle が無いページ（他の全ページ）では即 return するため、
+// 既存機能・他ページへの影響はない。
+// - 対象はページ上部1か所のトグルのみ（作品ごとの個別トグルは廃止）。
+// - data-text-ja / data-text-en を持つ全要素の textContent を一括で切替
+//   （見出し・場所表記・説明文・注記・CTA・ヘッダーナビの対象4項目など）。
+// - data-html-ja / data-html-en を持つ要素は innerHTML を切替（hero-lead の
+//   <br> を保持するため。値はHTML実体参照でエスケープ済みの信頼できる
+//   静的文言のみで、ユーザー入力は含まない）。
+// - 画像（.y400-media-img）は data-src-ja/en・data-alt-ja/en を1612・1882の
+//   2枚とも同時に切り替える。
+// - document.documentElement.lang を "ja"/"en" に同期する。
+// - 選択言語は localStorage（キー: y400-lang）に保存し、次回訪問時に復元する
+//   （保存値が無い、または "en" 以外の場合は既定どおり日本語のまま）。
+function initY400LangToggle() {
+  const toggle = document.getElementById("y400-lang-toggle");
+  if (!toggle) return;
 
-  toggles.forEach((toggle) => {
-    const img = document.getElementById(toggle.dataset.target);
-    if (!img) return;
+  const STORAGE_KEY = "y400-lang";
+  const buttons = toggle.querySelectorAll(".y400-lang-btn");
 
-    const disclaimer = toggle
-      .closest(".y400-artwork-body")
-      ?.querySelector(".y400-disclaimer");
+  function applyLang(lang) {
+    document.documentElement.lang = lang;
 
-    const buttons = toggle.querySelectorAll(".y400-lang-btn");
-
-    toggle.addEventListener("click", (event) => {
-      const btn = event.target.closest(".y400-lang-btn");
-      if (!btn || !toggle.contains(btn)) return;
-
-      const lang = btn.dataset.lang === "en" ? "en" : "ja";
-
-      const nextSrc = lang === "en" ? img.dataset.srcEn : img.dataset.srcJa;
-      if (nextSrc) img.src = nextSrc;
-
-      const nextAlt = lang === "en" ? img.dataset.altEn : img.dataset.altJa;
-      if (nextAlt) img.alt = nextAlt;
-
-      if (disclaimer) {
-        const nextText =
-          lang === "en" ? disclaimer.dataset.textEn : disclaimer.dataset.textJa;
-        if (nextText) disclaimer.textContent = nextText;
-      }
-
-      buttons.forEach((b) => {
-        const isActive = b === btn;
-        b.classList.toggle("is-active", isActive);
-        b.setAttribute("aria-pressed", String(isActive));
-      });
+    document.querySelectorAll("[data-text-ja]").forEach((el) => {
+      const text = lang === "en" ? el.dataset.textEn : el.dataset.textJa;
+      if (text !== undefined) el.textContent = text;
     });
+
+    document.querySelectorAll("[data-html-ja]").forEach((el) => {
+      const html = lang === "en" ? el.dataset.htmlEn : el.dataset.htmlJa;
+      if (html !== undefined) el.innerHTML = html;
+    });
+
+    document.querySelectorAll(".y400-media-img").forEach((img) => {
+      const src = lang === "en" ? img.dataset.srcEn : img.dataset.srcJa;
+      if (src) img.src = src;
+      const alt = lang === "en" ? img.dataset.altEn : img.dataset.altJa;
+      if (alt) img.alt = alt;
+    });
+
+    buttons.forEach((b) => {
+      const isActive = b.dataset.lang === lang;
+      b.classList.toggle("is-active", isActive);
+      b.setAttribute("aria-pressed", String(isActive));
+    });
+
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (e) {
+      /* プライベートブラウズ等で保存できない場合は無視（表示自体には影響しない） */
+    }
+  }
+
+  toggle.addEventListener("click", (event) => {
+    const btn = event.target.closest(".y400-lang-btn");
+    if (!btn || !toggle.contains(btn)) return;
+    applyLang(btn.dataset.lang === "en" ? "en" : "ja");
   });
+
+  // フッターの「日本語ページへ／Japanese Site」：常に日本語表示へ戻す
+  // 機能ボタン（別URLへは遷移しない）。存在しないページでは何もしない。
+  const footerLangBtn = document.getElementById("y400-footer-lang");
+  if (footerLangBtn) {
+    footerLangBtn.addEventListener("click", () => applyLang("ja"));
+  }
+
+  let stored = null;
+  try {
+    stored = localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    /* 読み取り不可時は既定の日本語表示のまま */
+  }
+  if (stored === "en") applyLang("en");
 }

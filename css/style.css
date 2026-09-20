@@ -382,6 +382,25 @@ h1, h2, h3 {
   color: var(--color-gold-light);
 }
 
+/* 400years.html 専用：フッターの「日本語ページへ」ボタンを既存の
+   footer-links a と同じ見た目にする（ボタンの既定スタイルを解除）。 */
+.footer-links .y400-footer-lang {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-left: 16px;
+  font-family: inherit;
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color 0.25s ease;
+}
+
+.footer-links .y400-footer-lang:hover {
+  color: var(--color-gold-light);
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 860px) {
@@ -1245,6 +1264,14 @@ a.content-card:hover {
 .y400-lang-btn.is-active {
   background: var(--color-gold);
   color: var(--color-bg);
+}
+
+/* ページ共通の言語切替（ヒーロー内に1か所のみ）。既存 .y400-lang-toggle /
+   .y400-lang-btn をそのまま再利用し、配置場所（クレジット表記の直下）に
+   合わせて上マージンのみ追加する。タップ領域は .y400-lang-btn の
+   padding（10px 20px）で確保済み（実測height 38px、スマホでも押しやすい）。 */
+.y400-page-lang-toggle {
+  margin-top: 0.4em;
 }
 
 .y400-cta {
