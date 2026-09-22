@@ -3,6 +3,7 @@ import { getPayload } from 'payload'
 import { runSourceLedgerCrawl } from '../lib/crawler/runCrawl'
 import { getDiscoveredContentSummary } from '../lib/curation/discoveredContentSummary'
 import { generateSourceCandidatesFromSnapshots } from '../lib/sourceLedger/generateSourceCandidates'
+import { getPayloadWithRetry } from '../lib/util/getPayloadWithRetry'
 import config from '../payload.config'
 
 // `./p2 crawl` から呼び出すCLIエントリ。SOURCE LEDGERのenabledな情報源を巡回し、
@@ -34,7 +35,10 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run')
   const articleStage2Budget = parseBudgetArg()
 
-  const payload = await getPayload({ config })
+  // 2026-09-22: dev-pushの一過性のDROP CONSTRAINT競合（他プロセスとの同時
+  // getPayload()実行時に発生しうる）を1回だけ自動リトライする
+  // （cms/src/lib/util/getPayloadWithRetry.ts 参照）。
+  const payload = await getPayloadWithRetry(() => getPayload({ config }))
   const crawl = await runSourceLedgerCrawl(payload, { persist: !dryRun, articleStage2Budget })
   const candidates = await generateSourceCandidatesFromSnapshots(payload, { persist: !dryRun })
   // --dry-run時もDB全体の現状サマリー自体は読み取り専用のため取得できる

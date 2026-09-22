@@ -1175,9 +1175,24 @@ crawl() {
   fi
 
   echo "$RAW" | python3 "$ROOT/scripts/format_crawl_status.py" "$LOG_DIR/crawl.log"
+  # 2026-09-22修正：上記はパイプのため、pipefail未設定のこのシェルでは
+  # `echo`（常に成功）の終了コードが関数全体の戻り値になり、
+  # format_crawl_status.py が解析失敗（sys.exit(1)）していても
+  # crawl() 自体は成功（0）を返してしまい、呼び出し元（run_phase）が
+  # 失敗を検知できずリトライも行われない実バグがあった
+  # （2026-09-22 6:00の自動巡回で実際に発生：getPayload()のdev-push
+  # 一過性競合によりcrawlSources.tsが失敗＝JSON出力なしだったにも
+  # かかわらず、summary.jsonがstatus:okになった）。
+  # PIPESTATUS[1] でパイプ2番目（python3側）の終了コードを個別に取得し、
+  # 失敗時はこの関数自体も失敗として返す。
+  FORMAT_STATUS_RC=${PIPESTATUS[1]}
 
   echo "================================================"
   echo
+
+  if [ "$FORMAT_STATUS_RC" -ne 0 ]; then
+    return 1
+  fi
 }
 
 tns_import_tracks() {
@@ -2610,6 +2625,87 @@ am_run() {
   return "$RC"
 }
 
+candidate_fallback_auto() {
+  # 2026-09-22新設：候補不足時の自動フォールバック（V1 Stage3.5、マロン指示）。
+  # ①本日の候補で充足しているか確認 → ②不足なら既存A候補ボード（持ち越し含む）で
+  # 充足しているか確認 → ③それでも不足ならSWEETS・グルメに限定した登録済み公式
+  # 情報源への補完取得（matsuya-sweets-fetch等、既存の無料コマンドをそのまま
+  # 再利用・新規fetchロジックは作らない）を1回だけ実行し再判定 → ④なお不足なら
+  # 記事を作らず「候補不足」として正常終了する（記事生成・CMS保存・note転記・
+  # 公開はこの関数の責務外＝一切行わない）。
+  #
+  # 終了コード：0＝判定・必要な補完取得まで完走（結果がinsufficient_stopでも0。
+  # 「候補が無い」は異常終了ではなく正しい判定結果のため）。1＝判定自体が
+  # 実行できなかった（DB未起動・report.json不在等の技術的失敗）。
+  local DATE="${1:-$(TZ=Asia/Tokyo date '+%Y-%m-%d')}"
+
+  if ! docker info >/dev/null 2>&1 ||
+     [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+    fail "PostgreSQL が起動していません（先に ./p2 start）"
+    return 1
+  fi
+
+  # 【重要】このフェーズの生JSON出力はstdoutへ「最終結果1個だけ」を出す。
+  # morning_auto_logline.py の extract_json_object は最初に完全パースできた
+  # {...} を採用して即座に確定するため、途中経過（1回目の判定）まで
+  # そのままechoすると、フォールバックが発動したケースでも1回目（補完取得前）
+  # の結果がサマリに採用されてしまう。1回目の生JSONはログファイルにのみ書き、
+  # 人間向けの経過表示は非JSON（"---"始まり）の行だけにする。
+  echo "--- 候補不足フォールバック判定（1回目：本日新規／既存ボード） ---"
+  local RAW1
+  RAW1="$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/candidateFallbackCheck.ts "$DATE" 2>"$LOG_DIR/candidate_fallback.log")"
+  if [ -z "$RAW1" ]; then
+    fail "候補不足フォールバック判定の実行に失敗しました"
+    tail -15 "$LOG_DIR/candidate_fallback.log" 2>/dev/null
+    return 1
+  fi
+  echo "$RAW1" >>"$LOG_DIR/candidate_fallback.log"
+  local STAGE1
+  STAGE1="$(echo "$RAW1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('plan',{}).get('stage',''))" 2>/dev/null)"
+  echo "--- 1回目の判定: $STAGE1 ---"
+
+  if [ "$STAGE1" != "needs_supplementary_fetch" ]; then
+    echo "（補完取得は不要）"
+    echo "$RAW1"
+    return 0
+  fi
+
+  echo "--- 判定結果: needs_supplementary_fetch → SWEETS・グルメに限定した登録済み公式情報源への補完取得を実行 ---"
+  # 既存の無料コマンドをそのまま再利用する（新規のfetchロジックは作らない）。
+  # 1つが失敗しても他は継続する（個別コマンド自体の成功判定・リトライは
+  # 呼び出し元のmorningAutoRun.sh側run_phaseに委ねず、ここでは失敗を記録して
+  # 次へ進む＝候補不足判定を止めないことを優先）。
+  local SUPP_FAILED=0
+  for cmd in matsuya-sweets-fetch matsuya-gourmet-fetch mitsukoshi-health-check mitsukoshi-food-events-fetch sweets-detail-fetch; do
+    echo "  補完取得: ./p2 $cmd"
+    if ! (cd "$ROOT" && ./p2 "$cmd" >"$LOG_DIR/candidate_fallback_${cmd//-/_}.log" 2>&1); then
+      warn "  ./p2 $cmd が失敗しました（続行）"
+      SUPP_FAILED=$((SUPP_FAILED + 1))
+    fi
+  done
+
+  echo "--- 補完取得後、A/B/C判定を再実行（./p2 am-run、外部通信なし） ---"
+  if ! (cd "$ROOT" && ./p2 am-run >"$LOG_DIR/candidate_fallback_am_run.log" 2>&1); then
+    fail "補完取得後のam-run再実行に失敗しました"
+    tail -15 "$LOG_DIR/candidate_fallback_am_run.log" 2>/dev/null
+    return 1
+  fi
+
+  echo "--- 候補不足フォールバック判定（2回目：補完取得後） ---"
+  local RAW2
+  RAW2="$(cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/candidateFallbackCheck.ts "$DATE" --after-supplementary 2>"$LOG_DIR/candidate_fallback.log")"
+  if [ -z "$RAW2" ]; then
+    fail "補完取得後の候補不足フォールバック判定の実行に失敗しました"
+    tail -15 "$LOG_DIR/candidate_fallback.log" 2>/dev/null
+    return 1
+  fi
+  local STAGE2
+  STAGE2="$(echo "$RAW2" | python3 -c "import sys,json; print(json.load(sys.stdin).get('plan',{}).get('stage',''))" 2>/dev/null)"
+  echo "--- 最終判定結果: $STAGE2（補完取得の失敗コマンド数: $SUPP_FAILED） ---"
+  echo "$RAW2"
+  return 0
+}
+
 candidate_review() {
   # 読み取り専用・1コマンド完結の候補レビュー資料（2026-09-06）。
   # DB書き込み・AI呼び出し・ready化・記事作成・公開・push・note/Chrome/X操作は一切しない。
@@ -2694,6 +2790,10 @@ case "${1:-status}" in
   crawl)
     shift
     crawl "$@"
+    ;;
+  candidate-fallback-auto)
+    shift
+    candidate_fallback_auto "$@"
     ;;
   tns)
     shift
@@ -3133,6 +3233,21 @@ case "${1:-status}" in
     fi
     ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/morningBrief.ts "$@" )
     ;;
+  candidate-fallback-check)
+    shift
+    # 2026-09-22新設：候補不足時の自動フォールバック判定。./p2 am-run が生成した
+    # report.json を読み、施設多様性フィルタ適用後のSWEETS・その他件数から
+    # sufficient_today / sufficient_via_existing_board / needs_supplementary_fetch /
+    # insufficient_stop のいずれかを判定する。読み取り専用（DB書き込み・外部通信・
+    # 補完取得の自動実行なし）。--after-supplementary は補完取得を実施した後の
+    # 再判定であることを示すフラグ。
+    if ! docker info >/dev/null 2>&1 ||
+       [ "$(docker inspect -f '{{.State.Running}}' "$DB_CONTAINER" 2>/dev/null)" != "true" ]; then
+      fail "PostgreSQL が起動していません（先に ./p2 start）"
+      return 1 2>/dev/null || exit 1
+    fi
+    ( cd "$ROOT/cms" && node --env-file=.env --import=tsx/esm src/scripts/candidateFallbackCheck.ts "$@" )
+    ;;
   sweets-today)
     shift
     # 2026-09-13新設：本日のSWEETS候補 再抽出（独立コマンド）。SWEETS_WAGASHI専用の
@@ -3257,7 +3372,9 @@ case "${1:-status}" in
     echo "  ./p2 publishlog add --dc=<id> [--title=] [--event=] [--venue=] [--period=] [--url=] [--published-at=] [--source=]  既公開テーマ台帳（PUBLISHED_REGISTRY）への追記：DB自動照合で検知できない、DB外で公開されたとマロンが確認した案件を登録。--url指定時は該当ArticleのpublishHistoryへも書き戻しを試みる（ベストエフォート）。台帳＝MANUAL_PUBLISHED_SEEDの緊急用補助であり主経路ではない"
     echo "  ./p2 morning-brief [--limit=N] [--json]  朝刊ブリーフ：本日の公開候補を ①ビューティー ②グルメ(スイーツ含む) ③文化・アート 各1本で選定（施設集中の自動回避・重複/既記事化の除外・偏り補正）→ 候補要約＋必須ArticleFacts12項目(無い項目は「公式記載なし」)＋公式出典を1画面 → 承認/保留/却下の1操作(admin URL)＋承認後のnote下書き自動転記手順。読み取り専用・推測補完なし。.devlogs/morning/brief/ へ保存"
     echo "  ./p2 sweets-today [--exclude-facility=key1,key2] [--limit=5] [--json]  本日のSWEETS候補 再抽出：SWEETS_WAGASHI専用の候補を最大5件（既公開/既下書き/施設分散/公式情報完全度/定例イベントの前年流用防止を適用）。--exclude-facilityで施設を一時除外可（例: ginza-six,ginza-tsutaya）。確認候補0件は非0終了（優先カテゴリーが候補上位を占めない場合の自動失敗ゲート）。読み取り専用。.devlogs/morning/sweets-today/ へ保存"
-    echo "  ./p2 morning-auto  朝刊自動化を今すぐ1回手動実行（本来は毎朝6:00にlaunchdが自動実行）。crawl→sweets-detail-fetch→am-run(--fetch --register-facts --write-facts)→morning-brief を順に実行し、失敗フェーズは間隔を空けて自動再試行。ログは.devlogs/morning/auto/"
+    echo "  ./p2 candidate-fallback-check [date] [--after-supplementary]  2026-09-22新設：候補不足時のフォールバック判定（読み取り専用）。report.jsonのA候補ボードへ施設多様性フィルタ（1施設グループ1件・GINZA SIX/銀座蔦屋書店は同一グループ）を適用し、本日新規／既存ボード全体それぞれのSWEETS・その他件数からsufficient_today/sufficient_via_existing_board/needs_supplementary_fetch/insufficient_stopを判定。補完取得は実行しない（提案のみ）"
+    echo "  ./p2 candidate-fallback-auto [date]  上記判定に基づき、needs_supplementary_fetchならSWEETS・グルメ限定の登録済み公式情報源への補完取得（matsuya-sweets-fetch等の既存無料コマンド）を自動実行し再判定する。候補が無ければ記事を作らずinsufficient_stopで正常終了（捏造しない）"
+    echo "  ./p2 morning-auto  朝刊自動化を今すぐ1回手動実行（本来は毎朝6:00にlaunchdが自動実行）。crawl→sweets-detail-fetch→am-run(--fetch --register-facts --write-facts)→morning-brief→candidate-fallback-auto を順に実行し、失敗フェーズは間隔を空けて自動再試行。ログは.devlogs/morning/auto/"
     echo "  ./p2 candidate-review-server [--port=4600]  朝刊候補レビュー画面（常駐サーバー）。http://localhost:4600 を開くだけで当日候補の承認/保留/却下ができる。承認のみDB書き込み・Claude API課金1回・note転記直前パッケージ生成、他は読み取り専用。localhost限定"
     echo "  ./p2 draft-from-dc <dcId> --yes  指定した1件のDiscoveredContentだけをCORE角度で記事化（他の承認済みDCは巻き込まない）。候補レビュー画面の承認ボタンと同じロジック（手動テスト・単発生成用）"
     echo "  ./p2 review-today [--ids=..] [--port=N] [--no-open]  本日記事レビュー画面：本日生成した記事下書きをタイトル/リード/note本文全文/ArticleFacts/公式URL+確認日/X案/IG案(自動生成)/ハッシュタグ4個/挿絵注釈/WARNING を1画面表示（localhost・承認/修正/保留ボタン＋「選択内容を確定」1つ）。承認した記事だけ ./p2 review-today transfer <articleId> で note 下書きへ転記（下書きまで・公開はマロン手動）。DB書き込みは socialCopy.instagram 自動補完のみ"

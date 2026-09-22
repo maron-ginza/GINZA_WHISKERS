@@ -24,6 +24,22 @@ import config from '../payload.config'
 import { fetchArticleMetadata } from '../lib/crawler/fetchArticlePage'
 import { normalizeFloorTokens } from '../lib/crawler/normalizeVenueText'
 import { classifyUxType } from '../lib/curation/uxType'
+import {
+  classifyFailureReason,
+  loadUrlHealthRegistry,
+  recordUrlHealth,
+  saveUrlHealthRegistry,
+  shouldSkipUrl,
+} from '../lib/crawler/urlHealthRegistry'
+import path from 'node:path'
+
+// 2026-09-22: 403/404/非HTMLレスポンス等の恒久失敗URLへ毎日同じリクエストを
+// 繰り返さないよう、ファイルベースのURL健全性レジストリ（DBスキーマ変更なし）で
+// cooldown期間中はスキップする（urlHealthRegistry.ts参照）。アクセス制限の
+// 回避は行わない——ここでは「いつ・何回試すか」だけを制御する。
+// パス解決はqueueWriter.tsと同じ規約（cwd=cms/を前提にROOTを1つ上に解決）。
+const ROOT = path.resolve(process.cwd(), '..')
+const URL_HEALTH_REGISTRY_PATH = path.join(ROOT, '.devlogs', 'crawler', 'url-health-registry.json')
 
 const TARGET_SOURCE_NAMES = [
   '銀座千疋屋',
@@ -81,10 +97,15 @@ async function main() {
 
   let totalAttempted = 0
   let totalSucceeded = 0
+  let totalSkippedCooldown = 0
   const failureReasons = new Map<string, number>()
+  const nowISO = new Date().toISOString()
+  let urlHealth = loadUrlHealthRegistry(URL_HEALTH_REGISTRY_PATH)
 
   for (const source of sources) {
-    const { docs: pending } = await payload.find({
+    // cooldown中のURLをこの場で除外できるよう、予算の数倍を取得してから絞り込む
+    // （既知の恒久失敗URLに予算を無駄遣いしない。DBクエリ自体は既存のまま）。
+    const { docs: candidates } = await payload.find({
       collection: 'discovered-content',
       where: {
         and: [
@@ -93,16 +114,25 @@ async function main() {
           { curationStatus: { in: ['inbox', 'approved'] } },
         ],
       },
-      limit: PER_SOURCE_BUDGET,
+      limit: PER_SOURCE_BUDGET * 4,
       depth: 0,
       overrideAccess: true,
       sort: '-detectedAt',
     })
+    const skippedForCooldown = candidates.filter((dc) =>
+      shouldSkipUrl(urlHealth[String(dc.articleUrl ?? '')], nowISO),
+    )
+    totalSkippedCooldown += skippedForCooldown.length
+    const pending = candidates
+      .filter((dc) => !shouldSkipUrl(urlHealth[String(dc.articleUrl ?? '')], nowISO))
+      .slice(0, PER_SOURCE_BUDGET)
     if (pending.length === 0) {
-      console.log(`  [${source.name}] 対象0件（すべて取得済み、または候補なし）`)
+      const cooldownNote = skippedForCooldown.length > 0 ? `（既知の取得不能URL ${skippedForCooldown.length}件をcooldown中のためスキップ）` : ''
+      console.log(`  [${source.name}] 対象0件（すべて取得済み、または候補なし）${cooldownNote}`)
       continue
     }
-    console.log(`  [${source.name}] 対象 ${pending.length} 件（予算 ${PER_SOURCE_BUDGET} 件まで）`)
+    const cooldownNote = skippedForCooldown.length > 0 ? `／既知の取得不能URL ${skippedForCooldown.length}件はcooldown中のためスキップ` : ''
+    console.log(`  [${source.name}] 対象 ${pending.length} 件（予算 ${PER_SOURCE_BUDGET} 件まで）${cooldownNote}`)
 
     for (const dc of pending) {
       totalAttempted++
@@ -123,9 +153,32 @@ async function main() {
           overrideAccess: true,
           data: { articleFetchStatus: 'fetch_error', lastCheckedAt: new Date().toISOString() },
         })
+        // robots.txt禁止は「アクセス制限の回避をしない」対象そのものなので、
+        // cooldown対象（=このURLへの再アクセスを止める）には含めない——
+        // 単に次回以降も同じ理由でスキップされ続けるだけで害はないが、
+        // 意味上は「恒久失敗」ではなく「そもそも取得しない」ため区別しておく。
+        if (!fetched.blockedByRobots) {
+          const { category, detail } = classifyFailureReason({
+            httpStatus: fetched.httpStatus,
+            contentTypeMismatch: (fetched.errorMessage ?? '').includes('非HTMLレスポンス'),
+            errorMessage: fetched.errorMessage,
+          })
+          urlHealth = recordUrlHealth(urlHealth, url, {
+            status: 'unreachable',
+            reasonCategory: category,
+            reasonDetail: detail,
+            lastCheckedAt: nowISO,
+            sourceId: source.sourceId as string,
+          })
+        }
         console.log(`    ✗ ${url} → ${reason}`)
         continue
       }
+      urlHealth = recordUrlHealth(urlHealth, url, {
+        status: 'ok',
+        lastCheckedAt: nowISO,
+        sourceId: source.sourceId as string,
+      })
       totalSucceeded++
       const title = fetched.title ?? String(dc.title ?? '')
       const excerpt = fetched.excerpt
@@ -161,11 +214,16 @@ async function main() {
     }
   }
 
+  if (!DRY) {
+    saveUrlHealthRegistry(URL_HEALTH_REGISTRY_PATH, urlHealth)
+  }
+
   console.log(
     JSON.stringify({
       attempted: totalAttempted,
       succeeded: totalSucceeded,
       failed: totalAttempted - totalSucceeded,
+      skippedCooldown: totalSkippedCooldown,
       failureReasons: Object.fromEntries(failureReasons),
     }),
   )

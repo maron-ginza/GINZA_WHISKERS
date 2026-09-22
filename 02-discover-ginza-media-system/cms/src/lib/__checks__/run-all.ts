@@ -51,6 +51,7 @@ import { suite as eventEndBoundary } from './eventEndBoundary.check'
 import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
 import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
 import { suite as factVerification, runFetchOutcomeTests } from './factVerification.check'
+import { runGetPayloadWithRetryTests } from '../util/getPayloadWithRetry.check'
 import { suite as p0Morning } from '../morning/verifyP0Morning.check'
 import { suite as morningThreeSlots } from '../morning/selectMorningThreeSlots.check'
 import { suite as candidateBoard } from '../morning/candidateBoard.check'
@@ -58,6 +59,9 @@ import { suite as selectionRecord } from '../morning/selectionRecord.check'
 import { suite as noteDraftFromSelection } from '../morning/noteDraftFromSelection.check'
 import { suite as bridgeNoteDraftsToArticles } from '../morning/bridgeNoteDraftsToArticles.check'
 import { suite as atomicWrite } from '../util/atomicWrite.check'
+import { suite as urlHealthRegistry } from '../crawler/urlHealthRegistry.check'
+import { suite as facilityDiversityFilter } from '../morning/facilityDiversityFilter.check'
+import { suite as candidateFallbackPlan } from '../morning/candidateFallbackPlan.check'
 import { suite as autoArticleFacts } from '../morning/autoArticleFacts.check'
 import { suite as parseMatsuyaSitemap } from '../crawler/parseMatsuyaSitemap.check'
 import { suite as extractMatsuyaGourmetEvents } from '../crawler/extractMatsuyaGourmetEvents.check'
@@ -129,6 +133,9 @@ const results: SuiteResult[] = [
   noteDraftFromSelection(),
   bridgeNoteDraftsToArticles(),
   atomicWrite(),
+  urlHealthRegistry(),
+  facilityDiversityFilter(),
+  candidateFallbackPlan(),
   autoArticleFacts(),
   parseMatsuyaSitemap(),
   extractMatsuyaGourmetEvents(),
@@ -151,5 +158,7 @@ void (async () => {
   // 実ネットワークに触れず弾く経路のみ（fetchOfficialSignals の fetchOutcome）。
   const f = await runFetchOutcomeTests()
   results.push({ suite: 'factVerification fetchOutcome(async, no-network)', pass: f.pass, fail: f.fail, failures: f.failures })
+  const g = await runGetPayloadWithRetryTests()
+  results.push({ suite: 'getPayloadWithRetry', pass: g.pass, fail: g.fail, failures: g.failures })
   reportAndExit(results)
 })()

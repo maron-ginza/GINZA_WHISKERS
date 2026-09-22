@@ -7,7 +7,7 @@
 
 import { runSuite, type CheckCase } from '../__checks__/_harness'
 import { imagePreflight } from './imagePreflight'
-import { assessCandidate, type AssessCandidateInput } from './assessCandidate'
+import { assessCandidate, resolveEligibilityEventPeriod, type AssessCandidateInput } from './assessCandidate'
 import { buildMorningReport, renderMorningReport } from './buildMorningReport'
 import {
   extractJsonLd,
@@ -292,7 +292,11 @@ const cases: CheckCase[] = [
             eventStartAt: null,
             eventEndAt: null,
           }),
-          facts: readyFacts(),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴い、facts側もこのDC自身の
+          // 期間が未確認であることと整合させる（eventDateISO未設定）——実運用でも、期間の
+          // 明記が無いDCのArticleFactsはgeneric/イベント系テンプレならreadyにできない
+          // （evaluateReadyGateがeventDateISOを必須にするため）。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(a.verdict === 'B', `常設サービス（signalなし）は期待 B / 実際 ${a.verdict} reasons=${a.reasons.join('|')}`)
@@ -438,6 +442,9 @@ const cases: CheckCase[] = [
             eventEndAt: null,
           }),
           factKind: 'unknown',
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする
+          // （このDC自身の期間が未確認であることと整合させる）。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(dc34.verdict !== 'A', `DC#34クラスは期待 B（実際 ${dc34.verdict}）`)
@@ -466,6 +473,8 @@ const cases: CheckCase[] = [
             eventStartAt: null,
             eventEndAt: null,
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(dc119.verdict !== 'A', `DC#119クラスは期待 B（実際 ${dc119.verdict}）`)
@@ -491,6 +500,8 @@ const cases: CheckCase[] = [
             eventStartAt: null,
             eventEndAt: null,
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(dc743.verdict !== 'A', `DC#743クラスは現在販売中を確認できないため期待 B（実際 ${dc743.verdict}）`)
@@ -504,6 +515,8 @@ const cases: CheckCase[] = [
             eventStartAt: null,
             eventEndAt: null,
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(dc1132.verdict !== 'A', `DC#1132クラスは現在販売中を確認できないため期待 B（実際 ${dc1132.verdict}）`)
@@ -577,6 +590,8 @@ const cases: CheckCase[] = [
             // last_checked_at は re-crawl で「新しく」なっている想定（DC#40の実データと同じ状況）
             lastCheckedAt: '2026-09-15T21:41:36.966Z',
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
           now: NOW_0916,
         }),
       )
@@ -598,6 +613,8 @@ const cases: CheckCase[] = [
             eventEndAt: null,
             lastCheckedAt: '2026-09-15T21:00:00Z',
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
           now: NOW_0916,
         }),
       )
@@ -624,6 +641,8 @@ const cases: CheckCase[] = [
             eventEndAt: null,
             lastCheckedAt: '2026-09-15T21:00:00Z',
           }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
           now: NOW_0916,
         }),
       )
@@ -818,6 +837,8 @@ const cases: CheckCase[] = [
       const dc294 = assessCandidate(
         mk({
           dc: baseDc({ title: '好評開催中！「北海道物産展」のおすすめ品', excerpt: null, eventStartAt: null, eventEndAt: null }),
+          // 2026-09-21改訂：ArticleFactsフォールバック新設に伴いeventDateISOも未設定にする。
+          facts: readyFacts({ eventDateISO: null, eventDate: null }),
         }),
       )
       assert(dc294.verdict === 'B', `DC#294クラスは期待 B / 実際 ${dc294.verdict}`)
@@ -1883,6 +1904,111 @@ const cases: CheckCase[] = [
       const r = mapDiscoveredContentToEventFields(dc, { facts, now: NOW, templateType: 'exhibition' })
       assert(r.variant === 'exhibition', `exhibition バリアント（実際 ${r.variant}）`)
       assert(r.templateEligible === true, `eligible（実際 ${r.templateEligible} / missing=${JSON.stringify(r.missing)}）`)
+    },
+  },
+
+  // ---------- resolveEligibilityEventPeriod（2026-09-21新設・マロン指示：現在性確認の
+  // ArticleFactsフォールバック。実データDC#624の再発防止修正） ----------
+  {
+    name: 'resolveEligibilityEventPeriod: DC.eventStartAt/eventEndAtが設定済みなら、それをそのまま使う（ArticleFactsは参照しない）',
+    fn: () => {
+      const r = resolveEligibilityEventPeriod(
+        { eventStartAt: PAST_ISO, eventEndAt: PAST_ISO },
+        readyFacts({ eventDateISO: FUTURE_ISO }),
+      )
+      assert(r.eventStartAt === PAST_ISO && r.eventEndAt === PAST_ISO, `DC自身の値を優先すべき（実際 ${JSON.stringify(r)}）——ArticleFactsのeventDateISOで上書きされてはいけない`)
+    },
+  },
+  {
+    name: 'resolveEligibilityEventPeriod: DCが両方未設定・ArticleFactsがready化済みかつeventDateISOありならフォールバックする（DC#624実例）',
+    fn: () => {
+      const r = resolveEligibilityEventPeriod(
+        { eventStartAt: null, eventEndAt: null },
+        readyFacts({ eventDateISO: FUTURE_ISO }),
+      )
+      assert(r.eventStartAt === FUTURE_ISO && r.eventEndAt === FUTURE_ISO, `ready ArticleFactsのeventDateISOへフォールバックすべき（実際 ${JSON.stringify(r)}）`)
+    },
+  },
+  {
+    name: 'resolveEligibilityEventPeriod: DCが両方未設定でもArticleFactsがdraft（未ready）なら使わない（推測値を使わない）',
+    fn: () => {
+      const r = resolveEligibilityEventPeriod(
+        { eventStartAt: null, eventEndAt: null },
+        readyFacts({ enrichmentStatus: 'draft', eventDateISO: FUTURE_ISO }),
+      )
+      assert(r.eventStartAt === null && r.eventEndAt === null, `draftのArticleFactsをフォールバックに使ってはいけない（実際 ${JSON.stringify(r)}）`)
+    },
+  },
+  {
+    name: 'resolveEligibilityEventPeriod: DC両方未設定・ArticleFactsはready化済みだがeventDateISO未設定なら null/null のまま（推測値を使わない）',
+    fn: () => {
+      const r = resolveEligibilityEventPeriod(
+        { eventStartAt: null, eventEndAt: null },
+        readyFacts({ eventDateISO: null }),
+      )
+      assert(r.eventStartAt === null && r.eventEndAt === null, `eventDateISO未確認時はフォールバックしてはいけない（実際 ${JSON.stringify(r)}）`)
+    },
+  },
+  {
+    name: 'A候補への昇格（DC#624実例の再現）: DC.eventStartAt/eventEndAtが未設定でも、ready化済みArticleFacts.eventDateISOがあればA判定になる',
+    fn: () => {
+      const dc = baseDc({
+        title: '中原淳一フェア',
+        excerpt: '教文館エインカレムで開催されるフェア。',
+        eventStartAt: null,
+        eventEndAt: null,
+      })
+      const facts = readyFacts({ eventDateISO: FUTURE_ISO })
+      const a = assessCandidate(mk({ dc, facts }))
+      assert(a.verdict === 'A', `期待 A / 実際 ${a.verdict}（reasons=${JSON.stringify(a.reasons)}）`)
+    },
+  },
+  {
+    // 実データDC#780の実例：発売日（2026-09-01）のみ確認済み・終了日は公式記載なし
+    // （saleAvailability='no_period_stated'）。eventDateISOフォールバックの対象には
+    // 含めていない（DC#370クラスの既存必須回帰＝2026-09-14決定「no_period_statedは
+    // 候補提示のAには現在の販売状況の確認も必要としB」と正面から矛盾するため、
+    // 2026-09-21時点ではA化を保留し、DC#780もその既存方針どおりBに留まることを
+    // 確認する回帰テストとして残す。マロンへ別途確認中。
+    name: 'B（現状維持・確認事項）: DC#780クラス——発売日のみ確認済み・saleAvailability=no_period_statedのsale商品は、DC#370クラスの既存方針（2026-09-14）どおりBのまま（eventDateISOフォールバック対象外）',
+    fn: () => {
+      const dc = baseDc({
+        title: 'ザ・ギンザ リバイタライザー ｎ',
+        excerpt: '内側から光を放つ、つや肌を叶えるクリーム。',
+        eventStartAt: null,
+        eventEndAt: null,
+      })
+      const facts = readyFacts({
+        eventDateISO: null,
+        eventDate: '2026年9月1日（火）発売',
+        saleAvailability: 'no_period_stated',
+      })
+      const a = assessCandidate(mk({ dc, facts, factKind: 'product_news' }))
+      assert(a.verdict !== 'A', `no_period_statedのsale商品はDC#370クラスの既存方針どおりAにしない（実際 ${a.verdict}）`)
+    },
+  },
+  {
+    name: '未確認B候補は誤って昇格しない: DC両方未設定・ArticleFactsはready化済みだがeventDateISO未確認なら現在性を確認できずB',
+    fn: () => {
+      const dc = baseDc({
+        title: '銀座の新商品のご案内',
+        excerpt: '新商品のお知らせです。',
+        eventStartAt: null,
+        eventEndAt: null,
+      })
+      const facts = readyFacts({ eventDateISO: null, eventDate: null })
+      const a = assessCandidate(mk({ dc, facts }))
+      assert(a.verdict !== 'A', `eventDateISO・saleAvailabilityとも未確認のままAに昇格してはいけない（実際 ${a.verdict}）`)
+    },
+  },
+  {
+    name: '未確認B候補は誤って昇格しない: ArticleFactsがdraft（未ready）のままではフォールバックせずB（articleFactsNotReadyの既存ゲートが先に効く）',
+    fn: () => {
+      const dc = baseDc({ eventStartAt: null, eventEndAt: null })
+      const facts = readyFacts({ enrichmentStatus: 'draft', eventDateISO: FUTURE_ISO })
+      const a = assessCandidate(mk({ dc, facts }))
+      assert(a.verdict !== 'A', `未readyのArticleFactsでAに昇格してはいけない（実際 ${a.verdict}）`)
+      assert(a.reasons.some((r) => r.includes('articleFactsNotReady')), `articleFactsNotReadyの理由が含まれるべき（実際 ${JSON.stringify(a.reasons)}）`)
     },
   },
 ]

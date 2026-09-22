@@ -156,7 +156,7 @@ rm -f "$DB_TMP"
 
 if [ "$DB_OK" -ne 1 ]; then
   echo "❌ PostgreSQL/Docker が起動できませんでした。後続フェーズは実行せず終了します。"
-  python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --fatal "db起動失敗" > "$SUMMARY_JSON"
+  python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" --fatal "db起動失敗" > "$SUMMARY_JSON"
   cat "$SUMMARY_JSON"
   exit 1
 fi
@@ -178,7 +178,12 @@ run_phase "mitsukoshi_health_check" ./p2 mitsukoshi-health-check
 run_phase "mitsukoshi_food_events_fetch" ./p2 mitsukoshi-food-events-fetch
 run_phase "am_run" ./p2 am-run --fetch --register-facts --write-facts
 run_phase "morning_brief" ./p2 morning-brief --json
+# 2026-09-22新設（マロン指示：候補不足時の自動フォールバック）：本日のA候補が
+# 不足（SWEETS0件、または合計3件未満）なら既存ボード（持ち越し含む）を確認し、
+# それでも不足ならSWEETS・グルメ限定の登録済み公式情報源へ1回だけ補完取得する。
+# なお不足なら記事を作らず insufficient_stop で正常終了する（捏造しない）。
+run_phase "candidate_fallback" ./p2 candidate-fallback-auto "$DATE"
 
-python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" > "$SUMMARY_JSON"
+python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" > "$SUMMARY_JSON"
 echo "=== morning-auto $DATE 完了。サマリ: $SUMMARY_JSON ==="
 cat "$SUMMARY_JSON"

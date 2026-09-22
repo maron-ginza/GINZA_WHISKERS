@@ -176,6 +176,58 @@ function isSaleAvailabilityConfirmed(saleAvailability: string | null | undefined
   return saleAvailability === 'has_end_date' || saleAvailability === 'ongoing_no_end_stated'
 }
 
+/**
+ * 現在性確認（evaluateTargetOrDiscoveryEligibility）用の開催・販売期間を解決する
+ * （2026-09-21、マロン指示：assessCandidate.tsの根本修正・再発防止）。
+ *
+ * 優先順位：
+ *   1. DiscoveredContent.eventStartAt / eventEndAt（構造化データ）。どちらか一方でも
+ *      あればそれをそのまま使う——ArticleFactsは参照しない。
+ *   2. 両方とも未設定のときに限り、**ready化済み**（enrichmentStatus='ready'）の
+ *      ArticleFacts.eventDateISO をフォールバックとして使う（開始・終了の両方へ同じ
+ *      値を渡す——hasExplicitPeriodSignal は「いずれか一方でもあれば true」の判定の
+ *      ため、単一の確認済み日付でも「現在性を確認できる」ことを表現できる）。
+ *   3. draft/none/withdrawnのArticleFacts、またはeventDateISO未設定のready
+ *      ArticleFactsは使わない（推測値を使わない・フォールバックなし＝null/null）。
+ *
+ * 【2026-09-21・実データで確認した副作用】ArticleFacts.eventDateISOは本関数以外に、
+ * assessCandidate内の開催終了判定（dc.eventEndAt ?? dc.eventStartAt ??
+ * facts?.eventDateISO）でも「終了日相当」として直接読まれる（DBの生値を参照する、
+ * 本関数の戻り値とは無関係の別ロジック）。DC#780（発売日のみ確認済み・終了日は公式
+ * 記載なし）でeventDateISOに発売日を設定したところ、この別ロジックが誤って「終了済み」
+ * と判定した実例があったため、終了日が無いことが確認済みの候補にはArticleFacts.
+ * eventDateISOを設定しない（DC#780自身のArticleFactsではeventDateISOを未設定のまま
+ * 保持している）。
+ *
+ * 【2026-09-21・検討したが不採用】eventDateISOが無くてもsaleAvailability
+ * （'ongoing_no_end_stated'／'no_period_stated'）を根拠に現在性シグナルとして使う案を
+ * 検討したが、'no_period_stated' は2026-09-14の既存決定（DC#370クラス、
+ * factVerification.check.ts「toFactsLike ラウンドトリップ」）で「候補提示のAには
+ * 現在の販売状況の確認も必要」として明示的にB判定に留める方針が確定済みであり、単純に
+ * A化すると既存の必須回帰テストと正面から矛盾する。DC#780もsaleAvailability=
+ * no_period_statedであるため、このフォールバックの対象には**含めていない**
+ * （2026-09-21時点でDC#780のA化は保留・マロンへ確認事項として報告）。
+ *
+ * enrichmentStatus='ready' は ArticleFacts.applyArticleFactsReadyGate（ログイン済み
+ * 人間の操作、または6時処理の決定論的自動導出のいずれかのみが遷移させられる）を
+ * 通過した値のみが持つ——「公式確認済み」の既存の信頼境界をそのまま利用する。
+ * DiscoveredContent自身のスキーマ・データはここでは一切変更しない（並行レイヤー
+ * 設計を維持。呼び出し元へ返すだけで書き込みはしない）。
+ */
+export function resolveEligibilityEventPeriod(
+  dc: { eventStartAt?: string | null; eventEndAt?: string | null },
+  facts: ArticleFactsLike | undefined,
+): { eventStartAt: string | null; eventEndAt: string | null } {
+  if (dc.eventStartAt || dc.eventEndAt) {
+    return { eventStartAt: dc.eventStartAt ?? null, eventEndAt: dc.eventEndAt ?? null }
+  }
+  if (facts?.enrichmentStatus === 'ready' && facts?.eventDateISO) {
+    const iso = String(facts.eventDateISO)
+    return { eventStartAt: iso, eventEndAt: iso }
+  }
+  return { eventStartAt: null, eventEndAt: null }
+}
+
 /** サイトナビ由来のノイズを避けた表示用タイトル */
 function displayTitleOf(title: string): string {
   const parts = title.split(/\s*\|\s*/).map((s) => s.trim()).filter(Boolean)
@@ -334,6 +386,17 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     // 近似重複（同一ブランド・同一会場、直近14日以内）は event/product_news/unknown 共通で
     // A適格判定そのものをブロックする安全条件として維持する（targetOrDiscoveryEligibility 内）。
     const recentDupBlocks = !!input.recentBrandVenueDuplicate?.isDuplicate
+    // 【2026-09-21改訂・マロン指示：現在性確認のArticleFactsフォールバック】
+    // 現在性確認（evaluateCurrencyConfirmation／evaluateDiscoverySignal）は、まず
+    // DiscoveredContent.eventStartAt/eventEndAt（構造化データ）を参照する。両方とも
+    // 未設定の場合に限り、**ready化済み（enrichmentStatus='ready'）のArticleFacts**の
+    // eventDateISO（人間または6時処理の決定論的自動導出のいずれかが確認済みの機械日付。
+    // ArticleFacts.applyArticleFactsReadyGate が両経路以外での ready 遷移を拒否するため、
+    // ready＝公式確認済みという既存の信頼境界をそのまま利用する）をフォールバックとして
+    // 使う。draft/none/withdrawn のArticleFactsは使わない（推測値を使わない）。
+    // DiscoveredContent自身のスキーマ・データは一切変更しない（ArticleFactsの並行
+    // レイヤー設計を維持）。
+    const eligibilityPeriod = resolveEligibilityEventPeriod(dc, facts)
     const eligibility = evaluateTargetOrDiscoveryEligibility({
       title: dc.title ?? null,
       venue: dc.venue ?? null,
@@ -342,8 +405,8 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       sourceSiteName: dc.sourceSiteName ?? null,
       contentType: dc.contentType ?? null,
       factKind: input.factKind ?? 'event',
-      eventStartAt: dc.eventStartAt ?? null,
-      eventEndAt: dc.eventEndAt ?? null,
+      eventStartAt: eligibilityPeriod.eventStartAt,
+      eventEndAt: eligibilityPeriod.eventEndAt,
       expired,
       ginzaRelevant,
       hasTraceableSource,
