@@ -38,6 +38,13 @@ export interface DiscoveredContentLike {
   articleUrl?: string | null
   /** sourceSite リレーションの name を解決したもの */
   sourceSiteName?: string | null
+  /**
+   * 【2026-09-22追加】収集方法。'field_material'（マロン現地収集資料）は
+   * articleUrlを持たない代わりに sourceDocumentId/sourcePage/sourceMaterialHash等
+   * （DiscoveredContent側）で出典を追跡できる——hasTraceableSource判定
+   * （assessCandidate.ts）で articleUrl の代替として扱う。
+   */
+  collectionMethod?: string | null
   publishedAt?: string | null
   contentUpdatedAt?: string | null
   eventStartAt?: string | null

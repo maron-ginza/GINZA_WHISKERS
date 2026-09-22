@@ -252,7 +252,14 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   const verifiedAt = typeof dc.lastCheckedAt === 'string' ? dc.lastCheckedAt : undefined
 
   // --- 決定的な素性 ---
-  const hasTraceableSource = /^https?:\/\/\S+$/.test(sourceUrl)
+  // 【2026-09-22追加】collectionMethod='field_material'（マロン現地収集資料）は
+  // articleUrlを持たない設計のため、URL正規表現だけでは常にfalseになってしまう。
+  // field_materialはDiscoveredContent側のbeforeValidateフック
+  // （fieldMaterialProvenance.ts）でsourceDocumentId/sourcePage/
+  // sourceMaterialHash等の出典項目が必須になっているため、その存在自体を
+  // 「追跡可能な出典」とみなす（URLの代わりにPDFページ番号・ハッシュで
+  // 追跡できる、という意味で同等に扱う）。
+  const hasTraceableSource = /^https?:\/\/\S+$/.test(sourceUrl) || dc.collectionMethod === 'field_material'
 
   // 銀座関連性：情報源名だけで通さない。個別記事のタイトル・会場・URL を確認し、
   // 銀座外の特定支店（◯◯テラス店 等）・市区の明記があれば除外する（推測しない）。

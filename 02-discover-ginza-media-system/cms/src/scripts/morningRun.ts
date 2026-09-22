@@ -157,6 +157,7 @@ export function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
     title: (dc.title as string | null) ?? null,
     excerpt: (dc.excerpt as string | null) ?? null,
     articleUrl: (dc.articleUrl as string | null) ?? null,
+    collectionMethod: (dc.collectionMethod as string | null) ?? null,
     sourceSiteName,
     publishedAt: (dc.publishedAt as string | null) ?? null,
     contentUpdatedAt: (dc.contentUpdatedAt as string | null) ?? null,
@@ -965,6 +966,7 @@ async function main(): Promise<void> {
             eventStartAt: dcLike.eventStartAt ?? null,
             eventEndAt: dcLike.eventEndAt ?? null,
             category: autoCategory,
+            collectionMethod: dcLike.collectionMethod ?? null,
           })
           if (auto.eligible && auto.payload) {
             try {

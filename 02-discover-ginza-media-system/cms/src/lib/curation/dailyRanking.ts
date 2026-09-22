@@ -231,7 +231,8 @@ export async function getDailyEditorialDeskRanking(payload: Payload, options: Ge
       },
       memberCount: cluster.memberIds.length,
       memberIds: cluster.memberIds,
-      representativeUrl: representative.articleUrl,
+      // 2026-09-22: field_material（現地収集資料）はarticleUrlがnullになりうる。
+      representativeUrl: representative.articleUrl ?? '',
       inclusionReasons,
       // 施設多様性パス実行前のプレースホルダー。下記で必ず上書きする。
       pureScoreRank: 0,

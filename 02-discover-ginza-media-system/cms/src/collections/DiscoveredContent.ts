@@ -23,6 +23,7 @@ import {
   VISIT_STYLE_VALUES,
 } from '../lib/curation/types'
 import { UX_TYPE_LABELS, UX_TYPES } from '../lib/curation/uxType'
+import { validateDiscoveredContentSourceFields } from '../lib/crawler/fieldMaterialProvenance'
 
 function toOptions<T extends string>(values: readonly T[], labels: Record<T, string>) {
   return values.map((value) => ({ label: labels[value], value }))
@@ -89,7 +90,16 @@ export const DiscoveredContent: CollectionConfig = {
   // (sourceSite, articleUrl)の組み合わせが重複判定キー。DBレベルでも一意性を
   // 強制することで、並行実行等による重複行の作成を防ぐ（アプリ側でも
   // 事前find-then-createで冪等性を担保するが、二重の防衛ライン）。
-  indexes: [{ fields: ['sourceSite', 'articleUrl'], unique: true }],
+  // 【2026-09-22追加】現地収集資料（collectionMethod='field_material'）は
+  // articleUrlを持たない（null）ため、代わりに(sourceSite, contentFingerprint)
+  // を重複判定キーとする第2のユニーク制約を追加した。PostgresはUNIQUE制約上
+  // NULLを「distinct」として扱うため、articleUrl=null の行同士・
+  // contentFingerprint=null の行同士はこの制約と衝突しない
+  // （＝両方式が同じテーブルに安全に共存できる）。
+  indexes: [
+    { fields: ['sourceSite', 'articleUrl'], unique: true },
+    { fields: ['sourceSite', 'contentFingerprint'], unique: true },
+  ],
   fields: [
     {
       name: 'sourceSite',
@@ -103,9 +113,88 @@ export const DiscoveredContent: CollectionConfig = {
       name: 'articleUrl',
       label: 'Article/Event URL（正規化後）',
       type: 'text',
-      required: true,
+      // 【2026-09-22】required:true を外し、collectionMethod別の条件付き必須へ
+      // 変更した（下記 beforeValidate フック参照）。web_crawl（既定）は従来どおり
+      // 必須のまま——ここでの緩和は現地収集資料（field_material）のみに適用される。
       index: true,
-      admin: { description: '重複判定キー。lib/crawler/normalizeUrl.tsで正規化済み' },
+      admin: {
+        description:
+          '重複判定キー（collectionMethod=web_crawl の場合は必須）。lib/crawler/normalizeUrl.tsで正規化済み。' +
+          'collectionMethod=field_material の場合は空欄可——代わりにcontentFingerprintで重複判定する。',
+      },
+    },
+    {
+      name: 'collectionMethod',
+      label: '収集方法',
+      type: 'select',
+      dbName: 'dc_collection_method',
+      defaultValue: 'web_crawl',
+      options: [
+        { label: 'Web巡回（既定）', value: 'web_crawl' },
+        { label: '現地収集資料（紙資料・写真・チラシ等）', value: 'field_material' },
+      ],
+      admin: {
+        description:
+          'web_crawl＝従来どおりSOURCE LEDGERのWeb巡回で発見。field_material＝マロンが現地で収集した' +
+          '紙資料・写真・チラシ等（Web URLを持たない）。field_materialの場合は下記の出典項目が必須になる。',
+      },
+    },
+    {
+      name: 'sourceDocumentId',
+      label: '現地収集資料ID',
+      type: 'text',
+      index: true,
+      admin: {
+        description:
+          'collectionMethod=field_materialの場合に必須。同一資料（例：特定のPDF冊子）を横断して識別する' +
+          '安定した slug（例: autumn-ginza-2026-booklet）。',
+      },
+    },
+    {
+      name: 'sourcePage',
+      label: '資料内ページ番号',
+      type: 'text',
+      admin: { description: 'collectionMethod=field_materialの場合に必須。例: p.6-7' },
+    },
+    {
+      name: 'contentFingerprint',
+      label: 'コンテンツ指紋（現地収集資料の重複判定キー）',
+      type: 'text',
+      index: true,
+      admin: {
+        readOnly: true,
+        description:
+          'collectionMethod=field_materialの場合に必須。sourceDocumentId・sourcePage・正式名称等から' +
+          'lib/crawler/fieldMaterialProvenance.ts の computeContentFingerprint で機械的に計算する（手入力しない）。',
+      },
+    },
+    {
+      name: 'sourceMaterialName',
+      label: '元資料名',
+      type: 'text',
+      admin: { description: 'collectionMethod=field_materialの場合に必須。例: AUTUMN GINZA 2026' },
+    },
+    {
+      name: 'sourceMaterialHash',
+      label: '元資料ファイルのSHA-256ハッシュ',
+      type: 'text',
+      admin: { description: 'collectionMethod=field_materialの場合に必須。ファイル同一性の確認用。' },
+    },
+    {
+      name: 'sourceMaterialLocation',
+      label: '元資料の保存場所',
+      type: 'text',
+      admin: {
+        description:
+          'collectionMethod=field_materialの場合に必須。リポジトリルートからの相対パス' +
+          '（例: media/manual-source-inbox/autumn-ginza-2026/オータムギンザ.pdf）。元ファイル自体はgit管理外。',
+      },
+    },
+    {
+      name: 'collectedBy',
+      label: '収集者',
+      type: 'text',
+      admin: { description: 'collectionMethod=field_materialの場合に必須。例: Maron' },
     },
     {
       name: 'rawUrl',
@@ -405,6 +494,27 @@ export const DiscoveredContent: CollectionConfig = {
     // 使うのはcurationStatusのみのため、editorial（Sources.ts）ほど複雑な
     // マージ処理は不要——beforeChangeで直接curationStatusの遷移だけをチェックする。
     beforeChange: [
+      // 【2026-09-22追加】collectionMethod別の出典必須項目チェック（articleUrl
+      // のrequired:true撤去に伴う代替バリデーション）。純粋関数
+      // validateDiscoveredContentSourceFields に委譲し、二重実装しない。
+      ({ data, originalDoc }) => {
+        const merged = { ...(originalDoc ?? {}), ...data }
+        const result = validateDiscoveredContentSourceFields({
+          collectionMethod: merged.collectionMethod ?? null,
+          articleUrl: merged.articleUrl ?? null,
+          sourceDocumentId: merged.sourceDocumentId ?? null,
+          sourcePage: merged.sourcePage ?? null,
+          contentFingerprint: merged.contentFingerprint ?? null,
+          sourceMaterialName: merged.sourceMaterialName ?? null,
+          sourceMaterialHash: merged.sourceMaterialHash ?? null,
+          sourceMaterialLocation: merged.sourceMaterialLocation ?? null,
+          collectedBy: merged.collectedBy ?? null,
+        })
+        if (!result.valid) {
+          throw new Error(`DiscoveredContent の出典項目が不正です: ${result.errors.join(' / ')}`)
+        }
+        return data
+      },
       async ({ data, originalDoc, req }) => {
         const prevStatus: CurationState | undefined = originalDoc?.curationStatus
         const nextStatus: CurationState | undefined = data.curationStatus ?? prevStatus

@@ -62,6 +62,7 @@ import { suite as atomicWrite } from '../util/atomicWrite.check'
 import { suite as urlHealthRegistry } from '../crawler/urlHealthRegistry.check'
 import { suite as facilityDiversityFilter } from '../morning/facilityDiversityFilter.check'
 import { suite as candidateFallbackPlan } from '../morning/candidateFallbackPlan.check'
+import { suite as fieldMaterialProvenance } from '../crawler/fieldMaterialProvenance.check'
 import { suite as autoArticleFacts } from '../morning/autoArticleFacts.check'
 import { suite as parseMatsuyaSitemap } from '../crawler/parseMatsuyaSitemap.check'
 import { suite as extractMatsuyaGourmetEvents } from '../crawler/extractMatsuyaGourmetEvents.check'
@@ -136,6 +137,7 @@ const results: SuiteResult[] = [
   urlHealthRegistry(),
   facilityDiversityFilter(),
   candidateFallbackPlan(),
+  fieldMaterialProvenance(),
   autoArticleFacts(),
   parseMatsuyaSitemap(),
   extractMatsuyaGourmetEvents(),

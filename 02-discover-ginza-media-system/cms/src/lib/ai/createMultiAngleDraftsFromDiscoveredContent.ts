@@ -153,7 +153,11 @@ export async function createMultiAngleDraftsFromDiscoveredContent(
   const { included, skipped, warnings } = await generateMultiAngleArticleDrafts({
     sourceText: [doc.title, doc.excerpt].filter(Boolean).join('\n'),
     sourceName,
-    sourceUrl: doc.articleUrl,
+    // 2026-09-22: articleUrlはcollectionMethod=field_materialの現地収集資料では
+    // nullになりうる（DiscoveredContent.tsのスキーマ変更）。このパス自体は
+    // 既存のWeb記事生成フローのため、nullの場合は空文字にフォールバックする
+    // （field_material候補をここに通す場合は別途対応が必要——現時点では未対応）。
+    sourceUrl: doc.articleUrl ?? '',
     venue: doc.venue ?? undefined,
     period: period ?? undefined,
     // Human Editor Review P0-1の原則（週次フローと同じ）：システムが実際に

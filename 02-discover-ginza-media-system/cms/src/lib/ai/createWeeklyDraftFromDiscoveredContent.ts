@@ -72,7 +72,9 @@ export async function createWeeklyDraftFromDiscoveredContent(
       discoveredContentId: doc.id,
       sourceText: [doc.title, doc.excerpt].filter(Boolean).join('\n'),
       sourceName,
-      sourceUrl: doc.articleUrl,
+      // 2026-09-22: field_material（現地収集資料）はarticleUrlがnullになりうる。
+      // 週次フローは既存のWeb記事のみ対象のため空文字へフォールバック。
+      sourceUrl: doc.articleUrl ?? '',
       venue: doc.venue ?? undefined,
       period: period ?? undefined,
       // Human Editor Review P0-1：システムが実際に確認した日時のみを使う

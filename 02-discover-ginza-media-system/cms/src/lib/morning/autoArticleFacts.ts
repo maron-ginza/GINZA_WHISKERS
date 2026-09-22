@@ -53,6 +53,14 @@ export interface AutoArticleFactsInput {
   eventEndAt: string | null
   /** Stage 2 で確定済みの18カテゴリー（あれば hashtags に1件追加するだけ。無くても eligible は変わらない） */
   category?: string | null
+  /**
+   * 【2026-09-22追加】'field_material'（マロン現地収集資料）はarticleUrlを持たない
+   * 設計のため、URLの有無だけでなくcollectionMethodも見て出典の有無を判定する
+   * （DiscoveredContent側のbeforeValidateフックがsourceDocumentId/sourcePage/
+   * sourceMaterialHash等を必須化済みのため、field_materialである時点で
+   * 出典は確認済みとみなせる）。
+   */
+  collectionMethod?: string | null
 }
 
 export interface AutoArticleFactsResult {
@@ -93,7 +101,10 @@ export function deriveAutoArticleFacts(input: AutoArticleFactsInput): AutoArticl
   }
 
   const hasUrl = !!input.articleUrl && /^https?:\/\/\S+$/.test(input.articleUrl)
-  if (!hasUrl) missing.push('sourceProvenanceFacts（公式URLが無いため出典事実を作れない）')
+  const isFieldMaterial = input.collectionMethod === 'field_material'
+  if (!hasUrl && !isFieldMaterial) {
+    missing.push('sourceProvenanceFacts（公式URLが無いため出典事実を作れない）')
+  }
 
   let availablePeriod: string | null = null
   let eventDateISO: string | null = null

@@ -52,6 +52,39 @@ const REAL_A_CANDIDATES: Record<number, AutoArticleFactsInput> = {
 
 const cases: CheckCase[] = [
   {
+    // 2026-09-22追加：collectionMethod='field_material'（マロン現地収集資料）は
+    // articleUrlを持たない設計のため、URLが無くてもeligible:trueになることを確認する
+    // （DiscoveredContent側のbeforeValidateフックが出典項目を必須化済みのため、
+    // field_materialである時点で出典は確認済みとみなす）。
+    name: 'field_material: articleUrlが無くてもtitle・構造化期間が揃っていればeligible:true',
+    fn: () => {
+      const r = deriveAutoArticleFacts({
+        title: '幸稲荷神社（銀座八丁神社めぐり2026 対象社）',
+        articleUrl: null,
+        eventStartAt: '2026-10-30T00:00:00.000Z',
+        eventEndAt: '2026-10-31T00:00:00.000Z',
+        category: 'ART',
+        collectionMethod: 'field_material',
+      })
+      assert(r.eligible === true, `eligible:trueのはず（実際 missing=${JSON.stringify(r.missing)}）`)
+      assert(!r.missing.some((m) => m.includes('公式URL')), 'field_materialでは公式URL不足を理由にしないはず')
+    },
+  },
+  {
+    name: 'field_material以外（web_crawl・未指定）はarticleUrlが無ければ従来どおりeligible:false（回帰確認）',
+    fn: () => {
+      const r1 = deriveAutoArticleFacts({
+        title: 'X', articleUrl: null, eventStartAt: '2026-10-30T00:00:00.000Z', eventEndAt: null,
+        collectionMethod: 'web_crawl',
+      })
+      const r2 = deriveAutoArticleFacts({
+        title: 'X', articleUrl: null, eventStartAt: '2026-10-30T00:00:00.000Z', eventEndAt: null,
+      })
+      assert(r1.eligible === false, 'web_crawlはURL無しならeligible:falseのまま')
+      assert(r2.eligible === false, 'collectionMethod未指定はURL無しならeligible:falseのまま（既存挙動を壊さない）')
+    },
+  },
+  {
     name: 'title・URL・構造化期間が揃っていればeligible:true（推測なし）',
     fn: () => {
       const r = deriveAutoArticleFacts(wellFormed)

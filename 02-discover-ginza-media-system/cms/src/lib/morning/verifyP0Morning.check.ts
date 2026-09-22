@@ -243,6 +243,27 @@ const cases: CheckCase[] = [
       assert(a.hasTraceableSource === false, 'hasTraceableSource は false')
     },
   },
+  {
+    // 2026-09-22追加：collectionMethod='field_material'（マロン現地収集資料、
+    // DiscoveredContent.tsスキーマ拡張）はarticleUrlを持たない設計のため、
+    // articleUrl空欄だけを理由にCへ落とさない——PDFページ番号・ハッシュ等
+    // （DiscoveredContent側で必須化済み）を出典の追跡可能性とみなす。
+    name: 'field_material: articleUrl空欄でもcollectionMethod=field_materialならhasTraceableSourceはtrue（Cにしない）',
+    fn: () => {
+      const a = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: 'field_material' }) }))
+      assert(a.hasTraceableSource === true, `field_materialはhasTraceableSource trueのはず（実際 ${a.hasTraceableSource}）`)
+      assert(a.verdict !== 'C' || !a.reasons.some((r) => r.includes('追跡可能な公式出典')), '出典URL理由のCにはならないはず')
+    },
+  },
+  {
+    name: 'field_material以外（web_crawl・未指定）はarticleUrl空欄なら従来どおりCのまま（回帰確認）',
+    fn: () => {
+      const a1 = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: 'web_crawl' }) }))
+      const a2 = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: null }) }))
+      assert(a1.hasTraceableSource === false, 'web_crawlはarticleUrl空欄ならfalseのまま')
+      assert(a2.hasTraceableSource === false, 'collectionMethod未指定はarticleUrl空欄ならfalseのまま（既存挙動を壊さない）')
+    },
+  },
 
   // ---------- B 判定 ----------
   {
