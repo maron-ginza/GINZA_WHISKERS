@@ -244,19 +244,25 @@ const cases: CheckCase[] = [
     },
   },
   {
-    // 2026-09-22追加：collectionMethod='field_material'（マロン現地収集資料、
-    // DiscoveredContent.tsスキーマ拡張）はarticleUrlを持たない設計のため、
-    // articleUrl空欄だけを理由にCへ落とさない——PDFページ番号・ハッシュ等
-    // （DiscoveredContent側で必須化済み）を出典の追跡可能性とみなす。
-    name: 'field_material: articleUrl空欄でもcollectionMethod=field_materialならhasTraceableSourceはtrue（Cにしない）',
+    // 【2026-09-22実装→2026-09-23 revert・マロン指示】field_material
+    // （マロン現地収集資料）はarticleUrl空欄でもhasTraceableSource:trueに
+    // していたが、この結果「発見型」判定経路（factKind='unknown'、
+    // ArticleFactsのready状態を見ない）でArticleFactsをdraftへ戻しても
+    // field_materialというだけでA判定になる抜け道が生じた
+    // （AUTUMN GINZA 2026親企画5件で実際に発生・確認）。
+    // articleUrlが無ければcollectionMethodに関わらずC判定（追跡可能な公式
+    // 出典URLが無い）に戻す——現地収集資料をA候補にするには、人間が
+    // ArticleFacts.enrichmentStatusをreadyにする（＝個別に公式情報と
+    // 突き合わせて確認する）経路のみとする。
+    name: 'field_material: articleUrl空欄ならcollectionMethodに関わらずhasTraceableSourceはfalse（2026-09-23revert）',
     fn: () => {
       const a = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: 'field_material' }) }))
-      assert(a.hasTraceableSource === true, `field_materialはhasTraceableSource trueのはず（実際 ${a.hasTraceableSource}）`)
-      assert(a.verdict !== 'C' || !a.reasons.some((r) => r.includes('追跡可能な公式出典')), '出典URL理由のCにはならないはず')
+      assert(a.hasTraceableSource === false, `field_materialでもarticleUrl空欄ならfalseのはず（実際 ${a.hasTraceableSource}）`)
+      assert(a.verdict === 'C', `期待 C / 実際 ${a.verdict}`)
     },
   },
   {
-    name: 'field_material以外（web_crawl・未指定）はarticleUrl空欄なら従来どおりCのまま（回帰確認）',
+    name: 'articleUrl空欄なら従来どおりCのまま（collectionMethodの値に関わらず・回帰確認）',
     fn: () => {
       const a1 = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: 'web_crawl' }) }))
       const a2 = assessCandidate(mk({ dc: baseDc({ articleUrl: '', collectionMethod: null }) }))

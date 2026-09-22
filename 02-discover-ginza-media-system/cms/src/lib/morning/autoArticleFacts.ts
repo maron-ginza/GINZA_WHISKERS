@@ -100,10 +100,22 @@ export function deriveAutoArticleFacts(input: AutoArticleFactsInput): AutoArticl
     derivedFrom.push(`contentTitle/whatHappens ← DiscoveredContent.title（サイトナビ除去後）: "${cleanedTitle}"`)
   }
 
+  // 【2026-09-22実装→2026-09-23revert・マロン指示】一時的に
+  // collectionMethod='field_material'（現地収集資料）をURL必須の対象外とし、
+  // Stage 0（人間レビューを経ない自動ready化）の対象に含めていたが、
+  // AUTUMN GINZA 2026冊子の実運用検証で「冊子記載の個別日程（銀茶会10/25等）が
+  // 発行組織自身の公式サイトでまだ確認できない（準備中／404）」ケースが見つかり、
+  // 独立した裏どりの無いまま自動でA候補へ昇格してしまう実害を確認した。
+  // 現地収集資料は sourceType=official・collectionMethod=field_material として
+  // 引き続き正式な情報源だが、**個別の事実（特に日付）が現時点の公式情報で
+  // 裏どりできるかはStage 0の機械的判定だけでは分からない**ため、Stage 0の
+  // 自動ready化（人間レビューなしでのA昇格）対象からは除外し、常に人間が
+  // 個別公式情報との照合を確認してready化する運用に戻す（hasTraceableSourceの
+  // C回避〈assessCandidate.ts〉自体は妥当なため無変更＝候補として提示はされるが
+  // B判定のまま人間確認待ちになる）。
   const hasUrl = !!input.articleUrl && /^https?:\/\/\S+$/.test(input.articleUrl)
-  const isFieldMaterial = input.collectionMethod === 'field_material'
-  if (!hasUrl && !isFieldMaterial) {
-    missing.push('sourceProvenanceFacts（公式URLが無いため出典事実を作れない）')
+  if (!hasUrl) {
+    missing.push('sourceProvenanceFacts（公式URLが無いため出典事実を作れない。現地収集資料は人間が個別に裏どりの上readyにしてください）')
   }
 
   let availablePeriod: string | null = null

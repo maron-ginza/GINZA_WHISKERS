@@ -52,11 +52,15 @@ const REAL_A_CANDIDATES: Record<number, AutoArticleFactsInput> = {
 
 const cases: CheckCase[] = [
   {
-    // 2026-09-22追加：collectionMethod='field_material'（マロン現地収集資料）は
-    // articleUrlを持たない設計のため、URLが無くてもeligible:trueになることを確認する
-    // （DiscoveredContent側のbeforeValidateフックが出典項目を必須化済みのため、
-    // field_materialである時点で出典は確認済みとみなす）。
-    name: 'field_material: articleUrlが無くてもtitle・構造化期間が揃っていればeligible:true',
+    // 【2026-09-22実装→2026-09-23 revert・マロン指示】field_material
+    // （マロン現地収集資料）をURL不要でStage 0自動ready化の対象にしていたが、
+    // AUTUMN GINZA 2026冊子の実運用で「冊子記載の個別日程が発行組織自身の
+    // 公式サイトでまだ確認できない」ケース（銀茶会の開催日が公式サイトで
+    // 「準備中」だった等）が見つかり、独立した裏どり無しに自動でA候補へ
+    // 昇格する実害を確認したため元に戻した。field_materialでもStage 0の
+    // 自動ready化はせず、常にarticleUrlが無ければeligible:falseのまま
+    // （＝B判定で人間確認待ち）とする。
+    name: 'field_material: articleUrlが無ければcollectionMethodに関わらずeligible:false（2026-09-23revert・人間確認を必須化）',
     fn: () => {
       const r = deriveAutoArticleFacts({
         title: '幸稲荷神社（銀座八丁神社めぐり2026 対象社）',
@@ -66,12 +70,12 @@ const cases: CheckCase[] = [
         category: 'ART',
         collectionMethod: 'field_material',
       })
-      assert(r.eligible === true, `eligible:trueのはず（実際 missing=${JSON.stringify(r.missing)}）`)
-      assert(!r.missing.some((m) => m.includes('公式URL')), 'field_materialでは公式URL不足を理由にしないはず')
+      assert(r.eligible === false, `eligible:falseのはず（現地収集資料は人間確認必須。実際 missing=${JSON.stringify(r.missing)}）`)
+      assert(r.missing.some((m) => m.includes('公式URL')), '公式URL不足の理由が含まれるはず（現地収集資料でも同様）')
     },
   },
   {
-    name: 'field_material以外（web_crawl・未指定）はarticleUrlが無ければ従来どおりeligible:false（回帰確認）',
+    name: 'articleUrlが無ければ従来どおりeligible:false（collectionMethodの値に関わらず・回帰確認）',
     fn: () => {
       const r1 = deriveAutoArticleFacts({
         title: 'X', articleUrl: null, eventStartAt: '2026-10-30T00:00:00.000Z', eventEndAt: null,

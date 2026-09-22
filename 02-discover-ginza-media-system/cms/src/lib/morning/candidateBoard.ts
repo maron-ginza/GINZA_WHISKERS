@@ -50,6 +50,17 @@ export interface CandidateBoard {
   unclassified: BoardEntry[]
   /** 対象から除外した使用済み（過去にマロンが選定済み）A候補の件数 */
   usedExcludedCount: number
+  /**
+   * 【2026-09-23追加・マロン指示によるポリシー変更】直近14日以内に同一施設
+   * （facilityNotice.recentlyUsed）でArticleを作成済みのため対象から除外した
+   * A候補の件数。2026-09-17時点では「施設クールダウンはA/B/C判定・ボード掲載
+   * 可否に影響しない（表示のみ・自動除外しない）」という設計だったが、
+   * AUTUMN GINZA 2026登録後の実運用で「投稿済み施設が翌日以降も無条件に
+   * 再候補化される」問題が確認されたため、2026-09-23にボードからの実除外へ
+   * 変更した（facilityNotice自体は引き続き計算されるが、trueの候補は
+   * このボードに含めない）。
+   */
+  facilityRecentlyUsedExcludedCount: number
 }
 
 function toBoardEntry(a: CandidateAssessment): BoardEntry {
@@ -76,7 +87,13 @@ export function buildCandidateBoard(
 ): CandidateBoard {
   const aOnly = assessments.filter((a) => a.verdict === 'A')
   const used = aOnly.filter((a) => usedDcIds.has(a.discoveredContentId))
-  const available = aOnly.filter((a) => !usedDcIds.has(a.discoveredContentId))
+  const notUsed = aOnly.filter((a) => !usedDcIds.has(a.discoveredContentId))
+
+  // 【2026-09-23追加・マロン指示】直近14日以内に同一施設でArticleを作成済み
+  // （facilityNotice.recentlyUsed）の候補はボードから除外する（2026-09-17の
+  // 「表示のみ・自動除外しない」方針を変更）。
+  const facilityRecentlyUsed = notUsed.filter((a) => a.facilityNotice?.recentlyUsed === true)
+  const available = notUsed.filter((a) => a.facilityNotice?.recentlyUsed !== true)
 
   const sweets = rankCandidatesByPriority(available.filter((a) => a.digestMeta?.category === REQUIRED_CATEGORY)).map(
     toBoardEntry,
@@ -92,5 +109,11 @@ export function buildCandidateBoard(
     byCategory[cat].push(toBoardEntry(a))
   }
 
-  return { sweets, byCategory, unclassified, usedExcludedCount: used.length }
+  return {
+    sweets,
+    byCategory,
+    unclassified,
+    usedExcludedCount: used.length,
+    facilityRecentlyUsedExcludedCount: facilityRecentlyUsed.length,
+  }
 }

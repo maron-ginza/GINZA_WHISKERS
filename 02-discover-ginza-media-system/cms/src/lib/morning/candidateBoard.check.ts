@@ -157,9 +157,13 @@ const cases: CheckCase[] = [
     },
   },
   {
-    // 2026-09-17追加・マロン指示：A判定と施設クールダウンの責務分離。施設クールダウン中でも
-    // A候補はボードに出続け（除外・降格しない）、facilityNoticeが注意情報として表示される。
-    name: '施設クールダウン中のA候補はボードから除外されず、facilityNoticeが注意情報として表示される',
+    // 【2026-09-17→2026-09-23 ポリシー変更・マロン指示】2026-09-17時点は
+    // 「A判定と施設クールダウンの責務分離——施設クールダウン中でもA候補は
+    // ボードに出続け、facilityNoticeは注意情報として表示するのみ（除外しない）」
+    // だった。AUTUMN GINZA 2026登録後の実運用で「投稿済み施設が翌日以降も
+    // 無条件に再候補化される」問題が確認されたため、2026-09-23に
+    // 「直近14日以内に同一施設で投稿済みならボードから除外する」へ変更した。
+    name: '【2026-09-23変更】施設クールダウン中（facilityNotice.recentlyUsed:true）のA候補はボードから除外される',
     fn: () => {
       const a = withCategory(81, 'SWEETS', 'matsuya-ginza')
       a.facilityNotice = {
@@ -171,12 +175,26 @@ const cases: CheckCase[] = [
         message: '同一施設が直近に使用されています（過去14日以内に同一施設（松屋銀座）でArticle #69 作成（2026-09-14））',
       }
       const board = buildCandidateBoard([a])
-      assert(board.sweets.length === 1 && board.sweets[0].discoveredContentId === 81, '施設クールダウン中でもボードに出る（除外しない）')
-      const e = board.sweets[0]
-      assert(!!e.facilityNotice, 'facilityNoticeがBoardEntryに伝わる')
-      assert(e.facilityNotice?.parentFacilityLabel === '松屋銀座', '親施設名が伝わる')
-      assert(e.facilityNotice?.lastArticleId === 69, '前回の記事IDが伝わる')
-      assert(e.facilityNotice?.daysSince === 3, '経過日数が伝わる')
+      assert(board.sweets.length === 0, '施設クールダウン中の候補はSWEETS枠から除外されるはず')
+      assert(board.facilityRecentlyUsedExcludedCount === 1, `除外件数が1件のはず（実際 ${board.facilityRecentlyUsedExcludedCount}）`)
+    },
+  },
+  {
+    name: '施設クールダウン対象外の候補と対象の候補が混在する場合、対象外のみボードに残る',
+    fn: () => {
+      const clean = withCategory(83, 'SWEETS', 'clean-facility')
+      const cooling = withCategory(84, 'SWEETS', 'matsuya-ginza')
+      cooling.facilityNotice = {
+        recentlyUsed: true,
+        parentFacilityLabel: '松屋銀座',
+        lastUsedDate: '2026-09-14T00:00:00Z',
+        lastArticleId: 69,
+        daysSince: 3,
+        message: 'test',
+      }
+      const board = buildCandidateBoard([clean, cooling])
+      assert(board.sweets.length === 1 && board.sweets[0].discoveredContentId === 83, 'クールダウン対象外の候補のみ残るはず')
+      assert(board.facilityRecentlyUsedExcludedCount === 1, '除外件数は1件のはず')
     },
   },
   {

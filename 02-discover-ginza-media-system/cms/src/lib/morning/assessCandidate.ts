@@ -252,14 +252,19 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   const verifiedAt = typeof dc.lastCheckedAt === 'string' ? dc.lastCheckedAt : undefined
 
   // --- 決定的な素性 ---
-  // 【2026-09-22追加】collectionMethod='field_material'（マロン現地収集資料）は
-  // articleUrlを持たない設計のため、URL正規表現だけでは常にfalseになってしまう。
-  // field_materialはDiscoveredContent側のbeforeValidateフック
-  // （fieldMaterialProvenance.ts）でsourceDocumentId/sourcePage/
-  // sourceMaterialHash等の出典項目が必須になっているため、その存在自体を
-  // 「追跡可能な出典」とみなす（URLの代わりにPDFページ番号・ハッシュで
-  // 追跡できる、という意味で同等に扱う）。
-  const hasTraceableSource = /^https?:\/\/\S+$/.test(sourceUrl) || dc.collectionMethod === 'field_material'
+  // 【2026-09-22実装→2026-09-23 revert・マロン指示】一時的に
+  // collectionMethod='field_material'（現地収集資料）をhasTraceableSourceの
+  // 対象に含めていたが、この結果「発見型」判定経路（factKind='unknown'。
+  // ArticleFacts の ready 状態を一切参照せず、期間性・銀座関連性・
+  // hasTraceableSourceだけでA判定する）で、ArticleFacts側をdraftへ戻しても
+  // field_materialというだけでA判定のままになる抜け道が生じることが
+  // AUTUMN GINZA 2026冊子の実運用検証で判明した（親企画5件が該当）。
+  // 現地収集資料は正式な情報源（sourceType=official）のままだが、
+  // 「URLで独立に裏どりできない資料は、ArticleFactsのready化（＝人間が
+  // 個別に公式情報と突き合わせて確認）を経るまでA候補にしない」という
+  // 安全側の挙動に戻すため、articleUrlの正規表現一致のみをhasTraceableSourceの
+  // 条件とする（field_materialの特別扱いを撤廃）。
+  const hasTraceableSource = /^https?:\/\/\S+$/.test(sourceUrl)
 
   // 銀座関連性：情報源名だけで通さない。個別記事のタイトル・会場・URL を確認し、
   // 銀座外の特定支店（◯◯テラス店 等）・市区の明記があれば除外する（推測しない）。
