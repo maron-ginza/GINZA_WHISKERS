@@ -151,8 +151,10 @@ async function readDeclaredSitemaps(origin: string, allowedHost: string): Promis
   return out
 }
 
-/** XML/RSS/Atomの生テキストから `<loc>`・`<link>`・`href=` のURLを抽出する（フルパーサーは使わない）。 */
-function extractUrlsFromFeedBody(text: string): string[] {
+/** XML/RSS/Atomの生テキストから `<loc>`・`<link>`・`href=` のURLを抽出する（フルパーサーは使わない）。
+ *  2026-09-24: 回帰テスト（discoverFeedCandidates.check.ts）から直接呼べるようexportした
+ *  （ネットワークなしの純粋関数のため、既存の呼び出し側の挙動には影響しない）。 */
+export function extractUrlsFromFeedBody(text: string): string[] {
   const urls = new Set<string>()
   const patterns = [
     /<loc>\s*([^<\s]+)\s*<\/loc>/gi, // sitemap
@@ -169,7 +171,13 @@ function extractUrlsFromFeedBody(text: string): string[] {
   }
   // RSS <item><link>...</link></item>本体テキストが空でtitleに続く場合のフォールバック：
   // プレーンな https URL を素朴に拾う（sitemap indexの<loc>漏れ対策も兼ねる）。
-  const bareRe = /https?:\/\/[^\s"'<>)]+/g
+  //
+  // 【2026-09-24修正】除外文字集合に `]` が無かったため、`<![CDATA[https://.../
+  // post-archive-sitemap.xml]]>` のようなCDATA終端直前のURLで、閉じ括弧
+  // `]]` までを1つのURLとして誤って取り込んでいた（実例：銀座菊廼舎の
+  // `post-archive-sitemap.xml]]`。当然そのままではリクエストが404になる）。
+  // `]` `[` を除外文字へ追加する。
+  const bareRe = /https?:\/\/[^\s"'<>)\]\[]+/g
   let bm: RegExpExecArray | null
   let scanned2 = 0
   while ((bm = bareRe.exec(text)) !== null && scanned2 < MAX_URLS_SCANNED_PER_BODY) {

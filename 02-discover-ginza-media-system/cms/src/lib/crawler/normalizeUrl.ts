@@ -65,6 +65,16 @@ export function isSameOrigin(url: string, baseUrl: string): boolean {
 // discoverListingPages.tsの両方の抽出段階で、既知の非HTML拡張子を持つURLを
 // 候補から除外する（fetchArticlePage.ts/fetchListingPage.ts側のContent-Type
 // チェックと合わせた二重防御——拡張子だけでは判定できないケースを後段で拾う）。
+//
+// 【2026-09-24追加】9/24 6:00の sweets_detail_fetch 全36件不成功の原因調査で、
+// discoverFeedCandidates.ts（sitemap/feed探索）がJS/CSS/XML/XSLスタイルシート・
+// gzip圧縮サイトマップまで「候補」として拾ってしまっていたことが判明した
+// （松崎煎餅のwp-embed.min.js・style_new.css、源吉兆庵・木挽町よしや・銀座あけぼのの
+// wp-sitemap(-index).xsl、GODIVAのSitemap_*.xml.gz等）。これらは
+// discoverFeedCandidates.ts側でも isNonHtmlResourcePath を既に呼んでいたが、
+// 対象拡張子がリストに無かったため通過していた。実際のHTTP応答時点では
+// Content-Type判定で正しく除外されるため記事は汚染されないが、収集予算を
+// 毎回無駄にしていた（Discovery層でのより早い除外に修正）。
 const NON_HTML_EXTENSIONS = [
   '.pdf',
   '.png',
@@ -83,6 +93,12 @@ const NON_HTML_EXTENSIONS = [
   '.mp4',
   '.mp3',
   '.csv',
+  '.js',
+  '.css',
+  '.json',
+  '.xml',
+  '.xsl',
+  '.gz',
 ]
 
 export function isNonHtmlResourcePath(url: string): boolean {

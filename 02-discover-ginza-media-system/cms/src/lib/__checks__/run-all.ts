@@ -60,6 +60,8 @@ import { suite as noteDraftFromSelection } from '../morning/noteDraftFromSelecti
 import { suite as bridgeNoteDraftsToArticles } from '../morning/bridgeNoteDraftsToArticles.check'
 import { suite as atomicWrite } from '../util/atomicWrite.check'
 import { suite as urlHealthRegistry } from '../crawler/urlHealthRegistry.check'
+import { suite as normalizeUrl } from '../crawler/normalizeUrl.check'
+import { suite as discoverFeedCandidates } from '../crawler/discoverFeedCandidates.check'
 import { suite as facilityDiversityFilter } from '../morning/facilityDiversityFilter.check'
 import { suite as candidateFallbackPlan } from '../morning/candidateFallbackPlan.check'
 import { suite as fieldMaterialProvenance } from '../crawler/fieldMaterialProvenance.check'
@@ -135,6 +137,8 @@ const results: SuiteResult[] = [
   bridgeNoteDraftsToArticles(),
   atomicWrite(),
   urlHealthRegistry(),
+  normalizeUrl(),
+  discoverFeedCandidates(),
   facilityDiversityFilter(),
   candidateFallbackPlan(),
   fieldMaterialProvenance(),
