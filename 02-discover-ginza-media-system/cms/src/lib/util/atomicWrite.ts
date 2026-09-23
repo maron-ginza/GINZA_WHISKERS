@@ -10,7 +10,8 @@
 // （チェック→書き込みの間に生じる TOCTOU レースの窓を最小化する。単一
 // オペレーター運用を前提とした実用的な対策であり、完全な排他ロックではない）。
 
-import { writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs'
+import { writeFileSync, renameSync, unlinkSync, existsSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { randomBytes } from 'node:crypto'
 
 export interface AtomicWriteResult {
@@ -27,6 +28,14 @@ export function atomicWriteFileSync(
   if (!opts.force && existsSync(targetPath)) {
     return { written: false, reason: `既に存在します: ${targetPath}` }
   }
+  // 【2026-09-24修正】targetPathの親ディレクトリが未作成のまま呼ばれると
+  // writeFileSync が ENOENT で例外を投げていた（sweets_detail_fetch が
+  // .devlogs/crawler/ 未作成の環境で3回連続失敗した実障害の原因。
+  // urlHealthRegistry.ts はディレクトリ作成を一切行っていなかった）。
+  // mkdirSync(recursive:true) は対象が既に存在すれば何もしない安全な操作
+  // のため、既存の呼び出し元（既にディレクトリが存在するケース）への
+  // 挙動変化はない。
+  mkdirSync(dirname(targetPath), { recursive: true })
   const tmpPath = `${targetPath}.tmp-${process.pid}-${randomBytes(6).toString('hex')}`
   writeFileSync(tmpPath, content, { encoding: 'utf8' })
   try {

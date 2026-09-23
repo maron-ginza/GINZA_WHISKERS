@@ -4,7 +4,7 @@
 //
 //   node --import=tsx/esm src/lib/crawler/urlHealthRegistry.check.ts
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -176,6 +176,25 @@ const cases: CheckCase[] = [
         saveUrlHealthRegistry(target, { b: { status: 'ok', lastCheckedAt: '2026-09-22T00:00:00.000Z' } })
         const loaded = loadUrlHealthRegistry(target)
         assert(loaded.a === undefined && loaded.b !== undefined, '2回目の保存が反映されるはず（毎日更新できる）')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  },
+  {
+    // 【2026-09-24追加・実障害の再発防止】2026-09-23 6:00の自動収集で
+    // sweets_detail_fetch が「.devlogs/crawler/」ディレクトリ未作成のまま
+    // saveUrlHealthRegistry を呼び ENOENT で3回連続失敗した実障害の回帰テスト。
+    name: '保存先ディレクトリ（.devlogs/crawler/ 相当）が未作成でも自動作成して保存できる',
+    fn: () => {
+      const dir = mkdtempSync(resolve(tmpdir(), 'url-health-'))
+      try {
+        const notYetCreated = resolve(dir, 'crawler')
+        assert(!existsSync(notYetCreated), '事前条件：crawlerディレクトリは未作成')
+        const target = resolve(notYetCreated, 'url-health-registry.json')
+        saveUrlHealthRegistry(target, { 'https://example.com/a': { status: 'ok', lastCheckedAt: '2026-09-23T00:00:00.000Z' } })
+        const loaded = loadUrlHealthRegistry(target)
+        assert(loaded['https://example.com/a']?.status === 'ok', 'ディレクトリ未作成でも保存・再読み込みできるはず')
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

@@ -2,7 +2,7 @@
 //
 //   node --import=tsx/esm src/lib/util/atomicWrite.check.ts
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 
@@ -67,6 +67,27 @@ const cases: CheckCase[] = [
         atomicWriteFileSync(target, 'content')
         const files = readdirSync(dir)
         assert(files.length === 1 && files[0] === 'out.json', `一時ファイルが残っていない（実際 ${JSON.stringify(files)}）`)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  },
+  {
+    // 【2026-09-24追加・実障害の再発防止】2026-09-23 6:00の自動収集で
+    // sweets_detail_fetch が3回とも `.devlogs/crawler/url-health-registry.json.tmp-...
+    // ENOENT: no such file or directory` で失敗した。原因は atomicWriteFileSync が
+    // targetPath の親ディレクトリの存在を一切確認・作成していなかったこと
+    // （呼び出し元の urlHealthRegistry.ts 側もディレクトリを作成していなかった）。
+    name: 'targetPathの親ディレクトリが未作成でも自動作成して書き込みに成功する（多段階の未作成ディレクトリを含む）',
+    fn: () => {
+      const dir = mkdtempSync(resolve(tmpdir(), 'atomic-write-'))
+      try {
+        const nested = resolve(dir, 'a', 'b', 'c')
+        assert(!existsSync(nested), '事前条件：nestedディレクトリは存在しない')
+        const target = resolve(nested, 'out.json')
+        const r = atomicWriteFileSync(target, 'content')
+        assert(r.written === true, '未作成ディレクトリ配下でも書き込み成功するはず')
+        assert(readFileSync(target, 'utf8') === 'content', '内容が一致するはず')
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

@@ -214,8 +214,21 @@ async function main() {
     }
   }
 
+  // 【2026-09-24追加】registry保存は「いつ・何回試すか」を最適化するための
+  // 副次的な記録であり、本フェーズの主目的（DiscoveredContentの取得・更新、
+  // 既にループ内でpayload.update()により個別に永続化済み）とは独立している。
+  // 保存自体が失敗しても、既に成功したDC更新を無駄にして全体をクラッシュさせず
+  // 警告として記録するだけに留める（直近の実障害＝ディレクトリ未作成はmkdirSyncで
+  // 解消済みだが、権限エラー等の別要因での再発時にも同じ理由で本フェーズ全体を
+  // 失敗扱いにしない防御）。
+  let registrySaveError: string | null = null
   if (!DRY) {
-    saveUrlHealthRegistry(URL_HEALTH_REGISTRY_PATH, urlHealth)
+    try {
+      saveUrlHealthRegistry(URL_HEALTH_REGISTRY_PATH, urlHealth)
+    } catch (err) {
+      registrySaveError = err instanceof Error ? err.message : String(err)
+      console.error(`  ⚠ URL健全性レジストリの保存に失敗しました（DC更新自体は成功済みのため処理は継続します）: ${registrySaveError}`)
+    }
   }
 
   console.log(
@@ -225,6 +238,7 @@ async function main() {
       failed: totalAttempted - totalSucceeded,
       skippedCooldown: totalSkippedCooldown,
       failureReasons: Object.fromEntries(failureReasons),
+      registrySaveError,
     }),
   )
   process.exit(0)
