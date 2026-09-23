@@ -33,6 +33,24 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 【2026-09-25追加・実障害の再発防止】9/24 6:00の自動収集で、松屋銀座
+    // 「今週のGINZAスイート」（開始日が秋分の日＝祝日）の期間抽出に失敗し、
+    // 実際にArticleFacts readyがブロックされていた（DC#1450/#1451、
+    // eventStartAt/eventEndAtがNULLのまま保存されていたことをDBで確認済み）。
+    name: '開始日が祝日の場合「(祝・水)」表記でも期間を抽出できる（実障害：松屋銀座「今週のGINZAスイート」2026-09-23週）',
+    fn: () => {
+      const p = extractExplicitPeriod('2026年9月23日(祝・水)－29日(火)', { now: NOW })
+      assert(p && d(p.startIso) === '2026-09-23' && d(p.endIso) === '2026-09-29', JSON.stringify(p))
+    },
+  },
+  {
+    name: '「(祝)」単独表記（曜日を併記しない）でも期間を抽出できる',
+    fn: () => {
+      const p = extractExplicitPeriod('2026年9月23日(祝)－29日(火)', { now: NOW })
+      assert(p && d(p.startIso) === '2026-09-23' && d(p.endIso) === '2026-09-29', JSON.stringify(p))
+    },
+  },
+  {
     name: '終端の月省略パターンは全角ダッシュ・波ダッシュ双方で機能する',
     fn: () => {
       const p1 = extractExplicitPeriod('2026年12月20日（土）〜25日（金）', { now: NOW })

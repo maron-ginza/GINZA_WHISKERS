@@ -34,7 +34,16 @@ export interface MatsuyaSweetsWeeklyResult {
   items: MatsuyaSweetsItem[]
 }
 
-const PERIOD_RE = /(\d{4}年\d{1,2}月\d{1,2}日[（(][日月火水木金土][）)]\s*[－\-〜～]\s*\d{1,2}日[（(][日月火水木金土][）)])/
+// 【2026-09-25修正】開始日・終了日いずれかが祝日の場合、曜日表記が単独の
+// 「(祝)」または「(祝・水)」のような複合表記になる（実例：2026年9月23日(祝・水)
+// ＝秋分の日、9/24 6:00の自動収集で「今週のGINZAスイート」〈開催期間 2026年9月23日
+// (祝・水)－29日(火)〉の期間抽出に失敗しB判定〈articleFactsNotReady〉のまま
+// 止まっていたことをWebFetchでの公式ページ再確認で特定した）。従来は
+// [日月火水木金土] の単一文字しか許容しておらず、この複合表記にマッチしなかった。
+const WEEKDAY_OR_HOLIDAY = /(?:祝(?:・[日月火水木金土])?|[日月火水木金土])/.source
+const PERIOD_RE = new RegExp(
+  `(\\d{4}年\\d{1,2}月\\d{1,2}日[（(]${WEEKDAY_OR_HOLIDAY}[）)]\\s*[－\\-〜～]\\s*\\d{1,2}日[（(]${WEEKDAY_OR_HOLIDAY}[）)])`,
+)
 const LOCATION_RE = /^(地下[０-９0-9]F.*スイート.*)$/m
 const PRICE_RE = /([\d,]+)\s*円/g
 

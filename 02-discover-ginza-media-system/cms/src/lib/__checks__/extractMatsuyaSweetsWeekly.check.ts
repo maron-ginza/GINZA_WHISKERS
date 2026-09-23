@@ -100,6 +100,18 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 【2026-09-25追加・実障害の再発防止】2026-09-23（秋分の日）週の実データで
+    // WebFetch再確認して判明。従来のPERIOD_REは[日月火水木金土]単独文字しか
+    // 許容しておらず、祝日が絡む「(祝・水)」表記で期間抽出全体が失敗していた
+    // （DC#1450/#1451でeventStartAt/eventEndAtがNULLのまま保存されていたことを
+    // DBで確認済み）。
+    name: '実データ：開始日が祝日「(祝・水)」表記の週でも開催期間を抽出できる（2026-09-23週）',
+    fn: () => {
+      const r = extractMatsuyaSweetsWeekly('地下1F GINZAスイート\n2026年9月23日(祝・水)－​29日(火)\n\n＜某店＞\n商品A\n500円')
+      assert.equal(r.periodText, '2026年9月23日(祝・水)－29日(火)')
+    },
+  },
+  {
     name: '期間・店舗ブロックが無いテキストでは null／空配列を返す（推測しない）',
     fn: () => {
       const r = extractMatsuyaSweetsWeekly('特にイベント情報のないページです。')
