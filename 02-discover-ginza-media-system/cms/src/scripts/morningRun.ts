@@ -68,6 +68,7 @@ import {
   type RawPastMorningActivity,
 } from '../lib/morning/facilityActivityHistory'
 import { deriveProvisionalCategory, isCategoryResolved } from '../lib/pipeline/provisionalCategory'
+import { allocateFetchFairness, type FetchFairnessCandidate } from '../lib/morning/fetchFairnessAllocation'
 import { deriveAutoArticleFacts } from '../lib/morning/autoArticleFacts'
 import { assessInboxPool } from '../lib/pipeline/assessInboxPool'
 import { selectRecommendedThemes, loadSelectThemesConfigFromEnv } from '../lib/pipeline/selectRecommendedThemes'
@@ -702,6 +703,31 @@ async function main(): Promise<void> {
     }
     mark('loadApproved', step)
 
+    // 【2026-09-24続き・候補不足の主因対応】同一ホストの取得本数上限（maxPerHost）の
+    // 「中身の選び方」を、更新日時順の先着順からカテゴリー・ラウンドロビン割当へ
+    // 変更する事前計算（fetchFairnessAllocation.ts、純粋関数・DB/ネットワーク非依存）。
+    // カテゴリーはタイトル・会場の明記語のみ（deriveProvisionalCategory と同じ判定源、
+    // primaryCategory/templateTypeはこの時点では未確定のため使わない＝本ループ後段の
+    // 最終カテゴリー判定とは別物・推測要素を増やさない）。既存の重複判定・掲載期間確認・
+    // 施設クールダウン・ArticleFacts ready 必須化のいずれにも影響しない
+    // （「公式ページ取得を試みる順序」だけを変える）。
+    const fetchFairnessCandidates: FetchFairnessCandidate[] = approved.docs.map((raw) => {
+      const dcLike = toDcLike(raw as Record<string, unknown>)
+      let host: string | null = null
+      try {
+        if (dcLike.articleUrl) host = new URL(dcLike.articleUrl).hostname.toLowerCase()
+      } catch {
+        /* host不明のまま（公平割当の対象外・従来どおり無条件で取得試行） */
+      }
+      const category = deriveProvisionalCategory({
+        title: dcLike.title,
+        venue: dcLike.venue,
+        contentType: dcLike.contentType,
+      }).category
+      return { id: Number(dcLike.id), host, category }
+    })
+    const fetchAllocation = allocateFetchFairness(fetchFairnessCandidates, args.maxPerHost)
+
     // 3.5 施設単位の14日間クールダウン・使用済み候補の自動除外（2026-09-16追加・マロン指示）。
     //     マロンによる投稿済み設定・施設設定・手動台帳登録は一切前提にせず、Project 02 内の
     //     既存データ（Articles・承認済みDC・note-draft.json・過去の朝刊report.json）だけから
@@ -838,24 +864,30 @@ async function main(): Promise<void> {
         const trustedSource = dcHost !== '' && isAllowedHost(dcHost, allowedHosts)
 
         // --- 公式ページ取得（--fetch のときだけ・重複でない・許可ドメイン・タイムアウトつき・失敗は握る） ---
+        // 【2026-09-24続き・候補不足の主因対応】同一ホストの取得本数上限（maxPerHost）
+        // 自体は変更しない。その枠の「中身の選び方」を、更新日時順の先着順から
+        // fetchFairnessAllocation.ts によるカテゴリー・ラウンドロビン割当へ変更した
+        // （事前に approved.docs 全体から算出済みの fetchAllocation.allowedIds を参照
+        // するだけ・本ループ内でのロジック変更はない）。dcHost が空（articleUrlなし等）の
+        // 場合は従来どおり無条件で許可（公平割当の対象外＝ホスト予算管理と無関係）。
         let signals: OfficialPageSignals | null = null
         if (args.fetch && !dedup.duplicate && dcLike.articleUrl) {
           const key = dcLike.articleUrl
           if (fetchCache.has(key)) {
             signals = fetchCache.get(key) ?? null
           } else {
-            const used = perHostCount.get(dcHost) ?? 0
-            if (dcHost && used >= args.maxPerHost) {
+            const allowedByFairness = !dcHost || fetchAllocation.allowedIds.has(dcId)
+            if (dcHost && !allowedByFairness) {
               signals = {
                 requested: true,
                 ok: false,
                 fetchedAt: new Date().toISOString(),
-                rejectedReason: `同一ホストの取得本数上限（${args.maxPerHost}）に達したためスキップ`,
+                rejectedReason: `同一ホストの取得本数上限（${args.maxPerHost}）に達したためスキップ（カテゴリー公平割当で対象外）`,
                 rejectedUrl: key,
               }
             } else {
               fetchMetrics.attempted++
-              if (dcHost) perHostCount.set(dcHost, used + 1)
+              if (dcHost) perHostCount.set(dcHost, (perHostCount.get(dcHost) ?? 0) + 1)
               try {
                 signals = await fetchOfficialSignals(key, {
                   allowedHosts,

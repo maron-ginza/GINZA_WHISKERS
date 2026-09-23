@@ -81,6 +81,7 @@ import { suite as resolveImageAsset } from './resolveImageAsset.check'
 import { suite as hasUsableBodyContent } from './hasUsableBodyContent.check'
 import { suite as excludeNonArticleCandidate } from './excludeNonArticleCandidate.check'
 import { suite as morningRunWiring } from './morningRunWiring.check'
+import { suite as fetchFairnessAllocation } from '../morning/fetchFairnessAllocation.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -158,6 +159,7 @@ const results: SuiteResult[] = [
   hasUsableBodyContent(),
   excludeNonArticleCandidate(),
   morningRunWiring(),
+  fetchFairnessAllocation(),
 ]
 
 void (async () => {

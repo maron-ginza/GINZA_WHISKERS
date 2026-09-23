@@ -88,6 +88,24 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 【2026-09-24続き・候補不足の主因対応】同一ホスト予算の「中身の選び方」が
+    // カテゴリー公平割当（fetchFairnessAllocation.ts）へ実際に配線されていることを
+    // 確認する——退行すると、更新日時順の先着順へ静かに戻りSWEETS埋没が再発する。
+    name: '主ループの公式ページ取得判定が fetchAllocation.allowedIds（カテゴリー公平割当）を参照している',
+    fn: () => {
+      const src = readFileSync(resolve(ROOT, 'cms/src/scripts/morningRun.ts'), 'utf8')
+      assert(
+        src.includes("import { allocateFetchFairness, type FetchFairnessCandidate } from '../lib/morning/fetchFairnessAllocation'"),
+        'allocateFetchFairnessがimportされていない',
+      )
+      assert(src.includes('const fetchAllocation = allocateFetchFairness('), 'fetchAllocationが計算されていない')
+      assert(
+        src.includes('const allowedByFairness = !dcHost || fetchAllocation.allowedIds.has(dcId)'),
+        '主ループの取得判定がfetchAllocation.allowedIdsを参照していない（更新日時順の先着順に退行している可能性）',
+      )
+    },
+  },
+  {
     name: 'assessInboxPool.ts にも同じ除外ゲートが配線されている（themesRecommend等の共有経路）',
     fn: () => {
       const src = readFileSync(resolve(ROOT, 'cms/src/lib/pipeline/assessInboxPool.ts'), 'utf8')
