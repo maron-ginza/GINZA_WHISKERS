@@ -135,7 +135,19 @@ function parseArgs(): Args {
     fetchDisabledByEnv: argv.includes('--fetch') && envDisabled,
     connectTimeoutMs: num('--fetch-timeout=', 8000),
     overallTimeoutMs: num('--fetch-overall-timeout=', 15000),
-    maxPerHost: num('--fetch-max-per-host=', 8),
+    // 【2026-09-24改訂・候補不足の主因調査】既定値8は、9/24 6:00実行の実データで
+    // B判定407件中298件（73%）を「同一ホストの取得本数上限（8）に達したため
+    // スキップ」で埋め尽くしていた——GINZA SIX・松屋銀座・和光・歌舞伎座等の
+    // 高頻度情報源は1ホストあたり日次20〜100件超の候補を持つため、8件では
+    // 大多数が公式ページ取得を一度も試みられずarticleFactsNotReadyのままB止まりに
+    // なっていた（SWEETSタイトルの候補だけでも12件がこの理由で未着手だった）。
+    // 実データで1ホストあたりの上限を30へ上げた場合の総実取得数を試算したところ
+    // （現行8で実取得274件・所要約275秒＝約1.0秒/件）、30なら実取得761件・
+    // 想定所要約12分——70分の実行枠に対し十分な余裕を維持できると確認した。
+    // 既投稿重複・開催期間確認・施設偏り防止の各条件は一切変更していない
+    // （このキャップは「公式ページ取得を試みる候補の母数」だけを左右する）。
+    // `--fetch-max-per-host=` で個別実行時に上書き可能な点は従来どおり。
+    maxPerHost: num('--fetch-max-per-host=', 30),
     registerFacts,
     writeFacts,
     date: (argv.find((a) => a.startsWith('--date=')) ?? '').split('=')[1] || undefined,

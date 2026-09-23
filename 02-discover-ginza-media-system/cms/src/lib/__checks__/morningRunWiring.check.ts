@@ -73,6 +73,21 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 【2026-09-24追加・候補不足の主因調査】9/24 6:00実行の実データで、B判定407件中
+    // 298件（73%）が「同一ホストの取得本数上限（8）に達したためスキップ」だった
+    // （SWEETSタイトル候補だけでも12件が未着手のまま埋もれていた）。既定値を8→30へ
+    // 引き上げた変更が退行しないことを確認する（実行時計測は run-all.ts の対象外
+    // ——他の静的配線確認と同じくソーステキストのアサーションで守る）。
+    name: '同一ホストの取得本数上限（maxPerHost）の既定値が8へ退行していない（候補不足の主因、既定30を維持）',
+    fn: () => {
+      const src = readFileSync(resolve(ROOT, 'cms/src/scripts/morningRun.ts'), 'utf8')
+      const m = src.match(/maxPerHost:\s*num\('--fetch-max-per-host=',\s*(\d+)\)/)
+      assert(m !== null, `maxPerHostのデフォルト指定が見つからない`)
+      const def = Number(m![1])
+      assert(def >= 30, `maxPerHostの既定値が8付近へ退行している疑い（実際 ${def}。候補不足の主因だったため30以上を維持すること）`)
+    },
+  },
+  {
     name: 'assessInboxPool.ts にも同じ除外ゲートが配線されている（themesRecommend等の共有経路）',
     fn: () => {
       const src = readFileSync(resolve(ROOT, 'cms/src/lib/pipeline/assessInboxPool.ts'), 'utf8')
