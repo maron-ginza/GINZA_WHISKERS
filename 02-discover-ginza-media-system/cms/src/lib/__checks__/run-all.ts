@@ -84,6 +84,7 @@ import { suite as excludeNonArticleCandidate } from './excludeNonArticleCandidat
 import { suite as morningRunWiring } from './morningRunWiring.check'
 import { suite as fetchFairnessAllocation } from '../morning/fetchFairnessAllocation.check'
 import { suite as categoryShortfallSummary } from '../morning/categoryShortfallSummary.check'
+import { suite as buildMorningReportSuite } from '../morning/buildMorningReport.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -164,6 +165,7 @@ const results: SuiteResult[] = [
   morningRunWiring(),
   fetchFairnessAllocation(),
   categoryShortfallSummary(),
+  buildMorningReportSuite(),
 ]
 
 void (async () => {

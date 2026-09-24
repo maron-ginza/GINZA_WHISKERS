@@ -110,6 +110,13 @@ export function buildMorningReport(
       ? summarizeShortfallReasons(filterNonSweetsClassified(assessments))
       : undefined
 
+  // 【2026-09-25追加・マロン指示】「選定可能」（8カテゴリーに分類済み）と「未分類・要確認」
+  // （分類保留、Stage 4選定の対象外）を機械可読な形でも別々に持つ——JSON出力（--json）を
+  // 読む側が counts.A（合算値）だけを見て未分類を選定可能に含めてしまうことを防ぐ。
+  const selectableCount =
+    candidateBoard.sweets.length + Object.values(candidateBoard.byCategory).reduce((sum, list) => sum + list.length, 0)
+  const unclassifiedCount = candidateBoard.unclassified.length
+
   return {
     generatedAt: now.toISOString(),
     assessed: assessments.length,
@@ -128,6 +135,8 @@ export function buildMorningReport(
     sourceAvailability: opts.unavailableSources ?? [],
     sweetsShortfall,
     otherCategoriesShortfall,
+    selectableCount,
+    unclassifiedCount,
   }
 }
 
@@ -283,6 +292,21 @@ export function renderMorningReport(report: MorningReport): string {
   s += line('  （過去に実際に選定済み）のA候補のみ。')
   s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
   s += line(`  （直近14日以内の同一施設投稿の注意表示あり・除外はしていない件数: ${report.candidateBoard.facilityRecentlyUsedNoticeCount}）`)
+  s += line()
+  // 【2026-09-25追加・マロン指示】「選定可能」と「未分類・要確認」を合算せず別々に示す
+  // ——未分類（category:null）は8カテゴリーへの機械分類に失敗しているだけで、公式確認・
+  // ArticleFacts readyの水準は分類済み候補と同じでも、そのままではStage 4選定の対象に
+  // 含めない（推測でカテゴリーを割り当てない既存方針）。合計20件のような単一の集計値だけを
+  // 見せると未分類が選定可能候補であるかのように誤読されるため、内訳を明示する。
+  const selectableCount =
+    report.candidateBoard.sweets.length +
+    Object.values(report.candidateBoard.byCategory).reduce((sum, list) => sum + list.length, 0)
+  const unclassifiedCount = report.candidateBoard.unclassified.length
+  s += line(
+    `  選定可能（8カテゴリーに分類済み・公式確認済み・ArticleFacts ready）: ${selectableCount}件` +
+      ` ／ 未分類・要確認（分類保留、Stage 4選定の対象外）: ${unclassifiedCount}件` +
+      ` （合計A判定 ${report.counts.A}件）`,
+  )
   s += line()
   s += line('  ◆ 主カテゴリー（8分類・表示集約のみ。18カテゴリー・アイコンは変更していない）')
   for (const row of summarizePrimaryCategory8(report.candidateBoard)) {

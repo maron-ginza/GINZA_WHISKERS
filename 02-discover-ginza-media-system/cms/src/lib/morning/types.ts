@@ -503,6 +503,14 @@ export interface MorningReport {
    * なぜ0件か」の概観を示す。byCategory に1件でもあれば undefined。
    */
   otherCategoriesShortfall?: import('./categoryShortfallSummary').ShortfallSummary
+  /**
+   * 【2026-09-25追加・マロン指示】8カテゴリーに分類済み（＝Stage 4選定の対象）の
+   * A判定候補数（candidateBoard.sweets + byCategory の合計）。counts.A（未分類を
+   * 含む合算値）とは別に持ち、「選定可能」と「未分類・要確認」を混同しないようにする。
+   */
+  selectableCount: number
+  /** 【2026-09-25追加】未分類（category:null）でStage 4選定の対象外のA判定候補数（candidateBoard.unclassified.length）。 */
+  unclassifiedCount: number
 }
 
 /** 【2026-09-17追加】公式収集元の取得可否（SOURCE_LEDGER.healthStatusの写し）。 */
