@@ -22,6 +22,7 @@
 
 import type { CandidateAssessment } from './types'
 import { REQUIRED_CATEGORY, rankCandidatesByPriority } from './selectMorningThreeSlots'
+import { applyFacilityDiversityFilter } from './facilityDiversityFilter'
 
 export interface BoardEntry {
   discoveredContentId: number
@@ -51,16 +52,22 @@ export interface CandidateBoard {
   /** 対象から除外した使用済み（過去にマロンが選定済み）A候補の件数 */
   usedExcludedCount: number
   /**
-   * 【2026-09-23追加・マロン指示によるポリシー変更】直近14日以内に同一施設
-   * （facilityNotice.recentlyUsed）でArticleを作成済みのため対象から除外した
-   * A候補の件数。2026-09-17時点では「施設クールダウンはA/B/C判定・ボード掲載
-   * 可否に影響しない（表示のみ・自動除外しない）」という設計だったが、
-   * AUTUMN GINZA 2026登録後の実運用で「投稿済み施設が翌日以降も無条件に
-   * 再候補化される」問題が確認されたため、2026-09-23にボードからの実除外へ
-   * 変更した（facilityNotice自体は引き続き計算されるが、trueの候補は
-   * このボードに含めない）。
+   * 【2026-09-24再改訂・マロン指示】「同一施設を直近14日以内に掲載」を
+   * 一律除外条件にしない方針へ戻した。2026-09-23改訂は
+   * PARENT_GINZA_SIX（facilityKey.ts）のような複合施設グルーピングの下で、
+   * 「GINZA SIXのどれか1件が投稿済み」というだけで、同じ館内の別ブランド・
+   * 別企画（銀座 蔦屋書店の別フェア等）までボードから一律に消えてしまう
+   * 副作用があった——同一商品・同一企画・既投稿の重複は dedupCheck.ts が
+   * 別途担保しており、施設単位の一律除外は同一商品/企画の重複防止としては
+   * 過剰だった。以後、facilityNotice.recentlyUsed は**除外条件にはせず**、
+   * 表示専用の注意情報のまま維持し、施設への偏りは
+   * applyFacilityDiversityFilter（既存、2026-09-22実装）による**選定時の
+   * 優先順位の調整（後方へ弱く押し下げるのみ・除外しない）**で扱う。
+   * このフィールドは「除外した件数」ではなく、「直近同一施設投稿の注意表示が
+   * 付いている（＝除外はされていない）A候補の件数」を表す（マロンへの
+   * 透明性のため件数自体は維持）。
    */
-  facilityRecentlyUsedExcludedCount: number
+  facilityRecentlyUsedNoticeCount: number
 }
 
 function toBoardEntry(a: CandidateAssessment): BoardEntry {
@@ -87,19 +94,27 @@ export function buildCandidateBoard(
 ): CandidateBoard {
   const aOnly = assessments.filter((a) => a.verdict === 'A')
   const used = aOnly.filter((a) => usedDcIds.has(a.discoveredContentId))
-  const notUsed = aOnly.filter((a) => !usedDcIds.has(a.discoveredContentId))
+  // 【2026-09-24再改訂】施設クールダウン（facilityNotice.recentlyUsed）では
+  // もう対象を絞らない——available は「使用済みでない」だけで絞った母集団。
+  const available = aOnly.filter((a) => !usedDcIds.has(a.discoveredContentId))
+  const facilityRecentlyUsedNoticeCount = available.filter((a) => a.facilityNotice?.recentlyUsed === true).length
 
-  // 【2026-09-23追加・マロン指示】直近14日以内に同一施設でArticleを作成済み
-  // （facilityNotice.recentlyUsed）の候補はボードから除外する（2026-09-17の
-  // 「表示のみ・自動除外しない」方針を変更）。
-  const facilityRecentlyUsed = notUsed.filter((a) => a.facilityNotice?.recentlyUsed === true)
-  const available = notUsed.filter((a) => a.facilityNotice?.recentlyUsed !== true)
+  // 施設への偏り調整は除外ではなく「選定時の優先順位」で行う（マロン指示）。
+  // applyFacilityDiversityFilter は元々「1施設グループにつきmaxPerFacilityGroup件まで」
+  // という上限も持つが、ここでは maxPerFacilityGroup を実質無制限にして呼び出す——
+  // 同一施設・同一系列（PARENT_GINZA_SIXグルーピング等）の候補を消さず、
+  // 直近使用済みの候補だけを同点内で後方へ弱く押し下げる整列効果のみを使う
+  // （新規ロジックの二重実装を避け、2026-09-22実装済みの既存関数をそのまま再利用）。
+  const softenFacilityOrder = (entries: BoardEntry[]): BoardEntry[] =>
+    applyFacilityDiversityFilter(entries, { maxPerFacilityGroup: Number.POSITIVE_INFINITY }).selected
 
-  const sweets = rankCandidatesByPriority(available.filter((a) => a.digestMeta?.category === REQUIRED_CATEGORY)).map(
-    toBoardEntry,
+  const sweets = softenFacilityOrder(
+    rankCandidatesByPriority(available.filter((a) => a.digestMeta?.category === REQUIRED_CATEGORY)).map(toBoardEntry),
   )
 
-  const unclassified = rankCandidatesByPriority(available.filter((a) => !a.digestMeta?.category)).map(toBoardEntry)
+  const unclassified = softenFacilityOrder(
+    rankCandidatesByPriority(available.filter((a) => !a.digestMeta?.category)).map(toBoardEntry),
+  )
 
   const byCategory: Record<string, BoardEntry[]> = {}
   const others = available.filter((a) => a.digestMeta?.category && a.digestMeta.category !== REQUIRED_CATEGORY)
@@ -108,12 +123,15 @@ export function buildCandidateBoard(
     if (!byCategory[cat]) byCategory[cat] = []
     byCategory[cat].push(toBoardEntry(a))
   }
+  for (const cat of Object.keys(byCategory)) {
+    byCategory[cat] = softenFacilityOrder(byCategory[cat])
+  }
 
   return {
     sweets,
     byCategory,
     unclassified,
     usedExcludedCount: used.length,
-    facilityRecentlyUsedExcludedCount: facilityRecentlyUsed.length,
+    facilityRecentlyUsedNoticeCount,
   }
 }

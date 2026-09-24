@@ -39,8 +39,33 @@ const ALL_18: CategoryCode[] = [
   'FOOD', 'CAFE', 'SWEETS', 'SHOPPING', 'ARCHITECTURE', 'ART', 'EVENT', 'NIGHT', 'MUSIC', 'BEAUTY',
   'HOTEL', 'WELLNESS', 'EXPERIENCE', 'GIFT', 'WORKSHOP', 'PHOTO', 'FAMILY', 'NIGHT_VIEW', 'RAINY_DAY',
 ]
-// SWEETS は専用アイコン未制作のため FOOD のアイコン画像を意図的に流用する（唯一の例外）。
-const INTENTIONAL_ICON_REUSE: [CategoryCode, CategoryCode][] = [['SWEETS', 'FOOD']]
+
+// 【2026-09-24改訂】完成版8アイコン（primaryCategory8.ts）が実際に用意されたため、
+// 「SWEETSだけFOODを流用」という暫定措置は解消した。代わりに、18(+RAINY_DAY)カテゴリーは
+// 8分類へ意図的に束ねられており、同じ8分類グループに属するものだけがファイルを共有する
+// （primaryCategory8.ts の CATEGORY_TO_PRIMARY_8 を正として、このテストでも同じ
+// グルーピングを検証する——値は複製せず期待値としてここに書き写す）。
+const PRIMARY_8_GROUP: Record<CategoryCode, string> = {
+  SWEETS: 'SWEETS',
+  FOOD: 'GOURMET',
+  CAFE: 'GOURMET',
+  NIGHT: 'GOURMET',
+  SHOPPING: 'SHOPPING',
+  GIFT: 'SHOPPING',
+  ART: 'ART_CULTURE',
+  ARCHITECTURE: 'ART_CULTURE',
+  PHOTO: 'ART_CULTURE',
+  NIGHT_VIEW: 'ART_CULTURE',
+  MUSIC: 'MUSIC_STAGE',
+  BEAUTY: 'BEAUTY_WELLNESS',
+  WELLNESS: 'BEAUTY_WELLNESS',
+  WORKSHOP: 'LEARNING_EXPERIENCE',
+  EXPERIENCE: 'LEARNING_EXPERIENCE',
+  FAMILY: 'LEARNING_EXPERIENCE',
+  EVENT: 'SEASONAL',
+  HOTEL: 'SEASONAL',
+  RAINY_DAY: 'SEASONAL',
+}
 
 const cases: CheckCase[] = [
   {
@@ -52,35 +77,31 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '18(+SWEETS)カテゴリーアイコンをすべて持ち、slug / file は一意（SWEETS→FOOD流用のみ意図的例外）',
+    name: '18(+RAINY_DAY)カテゴリーアイコンをすべて持ち、同一8分類グループのみファイルを共有する（2026-09-24：完成版8アイコン反映）',
     fn: () => {
       const keys = Object.keys(CATEGORY_ICONS)
       assert(keys.length === ALL_18.length, `件数: ${keys.length}（期待 ${ALL_18.length}）`)
       for (const c of ALL_18) assert(!!CATEGORY_ICONS[c], `${c} が無い`)
-      const reuseSources = new Set(INTENTIONAL_ICON_REUSE.map(([, src]) => src))
-      const slugs = new Set<string>()
-      const files = new Set<string>()
+      const fileToGroups = new Map<string, Set<string>>()
       for (const c of ALL_18) {
         const ic = CATEGORY_ICONS[c]
-        assert(/^icon_[a-z]+$/.test(ic.iconSlug), `slug 形式: ${ic.iconSlug}`)
-        assert(/^\d{2}_[a-z_]+\.jpg$/.test(ic.iconFile), `file 形式: ${ic.iconFile}`)
-        const isIntentionalReuse = INTENTIONAL_ICON_REUSE.some(([dup]) => dup === c)
-        if (!isIntentionalReuse) {
-          assert(!slugs.has(ic.iconSlug), `slug 重複（意図しない）: ${ic.iconSlug}`)
-          assert(!files.has(ic.iconFile), `file 重複（意図しない）: ${ic.iconFile}`)
-        }
-        if (!reuseSources.has(c) || !isIntentionalReuse) {
-          slugs.add(ic.iconSlug)
-          files.add(ic.iconFile)
-        }
+        assert(/^icon_[a-z_]+$/.test(ic.iconSlug), `slug 形式: ${ic.iconSlug}`)
+        assert(/^\d{2}_[a-z_]+\.png$/.test(ic.iconFile), `file 形式: ${ic.iconFile}`)
+        const group = PRIMARY_8_GROUP[c]
+        if (!fileToGroups.has(ic.iconFile)) fileToGroups.set(ic.iconFile, new Set())
+        fileToGroups.get(ic.iconFile)!.add(group)
       }
-      // SWEETS は明示的に FOOD と同じ画像を指す（専用アイコン未制作の暫定措置）
-      assert(CATEGORY_ICONS.SWEETS.iconFile === CATEGORY_ICONS.FOOD.iconFile, 'SWEETS は FOOD のアイコンを流用')
+      // 1ファイルにつき8分類グループは必ず1つだけ（別グループが同じ画像を指していないこと）
+      for (const [file, groups] of fileToGroups) {
+        assert(groups.size === 1, `${file} が複数グループから参照されている: ${[...groups].join(',')}`)
+      }
+      assert(fileToGroups.size === 8, `使用ファイル数は8種のはず（実際 ${fileToGroups.size}）`)
+      assert(CATEGORY_ICONS.SWEETS.iconFile === '01_sweets.png', `SWEETS専用アイコン: ${CATEGORY_ICONS.SWEETS.iconFile}`)
       assert(CATEGORY_ICONS.SWEETS.labelJa === 'スウィーツ', `SWEETS labelJa: ${CATEGORY_ICONS.SWEETS.labelJa}`)
     },
   },
   {
-    name: 'resolveCategoryIcon: 「更紗展」＋「銀座もとじ」→ ART / icon_art（DC#549 / article 58 と同じ判定）',
+    name: 'resolveCategoryIcon: 「更紗展」＋「銀座もとじ」→ ART / icon_art_culture / 04_art_culture.png（DC#549 / article 58 と同じ判定）',
     fn: () => {
       const r = resolveCategoryIcon({
         title: 'インドから世界へ。9月最後の週末、銀座で出会う『更紗展』',
@@ -88,8 +109,8 @@ const cases: CheckCase[] = [
         pillarJa: '文化',
       })
       assert(r.status === 'resolved', `status: ${r.status}`)
-      assert(r.category === 'ART' && r.iconSlug === 'icon_art', `${r.category}/${r.iconSlug}`)
-      assert(r.iconFile === '05_art_and_culture.jpg', `file: ${r.iconFile}`)
+      assert(r.category === 'ART' && r.iconSlug === 'icon_art_culture', `${r.category}/${r.iconSlug}`)
+      assert(r.iconFile === '04_art_culture.png', `file: ${r.iconFile}`)
     },
   },
   {
@@ -101,11 +122,11 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: 'resolveCategoryIcon: 2026-09-11追加 SWEETS（アフタヌーンティー含む）はFOODアイコンで解決',
+    name: 'resolveCategoryIcon: 2026-09-11追加 SWEETS（アフタヌーンティー含む）は2026-09-24追加のSWEETS専用アイコンで解決',
     fn: () => {
       const r1 = resolveCategoryIcon({ title: '秋のアフタヌーンティー' })
       assert(r1.status === 'resolved' && r1.category === 'SWEETS', `アフタヌーンティー: ${JSON.stringify(r1)}`)
-      assert(r1.iconFile === '01_gourmet.jpg', `SWEETSはFOODのアイコンを流用: ${r1.iconFile}`)
+      assert(r1.iconFile === '01_sweets.png', `SWEETS専用アイコン: ${r1.iconFile}`)
       assert(r1.labelJa === 'スウィーツ', `labelJa: ${r1.labelJa}`)
 
       const r2 = resolveCategoryIcon({ title: '新作パウンドケーキが登場' })

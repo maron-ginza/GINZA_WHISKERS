@@ -157,13 +157,16 @@ const cases: CheckCase[] = [
     },
   },
   {
-    // 【2026-09-17→2026-09-23 ポリシー変更・マロン指示】2026-09-17時点は
+    // 【2026-09-17→2026-09-23→2026-09-24 ポリシー変更・マロン指示】2026-09-17時点は
     // 「A判定と施設クールダウンの責務分離——施設クールダウン中でもA候補は
     // ボードに出続け、facilityNoticeは注意情報として表示するのみ（除外しない）」
-    // だった。AUTUMN GINZA 2026登録後の実運用で「投稿済み施設が翌日以降も
-    // 無条件に再候補化される」問題が確認されたため、2026-09-23に
-    // 「直近14日以内に同一施設で投稿済みならボードから除外する」へ変更した。
-    name: '【2026-09-23変更】施設クールダウン中（facilityNotice.recentlyUsed:true）のA候補はボードから除外される',
+    // だった。2026-09-23に一時「直近14日以内に同一施設で投稿済みならボードから
+    // 除外する」へ変更したが、PARENT_GINZA_SIXのような複合施設グルーピングの下で
+    // 同じ館内の別ブランド・別企画まで一律に消えてしまう副作用が判明したため、
+    // 2026-09-24に「除外しない・表示のみ」の2026-09-17方針へ戻した
+    // （施設への偏りは選定時の優先順位＝applyFacilityDiversityFilterの
+    // 後方への弱い押し下げで調整する）。
+    name: '【2026-09-24変更】施設クールダウン中（facilityNotice.recentlyUsed:true）のA候補もボードから除外されない（注意表示のみ）',
     fn: () => {
       const a = withCategory(81, 'SWEETS', 'matsuya-ginza')
       a.facilityNotice = {
@@ -175,12 +178,15 @@ const cases: CheckCase[] = [
         message: '同一施設が直近に使用されています（過去14日以内に同一施設（松屋銀座）でArticle #69 作成（2026-09-14））',
       }
       const board = buildCandidateBoard([a])
-      assert(board.sweets.length === 0, '施設クールダウン中の候補はSWEETS枠から除外されるはず')
-      assert(board.facilityRecentlyUsedExcludedCount === 1, `除外件数が1件のはず（実際 ${board.facilityRecentlyUsedExcludedCount}）`)
+      assert(board.sweets.length === 1 && board.sweets[0].discoveredContentId === 81, '施設クールダウン中でも候補はSWEETS枠に残るはず')
+      assert(
+        board.facilityRecentlyUsedNoticeCount === 1,
+        `注意表示件数が1件のはず（実際 ${board.facilityRecentlyUsedNoticeCount}）`,
+      )
     },
   },
   {
-    name: '施設クールダウン対象外の候補と対象の候補が混在する場合、対象外のみボードに残る',
+    name: '施設クールダウン対象と対象外の候補が混在する場合、両方ボードに残り、対象外が先に並ぶ（後方へ弱く押し下げるのみ）',
     fn: () => {
       const clean = withCategory(83, 'SWEETS', 'clean-facility')
       const cooling = withCategory(84, 'SWEETS', 'matsuya-ginza')
@@ -193,8 +199,28 @@ const cases: CheckCase[] = [
         message: 'test',
       }
       const board = buildCandidateBoard([clean, cooling])
-      assert(board.sweets.length === 1 && board.sweets[0].discoveredContentId === 83, 'クールダウン対象外の候補のみ残るはず')
-      assert(board.facilityRecentlyUsedExcludedCount === 1, '除外件数は1件のはず')
+      const ids = board.sweets.map((e) => e.discoveredContentId)
+      assert(ids.length === 2 && ids.includes(83) && ids.includes(84), '両方ボードに残るはず')
+      assert(ids[0] === 83, 'クールダウン対象外（83）が先に並ぶはず')
+      assert(board.facilityRecentlyUsedNoticeCount === 1, '注意表示件数は1件のはず')
+    },
+  },
+  {
+    name: '同じ親施設グループ（GINZA SIX系列）の別ブランド・別企画は、片方が施設クールダウン中でも両方ボードに残る',
+    fn: () => {
+      const tsutaya = withCategory(85, 'SWEETS', 'ginza-tsutaya')
+      tsutaya.facilityNotice = {
+        recentlyUsed: true,
+        parentFacilityLabel: 'GINZA SIX（蔦屋書店含む）',
+        lastUsedDate: '2026-09-20T00:00:00Z',
+        lastArticleId: 90,
+        daysSince: 1,
+        message: 'test',
+      }
+      const ginzaSix = withCategory(86, 'SWEETS', 'ginza-six')
+      const board = buildCandidateBoard([tsutaya, ginzaSix])
+      const ids = board.sweets.map((e) => e.discoveredContentId)
+      assert(ids.length === 2 && ids.includes(85) && ids.includes(86), '別ブランド・別企画は施設が同系列でも両方残るはず')
     },
   },
   {

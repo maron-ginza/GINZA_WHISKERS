@@ -19,6 +19,29 @@
 import type { CandidateAssessment, MorningReport, SourceAvailability } from './types'
 import { buildCandidateBoard, type BoardEntry } from './candidateBoard'
 import { filterByCategory, filterNonSweetsClassified, summarizeShortfallReasons } from './categoryShortfallSummary'
+import { PRIMARY_CATEGORY_8, PRIMARY_CATEGORY_8_LABELS, mapToPrimaryCategory8 } from '../pipeline/primaryCategory8'
+import type { CandidateBoard } from './candidateBoard'
+
+// 【2026-09-24追加・マロン指示：主カテゴリー整理】既存18カテゴリー（byCategory）の
+// 表示は変更せず、その上にマロンが一覧しやすい8分類の件数サマリを追加する。
+// 18カテゴリー・アイコン・DBのカテゴリーフィールドは一切変更しない（表示のみの集約）。
+function summarizePrimaryCategory8(board: CandidateBoard): { label: string; count: number }[] {
+  const counts = new Map<string, number>(PRIMARY_CATEGORY_8.map((c) => [c, 0]))
+  let unmapped = 0
+  const tally = (cat: string | null) => {
+    const mapped = mapToPrimaryCategory8(cat)
+    if (mapped) counts.set(mapped, (counts.get(mapped) ?? 0) + 1)
+    else unmapped += 1
+  }
+  for (const e of board.sweets) tally(e.category)
+  for (const cat of Object.keys(board.byCategory)) for (const e of board.byCategory[cat]) tally(e.category)
+  // unclassified（18カテゴリー未確定）は8分類でも当然未確定のため unmapped に数えない
+  // （もともとカテゴリーが無いことが明示されている候補であり、8分類マッピングの
+  // 取りこぼしではないため区別する）。
+  const rows = PRIMARY_CATEGORY_8.map((c) => ({ label: PRIMARY_CATEGORY_8_LABELS[c], count: counts.get(c) ?? 0 }))
+  if (unmapped > 0) rows.push({ label: '（8分類未対応の18カテゴリー値・要確認）', count: unmapped })
+  return rows
+}
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -252,12 +275,19 @@ export function renderMorningReport(report: MorningReport): string {
   }
   s += line('■ Stage 3：A候補ボード（最終3本はここでは確定しない・マロンが選ぶ）')
   s += line('  A判定は既に現在性・既処理・近似重複を通過済み（B/Cはここに出さない）。')
-  s += line('  【2026-09-23改訂・マロン指示】直近14日以内に同一施設でArticleを作成済みの候補は')
-  s += line('  このボードから除外する（2026-09-17時点の「表示のみ・自動除外しない」方針から変更）。')
-  s += line('  このボードはA/B/Cを一切変更しない読み取り専用の表示。使用済み（過去に実際に選定済み）のA候補・')
-  s += line('  直近14日以内に同一施設で投稿済みのA候補は除外。')
+  s += line('  【2026-09-24再改訂・マロン指示】「同一施設を直近14日以内に掲載」は一律除外条件に')
+  s += line('  しない（2026-09-23改訂を撤回）。同一商品・同一企画・既投稿の重複は別途除外済みで、')
+  s += line('  同じ施設・同じ館内の別ブランド・別企画はこのボードに残る。施設への偏りは除外ではなく')
+  s += line('  「選定時の優先順位」で調整する（直近使用済みの候補は同点内で後方へ弱く押し下げるのみ）。')
+  s += line('  このボードはA/B/Cを一切変更しない読み取り専用の表示。除外するのは使用済み')
+  s += line('  （過去に実際に選定済み）のA候補のみ。')
   s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
-  s += line(`  （直近14日以内の同一施設投稿のため除外した件数: ${report.candidateBoard.facilityRecentlyUsedExcludedCount}）`)
+  s += line(`  （直近14日以内の同一施設投稿の注意表示あり・除外はしていない件数: ${report.candidateBoard.facilityRecentlyUsedNoticeCount}）`)
+  s += line()
+  s += line('  ◆ 主カテゴリー（8分類・表示集約のみ。18カテゴリー・アイコンは変更していない）')
+  for (const row of summarizePrimaryCategory8(report.candidateBoard)) {
+    s += line(`      - ${row.label}: ${row.count}件`)
+  }
   s += line()
   s += line(`  ◆ SWEETS（${report.candidateBoard.sweets.length}件・先頭の独立枠・毎朝優先して探す）`)
   if (report.candidateBoard.sweets.length === 0) {

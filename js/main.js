@@ -32,6 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initLatestJournal();
   initY400LangToggle();
+  initClubCharmantLangToggle();
 });
 
 // 「最新のジャーナル」：Project 02（Discover GINZA）が公開する疎結合フィード
@@ -70,6 +71,10 @@ function initLatestJournal() {
 
 // フィードの items から、描画に必要な最小限を検証して取り出す。
 // url は http(s) のみ許可（javascript: 等を弾く）。title と url が無い項目は捨てる。
+// 2026-09-24追加：category（主カテゴリー8分類・日本語ラベル）と categoryIconUrl
+// （そのアイコン画像。Project 02 discover.ginzawhiskers.com が配信元）。
+// categoryIconUrl も url と同じ http(s) 限定チェックを行い、未分類（フィード側が
+// null を返す）の記事はアイコンを表示しない（無関係な画像で埋めない）。
 function normalizeLatestItems(data) {
   const raw = data && Array.isArray(data.items) ? data.items : [];
   return raw
@@ -77,12 +82,18 @@ function normalizeLatestItems(data) {
       const url = typeof it.url === "string" && /^https?:\/\//i.test(it.url) ? it.url : null;
       const title = typeof it.title === "string" ? it.title.trim() : "";
       if (!url || !title) return null;
+      const categoryIconUrl =
+        typeof it.categoryIconUrl === "string" && /^https?:\/\//i.test(it.categoryIconUrl)
+          ? it.categoryIconUrl
+          : null;
       return {
         url,
         title,
         excerpt: typeof it.excerpt === "string" ? it.excerpt.trim() : "",
         pillar: typeof it.pillar === "string" ? it.pillar.trim() : "",
         publishedAt: typeof it.publishedAt === "string" ? it.publishedAt : "",
+        category: typeof it.category === "string" ? it.category.trim() : "",
+        categoryIconUrl,
       };
     })
     .filter(Boolean);
@@ -106,9 +117,20 @@ function renderLatestCards(container, items) {
     card.href = item.url;
 
     const dateText = formatLatestDate(item.publishedAt);
-    if (item.pillar || dateText) {
+    if (item.pillar || dateText || item.categoryIconUrl) {
       const meta = document.createElement("p");
       meta.className = "latest-card-meta";
+      // 2026-09-24追加：主カテゴリー8分類のアイコン（未分類の記事には出さない）。
+      if (item.categoryIconUrl) {
+        const icon = document.createElement("img");
+        icon.className = "latest-card-category-icon";
+        icon.src = item.categoryIconUrl;
+        icon.alt = item.category || "";
+        icon.loading = "lazy";
+        icon.width = 20;
+        icon.height = 20;
+        meta.appendChild(icon);
+      }
       if (item.pillar) {
         const pillar = document.createElement("span");
         pillar.className = "latest-card-pillar";
@@ -203,6 +225,67 @@ function initY400LangToggle() {
   // フッターの「日本語ページへ／Japanese Site」：常に日本語表示へ戻す
   // 機能ボタン（別URLへは遷移しない）。存在しないページでは何もしない。
   const footerLangBtn = document.getElementById("y400-footer-lang");
+  if (footerLangBtn) {
+    footerLangBtn.addEventListener("click", () => applyLang("ja"));
+  }
+
+  let stored = null;
+  try {
+    stored = localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    /* 読み取り不可時は既定の日本語表示のまま */
+  }
+  if (stored === "en") applyLang("en");
+}
+
+// club-charmant/（Club Charmant専用ページ）のページ共通 日本語／ENGLISH 切り替え。
+// initY400LangToggle と同じ設計（data-text-ja/en の一括切替、html lang 同期、
+// localStorage 永続化）だが、対象IDが異なる別ページのため独立した関数にしている
+// （#cc-lang-toggle が無いページ、すなわち他の全ページでは即 return し、
+// 既存機能・他ページへの影響はない）。
+function initClubCharmantLangToggle() {
+  const toggle = document.getElementById("cc-lang-toggle");
+  if (!toggle) return;
+
+  const STORAGE_KEY = "cc-lang";
+  const buttons = toggle.querySelectorAll(".y400-lang-btn");
+
+  function applyLang(lang) {
+    document.documentElement.lang = lang;
+
+    document.querySelectorAll("[data-text-ja]").forEach((el) => {
+      const text = lang === "en" ? el.dataset.textEn : el.dataset.textJa;
+      if (text !== undefined) el.textContent = text;
+    });
+
+    // 2026-09-24 追加：実写真（img）の alt テキストを日英切替に合わせて
+    // 差し替える。data-alt-ja/en を持たない画像（装飾用アイコン等）には
+    // 一切影響しない。
+    document.querySelectorAll("[data-alt-ja]").forEach((img) => {
+      const alt = lang === "en" ? img.dataset.altEn : img.dataset.altJa;
+      if (alt !== undefined) img.alt = alt;
+    });
+
+    buttons.forEach((b) => {
+      const isActive = b.dataset.lang === lang;
+      b.classList.toggle("is-active", isActive);
+      b.setAttribute("aria-pressed", String(isActive));
+    });
+
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (e) {
+      /* プライベートブラウズ等で保存できない場合は無視（表示自体には影響しない） */
+    }
+  }
+
+  toggle.addEventListener("click", (event) => {
+    const btn = event.target.closest(".y400-lang-btn");
+    if (!btn || !toggle.contains(btn)) return;
+    applyLang(btn.dataset.lang === "en" ? "en" : "ja");
+  });
+
+  const footerLangBtn = document.getElementById("cc-footer-lang");
   if (footerLangBtn) {
     footerLangBtn.addEventListener("click", () => applyLang("ja"));
   }

@@ -52,6 +52,10 @@ export interface ArticleSummary {
   images: ArticleImage[]
   // false の場合、title/body/seo等は実際の翻訳ではなくプレースホルダー
   isTranslated: boolean
+  // 2026-09-24追加。主カテゴリー8分類（cms側 primaryCategory8.ts 正本）。
+  // ロケール非依存のプレーンな select フィールドのため Localized<T> ではない。
+  // 未分類（推測で埋めない設計）は null。
+  primaryCategory8: string | null
 }
 
 export interface ArticleDetail extends ArticleSummary {
@@ -82,6 +86,8 @@ interface ArticleRaw {
   // Phase 8でTags.nameをlocalized化。`locale=all`のためロケールごとの生値で返る
   pillars: Array<{ id: string; name: Localized<string> }>
   images: ArticleImageRaw[]
+  // 2026-09-24追加。ロケール非依存（Localizedではない）。未設定はnull/undefined。
+  primaryCategory8?: string | null
   seo: {
     metaTitle: Localized<string>
     metaDescription: Localized<string>
@@ -147,6 +153,7 @@ function resolveSummary(raw: ArticleRaw, locale: Locale): ArticleSummary {
       caption: img.caption[locale] ?? null,
     })),
     isTranslated,
+    primaryCategory8: raw.primaryCategory8 ?? null,
   }
 }
 

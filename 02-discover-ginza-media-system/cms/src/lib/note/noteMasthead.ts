@@ -46,67 +46,70 @@ export type CategoryCode =
 export interface CategoryIcon {
   category: CategoryCode
   labelJa: string
-  /** VISUAL_ASSET_LIBRARY §8.2 のスラッグ */
+  /** VISUAL_ASSET_LIBRARY §8.2 のスラッグ（2026-09-24以降は8分類ベースのスラッグ） */
   iconSlug: string
   /** media/discover-ginza-category-icons/ 配下の実ファイル名 */
   iconFile: string
 }
 
-/** 18 カテゴリー → アイコン（VISUAL_ASSET_LIBRARY §3.3 / §8.2 と 1:1）。 */
-export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
-  FOOD: { category: 'FOOD', labelJa: 'グルメ', iconSlug: 'icon_food', iconFile: '01_gourmet.jpg' },
-  CAFE: { category: 'CAFE', labelJa: 'カフェ', iconSlug: 'icon_cafe', iconFile: '02_cafe.jpg' },
-  // 2026-09-11 追加：SWEETS 専用アイコン画像は未制作のため、暫定的に FOOD（グルメ）の
-  // アイコン画像を流用する（表示ラベルのみ「スウィーツ」）。専用アイコンが用意でき次第、
-  // iconSlug/iconFile を差し替える（VISUAL_ASSET_LIBRARY 側の対応は未着手）。
-  SWEETS: { category: 'SWEETS', labelJa: 'スウィーツ', iconSlug: 'icon_food', iconFile: '01_gourmet.jpg' },
-  SHOPPING: { category: 'SHOPPING', labelJa: 'ショッピング', iconSlug: 'icon_shopping', iconFile: '03_shopping.jpg' },
-  ARCHITECTURE: {
-    category: 'ARCHITECTURE',
-    labelJa: '名所・建築',
-    iconSlug: 'icon_architecture',
-    iconFile: '04_landmarks_and_architecture.jpg',
-  },
-  ART: { category: 'ART', labelJa: 'アート・文化', iconSlug: 'icon_art', iconFile: '05_art_and_culture.jpg' },
-  EVENT: { category: 'EVENT', labelJa: 'イベント', iconSlug: 'icon_event', iconFile: '06_events.jpg' },
-  NIGHT: { category: 'NIGHT', labelJa: 'バー・お酒', iconSlug: 'icon_night', iconFile: '07_bars_and_drinks.jpg' },
-  MUSIC: { category: 'MUSIC', labelJa: '音楽・ライブ', iconSlug: 'icon_music', iconFile: '08_music_and_live.jpg' },
-  BEAUTY: { category: 'BEAUTY', labelJa: 'ビューティー', iconSlug: 'icon_beauty', iconFile: '09_beauty.jpg' },
-  HOTEL: { category: 'HOTEL', labelJa: 'ホテル', iconSlug: 'icon_hotel', iconFile: '10_hotels.jpg' },
-  WELLNESS: {
-    category: 'WELLNESS',
-    labelJa: '癒し・リラクゼーション',
-    iconSlug: 'icon_wellness',
-    iconFile: '11_wellness_and_relaxation.jpg',
-  },
-  EXPERIENCE: {
-    category: 'EXPERIENCE',
-    labelJa: 'トラベル・体験',
-    iconSlug: 'icon_experience',
-    iconFile: '12_travel_and_experiences.jpg',
-  },
-  GIFT: { category: 'GIFT', labelJa: '手土産・ギフト', iconSlug: 'icon_gift', iconFile: '13_gifts_and_souvenirs.jpg' },
-  WORKSHOP: {
-    category: 'WORKSHOP',
-    labelJa: '学び・ワークショップ',
-    iconSlug: 'icon_workshop',
-    iconFile: '14_learning_and_workshops.jpg',
-  },
-  PHOTO: { category: 'PHOTO', labelJa: 'フォトスポット', iconSlug: 'icon_photo', iconFile: '15_photo_spots.jpg' },
-  FAMILY: { category: 'FAMILY', labelJa: 'ファミリー', iconSlug: 'icon_family', iconFile: '16_family.jpg' },
-  NIGHT_VIEW: {
-    category: 'NIGHT_VIEW',
-    labelJa: '夜景・ナイトスポット',
-    iconSlug: 'icon_nightview',
-    iconFile: '17_night_views_and_night_spots.jpg',
-  },
-  RAINY_DAY: {
-    category: 'RAINY_DAY',
-    labelJa: '雨の日おすすめ',
-    iconSlug: 'icon_rainyday',
-    iconFile: '18_rainy_day_picks.jpg',
-  },
+// 【2026-09-24改訂・マロン指示】旧18カテゴリー専用アイコン画像（01_gourmet.jpg等）は
+// そもそも一度も制作・配置されていなかった（media/discover-ginza-category-icons/ に
+// 該当ファイルは存在せず、記事下書き生成はcategory_icon_missingで停止し続けていた——
+// createDraftFromArticleFacts.ts参照）。マロンが完成版8アイコン（01_sweets.png〜
+// 08_seasonal_events.png）を用意したため、18カテゴリー（CategoryCode）は維持したまま
+// （分類ロジック・DBフィールド・記事データは無変更）、アイコンの実体だけをこの8分類へ
+// 束ねて割り当てる。8分類への束ね方の根拠は primaryCategory8.ts を正本とする
+// （重複させず、そこから書き写す）。
+import { iconFileForCategory18, mapToPrimaryCategory8, PRIMARY_CATEGORY_8_LABELS } from '../pipeline/primaryCategory8'
+
+const ICON_SLUG_BY_PRIMARY_8: Record<string, string> = {
+  SWEETS: 'icon_sweets',
+  GOURMET: 'icon_gourmet',
+  SHOPPING: 'icon_shopping',
+  ART_CULTURE: 'icon_art_culture',
+  MUSIC_STAGE: 'icon_music_stage',
+  BEAUTY_WELLNESS: 'icon_beauty_wellness',
+  LEARNING_EXPERIENCE: 'icon_learning_experience',
+  SEASONAL: 'icon_seasonal',
 }
+
+function iconFor(category: CategoryCode, labelJa: string): CategoryIcon {
+  const primary8 = mapToPrimaryCategory8(category)
+  const iconFile = iconFileForCategory18(category)
+  if (!primary8 || !iconFile) {
+    // primaryCategory8.ts 側に対応が無い場合（新カテゴリー追加時の取りこぼし等）は
+    // 推測でアイコンを割り当てない——呼び出し側（resolveCategoryIcon）が
+    // ファイル不在を検出しneeds_humanで停止する設計に委ねる。
+    throw new Error(`カテゴリー「${category}」の8分類マッピングが primaryCategory8.ts に無い（要追記）`)
+  }
+  return { category, labelJa, iconSlug: ICON_SLUG_BY_PRIMARY_8[primary8], iconFile }
+}
+
+/** 18 カテゴリー＋RAINY_DAY → アイコン。実体は8分類アイコン（primaryCategory8.ts）に束ねる。 */
+export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
+  FOOD: iconFor('FOOD', 'グルメ'),
+  CAFE: iconFor('CAFE', 'カフェ'),
+  SWEETS: iconFor('SWEETS', 'スウィーツ'),
+  SHOPPING: iconFor('SHOPPING', 'ショッピング'),
+  ARCHITECTURE: iconFor('ARCHITECTURE', '名所・建築'),
+  ART: iconFor('ART', 'アート・文化'),
+  EVENT: iconFor('EVENT', 'イベント'),
+  NIGHT: iconFor('NIGHT', 'バー・お酒'),
+  MUSIC: iconFor('MUSIC', '音楽・ライブ'),
+  BEAUTY: iconFor('BEAUTY', 'ビューティー'),
+  HOTEL: iconFor('HOTEL', 'ホテル'),
+  WELLNESS: iconFor('WELLNESS', '癒し・リラクゼーション'),
+  EXPERIENCE: iconFor('EXPERIENCE', 'トラベル・体験'),
+  GIFT: iconFor('GIFT', '手土産・ギフト'),
+  WORKSHOP: iconFor('WORKSHOP', '学び・ワークショップ'),
+  PHOTO: iconFor('PHOTO', 'フォトスポット'),
+  FAMILY: iconFor('FAMILY', 'ファミリー'),
+  NIGHT_VIEW: iconFor('NIGHT_VIEW', '夜景・ナイトスポット'),
+  RAINY_DAY: iconFor('RAINY_DAY', '雨の日おすすめ'),
+}
+
+// 参照のみ（未使用インポート回避・将来の直接参照用）。
+export { PRIMARY_CATEGORY_8_LABELS }
 
 export interface ResolvedCategoryIcon {
   /** 'resolved'＝アイコン確定。'needs_human'＝確定できず人間確認で停止する。 */

@@ -72,6 +72,7 @@ import { suite as extractMitsukoshiGinzaFoodEvents } from '../crawler/extractMit
 import { suite as mitsukoshiFetchGate } from '../crawler/mitsukoshiFetchGate.check'
 import { suite as extractionDispatch } from '../sourceLedger/extractionDispatch.check'
 import { suite as articleCategories } from '../pipeline/articleCategories.check'
+import { suite as primaryCategory8 } from '../pipeline/primaryCategory8.check'
 import { suite as abcSingleSource } from '../morning/abcSingleSource.check'
 import { suite as paidApiAutomationAudit } from '../morning/paidApiAutomationAudit.check'
 import { suite as chromeExtensionManifest } from './chromeExtensionManifest.check'
@@ -151,6 +152,7 @@ const results: SuiteResult[] = [
   mitsukoshiFetchGate(),
   extractionDispatch(),
   articleCategories(),
+  primaryCategory8(),
   abcSingleSource(),
   paidApiAutomationAudit(),
   chromeExtensionManifest(),

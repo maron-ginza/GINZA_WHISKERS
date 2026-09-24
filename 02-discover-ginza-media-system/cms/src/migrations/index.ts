@@ -5,6 +5,7 @@ import * as migration_20260909_120000_article_facts_admission_applicable from '.
 import * as migration_20260910_120000_articles_paid_lane from './20260910_120000_articles_paid_lane';
 import * as migration_20260910_150000_articles_paywall_anchor from './20260910_150000_articles_paywall_anchor';
 import * as migration_20260922_020000_discovered_content_field_material from './20260922_020000_discovered_content_field_material';
+import * as migration_20260924_170000_articles_primary_category8 from './20260924_170000_articles_primary_category8';
 
 export const migrations = [
   {
@@ -41,5 +42,10 @@ export const migrations = [
     up: migration_20260922_020000_discovered_content_field_material.up,
     down: migration_20260922_020000_discovered_content_field_material.down,
     name: '20260922_020000_discovered_content_field_material',
+  },
+  {
+    up: migration_20260924_170000_articles_primary_category8.up,
+    down: migration_20260924_170000_articles_primary_category8.down,
+    name: '20260924_170000_articles_primary_category8',
   },
 ];

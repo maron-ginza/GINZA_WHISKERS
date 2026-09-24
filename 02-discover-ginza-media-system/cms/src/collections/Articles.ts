@@ -1,4 +1,5 @@
 import type { CollectionConfig } from 'payload'
+import { PRIMARY_CATEGORY_8, PRIMARY_CATEGORY_8_LABELS } from '../lib/pipeline/primaryCategory8'
 
 // CONTENT_MODEL.md 2.1節：representedYear -> historicalPeriod の自動分類表
 const HISTORICAL_PERIODS = [
@@ -103,6 +104,26 @@ export const Articles: CollectionConfig = {
       minRows: 1,
       filterOptions: {
         type: { equals: 'pillar' },
+      },
+    },
+    {
+      name: 'primaryCategory8',
+      label: '主カテゴリー（8分類）',
+      type: 'select',
+      // required にはしない——判断できない記事は「未分類」のまま保持する（推測で埋めない）。
+      // 既存の18カテゴリー（ArticleFacts.primaryCategory・SOURCE_LEDGER.article18Categories・
+      // deriveProvisionalCategoryの分類ロジック）はこのフィールドとは独立で無変更のまま
+      // 残る——このフィールドは表示・母艦連携用の8分類サマリを Articles 自体に
+      // 持たせるための追加のみ（primaryCategory8.ts が正本の8分類・アイコン対応）。
+      options: PRIMARY_CATEGORY_8.map((c) => ({ label: PRIMARY_CATEGORY_8_LABELS[c], value: c })),
+      admin: {
+        description:
+          '2026-09-24 追加。スイーツ／グルメ／ショッピング／アート・文化／音楽・舞台／' +
+          'ビューティー・ウェルネス／学び・体験／季節の催し、の8分類（primaryCategory8.ts正本）。' +
+          '記事生成時に決定的に分かる場合のみ自動設定し、判断できない記事は空欄（未分類）のまま' +
+          '残す（推測で埋めない）。18カテゴリー・SOURCE_LEDGERの分類は本フィールドと独立で無変更。' +
+          'Project 01母艦サイト「最新のジャーナル」・Morning Boardのカテゴリーアイコン表示に使う' +
+          '（アイコン実体は media/discover-ginza-category-icons/）。',
       },
     },
     {

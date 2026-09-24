@@ -18,6 +18,8 @@ import {
 import type { AppliedTemplate } from './readyGate'
 import { renderArticleFromTemplate } from './renderArticleFromTemplate'
 import { toFactsLike } from '../morning/toFactsLike'
+import { CATEGORY_ICONS, type CategoryCode } from '../note/noteMasthead'
+import { mapToPrimaryCategory8 } from '../pipeline/primaryCategory8'
 
 // GINZA WHISKERS / Project 02 改善 Stage 4（2026-09-02）。
 //
@@ -61,28 +63,17 @@ export type CreateDraftSkipReason =
   | 'template_type_unknown'
   | 'category_icon_missing'
 
-// 18カテゴリー（primaryCategory）→ カテゴリーアイコンのファイル名／slug。
-// VISUAL_ASSET_LIBRARY §3.3 / §8.2。ART へフォールバックしない（未定義は割当なし）。
-const PRIMARY_CATEGORY_TO_ICON: Record<string, { file: string; slug: string }> = {
-  FOOD: { file: '01_gourmet.jpg', slug: 'icon_food' },
-  CAFE: { file: '02_cafe.jpg', slug: 'icon_cafe' },
-  SHOPPING: { file: '03_shopping.jpg', slug: 'icon_shopping' },
-  ARCHITECTURE: { file: '04_landmarks_and_architecture.jpg', slug: 'icon_architecture' },
-  ART: { file: '05_art_and_culture.jpg', slug: 'icon_art' },
-  EVENT: { file: '06_events.jpg', slug: 'icon_event' },
-  NIGHT: { file: '07_bars_and_drinks.jpg', slug: 'icon_night' },
-  MUSIC: { file: '08_music_and_live.jpg', slug: 'icon_music' },
-  BEAUTY: { file: '09_beauty.jpg', slug: 'icon_beauty' },
-  HOTEL: { file: '10_hotels.jpg', slug: 'icon_hotel' },
-  WELLNESS: { file: '11_wellness_and_relaxation.jpg', slug: 'icon_wellness' },
-  EXPERIENCE: { file: '12_travel_and_experiences.jpg', slug: 'icon_experience' },
-  GIFT: { file: '13_gifts_and_souvenirs.jpg', slug: 'icon_gift' },
-  WORKSHOP: { file: '14_learning_and_workshops.jpg', slug: 'icon_workshop' },
-  PHOTO: { file: '15_photo_spots.jpg', slug: 'icon_photo' },
-  FAMILY: { file: '16_family.jpg', slug: 'icon_family' },
-  NIGHT_VIEW: { file: '17_night_views_and_night_spots.jpg', slug: 'icon_nightview' },
-  RAINY_DAY: { file: '18_rainy_day_picks.jpg', slug: 'icon_rainyday' },
-}
+// 【2026-09-24改訂】18カテゴリー（primaryCategory）→ カテゴリーアイコンのファイル名／slug。
+// 従来ここに noteMasthead.ts の CATEGORY_ICONS と全く同じ内容を手打ちで二重管理して
+// おり、しかも SWEETS のエントリが漏れていた（SWEETSのDCはここが理由で
+// category_icon_missing により常にskippedになっていた——実データで確認済みのバグ）。
+// 二重管理をやめ、noteMasthead.ts の CATEGORY_ICONS を唯一の正として導出する
+// （値を複製しない。18カテゴリー全件が自動的に揃う＝手動追記の漏れが起きない）。
+const PRIMARY_CATEGORY_TO_ICON: Record<string, { file: string; slug: string }> = Object.fromEntries(
+  (Object.keys(CATEGORY_ICONS) as CategoryCode[])
+    .filter((code) => code !== 'RAINY_DAY') // RAINY_DAYは18カテゴリー（primaryCategory）の値域外
+    .map((code) => [code, { file: CATEGORY_ICONS[code].iconFile, slug: CATEGORY_ICONS[code].iconSlug }]),
+)
 
 const KNOWN_TEMPLATE_TYPES = [
   'exhibition', 'sale', 'application', 'workshop', 'recurring_event', 'generic',
@@ -507,12 +498,17 @@ export async function createDraftFromArticleFacts(
   }
 
   // regenerate 対象があれば **同じ Article を上書き更新**（重複作成しない）。無ければ新規作成。
+  // 2026-09-24追加：categoryIcon（18カテゴリー・ここまでで実ファイル確認済み）から
+  // primaryCategory8（8分類）を決定的に導出して保存する。categoryIcon が無い
+  // （未分類）場合は primaryCategory8 も設定しない（推測しない）——18カテゴリー側の
+  // 分類ロジック・ArticleFacts.primaryCategory は本フィールドと独立で無変更。
   const writeData = {
     reviewStatus: 'draft' as const, // ハードコード。自動公開しない
     title: rendered.title,
     slug,
     body: blocksToLexicalState(rendered.blocks),
     pillars: pillarIds,
+    primaryCategory8: categoryIcon ? mapToPrimaryCategory8(categoryIcon.category) : null,
     seo: meta.seo,
     socialCopy: meta.socialCopy,
     // CTA は renderer の判定に従う（テンプレ既定文を無条件には保持しない。

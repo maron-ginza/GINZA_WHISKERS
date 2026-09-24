@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro'
 
 import { lexicalToPlainText } from '../../lib/lexical'
 import { fetchPublishedArticleDetails, getHeroImageUrl, type ArticleDetail } from '../../lib/payload'
+import { categoryLabelJa, categoryIconUrl } from '../../lib/categoryIcons'
 
 // Project 01母艦（ginzawhiskers.com）の「最新のジャーナル」へ渡す疎結合フィード。
 //
@@ -27,6 +28,11 @@ interface LatestFeedItem {
   publishedAt: string
   pillar: string | null
   image: string | null
+  // 2026-09-24追加。主カテゴリー8分類（日本語ラベル）とそのアイコンの絶対URL。
+  // 記事にprimaryCategory8が未設定（未分類）の場合はどちらもnull——母艦側は
+  // nullのときアイコンを描画しない設計とする（無関係アイコンで埋めない）。
+  category: string | null
+  categoryIconUrl: string | null
 }
 
 interface LatestFeed {
@@ -59,6 +65,8 @@ function toFeedItem(base: string, article: ArticleDetail): LatestFeedItem {
     pillar: article.pillars[0]?.name ?? null,
     // hero画像が無ければ null（母艦側はテキストのみで描画する）
     image: getHeroImageUrl(article),
+    category: categoryLabelJa(article.primaryCategory8),
+    categoryIconUrl: categoryIconUrl(article.primaryCategory8, base),
   }
 }
 

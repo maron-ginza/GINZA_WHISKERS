@@ -32,7 +32,7 @@ function mkBoard(): CandidateBoard {
       { discoveredContentId: 4, title: '未分類候補', facilityLabel: null, category: null, eventPeriod: '不明', sourceUrl: 'https://example.com/4', reasons: ['理由'] },
     ],
     usedExcludedCount: 0,
-    facilityRecentlyUsedExcludedCount: 0,
+    facilityRecentlyUsedNoticeCount: 0,
   }
 }
 

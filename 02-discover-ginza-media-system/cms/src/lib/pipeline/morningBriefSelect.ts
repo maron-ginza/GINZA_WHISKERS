@@ -1,21 +1,38 @@
-// GINZA WHISKERS / Project 02（2026-09-11、2026-09-13改訂）— 朝刊ブリーフの選定・整形
-// （純粋・AI/DB/ネットワークなし）。
+// GINZA WHISKERS / Project 02（2026-09-11、2026-09-13改訂、2026-09-24再改訂）
+// — 朝刊ブリーフの選定・整形（純粋・AI/DB/ネットワークなし）。
 //
-// 目的：本日の公開候補を「①スイーツ・和菓子 ②グルメ ③ビューティー ④文化・アート」
-// 各1本で選び、各候補について必須 ArticleFacts（12項目）・Editorial Compass・選定理由を
-// 1画面へまとめる。**推測でデータを補完しない**——ArticleFacts / DiscoveredContent に
-// 無い項目はすべて「公式記載なし」（検証状態は「未確認」）とする。
-// 4領域・優先順位はCORE_DAILY_BUCKETS（dailySelectionSupport.ts）の並び順そのもの
-// （2026-09-13、朝刊実運用開始にあたりマロン指示で3領域→4領域へ改訂）。
+// 目的：本日の公開候補を「①スイーツ 1本（必須）②その他8分類（スイーツ以外の
+// 7分類＝グルメ／ショッピング／アート・文化／音楽・舞台／ビューティー・ウェルネス／
+// 学び・体験／季節の催し のいずれか）から2本」で選び、各候補について必須
+// ArticleFacts（12項目）・Editorial Compass・選定理由を1画面へまとめる。
+// **推測でデータを補完しない**——ArticleFacts / DiscoveredContent に無い項目はすべて
+// 「公式記載なし」（検証状態は「未確認」）とする。
 //
-// 選定条件（マロン指示・2026-09-11）：
+// 【2026-09-24改訂・マロン指示】従来は「①スイーツ・和菓子 ②グルメ ③ビューティー
+// ④文化・アート」という**固定4バケット**（dailySelectionSupport.ts の
+// CORE_DAILY_BUCKETS）を使っており、②③はカテゴリーを固定した単一バケットの
+// ため、実データで「③ビューティーは候補が薄く、毎日のように該当なしになる」
+// 偏りが継続していた（該当なしでも②④に振り替えられない構造上の欠陥）。
+// マロン指示によりこれを「スイーツ1本＋残り8分類（スイーツ以外の7分類）から
+// スコア上位2本」という柔軟なルールへ変更する。8分類の判定・グルーピングは
+// primaryCategory8.ts を正本とし、ここでは重複させず呼び出すのみ
+// （dailySelectionSupport.ts の CORE_DAILY_BUCKETS は他コマンド
+// 〈./p2 themes recommend の候補選定サポート表示等〉で引き続き使われているため
+// 変更しない——本ファイルの選定ロジックだけがこの新ルールへ切り替わる）。
+//
+// 選定条件（マロン指示・2026-09-11、2026-09-24一部改訂）：
 //   ・コアターゲット＝20代後半〜30代女性。Editorial Compass かわいい20／上質30／
 //     自分を整える25／新しい発見15／少し背伸び10。
 //   ・18カテゴリー全体の過去掲載数を参照して偏りを補正（scoreTotal に反映済みの前提）。
 //   ・GINZA SIX・銀座三越・松屋銀座など特定施設への連続集中を自動回避。
 //   ・同一イベント・同一商品・同一URL・既に Article 化済みの候補は除外。
+//   ・その他2本は、可能な限り異なる8分類グループから選ぶ（同一グループへの
+//     集中を弱く回避。代替が無ければ同一グループでも埋める——空欄より優先）。
 
-import { bucketForCategory, CORE_DAILY_BUCKETS } from './dailySelectionSupport'
+import { mapToPrimaryCategory8, primaryCategory8Label, type PrimaryCategory8 } from './primaryCategory8'
+
+/** 本日選ぶ枠数（スイーツ1＋その他2＝計3）。マロン指示「1日3本」に対応。 */
+const DAILY_BUCKET_COUNT = 3
 
 export const CORE_COMPASS_WEIGHT = { kawaii: 20, joshitsu: 30, totonoeru: 25, hakken: 15, senobi: 10 } as const
 
@@ -162,7 +179,7 @@ function resolveConditions(c: BriefCandidateInput): string {
 
 /** 選定理由：カテゴリー・旬・target_fit・偏り補正の観点から機械生成（推測なし・数値と事実のみ）。 */
 export function buildSelectionReason(c: BriefCandidateInput, bucketLabel: string): string {
-  const bits: string[] = [`本日の${CORE_DAILY_BUCKETS.length}領域「${bucketLabel}」枠として選定`]
+  const bits: string[] = [`本日の${DAILY_BUCKET_COUNT}領域「${bucketLabel}」枠として選定`]
   if (c.categoryKey && c.categoryKey !== '未確定') bits.push(`18カテゴリー＝${c.categoryKey}（${c.categoryBasis === 'primaryCategory' ? 'ArticleFacts確定' : '明記'}）`)
   if (typeof c.targetFit === 'number') bits.push(`コアターゲット適合 ${c.targetFit}／100`)
   if (clean(c.targetFitReason)) bits.push(clean(c.targetFitReason))
@@ -219,108 +236,168 @@ export function assembleBriefFacts(c: BriefCandidateInput): BriefFacts {
   }
 }
 
+/** OTHER枠（スイーツ以外）で既に使用済みの8分類を、可能な限り避けるためのフィルタ結果。 */
+interface PickOutcome {
+  picked: BriefCandidateInput | null
+  considered: { dcId: number; title: string; skipped: string }[]
+  isConcentrated: boolean
+}
+
 /**
- * 候補プール → 4領域（スイーツ・和菓子／グルメ／ビューティー／文化・アート）各1本を選ぶ。
+ * 候補プールから1件選ぶ共通ロジック（alreadyPublished／finalEligible／alreadyDrafted／
+ * duplicate／施設重複／直近施設／特定施設集中、の順で除外）。SWEETS枠・OTHER枠の
+ * 両方で使う（2026-09-24：4固定バケットの重複実装をやめ1関数へ統合）。
+ */
+function pickFromPool(
+  pool: BriefCandidateInput[],
+  ctx: { usedFacilities: Set<string>; recent: Set<string>; concentratedUsed: number },
+): PickOutcome {
+  const considered: PickOutcome['considered'] = []
+  for (const c of pool) {
+    if (c.alreadyPublished) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `既公開テーマとの重複（${c.publishedReason ?? '全公開履歴と一致'}）` })
+      continue
+    }
+    if (c.finalEligible === false) {
+      considered.push({
+        dcId: c.dcId,
+        title: c.displayTitle ?? c.title,
+        skipped: `公式情報の完全度不足（未確認: ${(c.officialMissing ?? ['公式URL/期間/場所/内容']).join('・')}）— 最終候補に上げない`,
+      })
+      continue
+    }
+    if (c.alreadyDrafted) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: '既に Article／note下書き 化済み（重複）' })
+      continue
+    }
+    if (c.duplicate) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: '同一イベント／商品／URL の重複候補' })
+      continue
+    }
+    const fk = c.facilityKey ?? c.facilityLabel
+    if (fk && fk !== '(会場不明)' && ctx.usedFacilities.has(fk)) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `施設「${c.facilityLabel}」が他の枠と重複` })
+      continue
+    }
+    if (fk && ctx.recent.has(fk) && pool.length > 1) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `直近の採用施設「${c.facilityLabel}」と同一（連続集中回避）— 次点を優先` })
+      continue
+    }
+    const isConcentrated = CONCENTRATED_FACILITY_RE.test(`${c.facilityLabel} ${c.sourceName} ${c.venue ?? ''}`)
+    if (isConcentrated && ctx.concentratedUsed >= 1 && pool.length > 1) {
+      considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `GINZA SIX／三越／松屋 系が既に1枠。特定施設集中回避で次点を優先` })
+      continue
+    }
+    return { picked: c, considered, isConcentrated }
+  }
+  return { picked: null, considered, isConcentrated: false }
+}
+
+/**
+ * 候補プール → 本日3本（①スイーツ1本〈必須〉②その他8分類から2本）を選ぶ。
+ * 【2026-09-24改訂・マロン指示】②③を固定カテゴリー（旧：ビューティー／文化・アート）
+ * にせず、スイーツ以外の7分類（primaryCategory8.ts）をまとめて1つのプールとし、
+ * scoreTotal上位から2本を選ぶ。可能な限り異なる8分類グループから選ぶ（同一グループへの
+ * 集中は弱く回避。代替が無ければ同一グループでも埋める——空欄より優先）。
  *  ・alreadyDrafted / duplicate は除外
  *  ・同一施設は2枠に跨がせない
  *  ・直近採用の施設（recentFacility）と同一なら次点へ
  *  ・特定施設（GINZA SIX／三越／松屋）が既に1枠に入っていたら、2枠目には別施設を優先
- *  ・該当なしのバケットは pick=null＋理由（推測補完しない）
+ *  ・該当なしの枠は pick=null＋理由（推測補完しない）
  */
 export function buildMorningBrief(
   candidates: BriefCandidateInput[],
   opts: { recentFacilities?: string[] } = {},
 ): BuildBriefResult {
   const recent = new Set((opts.recentFacilities ?? []).slice(0, 2).filter(Boolean))
-  const buckets: BriefBucketResult[] = CORE_DAILY_BUCKETS.map((b) => ({
-    bucketKey: b.key,
-    bucketLabel: b.label,
-    pick: null,
-    reasonIfEmpty: null,
-    considered: [],
-  }))
-  const warnings: string[] = []
   const usedFacilities = new Set<string>()
   let concentratedUsed = 0
 
-  for (const bucket of buckets) {
-    const coreBucket = CORE_DAILY_BUCKETS.find((b) => b.key === bucket.bucketKey)!
-    // このバケットに該当する候補（カテゴリー確定のみ。未確定は推測しないので対象外）
-    // 2026-09-13：SWEETS専用バケット（SWEETS_WAGASHI）を新設したため、バケット内での
-    // カテゴリー優先ソートは不要になった（1バケット1カテゴリー系統）。scoreTotal 降順のみ。
-    const pool = candidates
-      .filter((c) => {
-        const b = bucketForCategory(c.categoryKey)
-        return b?.key === bucket.bucketKey
-      })
-      .sort((a, b) => b.scoreTotal - a.scoreTotal)
+  const withGroup = candidates.map((c) => ({ c, group: mapToPrimaryCategory8(c.categoryKey) }))
 
-    if (pool.length === 0) {
-      bucket.reasonIfEmpty = `該当なし：${coreBucket.label}に分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。`
-      continue
+  // ①スイーツ（必須・1本）
+  const sweetsBucket: BriefBucketResult = { bucketKey: 'SWEETS', bucketLabel: 'スイーツ', pick: null, reasonIfEmpty: null, considered: [] }
+  const sweetsPool = withGroup.filter((x) => x.group === 'SWEETS').map((x) => x.c).sort((a, b) => b.scoreTotal - a.scoreTotal)
+  if (sweetsPool.length === 0) {
+    sweetsBucket.reasonIfEmpty = '該当なし：スイーツに分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。'
+  } else {
+    const outcome = pickFromPool(sweetsPool, { usedFacilities, recent, concentratedUsed })
+    sweetsBucket.considered = outcome.considered
+    if (outcome.picked) {
+      const fk = outcome.picked.facilityKey ?? outcome.picked.facilityLabel
+      if (fk && fk !== '(会場不明)') usedFacilities.add(fk)
+      if (outcome.isConcentrated) concentratedUsed += 1
+      const facts12 = assembleBriefFacts(outcome.picked)
+      facts12.選定理由 = buildSelectionReason(outcome.picked, 'スイーツ')
+      sweetsBucket.pick = { ...outcome.picked, facts12 }
+    } else {
+      sweetsBucket.reasonIfEmpty = `該当なし：スイーツの候補は ${sweetsPool.length} 件あったが、すべて重複・施設集中・既記事化で除外（推測補完しない）。`
     }
-
-    let picked: BriefCandidateInput | null = null
-    for (const c of pool) {
-      if (c.alreadyPublished) {
-        bucket.considered.push({
-          dcId: c.dcId,
-          title: c.displayTitle ?? c.title,
-          skipped: `既公開テーマとの重複（${c.publishedReason ?? '全公開履歴と一致'}）`,
-        })
-        continue
-      }
-      if (c.finalEligible === false) {
-        bucket.considered.push({
-          dcId: c.dcId,
-          title: c.displayTitle ?? c.title,
-          skipped: `公式情報の完全度不足（未確認: ${(c.officialMissing ?? ['公式URL/期間/場所/内容']).join('・')}）— 最終候補に上げない`,
-        })
-        continue
-      }
-      if (c.alreadyDrafted) {
-        bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: '既に Article／note下書き 化済み（重複）' })
-        continue
-      }
-      if (c.duplicate) {
-        bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: '同一イベント／商品／URL の重複候補' })
-        continue
-      }
-      const fk = c.facilityKey ?? c.facilityLabel
-      if (fk && fk !== '(会場不明)' && usedFacilities.has(fk)) {
-        bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `施設「${c.facilityLabel}」が他の枠と重複` })
-        continue
-      }
-      if (fk && recent.has(fk) && pool.length > 1) {
-        bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `直近の採用施設「${c.facilityLabel}」と同一（連続集中回避）— 次点を優先` })
-        continue
-      }
-      const isConcentrated = CONCENTRATED_FACILITY_RE.test(`${c.facilityLabel} ${c.sourceName} ${c.venue ?? ''}`)
-      if (isConcentrated && concentratedUsed >= 1 && pool.length > 1) {
-        bucket.considered.push({ dcId: c.dcId, title: c.displayTitle ?? c.title, skipped: `GINZA SIX／三越／松屋 系が既に1枠。特定施設集中回避で次点を優先` })
-        continue
-      }
-      picked = c
-      if (isConcentrated) concentratedUsed += 1
-      break
-    }
-
-    if (!picked) {
-      // 全候補が除外条件に当たった＝実質「該当なし」
-      bucket.reasonIfEmpty = `該当なし：${coreBucket.label}の候補は ${pool.length} 件あったが、すべて重複・施設集中・既記事化で除外（推測補完しない）。`
-      continue
-    }
-    const fk = picked.facilityKey ?? picked.facilityLabel
-    if (fk && fk !== '(会場不明)') usedFacilities.add(fk)
-    const facts12 = assembleBriefFacts(picked)
-    facts12.選定理由 = buildSelectionReason(picked, bucket.bucketLabel)
-    bucket.pick = { ...picked, facts12 }
   }
 
+  // ②③その他8分類（スイーツ以外の7分類。同一グループへの集中を弱く回避しつつ2本）
+  const otherBuckets: BriefBucketResult[] = []
+  const pickedOtherGroups = new Set<PrimaryCategory8>()
+  // OTHER_1／OTHER_2 のプールは（スイーツ以外の7分類という）同じ母集団から重複して
+  // 引くため、施設・グループの一致だけに頼ると「施設が空欄の候補」が2枠へ二重に
+  // 選ばれてしまう恐れがある——既に選定済みのDC番号は明示的に除外する。
+  const pickedSoFar = new Set<number>()
+  if (sweetsBucket.pick) pickedSoFar.add(sweetsBucket.pick.dcId)
+  for (let slot = 1; slot <= 2; slot++) {
+    const bucketKey = `OTHER_${slot}`
+    const bucketLabelDefault = `その他${slot === 1 ? '①' : '②'}（スイーツ以外の8分類のいずれか）`
+    const bucket: BriefBucketResult = { bucketKey, bucketLabel: bucketLabelDefault, pick: null, reasonIfEmpty: null, considered: [] }
+
+    const basePool = withGroup
+      .filter((x): x is { c: BriefCandidateInput; group: PrimaryCategory8 } => x.group !== null && x.group !== 'SWEETS')
+      .filter((x) => !pickedSoFar.has(x.c.dcId))
+      .sort((a, b) => b.c.scoreTotal - a.c.scoreTotal)
+
+    if (basePool.length === 0) {
+      bucket.reasonIfEmpty = '該当なし：スイーツ以外の8分類に分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。'
+      otherBuckets.push(bucket)
+      continue
+    }
+
+    // 1回目：まだ選んでいない8分類グループのみに絞る（多様性を優先）。
+    const diversePool = basePool.filter((x) => !pickedOtherGroups.has(x.group)).map((x) => x.c)
+    let outcome = diversePool.length > 0 ? pickFromPool(diversePool, { usedFacilities, recent, concentratedUsed }) : { picked: null, considered: [], isConcentrated: false }
+    // 2回目（フォールバック）：多様性優先で選べなければ、同一グループも許容して全プールから選ぶ
+    // （空欄にするより優先——マロン指示「未確認情報で件数を埋めないが、条件を過剰に絞って
+    // 埋まる候補まで落とさない」の趣旨）。
+    if (!outcome.picked) {
+      const fullPool = basePool.map((x) => x.c)
+      const fallback = pickFromPool(fullPool, { usedFacilities, recent, concentratedUsed })
+      bucket.considered = [...outcome.considered, ...fallback.considered]
+      outcome = fallback
+    } else {
+      bucket.considered = outcome.considered
+    }
+
+    if (outcome.picked) {
+      const group = withGroup.find((x) => x.c.dcId === outcome.picked!.dcId)?.group ?? null
+      if (group) pickedOtherGroups.add(group)
+      pickedSoFar.add(outcome.picked.dcId)
+      const label = primaryCategory8Label(group) ?? bucketLabelDefault
+      bucket.bucketLabel = label
+      const fk = outcome.picked.facilityKey ?? outcome.picked.facilityLabel
+      if (fk && fk !== '(会場不明)') usedFacilities.add(fk)
+      if (outcome.isConcentrated) concentratedUsed += 1
+      const facts12 = assembleBriefFacts(outcome.picked)
+      facts12.選定理由 = buildSelectionReason(outcome.picked, label)
+      bucket.pick = { ...outcome.picked, facts12 }
+    } else {
+      bucket.reasonIfEmpty = `該当なし：スイーツ以外の8分類の候補は ${basePool.length} 件あったが、すべて重複・施設集中・既記事化で除外（推測補完しない）。`
+    }
+    otherBuckets.push(bucket)
+  }
+
+  const buckets: BriefBucketResult[] = [sweetsBucket, ...otherBuckets]
+  const warnings: string[] = []
   const pickedDcIds = buckets.filter((b) => b.pick).map((b) => b.pick!.dcId)
   if (concentratedUsed >= 2) warnings.push('GINZA SIX／三越／松屋 系が2枠以上を占めています。追加収集で分散してください。')
-  if (pickedDcIds.length < CORE_DAILY_BUCKETS.length)
-    warnings.push(`本日確定できたのは ${pickedDcIds.length}／${CORE_DAILY_BUCKETS.length} 領域。残りは「該当なし」として報告（推測で埋めない）。`)
+  if (pickedDcIds.length < DAILY_BUCKET_COUNT)
+    warnings.push(`本日確定できたのは ${pickedDcIds.length}／${DAILY_BUCKET_COUNT} 領域。残りは「該当なし」として報告（推測で埋めない）。`)
 
   return { buckets, pickedDcIds, warnings, filledCount: pickedDcIds.length }
 }

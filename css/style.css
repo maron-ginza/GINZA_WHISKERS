@@ -608,6 +608,19 @@ a.content-card:hover {
   color: var(--color-gold-light);
 }
 
+/* 2026-09-24追加：Project 02フィードの主カテゴリー8分類アイコン（未分類の記事には
+   出さない＝item.categoryIconUrlが無い場合はJS側でそもそも要素を作らない）。
+   .latest-card-metaの align-items: baseline だと画像下端がテキストの
+   ベースラインに揃ってしまい浮いて見えるため、アイコンだけ中央揃えに上書きする。 */
+.latest-card-category-icon {
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
 .latest-card-title {
   margin: 0;
   font-size: 1.05rem;
@@ -701,6 +714,36 @@ a.content-card:hover {
   margin: 0 0 1.8em;
 }
 
+/* 2026-09-26 追加：club-charmant/ ヒーロー専用の「位置付け」行。
+   h1（Club Charmant、最大）と .hero-lead（誘い文句、既存の本文サイズ）の
+   中間の大きさに置き、名称＞位置付け＞誘い文句の強弱を作る。 */
+.cc-position {
+  font-family: var(--font-serif);
+  font-size: clamp(1.1rem, 2.6vw, 1.5rem);
+  color: var(--color-ink-muted);
+  letter-spacing: 0.02em;
+  margin: 0.3em 0 0.6em;
+}
+
+/* 2026-09-24 追加：club-charmant/ ヒーローの添え写真（看板・庇の実写真）。
+   h1・.cc-position・.hero-lead・両CTAより明確に小さく、名称・位置付け・
+   二つの入口の可読性を邪魔しない大きさに固定する。元画像はEXIF
+   Orientation=6（90°回転）を持ち、回転後の実寸は3024×4032（縦長・3:4）
+   のため、aspect-ratioもそれに合わせてクロップを最小化した。 */
+.cc-hero-accent {
+  margin: 2em 0 0;
+}
+
+.cc-hero-accent img {
+  display: block;
+  width: 130px;
+  max-width: 38vw;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+}
+
 /* 見出し直下の補助ラベル：3つの過ごし方の英語名、LIVE の公演名。
    .pillar-num（ゴールドのセリフ・イタリック小）と同系の扱い。 */
 .cc-sublabel {
@@ -711,6 +754,36 @@ a.content-card:hover {
   letter-spacing: 0.14em;
   color: var(--color-gold);
   margin: -0.2em 0 1.4em;
+}
+
+/* 2026-09-24 追加：「三つの顔」専用の見出し直前の番号表示。既存の
+   .cc-sublabel（LIVEセクションの公演名表記と共用）とは別クラスとし、
+   ここだけ大きな金色の番号＋日英ラベル（建物/Place・音楽/Music・
+   文化/Culture）にする。PC・スマホともスクロール中に三つの区切りが
+   ひと目で分かる大きさを狙い、h1（モバイル35.2px）に迫るサイズに
+   clampした。 */
+.cc-face-number {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 0.3em;
+}
+
+.cc-face-number-digit {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(2rem, 6vw, 2.75rem);
+  line-height: 1;
+  color: var(--color-gold);
+}
+
+.cc-face-number-label {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-gold-light);
 }
 
 .cc-prose {
@@ -1338,13 +1411,18 @@ a.content-card:hover {
   }
 }
 
-/* charmant.html 専用：Contactのメールアドレスボタン（cc-contact-email）が
-   390px幅で画面外にはみ出す横スクロールの修正（2026-09-20）。
+/* Contactのメールアドレスボタン（#contact-email、js/main.jsが実行時に
+   ginzashowaromanticclub@gmail.comを生成して挿入する）が390px幅で画面外に
+   はみ出す横スクロールの修正（2026-09-20、charmant.html専用の.cc-contact-email
+   として新設。2026-09-25、母艦トップindex.htmlの#contact-emailには当時
+   このクラスが付いておらず未対応のまま残っていたことが判明したため、
+   IDセレクタを追加してid="contact-email"を持つ全ページ（index.html・
+   club-charmant/index.html）へ一律適用するよう修正した）。
    overflow-wrap / max-width は「入り切らない時だけ」効くプロパティのため、
    PC幅では現状どおり1行表示のまま見た目は変わらない。狭い画面でのみ
-   ボタン内でアドレスを安全に折り返し、省略はしない。index.html 側の
-   #contact-email（同一id）は .cc-contact-email クラスを持たないため
-   無関係——他ページ・他ボタンへは影響しない。 */
+   ボタン内でアドレスを安全に折り返し、省略はしない。他ページの他ボタンは
+   このIDを持たないため無関係——影響しない。 */
+#contact-email,
 .cc-contact-email {
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1354,10 +1432,181 @@ a.content-card:hover {
 }
 
 @media (max-width: 480px) {
+  #contact-email,
   .cc-contact-email {
     padding-left: 20px;
     padding-right: 20px;
     font-size: 0.8rem;
     letter-spacing: 0.04em;
   }
+}
+
+/* ==========================================================
+   club-charmant/index.html 専用（2026-09-24 追加）
+   既存 .hero / .cc-hero / .section / .container / .cc-prose / .btn / :root /
+   .y400-lang-toggle・.y400-lang-btn・.y400-footer-lang（400years.htmlの
+   言語切替と同じ見た目を再利用）を継承し、本ページ専用の追加セレクタ
+   （.cc-hero-actions・.cc-face-*・.cc-note-link・.cc-pending-note）のみで
+   構成する。既存ルールは一切変更していない。モバイル（1カラム・画像が上）を
+   基準に、広い画面のみ2カラム化する（400years.htmlの .y400-artwork-grid と
+   同じ設計方針）。
+   ========================================================== */
+
+.cc-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0;
+}
+
+.cc-face-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  padding: 40px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+#faces .container:last-of-type .cc-face-grid {
+  border-bottom: none;
+}
+
+.cc-face-media {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+
+.cc-face-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 2026-09-24 追加：顔1（入口）の実写真は縦長（476×1165）のため、既定の
+   4:3枠のままだと看板・階段が大きく削れてしまう。この顔専用に、元画像の
+   比率へ近づけた縦長枠を用意し、看板・階段・煉瓦がひと目で分かる構図を
+   保つ。 */
+.cc-face-media--portrait {
+  aspect-ratio: 3 / 7;
+}
+
+/* 実写真が未提供の顔（建物・文化サロン）向けの中立なプレースホルダー。
+   無関係な既存画像を「実写真」として流用しない方針のための代替表示。 */
+.cc-face-media--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-alt);
+}
+
+.cc-face-media-label {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.82rem;
+  letter-spacing: 0.14em;
+  color: var(--color-ink-muted);
+}
+
+.cc-prose-sm {
+  color: var(--color-ink-muted);
+  margin: 0 0 1.2em;
+}
+
+/* 2026-09-24 追加：顔3（文化サロン）の投扇興写真を、主写真（抹茶と和菓子）
+   より明確に小さい補助写真として添える。元画像の背景が鮮やかな赤のため、
+   64px角の小さな枠に固定し、ページ全体の配色を支配しないようにした。 */
+.cc-face-accent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 1.2em;
+}
+
+.cc-face-accent-img {
+  display: block;
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.cc-face-accent-caption {
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--color-ink-muted);
+}
+
+.cc-face-status {
+  font-size: 0.85rem;
+  color: var(--color-gold-light);
+  margin: 0 0 1.2em;
+}
+
+.cc-face-cta {
+  margin: 0;
+}
+
+/* 準備中の note リンク（架空URLを作らないための非活性表示）。
+   index.html の is-pending カードや y400-cta-pending と同系の扱い。 */
+.cc-note-link {
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: var(--color-ink-muted);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 2px;
+  cursor: default;
+}
+
+.cc-pending-note {
+  display: block;
+  margin-top: 0.6em;
+  font-size: 0.78rem;
+  color: var(--color-ink-muted);
+  opacity: 0.75;
+}
+
+@media (min-width: 720px) {
+  .cc-face-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 40px;
+  }
+
+  .cc-face-grid--reverse .cc-face-media {
+    order: 2;
+  }
+
+  .cc-face-grid--reverse .cc-face-body {
+    order: 1;
+  }
+}
+
+/* 2026-09-25 追加：LIVE/Privateの橋渡しとなる短い一文セクション
+   （「通常利用は紹介制。初めての方はLIVEまたは貸切相談から」）。
+   通常の .section より上下の余白を絞った控えめな仕切り。 */
+.cc-visit-intro {
+  padding: 32px 0;
+  text-align: center;
+}
+
+.cc-visit-intro .cc-prose {
+  margin: 0 auto;
+}
+
+/* 実写真が未提供の顔（建物・文化サロン）向けプレースホルダーを、
+   ページ内で空白が目立ちすぎないよう控えめに調整。実写真枠
+   （border実線・color-bg-alt）とは視覚的に区別し、破線＋ページと
+   同系の背景色で「準備中」であることが一目で分かるようにする。 */
+.cc-face-media--placeholder {
+  background: var(--color-bg);
+  border-style: dashed;
 }
