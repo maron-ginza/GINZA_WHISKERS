@@ -82,6 +82,7 @@ import { suite as hasUsableBodyContent } from './hasUsableBodyContent.check'
 import { suite as excludeNonArticleCandidate } from './excludeNonArticleCandidate.check'
 import { suite as morningRunWiring } from './morningRunWiring.check'
 import { suite as fetchFairnessAllocation } from '../morning/fetchFairnessAllocation.check'
+import { suite as categoryShortfallSummary } from '../morning/categoryShortfallSummary.check'
 
 const results: SuiteResult[] = [
   eventTiming(),
@@ -160,6 +161,7 @@ const results: SuiteResult[] = [
   excludeNonArticleCandidate(),
   morningRunWiring(),
   fetchFairnessAllocation(),
+  categoryShortfallSummary(),
 ]
 
 void (async () => {

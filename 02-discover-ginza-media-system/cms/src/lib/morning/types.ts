@@ -489,6 +489,20 @@ export interface MorningReport {
    * しない（表示専用・A/B/C判定には使わない）。未指定なら空配列。
    */
   sourceAvailability: SourceAvailability[]
+  /**
+   * 【2026-09-24続き2追加・マロン指示】candidateBoard.sweets が0件のとき、
+   * 「実際に落ちた理由と件数」を機械的に集計したもの（新たな判定ロジックは
+   * 追加しない・既存の dedup/facilityNotice/reasons/hasTraceableSource/
+   * ginzaRelevant/expired を集計するだけ）。sweets が1件以上あるときは undefined。
+   */
+  sweetsShortfall?: import('./categoryShortfallSummary').ShortfallSummary
+  /**
+   * 【2026-09-24続き2追加】candidateBoard.byCategory が全カテゴリー0件（＝SWEETS以外の
+   * 17カテゴリーすべてが空）のときの、SWEETS以外の分類済み候補全体（複数カテゴリー横断）の
+   * 落選理由サマリ。個別カテゴリーごとの内訳ではなく「他の18カテゴリー全体が
+   * なぜ0件か」の概観を示す。byCategory に1件でもあれば undefined。
+   */
+  otherCategoriesShortfall?: import('./categoryShortfallSummary').ShortfallSummary
 }
 
 /** 【2026-09-17追加】公式収集元の取得可否（SOURCE_LEDGER.healthStatusの写し）。 */

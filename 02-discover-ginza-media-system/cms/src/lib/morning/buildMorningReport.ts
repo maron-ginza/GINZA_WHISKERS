@@ -18,6 +18,7 @@
 
 import type { CandidateAssessment, MorningReport, SourceAvailability } from './types'
 import { buildCandidateBoard, type BoardEntry } from './candidateBoard'
+import { filterByCategory, filterNonSweetsClassified, summarizeShortfallReasons } from './categoryShortfallSummary'
 
 function eventSortKey(a: CandidateAssessment): number {
   // eventPeriod は "YYYY-MM-DD" もしくは "YYYY-MM-DD 〜 YYYY-MM-DD" もしくは "不明"
@@ -71,6 +72,21 @@ export function buildMorningReport(
     topPresentable.push(a)
   }
 
+  const candidateBoard = buildCandidateBoard(assessments, opts.usedDcIds ?? new Set())
+
+  // 【2026-09-24続き2追加・マロン指示】SWEETSは毎朝優先して探す——candidateBoard.sweets
+  // が0件のときだけ、実際に落ちた理由と件数を機械的に集計して添える（新たな判定ロジック・
+  // 新たな除外条件は追加しない。既存の判定結果を集計するだけ）。
+  const sweetsShortfall =
+    candidateBoard.sweets.length === 0 ? summarizeShortfallReasons(filterByCategory(assessments, 'SWEETS')) : undefined
+  // SWEETS以外の18カテゴリーも全て0件（byCategoryが空）のときは、他カテゴリー全体の
+  // 概観も添える——「システムが最終3本を決めず複数提示する」前提のうえで、なぜ提示できる
+  // ものが無いのかをマロンが判断できるようにする。
+  const otherCategoriesShortfall =
+    Object.keys(candidateBoard.byCategory).length === 0
+      ? summarizeShortfallReasons(filterNonSweetsClassified(assessments))
+      : undefined
+
   return {
     generatedAt: now.toISOString(),
     assessed: assessments.length,
@@ -85,8 +101,10 @@ export function buildMorningReport(
     // Stage 3：A候補ボード（読み取り専用・A/B/Cを変更しない）。usedDcIds は「過去に
     // マロンが実際に選定したDC」の集合（呼び出し元が selectionRecord.collectUsedDcIds
     // で用意する。未指定なら空集合＝除外なし）。
-    candidateBoard: buildCandidateBoard(assessments, opts.usedDcIds ?? new Set()),
+    candidateBoard,
     sourceAvailability: opts.unavailableSources ?? [],
+    sweetsShortfall,
+    otherCategoriesShortfall,
   }
 }
 
@@ -241,13 +259,24 @@ export function renderMorningReport(report: MorningReport): string {
   s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
   s += line(`  （直近14日以内の同一施設投稿のため除外した件数: ${report.candidateBoard.facilityRecentlyUsedExcludedCount}）`)
   s += line()
-  s += line(`  ◆ SWEETS（${report.candidateBoard.sweets.length}件・先頭の独立枠）`)
-  if (report.candidateBoard.sweets.length === 0) s += line('    該当候補なし')
-  else for (const e of report.candidateBoard.sweets) s += renderBoardEntry(e)
+  s += line(`  ◆ SWEETS（${report.candidateBoard.sweets.length}件・先頭の独立枠・毎朝優先して探す）`)
+  if (report.candidateBoard.sweets.length === 0) {
+    s += line('    SWEETS 0件')
+    if (report.sweetsShortfall && report.sweetsShortfall.totalNonA > 0) {
+      s += line(`    （SWEETS分類の候補 ${report.sweetsShortfall.totalNonA}件のうち、実際に落ちた理由の内訳）`)
+      for (const r of report.sweetsShortfall.reasons) s += line(`      - ${r.label}: ${r.count}件`)
+    } else {
+      s += line('    （SWEETSに分類された候補自体が今回の評価対象に存在しない）')
+    }
+  } else for (const e of report.candidateBoard.sweets) s += renderBoardEntry(e)
   const catKeys = Object.keys(report.candidateBoard.byCategory).sort()
   if (catKeys.length === 0) {
     s += line()
     s += line('  ◆ その他カテゴリー：該当候補なし')
+    if (report.otherCategoriesShortfall && report.otherCategoriesShortfall.totalNonA > 0) {
+      s += line(`    （SWEETS以外に分類された候補 ${report.otherCategoriesShortfall.totalNonA}件のうち、実際に落ちた理由の内訳）`)
+      for (const r of report.otherCategoriesShortfall.reasons) s += line(`      - ${r.label}: ${r.count}件`)
+    }
   } else {
     for (const cat of catKeys) {
       s += line()
