@@ -347,6 +347,37 @@ const cases: CheckCase[] = [
       assert.equal(findConflictingArticleForDraftUrl(state, 73, 'https://editor.note.com/notes/nYYY/edit/'), null, '別URLなら衝突ではない')
     },
   },
+  {
+    // 【2026-09-25追加・実障害の再発防止】forceContentRewrite（1回きりの明示指示：
+    // completion-onlyジョブでもタイトル・本文を書き直す）が、claimInProgressの
+    // 時点で失われてしまい、実機で2回連続「フラグを立てたのに反映されない」
+    // 事象が発生した。claimInProgress後もフラグが維持され、実際の結果が
+    // 確定した時点（recordCompletionAttempt）で初めて消費されることを確認する。
+    name: '【実障害の再発防止】forceContentRewriteはclaimInProgressでは消費されず、recordCompletionAttemptで初めて消費される',
+    fn: () => {
+      let state: TransferState = {
+        '81': {
+          articleId: 81,
+          status: 'success',
+          attempts: 0,
+          draftUrl: 'https://editor.note.com/notes/nZZZ/edit/',
+          needsCompletion: true,
+          completionAttempts: 0,
+          completionClaimStarted: false,
+          forceContentRewrite: true,
+        },
+      }
+      // claim後もforceContentRewriteが残っていること（サーバー側はclaim前に
+      // 読み取るため実害はないが、2回目のclaimが起きるケースでも失われない
+      // ことを保証する）。
+      state = claimInProgress(state, 81, '2026-09-25T00:00:00.000Z', 'token-1')
+      assert.equal(state['81'].forceContentRewrite, true, 'claimInProgress直後もforceContentRewriteは維持されるはず')
+
+      // 結果が確定（成功・失敗いずれも）した時点で消費されること。
+      state = recordCompletionAttempt(state, 81, false, 'token-1')
+      assert.equal(state['81'].forceContentRewrite, undefined, 'recordCompletionAttempt後はforceContentRewriteが消費されているはず')
+    },
+  },
 ]
 
 export const suite = () => runSuite('noteTransferState', cases)

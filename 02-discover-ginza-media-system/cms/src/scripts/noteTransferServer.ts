@@ -260,6 +260,25 @@ async function main() {
           const runToken = randomUUID()
           saveState(claimInProgress(state, pending.articleId, new Date().toISOString(), runToken))
 
+          // 2026-09-25追加：state.forceContentRewriteがtrueのcompletion-onlyジョブは
+          // タイトル・本文も書き直す（claimInProgress前のexistingから読む）。
+          // extension側（injected-transfer.js）はitem.forceContentRewrite===true
+          // のときだけ通常のcompletion-onlyの「再入力しない」ガードを外す。
+          // claimInProgressは既存フィールドを明示列挙で再構築するため、
+          // forceContentRewriteはクレームと同時に自動的にstateから消費される
+          // （1回きりの明示指示——再度必要なら呼び出し側が明示的に立て直す）。
+          const forceContentRewrite = existing?.forceContentRewrite === true
+          // 2026-09-25追加（原因切り分け用の一時ログ）：実機でforceContentRewriteが
+          // ブラウザ側まで届かない事象があったため、サーバーが実際に何を計算・送信
+          // したかを直接記録する（state再読込のタイミング競合を切り分けるため）。
+          appendDiagnosticLog({
+            source: 'server',
+            event: 'force_content_rewrite_computed',
+            articleId: pending.articleId,
+            existingHadFlag: existing?.forceContentRewrite ?? null,
+            forceContentRewriteSent: forceContentRewrite,
+          })
+
           const draft = JSON.parse(readFileSync(pending.draftPath, 'utf8'))
           const iconFile: string | undefined = draft?.masthead?.categoryIcon?.iconFile
           // 2026-09-14続き11：実画像ファイルの存在を検証したうえで、MIME type・
@@ -285,6 +304,9 @@ async function main() {
                 mode: pending.mode,
                 runToken,
                 existingDraftUrl: pending.existingDraftUrl ?? null,
+                // 2026-09-25追加：completion-onlyジョブでもタイトル・本文を書き直す
+                // 1回きりのフラグ（既定false＝従来どおり再入力しない）。
+                forceContentRewrite,
                 title: draft.title,
                 body: draft.body,
                 hashtags: draft.noteMeta?.hashtags ?? [],

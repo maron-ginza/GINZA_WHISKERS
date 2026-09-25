@@ -40,6 +40,20 @@ export interface TransferStateEntry {
    * /result（recordCompletionAttempt）が同じトークンを伴わない結果報告
    * （古い/重複した報告等）を受け取った場合はstateを変更せず無視する。 */
   activeRunToken?: string
+  /**
+   * 2026-09-25追加（マロン指示：「GINZA WHISKERS編集部からのコメント」が
+   * note下書きに転記されていない不具合の修正）。noteTransferServer.tsが
+   * 静的な.devlogs/night/queue/<date>/<id>/note-draft.jsonをそのまま
+   * 転記していたため、記事作成後にCMS本文を修正しても既存のnote下書きへは
+   * 反映されなかった——既存の完全リトライ（mode:'full'）は「noteId未採番の
+   * 空白タブ」以外では新規タブを開いてしまい二重下書きを作る設計のため、
+   * 既存下書きの内容を更新する専用の手段が無かった。この1回限りのフラグは
+   * completion-onlyジョブ（既存draftUrlへの遷移・タブ再利用は元々安全に
+   * 動作する経路）のうち、この値がtrueの回だけタイトル・本文も書き直す
+   * （通常のcompletion-onlyジョブはタイトル・本文を再入力しない設計のまま
+   * 無変更）。true のときも hashtagsDone/iconDone の判定基準は緩めない
+   * （既存の厳格な success 判定をそのまま適用する）。 */
+  forceContentRewrite?: boolean
 }
 
 export type TransferState = Record<string, TransferStateEntry>
@@ -135,6 +149,13 @@ export function claimInProgress(state: TransferState, articleId: number, nowIso?
       draftUrl: prev?.draftUrl,
       activeRunToken: runToken,
       completionClaimStarted: isCompletionClaim ? true : prev?.completionClaimStarted,
+      // 2026-09-25追加：forceContentRewrite（1回きりの明示指示）はneedsCompletion等と
+      // 同じくclaim時点では消費せず維持する——claimInProgress前後で2回目のpending
+      // 取得が起きるケース（例：直前のクレームがブラウザ側で結果報告なしに終わった
+      // 場合の再選出）でも、実際に結果が確定するまでフラグを失わないようにする
+      // （実機検証で、claim直後にフラグが失われ2回目の試行で反映されない事象を確認）。
+      // 実際の消費はrecordCompletionAttempt側で行う。
+      forceContentRewrite: prev?.forceContentRewrite,
     },
   }
 }
@@ -215,6 +236,11 @@ export function recordCompletionAttempt(
       activeRunToken: undefined,
       // completionClaimStartedは既にtrueのまま維持される（prevをspread
       // しているため）——一度クレームしたら恒久的に選出対象から外れ続ける。
+      // 2026-09-25追加：forceContentRewrite（1回きりの明示指示）は、成否に
+      // 関わらずここで初めて消費する——claimInProgress時点では維持し
+      // （2回目のpending取得でも失われないようにするため）、実際の結果が
+      // 確定した時点で消費する設計に統一した。
+      forceContentRewrite: undefined,
     },
   }
 }

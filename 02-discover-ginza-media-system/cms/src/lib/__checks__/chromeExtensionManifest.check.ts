@@ -674,11 +674,15 @@ const WATCHDOG_DEDUP_TEST_CASES: CheckCase[] = [
       assert.ok(!/chrome\.tabs\.create/.test(body), 'preferredUrl経路でchrome.tabs.createが呼ばれている（新規タブ作成の再発）')
       assert.ok(!/chrome\.tabs\.reload/.test(body), 'preferredUrl経路でchrome.tabs.reloadが呼ばれている（reload禁止の再発）')
 
-      // injected-transfer.js側：completion-onlyモードではタイトル・本文の
-      // 書き込み関数（setContentEditableParagraphs等）がmode==='full'の
-      // 分岐内にのみ存在し、completionモードの経路では呼ばれないこと。
+      // injected-transfer.js側：通常のcompletion-onlyモード（forceContentRewrite
+      // が明示的にtrueでない場合）ではタイトル・本文の書き込み関数
+      // （setContentEditableParagraphs等）がmode==='full'の分岐内にのみ存在し、
+      // completionモードの経路では呼ばれないこと。
+      // 【2026-09-25改訂】forceContentRewrite===trueの1回きりの明示指示のみ
+      // 例外的に書き込みを許可する設計へ変更したため、ガード文言に合わせて
+      // 検索対象を更新（安全境界の後退ではなく、明示フラグ必須という条件の追加）。
       const inj = injSrc()
-      const completionIdx = inj.indexOf("if (mode === 'completion') {")
+      const completionIdx = inj.indexOf("if (mode === 'completion' && item.forceContentRewrite !== true) {")
       const imageSectionIdx = inj.indexOf('// --- ① カテゴリー画像')
       assert.ok(completionIdx >= 0 && imageSectionIdx > completionIdx, 'completion分岐と画像処理の位置関係を特定できない')
       const completionToImageSection = inj.slice(completionIdx, imageSectionIdx)
@@ -1405,10 +1409,39 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       const inj = injSrc()
       assert.ok(/const PUBLISH_FINAL_RE = /.test(inj), 'PUBLISH_FINAL_REが見つからない（安全境界の消失）')
       assert.ok(/if\s*\(\s*\/公開\/\.test\(t\)\)\s*return\s*false/.test(inj), '「公開」除外ガードが見つからない')
-      const completionIdx = inj.indexOf("if (mode === 'completion') {")
+      const completionIdx = inj.indexOf("if (mode === 'completion' && item.forceContentRewrite !== true) {")
       const imageSectionIdx = inj.indexOf("log('image_section_start', {})")
       assert.ok(completionIdx >= 0 && imageSectionIdx > completionIdx, 'completion分岐と画像処理区間の位置関係を特定できない')
       assert.ok(!/setContentEditableParagraphs/.test(inj.slice(completionIdx, imageSectionIdx)), 'completion経路上でタイトル・本文の書き込み関数が呼ばれている（再入力禁止の再発）')
+    },
+  },
+  {
+    // 2026-09-25追加（マロン指示：「GINZA WHISKERS編集部からのコメント」が
+    // note下書きに転記されない不具合の修正）。既存の安全境界（新規タブを開かない・
+    // reloadしない・「公開」は絶対押さない）を保ったまま、明示フラグ
+    // forceContentRewrite===trueのときだけタイトル・本文の書き込み関数が
+    // 呼ばれることを確認する——安全境界の後退ではなく、既存の
+    // completion-onlyの安全な遷移経路（既存タブ・既存URLの再利用）を使って
+    // 内容を書き直すための、狭く明示的な例外であることをコードで検証する。
+    name: '【新設確認】forceContentRewrite===trueのときのみcompletion経路でもタイトル・本文の書き込み関数が呼ばれる（既定はfalse＝従来どおり再入力しない）',
+    fn: () => {
+      const inj = injSrc()
+      const writeGateIdx = inj.indexOf("if (mode === 'full' || item.forceContentRewrite === true) {")
+      assert.ok(writeGateIdx >= 0, 'forceContentRewriteを考慮した書き込みゲートが見つからない')
+      const nextSectionIdx = inj.indexOf('let titleHashBefore = null', writeGateIdx)
+      assert.ok(nextSectionIdx > writeGateIdx, '書き込みゲートの終端が特定できない')
+      assert.ok(
+        /setContentEditableParagraphs/.test(inj.slice(writeGateIdx, nextSectionIdx)),
+        'forceContentRewriteのゲート内でタイトル・本文の書き込み関数が呼ばれていない',
+      )
+      // 同じフラグが「新規タブを開く」「tabs.reloadする」経路には一切関与しないこと
+      // （background.jsのpreferredUrl選定はmode==='completion'かどうかのみで決まり、
+      // forceContentRewriteの値に応じて分岐を増やしていない）を確認する。
+      const bg = readFileSync(resolve(EXT_DIR, 'background.js'), 'utf8')
+      assert.ok(
+        /const preferredUrl = item\.mode === 'completion' \? item\.existingDraftUrl : undefined/.test(bg),
+        'preferredUrl選定ロジックがmode以外の条件（forceContentRewrite等）で分岐するよう変更されている（新規タブ作成の安全境界に影響する可能性）',
+      )
     },
   },
   {
@@ -1557,6 +1590,40 @@ const TIMEOUT_HARDENING_TEST_CASES: CheckCase[] = [
       // ことを既存実装のシグネチャで確認する（同一runTokenの多重報告は
       // tokenAccepted判定で別途弾かれる——続き32以降の既存設計、無変更）。
       assert.ok(/const completionAttempts = \(prev\.completionAttempts \?\? 0\) \+ 1/.test(stateSrc), 'completionAttemptsの加算ロジックが見つからない（変更されていないか確認できない）')
+    },
+  },
+  {
+    name: '【2026-09-25追加確認】forceContentRewrite時、画像処理区間へ進む前にタイトル・本文を一度保存する（実機で画像timeoutにより②の保存へ未到達のまま終わる事象を確認したための対応）',
+    fn: () => {
+      const inj = injSrc()
+      const writeGateEnd = inj.indexOf(
+        "if (bodyReadback.length === 0) {\n        return { status: 'failure', error: 'stage=body_write_not_verified",
+      )
+      assert.ok(writeGateEnd >= 0, '書き込みゲート（本文0文字チェック）が見つからない')
+      const presaveIdx = inj.indexOf("if (item.forceContentRewrite === true) {\n      const presaveBtn", writeGateEnd)
+      assert.ok(presaveIdx >= 0, 'forceContentRewrite用のpresaveブロックが書き込みゲートの後に見つからない')
+      const sanityGateIdx = inj.indexOf("if (mode === 'completion' && item.forceContentRewrite !== true) {", presaveIdx)
+      assert.ok(sanityGateIdx > presaveIdx, 'presaveブロックがsanity-checkゲートより前に置かれていない（画像処理区間の前に保存する設計が崩れている）')
+      const presaveBlock = inj.slice(presaveIdx, sanityGateIdx)
+      assert.ok(/findSaveDraftButton/.test(presaveBlock), 'presaveブロックが既存の安全な保存ボタン探索関数（findSaveDraftButton）を使っていない')
+      assert.ok(/force_rewrite_presave_click|force_rewrite_presave_button_not_found/.test(presaveBlock), 'presaveブロックの診断ログが見つからない')
+      assert.ok(!/投稿する|公開する/.test(presaveBlock), 'presaveブロックに最終公開系の文言が含まれている（安全境界違反の疑い）')
+      // 保存ボタンが見つからなくても即failureにしない（後続②の保存で再試行されるため）。
+      assert.ok(!/presaveBtn\)\s*\{[^}]*return \{ status: 'failure'/.test(presaveBlock), 'presaveボタン未検出時に即failureを返している（後続②での再試行機会を奪っている）')
+    },
+  },
+  {
+    name: '【2026-09-25追加確認】presaveブロックはmode===\'full\'のときは発火しない（forceContentRewriteはcompletion-onlyジョブ専用の指示であり、fullモードの既存フローに影響しない）',
+    fn: () => {
+      const inj = injSrc()
+      const presaveIdx = inj.indexOf('if (item.forceContentRewrite === true) {\n      const presaveBtn')
+      assert.ok(presaveIdx >= 0, 'presaveブロックが見つからない')
+      // ガード条件がmodeを見ずitem.forceContentRewriteのみで判定している
+      // ことを確認する（fullモードの新規下書きではforceContentRewriteが
+      // 送られてこない前提——noteTransferServer.ts側でmode==='completion'の
+      // ときのみ計算されることは別テストで担保済み）。
+      const guardLine = inj.slice(presaveIdx, presaveIdx + 60)
+      assert.ok(/^if \(item\.forceContentRewrite === true\) \{/.test(guardLine), 'presaveブロックのガード条件が想定と異なる')
     },
   },
 ]

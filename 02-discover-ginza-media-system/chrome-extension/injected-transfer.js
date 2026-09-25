@@ -158,6 +158,9 @@
 
   async function runTransfer(item, log, stages, categoryIconAsset) {
     const mode = item.mode === 'completion' ? 'completion' : 'full'
+    // 【2026-09-25追加・原因切り分け用の一時ログ】サーバーから受信したitemに
+    // forceContentRewriteが実際にどう入っていたかをそのまま記録する。
+    log('item_received', { mode, forceContentRewrite: item.forceContentRewrite, articleId: item.articleId })
 
     function sleep(ms) {
       return new Promise((r) => setTimeout(r, ms))
@@ -820,11 +823,15 @@
     let bodyField = null
 
     // マロン指示：「タイトル・本文は再入力しない」——completion-onlyモード
-    // （このジョブの対象）ではfullモードのタイトル・本文書き込み経路
-    // そのものを通らない。以下は既存記事の下書き作成（本経路が現状使われて
-    // いないfullモード）向けに残しているのみで、completion専用ジョブの
-    // 動作には影響しない。
-    if (mode === 'full') {
+    // （このジョブの対象）では通常fullモードのタイトル・本文書き込み経路
+    // そのものを通らない。
+    // 【2026-09-25追加】item.forceContentRewrite===true のときだけ例外——
+    // 既存下書き（completion-onlyモードが安全に遷移・再利用できる既存タブ・
+    // 既存URL）の内容を意図的に書き直す1回きりの指示（noteTransferServer.ts
+    // のforceContentRewriteフラグ参照）。新規タブを開く・二重下書きを作る
+    // 挙動には一切影響しない——targetURLの決定はbackground.js側で従来どおり
+    // preferredUrl（completion-onlyと同じ経路）のまま。
+    if (mode === 'full' || item.forceContentRewrite === true) {
       if (!titleField) {
         return { status: 'failure', error: 'stage=title_field_not_found', debug: domDebugSnapshot(), stages }
       }
@@ -858,9 +865,35 @@
       }
     }
 
+    // 2026-09-25追加：forceContentRewrite===trueのときは、この直後の画像処理
+    // 区間（アイコン添付、不安定になりやすい）へ進む前に、書き換えたタイトル・
+    // 本文をこの時点で一度保存しておく——画像処理が45秒タイムアウトで打ち切ら
+    // れても、タイトル・本文の書き換え自体は保存済みの状態を確実にする
+    // （実機検証で、画像処理timeoutにより②の下書き保存〈886行目以降〉へ一度も
+    // 到達しないまま終わり、書き換えたタイトル・本文が未保存のままになる
+    // ケースを確認したための対応）。アイコン添付の成否とは独立させる——
+    // ②下書き保存・③ハッシュタグ確認は従来どおり画像処理の後にそのまま実行する
+    // （二重保存になるが実害はない）。保存ボタンが見つからない場合も後続の
+    // ②で再度試みるため、ここでは失敗させず記録のみ。
+    if (item.forceContentRewrite === true) {
+      const presaveBtn = await waitFor(() => findSaveDraftButton(), 4000)
+      if (presaveBtn) {
+        log('force_rewrite_presave_click', { text: visibleText(presaveBtn) })
+        clickElement(presaveBtn)
+        await sleep(2000)
+        const presaveErrorText = deepQuerySelectorAll('span, div, p', document, { budgetMs: 2000 })
+          .filter(isVisible)
+          .map(visibleText)
+          .find((t) => t && /保存に失敗|エラーが発生|保存できません/.test(t))
+        log('force_rewrite_presave_check', { ok: !presaveErrorText, errorText: presaveErrorText || null })
+      } else {
+        log('force_rewrite_presave_button_not_found', {})
+      }
+    }
+
     let titleHashBefore = null
     let bodyHashBefore = null
-    if (mode === 'completion') {
+    if (mode === 'completion' && item.forceContentRewrite !== true) {
       // completion-onlyジョブ：タイトル・本文は既に保存済みのはず——再入力せず、
       // 既存の内容が0文字でないことだけ確認する（sanity check、書き換えない）。
       bodyField = titleField ? findBodyField(titleField.el) : findBodyField(null)
@@ -1188,7 +1221,7 @@
     const iconApplied = checkIconApplied(iconResult.fileName)
     log('hashtag_icon_readback', { appliedTagCount, expectedTagCount: expectedTagsNoHash.length, iconApplied })
 
-    if (mode === 'full') {
+    if (mode === 'full' || item.forceContentRewrite === true) {
       const finalTitle = readBackText(titleField)
       const finalBody = readBackText(bodyField)
       log('post_save_verify', { titleLength: finalTitle.length, bodyLength: finalBody.length })
