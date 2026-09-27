@@ -11,7 +11,7 @@
 // 推測でデータを補完しない——ArticleFacts / DiscoveredContent に無い項目は「公式記載なし」。
 
 import { getPayload } from 'payload'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import config from '../payload.config'
@@ -66,9 +66,56 @@ const EXCLUDE_FACILITY_KEYS =
     ? excludeFacilityArg.split(',').map((s) => s.trim()).filter(Boolean)
     : DEFAULT_SWEETS_EXCLUDE_FACILITY_KEYS
 
+// 2026-09-27追加（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」を
+// Project 02運用基準として反映）。
+//
+// 【背景】本ファイルはこれまでArticleFacts readinessを「表示のみの注記」
+// （c.readiness !== 'ready'なら注記を付けるだけで、選定自体はブロックしない）
+// として扱い、SWEETS候補選定（selectSweetsCandidates）も同様に独自の緩い
+// 基準（evaluateSweetsEligibility等）で選んでいた。これにより、正式な
+// Stage 1-4 A/B/C判定（assessCandidate、`./p2 am-candidates`のcandidateBoard
+// が正本）ではB判定（ArticleFacts未ready＝要確認）の候補が、morning-briefの
+// 「選べます」候補として提示される不整合が実データで発生した（2026-09-27・
+// DC#1244＝SWEETS枠が選定したが公式にはB判定）。
+//
+// マロン確認済みの方針：「選定可能」は必ず公式のA判定（ArticleFacts ready）
+// のみとし、A判定が0件の日は正直に「候補なし」を表示する（厳格化）。
+//
+// 【実装】am-run（本スクリプトの直前に実行される）が書き出す当日の
+// report.json（candidateBoard＝Stage 3の正式なA候補ボード）を読み、
+// candidateBoard.sweets／byCategory に含まれるDC idの集合だけを
+// 「確定済み（confirmed）」として扱う。sweetsInputs／briefInputsは
+// この集合に含まれないDCを選定候補から除外する——読み取り専用・追加の
+// DB/AI呼び出しなし。report.jsonが無い（am-run未実行・テスト実行等）場合は
+// 緩い基準へフォールバックせず「確定候補0件」として扱う（fail-safe。
+// 未確認候補を選定可能に見せない方を優先する）。
+interface ConfirmedBoardIds {
+  found: boolean
+  sweetsDcIds: Set<number>
+  allDcIds: Set<number>
+}
+function loadConfirmedBoardIds(date: string): ConfirmedBoardIds {
+  const reportPath = resolve(process.cwd(), '..', '.devlogs', 'morning', date, 'report.json')
+  if (!existsSync(reportPath)) return { found: false, sweetsDcIds: new Set(), allDcIds: new Set() }
+  try {
+    const parsed = JSON.parse(readFileSync(reportPath, 'utf8')) as {
+      report?: { candidateBoard?: { sweets?: { discoveredContentId: number }[]; byCategory?: Record<string, { discoveredContentId: number }[]> } }
+    }
+    const board = parsed.report?.candidateBoard
+    const sweetsDcIds = new Set((board?.sweets ?? []).map((e) => e.discoveredContentId))
+    const allDcIds = new Set(sweetsDcIds)
+    for (const list of Object.values(board?.byCategory ?? {})) for (const e of list) allDcIds.add(e.discoveredContentId)
+    return { found: true, sweetsDcIds, allDcIds }
+  } catch {
+    // report.json が壊れている／読めない場合も緩い基準へ戻さない（fail-safe）。
+    return { found: false, sweetsDcIds: new Set(), allDcIds: new Set() }
+  }
+}
+
 async function main() {
   const payload = await getPayload({ config })
   const now = tokyoStartOfDay(DATE)
+  const confirmed = loadConfirmedBoardIds(DATE)
 
   // 1. 承諾前(inbox)＋承諾済み(approved) を評価してスコアリング
   const assessed = await assessInboxPool(payload, { now, statuses: ['inbox', 'approved'], limit: LIMIT })
@@ -165,6 +212,9 @@ async function main() {
       }
     })
     .filter((x): x is SweetsCandidateInput => x != null)
+    // 2026-09-27追加：正式なA判定（Stage 3 candidateBoard.sweets）に含まれない
+    // DCは「要確認」であり選定可能候補ではない——独自の緩い基準で選ばない。
+    .filter((x) => confirmed.sweetsDcIds.has(x.dcId))
   const sweetsSelection = selectSweetsCandidates(sweetsInputs, {
     now,
     excludeFacilityKeys: EXCLUDE_FACILITY_KEYS.length ? EXCLUDE_FACILITY_KEYS : undefined,
@@ -273,6 +323,10 @@ async function main() {
       }
     })
     .filter((x): x is BriefCandidateInput => x != null)
+    // 2026-09-27追加：正式なA判定（Stage 3 candidateBoard、8カテゴリー分類済み・
+    // ArticleFacts ready）に含まれないDCは「要確認」——SWEETS同様、独自基準で
+    // 選ばず、確定済みボードのみを選定可能プールとする。
+    .filter((x) => confirmed.allDcIds.has(x.dcId))
 
   const brief = buildMorningBrief(briefInputs, {
     recentFacilities: assessed.history.recentFacilitySequence,
@@ -295,6 +349,14 @@ async function main() {
   const lines: string[] = []
   const L = (s = '') => lines.push(s)
   L(`=== 朝刊ブリーフ（morning-brief）  対象日 ${DATE}  読み取り専用・DB書き込みなし ===`)
+  // 2026-09-27追加：正式なA判定（Stage 3 candidateBoard、report.json）に含まれない
+  // 候補は選定可能から除外している旨を明示する（厳格化・マロン確認済み）。
+  if (confirmed.found) {
+    L(`厳格化: Stage 3 candidateBoard（report.json）のA判定 ${confirmed.allDcIds.size}件（うちSWEETS ${confirmed.sweetsDcIds.size}件）のみを選定可能候補とする。`)
+  } else {
+    L(`⚠ 本日の report.json（./p2 am-run の出力）が見つからないため、選定可能候補は0件として扱う（推測でA判定を代替しない・fail-safe）。`)
+    L(`  → ./p2 am-candidates（または am-run）を先に実行してから再実行してください。`)
+  }
   L(`承諾前(inbox)＋承諾済み(approved) 評価 ${assessed.assessed} 件（A ${assessed.abcCounts.A} / B ${assessed.abcCounts.B} / C ${assessed.abcCounts.C}） → gate通過 ${sel.gatePassed} → 推奨+予備 ${pool.length}`)
   L(`過去7日間の採用（approved ${assessed.history.approvedCount}件）／直近施設: ${assessed.history.recentFacilitySequence.slice(0, 5).join(' → ') || '（履歴なし）'}`)
   L('────────────────────────────────────────────')
@@ -388,6 +450,12 @@ async function main() {
       {
         generatedAt: new Date().toISOString(),
         date: DATE,
+        // 2026-09-27追加：厳格化フィルタの適用状況（report.json由来のA判定数）。
+        confirmedBoard: {
+          found: confirmed.found,
+          allDcCount: confirmed.allDcIds.size,
+          sweetsDcCount: confirmed.sweetsDcIds.size,
+        },
         assessed: assessed.assessed,
         abcCounts: assessed.abcCounts,
         gatePassed: sel.gatePassed,
@@ -433,6 +501,7 @@ async function main() {
     console.log(
       JSON.stringify({
         date: DATE,
+        confirmedBoard: { found: confirmed.found, allDcCount: confirmed.allDcIds.size, sweetsDcCount: confirmed.sweetsDcIds.size },
         filledCount: brief.filledCount,
         pickedDcIds: brief.pickedDcIds,
         approveUrl,

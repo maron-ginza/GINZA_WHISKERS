@@ -20,8 +20,12 @@ import type { SourceLedgerEntry } from './types'
 // 誘発していた（発見・修正は同日）。`name`から百貨店名を除去し出店先情報は`notes`のみに
 // 記載する形へ改めた。今後、複数店舗ブランドの`name`に他の単独施設名を含めないこと。
 // ＋2026-09-13追加：銀茶会2025参加和菓子店のうち未登録5件（木挽町よしや／清月堂本店／
-// 東京凮月堂銀座／宗家源吉兆庵／銀座松﨑煎餅）。
-// 合計51件。urlは初期14件についてはWebSearchで
+// 東京凮月堂銀座／宗家源吉兆庵／銀座松﨑煎餅）＋2026-09-13キル フェ ボン1件
+// ＋2026-09-27「毎朝6時の情報収集・候補選定プロンプト」§3照合で判明した未登録
+// 10ブランド（ピエール マルコリーニ／ノワ・ドゥ・ブール／ホレンディッシェ・
+// カカオシュトゥーべ／サブレミシェル／アンテノール／ミルフィユ メゾン フランセ／
+// ベイユヴェール／アンフィニ／Mr. CHEESECAKE／パティスリー GIN NO MORI）。
+// 合計62件。urlは初期14件についてはWebSearchで
 // 実際の検索結果リンク（AIによる要約文ではなく、検索結果に直接返ってきたURL）を根拠に
 // 確認済み（確認日はnotesに記載）。「URLや取得方式が不確かなものを推測で埋めない」という
 // 方針のため、複数の候補URLが見つかった情報源（銀座三越・松屋銀座・SEIKO HOUSE GINZA・
@@ -1056,5 +1060,199 @@ export const SOURCE_LEDGER_SEED_DATA: SourceLedgerEntry[] = [
       'グランメゾン銀座（銀座2-5-4 ファサード銀座 1F・B1F、銀座一丁目駅5出口徒歩0分）' +
       'を実在確認済み。公式お知らせ一覧（複数店舗共通）にグランメゾン銀座の明記のある' +
       '記事のみ採用する——全国ブランドのトップページだけを根拠に銀座販売を推定しない。',
+  },
+  // 2026-09-27追加（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」§3の
+  // スイーツ重点収集先のうち、SOURCE_LEDGER未登録だった10ブランドを追加）。
+  // 全件WebSearchで実在・URL・銀座出店を確認し、curlでHTTP 200（到達可能）を
+  // 確認済み（2026-09-27）。複数店舗を持つブランドは、公式サイトのトップページ／
+  // お知らせ一覧だけを根拠に銀座販売と推定しない——ginzaRelevance.ts側の既存判定
+  // （本文中の銀座店明記チェック）にそのつど委ねる（このシード追加では判定条件を
+  // 一切変更しない）。
+  {
+    id: 'pierre-marcolini-ginza',
+    name: 'ピエール マルコリーニ 銀座本店',
+    url: 'https://pierremarcolini.jp/Page/ginza_information.aspx',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（チョコレート、路面店）。2001年開業のアジア初旗艦店（銀座5-5-8、' +
+      '1F店舗・2-3Fカフェ）。ページ自体が銀座本店専用のお知らせページ（' +
+      'https://pierremarcolini.jp/Page/ginza_information.aspx）のため店舗明記の' +
+      '確認不要。WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'noix-de-beurre-ginza-mitsukoshi',
+    name: 'ノワ・ドゥ・ブール（noix de beurre）',
+    url: 'https://noix-de-beurre.com/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（フィナンシェ専門、銀座三越B2F出店）。ブランド公式サイトは全国店舗共通' +
+      'のため、本文中に「銀座三越」の明記がある記事のみ採用する——トップページの情報' +
+      'だけで銀座販売と推定しない。WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'hollandische-kakao-stube-ginza-mitsukoshi',
+    name: 'ホレンディッシェ・カカオシュトゥーべ（HOLLÄNDISCHE KAKAO-STUBE）',
+    url: 'https://hollaendische-kakao-stube.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（バウムクーヘン等ドイツ菓子、銀座三越B2F出店）。ブランド公式サイトは' +
+      '全国店舗共通のため、本文中に「銀座三越」の明記がある記事のみ採用する——' +
+      'トップページの情報だけで銀座販売と推定しない。WebSearchで実在・URL確認' +
+      '（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'sable-michelle-ginza-mitsukoshi',
+    name: 'サブレミシェル（Sablé Michelle）',
+    url: 'https://www.sable-michelle.com/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（サブレ専門、銀座三越本館B1F出店・2024-12-11開業）。ブランド公式サイト' +
+      'は全国店舗共通のため、本文中に「銀座三越」の明記がある記事のみ採用する——' +
+      'トップページの情報だけで銀座販売と推定しない。WebSearchで実在・URL確認' +
+      '（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'antenor-ginza-boutique',
+    name: 'アンテノール（ANTENOR）',
+    url: 'https://www.antenor.jp/shops/kanto/ginzamitsukoshi.html',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（洋菓子、銀座三越B2F「銀座ブティック」）。ページ自体が銀座ブティック' +
+      '専用の店舗ページ（antenor.jp公式サイト内）のため店舗明記の確認不要。' +
+      'WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'millefeuille-maison-francais-matsuya-ginza',
+    name: 'ミルフィユ メゾン フランセ（MILLE-FEUILLE MAISON FRANÇAIS）',
+    url: 'https://www.millefeuillemaison.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（ミルフィユ専門、松屋銀座B1F出店。「銀座アヴニュ」等松屋銀座限定商品の' +
+      '実績あり）。ブランド公式サイトは複数店舗共通のため、本文中に「松屋銀座」の' +
+      '明記がある記事のみ採用する——トップページの情報だけで銀座販売と推定しない。' +
+      'WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'beillevaire-matsuya-ginza',
+    name: 'ベイユヴェール（Beillevaire）',
+    url: 'https://www.beillevaire.jp/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（フランス発チーズケーキ・乳製品、松屋銀座B1F出店・2019年開業）。' +
+      'ブランド公式サイトは複数店舗共通のため、本文中に「松屋銀座」の明記がある' +
+      '記事のみ採用する——トップページの情報だけで銀座販売と推定しない。WebSearchで' +
+      '実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'infini-matsuya-ginza',
+    name: 'アンフィニ（INFINI）',
+    url: 'https://www.infinidepuis2020.com/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（パティシエ金井史章の洋菓子、松屋銀座B1F出店・2020年開業）。' +
+      '公式サイトは九品仏本店・松屋銀座店の2店舗共通のため、本文中に「松屋銀座」の' +
+      '明記がある記事のみ採用する——トップページの情報だけで銀座販売と推定しない。' +
+      'WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'mr-cheesecake-ginza-six',
+    name: 'Mr. CHEESECAKE',
+    url: 'https://mr-cheesecake.com/pages/ginza-six',
+    category: 'food',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'high',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（チーズケーキ専門、GINZA SIX旗艦店・カフェ併設・デザートコース予約制）。' +
+      'ページ自体がGINZA SIX店専用ページ（mr-cheesecake.com公式サイト内）のため店舗' +
+      '明記の確認不要。WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
+  },
+  {
+    id: 'patisserie-gin-no-mori-ginza-six',
+    name: 'パティスリー GIN NO MORI',
+    url: 'https://ginnomori.info/patisserie/news/',
+    category: 'brand',
+    tier: 'secondary',
+    language: 'ja',
+    sourceType: 'official_site',
+    reliability: 'medium',
+    crawlFrequency: 'weekly',
+    enabled: true,
+    lastCheckedAt: null,
+    lastChangedAt: null,
+    notes:
+      'SWEETS（岐阜・恵那銀の森発の洋菓子、GINZA SIX B2F出店・ポップアップから' +
+      '常設店へ）。お知らせ一覧は本店・複数出店先共通のため、本文中に「GINZA SIX」' +
+      'の明記がある記事のみ採用する——トップページの情報だけで銀座販売と推定しない。' +
+      'WebSearchで実在・URL確認（2026-09-27、curl HTTP 200）。',
   },
 ]

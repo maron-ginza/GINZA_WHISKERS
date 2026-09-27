@@ -40,6 +40,85 @@ def read_json(path):
         return None
 
 
+# 2026-09-27追加（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」§7の
+# 「収集、データベース保存、分類、候補表示の各処理の成功・失敗」を、マロンが
+# 直接読む人間可読テキストにも明示する）。フェーズ名→この4区分＋日本語ラベルへの
+# 写像（表示専用・判定ロジックには影響しない）。
+PHASE_GROUPS = [
+    ("収集", ["crawl", "sweets_detail_fetch", "matsuya_sweets_fetch", "matsuya_gourmet_fetch",
+             "mitsukoshi_health_check", "mitsukoshi_food_events_fetch"]),
+    ("データベース保存", ["db"]),
+    ("分類（A/B/C判定・ArticleFacts）", ["am_run"]),
+    ("候補表示（Morning Board）", ["morning_brief", "candidate_fallback"]),
+]
+PHASE_LABELS = {
+    "db": "DB起動確認",
+    "crawl": "収集（SOURCE_LEDGER 巡回）",
+    "sweets_detail_fetch": "収集補完（スイーツ詳細取得）",
+    "matsuya_sweets_fetch": "収集（松屋銀座スイーツ）",
+    "matsuya_gourmet_fetch": "収集（松屋銀座グルメ）",
+    "mitsukoshi_health_check": "収集（銀座三越 到達確認）",
+    "mitsukoshi_food_events_fetch": "収集（銀座三越 食料品催事）",
+    "am_run": "分類（A/B/C判定・ArticleFacts抽出）",
+    "morning_brief": "候補表示（Morning Board生成）",
+    "candidate_fallback": "候補不足フォールバック判定",
+}
+STATUS_LABELS = {"ok": "✅成功", "retry": "🔁リトライ中", "error": "❌失敗"}
+
+
+def render_human_summary(out: dict) -> str:
+    """out（main()が組み立てた最終サマリdict）から、マロンが直接読む人間可読テキストを
+    組み立てる。数値・文言はoutにある値をそのまま転記するだけ（新たな判定はしない）。
+    「実行は成功したが結果が乏しい」（status=degraded）を「失敗」と混同表示しない一方、
+    実際にフェーズが失敗した場合は必ずここにも❌として現れる。"""
+    lines = []
+    L = lines.append
+    L(f"=== 本日（{out['date']}）の処理成否（収集・DB保存・分類・候補表示） ===")
+    if out.get("fatal"):
+        L(f"❌ 致命的エラーのため後続フェーズ未実行: {out['fatal']}")
+    phases = out.get("phases") or {}
+    for group_label, phase_keys in PHASE_GROUPS:
+        group_statuses = [phases[k]["status"] for k in phase_keys if k in phases]
+        if not group_statuses:
+            L(f"  ◆ {group_label}: （未実行）")
+            continue
+        group_ok = all(s == "ok" for s in group_statuses)
+        L(f"  ◆ {group_label}: {'✅全フェーズ成功' if group_ok else '⚠一部失敗・要確認'}")
+        for k in phase_keys:
+            if k not in phases:
+                continue
+            p = phases[k]
+            label = PHASE_LABELS.get(k, k)
+            st = STATUS_LABELS.get(p["status"], p["status"])
+            L(f"      - {label}: {st}（試行 {p['attempt']}/{p['maxAttempts']}・{p['elapsedSec']}秒）")
+    L("")
+    sig = out.get("signals") or {}
+    new_count = sig.get("todayNewOrChangedCount")
+    L(
+        f"本日の新規/更新DiscoveredContent件数: {new_count}"
+        if new_count is not None
+        else "本日の新規/更新DiscoveredContent件数: 不明（./p2 crawl が構造化出力を返していないため取得できない。既知の別課題・推測で埋めない）"
+    )
+    a_count = sig.get("candidateBoardACount")
+    sweets_count = sig.get("candidateBoardSweetsCount")
+    L(f"A判定（公式確認済み）実数: {a_count if a_count is not None else '（report.json未検出のため不明）'}")
+    L(f"うちSWEETS: {sweets_count if sweets_count is not None else '（report.json未検出のため不明）'}")
+    L(f"候補不足フォールバック最終判定: {sig.get('candidateFallbackStage') or '（未実行）'}")
+    L("")
+    L(f"総合ステータス: {out['status']}（success={out['success']}）")
+    if out.get("degradedReasons"):
+        L("劣化理由（実行は成功・結果が乏しい）:")
+        for r in out["degradedReasons"]:
+            L(f"  - {r}")
+    if out.get("errors"):
+        L("フェーズ失敗（実行そのものが失敗）:")
+        for e in out["errors"]:
+            L(f"  - {e}")
+    L("（新規取得件数と前日持ち越し件数の分離集計は未実装——現状は合算のA判定実数のみ。"
+      "この点は既知の未反映事項として別途対応予定）")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", required=True)
@@ -47,6 +126,7 @@ def main() -> int:
     ap.add_argument("--brief", required=True, help=".devlogs/morning/brief/<date>.json")
     ap.add_argument("--report", default=None, help=".devlogs/morning/<date>/report.json（省略時は--logと同じ親から自動推定しない＝明示指定のみ読む）")
     ap.add_argument("--fatal", default=None, help="db起動失敗など、フェーズ実行前の致命的エラー")
+    ap.add_argument("--text-out", default=None, help="人間可読サマリ（render_human_summary）の書き出し先パス（省略時は書き出さない）")
     args = ap.parse_args()
 
     phase_rows = read_jsonl(args.log)
@@ -180,6 +260,9 @@ def main() -> int:
         "candidates": candidates_summary,
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))
+    if args.text_out:
+        with open(args.text_out, "w", encoding="utf-8") as f:
+            f.write(render_human_summary(out))
     return 0
 
 

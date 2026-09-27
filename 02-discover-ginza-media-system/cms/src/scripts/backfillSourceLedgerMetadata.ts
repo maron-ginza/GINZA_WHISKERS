@@ -48,6 +48,16 @@ const SWEETS_BRAND_SOURCE_IDS = new Set([
   'lenotre-japan',
   'pierre-herme-paris',
   'ginza-cozycorner',
+  // 2026-09-27追加（「毎朝6時の情報収集・候補選定プロンプト」§3照合で新規登録した
+  // 10ブランドのうちcategory='brand'の7件。いずれも菓子・スイーツ専門ブランド
+  // としてseedData.tsのnotesに実地確認記載あり）。
+  'noix-de-beurre-ginza-mitsukoshi',
+  'hollandische-kakao-stube-ginza-mitsukoshi',
+  'sable-michelle-ginza-mitsukoshi',
+  'millefeuille-maison-francais-matsuya-ginza',
+  'beillevaire-matsuya-ginza',
+  'infini-matsuya-ginza',
+  'patisserie-gin-no-mori-ginza-six',
 ])
 
 async function main() {

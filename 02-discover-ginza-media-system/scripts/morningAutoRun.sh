@@ -156,8 +156,11 @@ rm -f "$DB_TMP"
 
 if [ "$DB_OK" -ne 1 ]; then
   echo "❌ PostgreSQL/Docker が起動できませんでした。後続フェーズは実行せず終了します。"
-  python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" --fatal "db起動失敗" > "$SUMMARY_JSON"
+  STATUS_TXT="$LOG_DIR/${DATE}-status.txt"
+  python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" --fatal "db起動失敗" --text-out "$STATUS_TXT" > "$SUMMARY_JSON"
   cat "$SUMMARY_JSON"
+  echo ""
+  cat "$STATUS_TXT"
   exit 1
 fi
 
@@ -184,6 +187,10 @@ run_phase "morning_brief" ./p2 morning-brief --json
 # なお不足なら記事を作らず insufficient_stop で正常終了する（捏造しない）。
 run_phase "candidate_fallback" ./p2 candidate-fallback-auto "$DATE"
 
-python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" > "$SUMMARY_JSON"
-echo "=== morning-auto $DATE 完了。サマリ: $SUMMARY_JSON ==="
-cat "$SUMMARY_JSON"
+# 2026-09-27追加（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」§7の
+# 段階別成否表示）：JSONサマリと同時に、収集・DB保存・分類・候補表示の各成否を
+# 明示した人間可読テキストも書き出す（マロンが直接読める場所に残す）。
+STATUS_TXT="$LOG_DIR/${DATE}-status.txt"
+python3 "$PY_SUMMARY" --date "$DATE" --log "$RUN_LOG" --brief "$ROOT/.devlogs/morning/brief/${DATE}.json" --report "$ROOT/.devlogs/morning/${DATE}/report.json" --text-out "$STATUS_TXT" > "$SUMMARY_JSON"
+echo "=== morning-auto $DATE 完了。サマリ: $SUMMARY_JSON ／ 成否テキスト: $STATUS_TXT ==="
+cat "$STATUS_TXT"
