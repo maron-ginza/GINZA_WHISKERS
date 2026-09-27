@@ -3,6 +3,7 @@
 crawlSources.ts が標準出力した1行JSON（{"crawl": ..., "candidates": ...}）を
 標準入力から受け取り、人間向けに整形する。
 """
+import os
 import sys
 import json
 
@@ -13,6 +14,27 @@ def fail(message: str) -> None:
     print(message)
     if log_hint:
         print(f"詳細は {log_hint} を確認してください")
+        # 2026-09-27追加（マロン指示：今回1回失敗した収集処理の原因特定）。
+        # crawl.logは次の試行実行時に上書きされるため、この失敗パス
+        # （JSON解析失敗）が発生した“その瞬間”の内容をこの場でstdoutへ
+        # 転記しておかないと、リトライが成功した時点で原因が永久に失われる
+        # （実際に2026-09-27朝の1回目失敗でこれが発生し、原因を特定できな
+        # かった）。stdoutはmorningAutoRun.shのrun_phaseが per-attempt の
+        # ログファイルへコピーするため、ここに転記しておけば保存される。
+        try:
+            with open(log_hint, "r", encoding="utf-8", errors="replace") as f:
+                tail = f.read()[-2000:]
+            if tail.strip():
+                print(f"--- {log_hint} 末尾2000字 ---")
+                print(tail)
+        except OSError:
+            pass
+    # raw（標準入力で受け取った、JSONとして解析できなかった内容）自体も
+    # 末尾500字だけ転記する——crawlSources.tsの最終console.log行が何を
+    # 出力していたか（空だったか・途中で切れたか等）を確認できるようにする。
+    if raw:
+        print(f"--- 標準入力（解析対象）末尾500字 ---")
+        print(raw[-500:])
     sys.exit(1)
 
 
@@ -151,3 +173,22 @@ if articles_summary is not None:
     if by_type:
         type_str = " / ".join(f"{k}:{v}" for k, v in sorted(by_type.items(), key=lambda x: -x[1]))
         print(f"  contentType内訳: {type_str}")
+
+# 2026-09-27追加（マロン指示：「./p2 crawl の構造化JSON出力が欠けている原因」）。
+# 【原因】crawlSources.tsは1行JSON（articlesSummary.todayNewOrChangedCount含む）を
+# 標準出力していたが、それは本スクリプト（format_crawl_status.py）の標準入力へ
+# パイプで渡されるだけで、本スクリプト自身は常に人間向け整形テキストのみを標準
+# 出力していた——morningAutoRun.shが各フェーズの標準出力から拾うJSON
+# （morning_auto_logline.pyのextract_json_object）には、この人間向けテキストしか
+# 渡らず、todayNewOrChangedCount等は一度も機械可読な形で外へ出ていなかった。
+# 【対応】人間向け出力の末尾に、機械可読な1行JSONを追加で出力する（既存の人間向け
+# 出力は一切変更しない・追加のみ）。这行は常に最後に出るため、
+# morning_auto_logline.pyのextract_json_object（最初に見つかる完全パース可能な
+# JSONオブジェクトを採用）は、それより前に完全パース可能なJSON断片が無ければ
+# 確実にこの行を拾う。
+if articles_summary is not None:
+    print(json.dumps({
+        "todayNewOrChangedCount": articles_summary.get("todayNewOrChangedCount", 0),
+        "totalUnique": articles_summary.get("totalUnique", 0),
+        "scannedSources": data.get("scannedSources", 0) if isinstance(data, dict) else None,
+    }, ensure_ascii=False))

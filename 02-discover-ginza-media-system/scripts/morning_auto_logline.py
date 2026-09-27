@@ -58,8 +58,13 @@ def main() -> int:
     }
     if obj is not None:
         rec["output"] = obj
-    if status == "error":
-        # 末尾800字だけ保持（ログ肥大化防止・原因調査に十分な量）
+    # 2026-09-27追加（マロン指示：今回1回失敗した収集処理の原因特定を試みたところ、
+    # 「retry」で終わった試行（後続リトライが成功したため最終的にはerrorにならない）
+    # にはtailが記録されておらず、失敗の実際のエラー内容が一切残らないことが分かった
+    # ——crawl.log等の下位ログも次の試行で上書きされるため、事後の原因調査が不可能な
+    # 状態だった。「error」だけでなく「retry」でもtailを記録するよう変更する
+    # （ログ肥大化防止のため800字上限は維持）。
+    if status in ("error", "retry"):
         rec["tail"] = raw[-800:]
 
     with open(runlog, "a", encoding="utf-8") as f:

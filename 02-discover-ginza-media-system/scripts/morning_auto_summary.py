@@ -211,7 +211,15 @@ def main() -> int:
     degraded_reasons = []
 
     crawl_output = last_output_by_phase.get("crawl") or {}
-    today_new_or_changed = ((crawl_output.get("articlesSummary") or {}).get("todayNewOrChangedCount"))
+    # 2026-09-27修正：./p2 crawl（format_crawl_status.py）が今回新設した機械可読
+    # JSON出力は articlesSummary で入れ子にせず todayNewOrChangedCount を直接
+    # トップレベルに持つフラットな形（{"todayNewOrChangedCount": ..., ...}）。
+    # 旧来の「articlesSummaryへの入れ子」を期待するルックアップのままだと、
+    # 新しい出力形式では常にNoneを返し「不明」表示が続く実バグがあったため、
+    # フラットなキーを直接読むよう修正した（新形式のみ対応。crawlSources.ts
+    # 自体の生JSON〈{crawl, candidates, articlesSummary}〉はこの経路には
+    # 一度も渡ってこないため後方互換は不要）。
+    today_new_or_changed = crawl_output.get("todayNewOrChangedCount")
     if today_new_or_changed is not None and today_new_or_changed == 0:
         degraded_reasons.append("新規取得0件（本日のDiscoveredContent新規/更新が0件。DB件数も実質増えていない）")
 
