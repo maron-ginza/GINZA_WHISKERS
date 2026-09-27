@@ -190,14 +190,18 @@ function isSaleAvailabilityConfirmed(saleAvailability: string | null | undefined
  *   3. draft/none/withdrawnのArticleFacts、またはeventDateISO未設定のready
  *      ArticleFactsは使わない（推測値を使わない・フォールバックなし＝null/null）。
  *
- * 【2026-09-21・実データで確認した副作用】ArticleFacts.eventDateISOは本関数以外に、
- * assessCandidate内の開催終了判定（dc.eventEndAt ?? dc.eventStartAt ??
- * facts?.eventDateISO）でも「終了日相当」として直接読まれる（DBの生値を参照する、
- * 本関数の戻り値とは無関係の別ロジック）。DC#780（発売日のみ確認済み・終了日は公式
- * 記載なし）でeventDateISOに発売日を設定したところ、この別ロジックが誤って「終了済み」
- * と判定した実例があったため、終了日が無いことが確認済みの候補にはArticleFacts.
- * eventDateISOを設定しない（DC#780自身のArticleFactsではeventDateISOを未設定のまま
- * 保持している）。
+ * 【2026-09-21・実データで確認した副作用／2026-09-27に根本修正】ArticleFacts.
+ * eventDateISOは本関数以外に、assessCandidate内の開催終了判定（endIsoRaw）でも
+ * 「終了日相当」として直接読まれる（DBの生値を参照する、本関数の戻り値とは無関係の
+ * 別ロジック）。DC#780（発売日のみ確認済み・終了日は公式記載なし）でeventDateISOに
+ * 発売日を設定したところ、この別ロジックが誤って「終了済み」と判定した実例があった。
+ * 2026-09-21時点では対症療法（終了日が無いことが確認済みの候補にはArticleFacts.
+ * eventDateISOを設定しない）のみで、endIsoRaw自体が`dc.eventEndAt ?? dc.eventStartAt
+ * ?? facts?.eventDateISO`と開始日を終了日の代用にするフォールバックを残していたため、
+ * DC#780と同型の候補（開始日のみDiscoveredContent側で確認済み）は依然誤判定した
+ * ままだった。2026-09-27、「毎朝6時の情報収集・候補選定プロンプト」§4の「終了日が
+ * ないこと自体を除外理由にしない」を踏まえ、endIsoRawから`?? dc.eventStartAt`を
+ * 削除する根本修正を行った（詳細は該当箇所のコメント参照）。
  *
  * 【2026-09-21・検討したが不採用】eventDateISOが無くてもsaleAvailability
  * （'ongoing_no_end_stated'／'no_period_stated'）を根拠に現在性シグナルとして使う案を
@@ -281,7 +285,21 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
   const ginzaRelevant = gr.ginzaRelevant
   const ginzaRelevanceBasis = gr.basis
 
-  const endIsoRaw = dc.eventEndAt ?? dc.eventStartAt ?? facts?.eventDateISO ?? null
+  // 2026-09-27修正（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」§4
+  // 「通年販売の新商品は、終了日がないこと自体を除外理由にしない」に対応）。
+  // 【発見した実バグ】従来は`dc.eventEndAt ?? dc.eventStartAt ?? ...`で、
+  // eventEndAtが未確認（null）の場合に開始日を「終了日相当」として代用していた
+  // ——開始日が過去であれば「終了済み」と誤判定する実バグで、2026-09-21に
+  // DC#780（発売日のみ確認済み・終了日は公式記載なし）で発覚済みだったが、
+  // 当時はArticleFacts.eventDateISO側の設定を避ける対症療法のみで、この
+  // dc.eventStartAtへのフォールバック自体は残っていた（コード内コメント参照）。
+  // 今回、パティスリー GIN NO MORI「栗とはちみつのパウンドケーキ」
+  // （販売開始2026-08-29・終了日は「10月末頃」で確認できず終了日は未確認の
+  // まま）で同じ誤判定を実データで再確認したため、開始日を終了日の代用に
+  // しないよう修正する——終了日が未確認の場合は「終了済みとは判定できない」
+  // （expired=false）。ArticleFacts.eventDateISOのフォールバックは、単発
+  // イベント（開始=終了とみなせる）を想定した既存設計のため維持する。
+  const endIsoRaw = dc.eventEndAt ?? facts?.eventDateISO ?? null
   const endD = toDate(endIsoRaw)
   // 2026-09-06、根本改善：event_end_at が日付のみ（時刻情報なし）の場合、
   // 日本時間の当日23:59:59までは開催中として扱い、翌日から終了済みにする

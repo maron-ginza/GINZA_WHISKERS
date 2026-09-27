@@ -394,6 +394,25 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-09-27追加（マロン指示：「毎朝6時の情報収集・候補選定プロンプト」§4
+    // 「通年販売の新商品は、終了日がないこと自体を除外理由にしない」の回帰テスト）。
+    // 2026-09-21に一度発覚したDC#780と同型の実データ（パティスリー GIN NO MORI
+    // 「栗とはちみつのパウンドケーキ」、販売開始のみ確認済み・終了日は「10月末頃」で
+    // 確認できず未確認のまま）で、開始日を終了日の代用にする従来のフォールバックが
+    // 「終了済み」に誤判定していたことを2026-09-27に再確認・根本修正した。
+    name: '根本修正（2026-09-27）: 開始日のみ確認済み・終了日が未確認（null）の候補は、開始日を終了日の代用にして「終了済み」と誤判定しない',
+    fn: () => {
+      const startOnlyPast = assessCandidate(
+        mk({ dc: baseDc({ eventStartAt: PAST_ISO, eventEndAt: null }), facts: readyFacts({ eventDateISO: null, eventDate: null }) }),
+      )
+      assert(startOnlyPast.expired === false, `開始日のみ・過去でも終了日未確認なら expired=false のはず（実際 ${startOnlyPast.expired}）`)
+      assert(
+        !startOnlyPast.reasons.some((r) => r.includes('開催終了済み')),
+        `「開催終了済み」を理由にしないはず（実際 reasons=${startOnlyPast.reasons.join('|')}）`,
+      )
+    },
+  },
+  {
     name: 'B（必須回帰）: 終了済み・重複・銀座で利用不可の候補はAにならない（安全条件は緩めない）',
     fn: () => {
       const expiredC = assessCandidate(mk({ dc: baseDc({ eventStartAt: PAST_ISO, eventEndAt: PAST_ISO }) }))

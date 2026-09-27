@@ -238,6 +238,169 @@ const cases: CheckCase[] = [
       )
     },
   },
+  // ─────────────────────────────────────────────────────────────────
+  // 2026-09-27追加（マロン指示）：販売期間が本文に人が読める形で書かれている
+  // のに構造化日付を一切取得できなかった実データ（パティスリー GIN NO MORI
+  // 「秋限定┃栗とはちみつのパウンドケーキ」）を起点とした回帰テスト。
+  // ─────────────────────────────────────────────────────────────────
+  {
+    name: 'GIN NO MORI実データ再現：「販売日:2026年8月29日(土)～2026年11月末頃」は開始日だけを採用し、終了日は推測せずnull（要確認）のまま',
+    fn: () => {
+      const html = page(
+        '秋限定┃栗とはちみつのパウンドケーキ | パティスリー GIN NO MORI',
+        `
+        <h1>秋限定┃栗とはちみつのパウンドケーキ</h1>
+        <p>栗とはちみつが織りなす、実りの秋感じる贅沢な味わい</p>
+        ■商品概要
+        栗とはちみつのパウンドケーキ
+        販売日:2026年8月29日(土)～2026年11月末頃
+        ※各店舗数量限定/完売次第終了
+        販売店舗：恵那本店/銀座店/名古屋店/麻布台ヒルズ店/グランスタ東京店/グランフロント大阪店価格：2,138円(税込)
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === new Date(Date.UTC(2026, 7, 29)).toISOString(),
+        `開始日 2026-08-29 を採用（実際: ${r.eventStartAt.value}）`,
+      )
+      assert(r.eventStartAt.source === 'body_label', `販売日ラベルから採用（実際: ${r.eventStartAt.source}）`)
+      assert(
+        r.eventEndAt.value === null,
+        `"11月末頃"は日番号を持たずDATE_TOKENに一致しないため、終了日を推測で確定しない（実際: ${r.eventEndAt.value}）`,
+      )
+    },
+  },
+  {
+    name: '「発売日：2026年10月1日」のような終了日の概念が無い単発の発売日は、開始日のみ採用し終了日はnullのまま（推測しない）',
+    fn: () => {
+      const html = page(
+        '新フレーバー登場 | Mr. CHEESECAKE',
+        `
+        <h1>新フレーバー登場</h1>
+        <p>発売日：2026年10月1日（木）より常設ストアにて数量限定で販売します。</p>
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === new Date(Date.UTC(2026, 9, 1)).toISOString(),
+        `開始日 2026-10-01 を採用（実際: ${r.eventStartAt.value}）`,
+      )
+      assert(r.eventEndAt.value === null, `発売日には終了日の概念が無いため null のまま（実際: ${r.eventEndAt.value}）`)
+    },
+  },
+  {
+    name: '「販売期間：2026年9月1日～2026年9月30日」のように終了日も明確な日付トークンで書かれている場合は、従来どおり範囲として両方採用する',
+    fn: () => {
+      const html = page(
+        '9月限定商品 | サブレミシェル',
+        `
+        <h1>9月限定商品</h1>
+        <p>販売期間：2026年9月1日～2026年9月30日</p>
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === new Date(Date.UTC(2026, 8, 1)).toISOString(),
+        `開始日 2026-09-01（実際: ${r.eventStartAt.value}）`,
+      )
+      assert(
+        r.eventEndAt.value === new Date(Date.UTC(2026, 8, 30)).toISOString(),
+        `終了日が明確な日付なら従来どおり採用する（実際: ${r.eventEndAt.value}）`,
+      )
+    },
+  },
+  {
+    name: '「販売期間」ラベルの近傍に日付トークンが一切無い場合は、開始日・終了日とも null のまま（推測しない）',
+    fn: () => {
+      const html = page(
+        '販売期間未定商品 | ホレンディッシェ・カカオシュトゥーべ',
+        `
+        <h1>販売期間未定商品</h1>
+        <p>販売期間：詳細は追ってお知らせいたします。</p>
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(r.eventStartAt.value === null, `日付トークンが無ければ推測しない（実際: ${r.eventStartAt.value}）`)
+      assert(r.eventEndAt.value === null, `日付トークンが無ければ推測しない（実際: ${r.eventEndAt.value}）`)
+    },
+  },
+  {
+    name: '「開催期間」ラベルが既に会期を確定できている場合は、後続の「販売期間」ラベルで上書きしない（優先度・既存挙動を維持）',
+    fn: () => {
+      const html = page(
+        '展覧会と限定グッズ販売 | 銀座 蔦屋書店',
+        `
+        <h1>展覧会と限定グッズ販売</h1>
+        <p>開催期間: 2026.10.02 - 2026.10.25</p>
+        <p>販売期間：2026年10月2日～2026年11月末頃</p>
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === new Date(Date.UTC(2026, 9, 2)).toISOString(),
+        `開催期間ラベルの開始日を優先（実際: ${r.eventStartAt.value}）`,
+      )
+      assert(
+        r.eventEndAt.value === new Date(Date.UTC(2026, 9, 25)).toISOString(),
+        `開催期間ラベルの終了日を優先——販売期間ラベルで上書きしない（実際: ${r.eventEndAt.value}）`,
+      )
+    },
+  },
+  {
+    name: 'Mr. CHEESECAKE実データ再現：ラベルの無い自然文「2026年10月1日（木）より…販売開始します」から発売日を採用し、終了日は概念が無いためnullのまま',
+    fn: () => {
+      const html = page(
+        '【プレスリリース】新フレーバー登場 | Mr. CHEESECAKE',
+        `
+        2026.09.25
+        【プレスリリース】発売半年で累計販売数20万個を突破したひとくちチーズケーキ「CREAMY BAKED CHEESECAKE」から新フレーバー「Milk Tea」が登場！
+        株式会社Mr. CHEESECAKEは、新フレーバー「Milk Tea」を開発しました。
+        2026年10月1日（木）より「Milk Tea」と「Original（オリジナル）」の2種を楽しめるアソートを、国内の常設ストア5店舗で販売開始します。
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === new Date(Date.UTC(2026, 9, 1)).toISOString(),
+        `発売日 2026-10-01 を採用（実際: ${r.eventStartAt.value}）`,
+      )
+      assert(
+        r.eventStartAt.value !== new Date(Date.UTC(2026, 8, 25)).toISOString(),
+        '記事投稿日（2026.09.25）や見出し中の"発売半年で"を誤って採用していない',
+      )
+      assert(r.eventEndAt.value === null, `発売には終了日の概念が無いため null のまま（実際: ${r.eventEndAt.value}）`)
+    },
+  },
+  {
+    name: '「発売半年で累計販売数20万個を突破」のような過去の実績言及（単独の"発売"）は、新規の発売告知として誤検出しない',
+    fn: () => {
+      const html = page(
+        '実績のお知らせ | Mr. CHEESECAKE',
+        `
+        2026.09.25 発売半年で累計販売数20万個を突破したチーズケーキについてのお知らせです。
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(
+        r.eventStartAt.value === null,
+        `単独の"発売"（複合語でない）への隣接では採用しない（実際: ${r.eventStartAt.value}）`,
+      )
+    },
+  },
+  {
+    name: '配送遅延等の事務告知ページ（日付＋無関係な文脈）では、Tier 3cが誤って発売日を作り出さない',
+    fn: () => {
+      const html = page(
+        '大雨に伴うお荷物のお届けへの影響について | beillevaire',
+        `
+        2025/09/04
+        大雨に伴うお荷物のお届けへの影響について
+        大雨の影響により、一部地域でお届けに遅延が発生しております。ご了承ください。
+        `,
+      )
+      const r = extractStructuredDates(html)
+      assert(r.eventStartAt.value === null, `事務告知の日付を発売日として誤採用しない（実際: ${r.eventStartAt.value}）`)
+    },
+  },
 ]
 
 export const suite = () => runSuite('extractStructuredDates', cases)

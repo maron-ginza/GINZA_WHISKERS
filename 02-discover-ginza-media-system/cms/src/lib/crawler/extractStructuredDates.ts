@@ -130,6 +130,13 @@ const EVENT_SINGLE_OR_RANGE_LABELS = ['日時', '開催日', '開催概要']
 const PUBLISHED_LABELS = ['公開日', '掲載日', '投稿日']
 const UPDATED_LABELS = ['更新日', '最終更新日']
 
+// 2026-09-27追加（マロン指示：スイーツ商品ページで販売期間が人には読めるのに
+// 構造化日付を取得できなかった不具合の修正）。「開催期間」等のイベント向け
+// ラベルとは別に、商品の販売・発売を示すラベルを追加する（展覧会・催事の
+// 会期とは意味が異なるため既存EVENT_RANGE_LABELSへ混ぜない）。
+const SALE_RANGE_LABELS = ['販売期間', '発売期間', '販売日', '発売日']
+
+
 // ギャラリートーク・ワークショップ等、展覧会本体とは別の個別セッションの
 // 日時であることを示す語（2026-08-17追加）。「日時」「開催日」ラベルの
 // 近傍にこれらが見つかった場合、その日付は展覧会全体の会期を表さない
@@ -281,6 +288,69 @@ function findLabeledRange(
   return null
 }
 
+// 2026-09-27追加（マロン指示）：「販売期間」「発売日」等、商品の販売・発売を
+// 示すラベル向け。findLabeledRangeと同じラベル出現位置・タイトル近接判定・
+// 100字ウィンドウを再利用するが、以下の点だけ異なる（イベント会期向けの
+// findLabeledRangeの挙動自体は一切変更しない・新しいラベル専用の別関数）：
+//   ・日付トークンが2個見つかり、かつ終了日が開始日以降なら範囲として採用
+//     （findLabeledRangeと同じ安全側の判定）。
+//   ・日付トークンが1個しか見つからない場合（例：「2026年8月29日(土)～
+//     2026年11月末頃」の"11月末頃"はDATE_TOKENが要求する日番号を持たず
+//     マッチしない）、終了日を推測で確定せず、開始日だけを採用し終了日は
+//     null（要確認）のまま返す——「発売日」ラベルで終了日の概念自体が無い
+//     場合も同じ扱いになり、いずれも正しい（推測より要確認を優先）。
+//   ・トークンが0個ならnull（推測しない、従来どおり）。
+function findLabeledSaleRange(
+  text: string,
+  labels: string[],
+  titleAnchor: string | null = null,
+): { start: string; end: string | null; rawMatch: string } | null {
+  for (const label of labels) {
+    const allIdxs = findAllIndices(text, label)
+    // 2026-09-27追加：タイトル近接判定は「同ページ内に複数の商品・催事が
+    // 並び、どちらの日付か紛らわしい」場合の安全策（findLabeledRangeと同じ
+    // 設計思想）。この情報源のこのラベルが1回しか出現しない場合は、紛らわしい
+    // 「別の候補」自体が存在しないため、近接判定を要求する意味が無い
+    // （実データ：単一商品ページで本文の商品説明が長く、タイトルから
+    // ラベルまでの距離がTITLE_PROXIMITY_WINDOWを超えるケースを確認した——
+    // 判定材料が無いのではなく「そもそも比較対象が無い」ケースであり、
+    // isNearOwnTitleの「アンカー無し＝許可」と同じ扱いにする）。
+    const requireProximity = titleAnchor != null && allIdxs.length > 1
+    const candidateIdxs = allIdxs.length > 0 ? allIdxs : [text.indexOf(label)]
+    for (const idx of candidateIdxs) {
+      if (idx === -1) continue
+      if (requireProximity && !isNearOwnTitle(text, idx, titleAnchor)) continue
+      const window = text.slice(idx, idx + label.length + LABEL_WINDOW_CHARS)
+      const tokens = Array.from(window.matchAll(DATE_TOKEN)).map((m) => m[0])
+      if (tokens.length === 0) continue
+
+      const first = parseDateToken(tokens[0], null)
+      if (!first) continue
+
+      if (tokens.length === 1) {
+        // 終了日の情報が無い（「発売日」等）、または終了日があいまいで
+        // DATE_TOKENとして解析できない（「〜月末頃」等）——いずれも推測せず
+        // 終了日はnullのまま返す。
+        return { start: first.iso, end: null, rawMatch: window.trim() }
+      }
+
+      const second = parseDateToken(tokens[1], first.year)
+      if (!second) {
+        return { start: first.iso, end: null, rawMatch: window.trim() }
+      }
+
+      if (new Date(second.iso).getTime() < new Date(first.iso).getTime()) {
+        // findLabeledRangeと同じ理由（2つのトークンが同一範囲の開始・終了で
+        // ない可能性が高い）で、この出現位置からの抽出は諦める。
+        continue
+      }
+
+      return { start: first.iso, end: second.iso, rawMatch: window.trim() }
+    }
+  }
+  return null
+}
+
 // 「日時：」「開催日：」等、単日イベントを表すことが多いラベル向け。
 // ラベル近傍に日付トークンが2つ見つかれば範囲（findLabeledRangeと同じ
 // ロジック）、1つだけなら単日イベント（start=end=その日付）として扱う。
@@ -352,6 +422,37 @@ function findLabeledEventDate(
 function findTitleAdjacentEventDate(titleText: string): { value: string; rawMatch: string } | null {
   const re = new RegExp(`${DATE_TOKEN.source}[^\\S\\n]{0,20}開催`, DATE_TOKEN.flags.replace('g', ''))
   const m = re.exec(titleText)
+  if (!m) return null
+  const parsed = parseDateToken(m[1], new Date().getUTCFullYear())
+  if (!parsed) return null
+  return { value: parsed.iso, rawMatch: m[0].trim() }
+}
+
+// 2026-09-27追加（マロン指示：スイーツ商品ページの実データ対応、Tier 3c）。
+// 「2026年10月1日（木）より…を販売開始します」のような、ラベル（「販売日：」等）
+// を伴わない自然文のプレスリリース表現（実データ：Mr. CHEESECAKEの
+// プレスリリース）を対象にする。ラベルという明示的手がかりが無いため、
+// 日付の直後（曜日カッコ・「より」等を挟んで最大60文字以内）に、販売・発売を
+// 明確に示す語（下記の狭い許可リストのみ）が続く場合に限定する——findTitle
+// AdjacentEventDate（"開催"への隣接）と同じ「動詞への直接隣接を文脈手がかり
+// とみなす」設計を、本文全体・販売系の語へ拡張したもの。
+// 【安全策】①許可リストは複合語のみ（「発売開始」「販売開始」「新発売」
+// 「発売します」「販売します」）に限定し、単独の「発売」「登場」は含めない
+// ——実データ（Mr. CHEESECAKEのプレスリリース）で、記事の投稿日付
+// （「2026.09.25」）の直後に無関係な見出し文中の「発売**半年**で累計販売数」
+// （新発売の告知ではなく過去の実績に言及する文）がマッチしてしまう誤検出を
+// 確認したため、単独の「発売」を許可リストから除外し複合語のみに絞った。
+// ②本文中で最初に見つかった1件のみを採用する（複数の日付が混在するページで
+// 誤って別の日付を拾うリスクを避けるため、findTitleAdjacentEventDateと同じ
+// 「最初の1件のみ」方針）。③単一日付として採用し、終了日は概念上存在しない
+// ため常にnull（推測しない）。
+const SALE_VERB_ADJACENT_RE = new RegExp(
+  `${DATE_TOKEN.source}[^\\S\\n]{0,4}(?:より|から)?[^\\n]{0,60}?(?:発売開始|販売開始|新発売|発売します|販売します)`,
+  DATE_TOKEN.flags,
+)
+function findSaleVerbAdjacentDate(bodyText: string): { value: string; rawMatch: string } | null {
+  SALE_VERB_ADJACENT_RE.lastIndex = 0
+  const m = SALE_VERB_ADJACENT_RE.exec(bodyText)
   if (!m) return null
   const parsed = parseDateToken(m[1], new Date().getUTCFullYear())
   if (!parsed) return null
@@ -478,6 +579,23 @@ export function extractStructuredDates(html: string): StructuredDates {
         }
       }
     }
+    // Tier 3a続き：商品の販売・発売ラベル（2026-09-27追加）。イベント向け
+    // ラベル（開催期間・日時等）で見つからなかった場合のみ試す——「販売期間」
+    // 等はイベント会期とは意味が異なるため、既存のイベント抽出より優先度を
+    // 下げる。終了日があいまい（「〜月末頃」等）で解析できない場合は、
+    // findLabeledSaleRange側の設計により終了日をnull（要確認）のまま返す
+    // ——ここでも推測で埋めない。
+    if (!result.eventStartAt.value) {
+      const saleRange = findLabeledSaleRange(bodyText, SALE_RANGE_LABELS, titleAnchor)
+      if (saleRange) {
+        result.eventStartAt = { value: saleRange.start, source: 'body_label', confidence: 'medium', rawMatch: saleRange.rawMatch }
+        if (saleRange.end && !result.eventEndAt.value) {
+          result.eventEndAt = { value: saleRange.end, source: 'body_label', confidence: 'medium', rawMatch: saleRange.rawMatch }
+        }
+        // saleRange.endがnullの場合は、eventEndAtをempty()のまま（要確認）に
+        // 留める——推測で埋めない。
+      }
+    }
     // Tier 3b：タイトル中の「〜開催」に直接隣接する日付（2026-08-17追加）
     if (!result.eventStartAt.value) {
       const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)
@@ -490,6 +608,17 @@ export function extractStructuredDates(html: string): StructuredDates {
             result.eventEndAt = { value: titleDate.value, source: 'title_label', confidence: 'low', rawMatch: titleDate.rawMatch }
           }
         }
+      }
+    }
+    // Tier 3c：本文中の「日付＋販売・発売系の動詞」の直接隣接（2026-09-27追加）。
+    // ラベル（「販売日：」等）が本文中に見つからない、自然文のプレスリリース
+    // 表現のみを対象にする——ラベルが見つかっている場合は上記Tier 3a/3a続きの
+    // 方がより明示的な手がかりのため、そちらを優先する（このTierは最後の
+    // フォールバック）。終了日の概念は無いため設定しない（推測しない）。
+    if (!result.eventStartAt.value) {
+      const saleVerbDate = findSaleVerbAdjacentDate(bodyText)
+      if (saleVerbDate) {
+        result.eventStartAt = { value: saleVerbDate.value, source: 'body_label', confidence: 'low', rawMatch: saleVerbDate.rawMatch }
       }
     }
     if (!result.publishedAt.value) {
