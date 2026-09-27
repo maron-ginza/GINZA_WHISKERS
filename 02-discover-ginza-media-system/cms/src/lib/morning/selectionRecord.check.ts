@@ -33,6 +33,7 @@ function mkBoard(): CandidateBoard {
     ],
     usedExcludedCount: 0,
     facilityRecentlyUsedNoticeCount: 0,
+    preStartNoticeCount: 0,
   }
 }
 

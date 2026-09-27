@@ -2,6 +2,7 @@ import { classifyContentType } from './classifyContentType'
 import type { ContentType } from './discoveredContentTypes'
 import { emptyImageUrlResult, extractRepresentativeImageUrl, type ImageUrlResult } from './extractImageUrl'
 import { extractStructuredDates, type DateFieldResult, type VenueFieldResult } from './extractStructuredDates'
+import { extractProductGinzaAvailability, type ProductGinzaAvailabilityResult } from './extractProductGinzaAvailability'
 import { BOT_TOKEN, USER_AGENT } from './fetchSource'
 import { decodeAndNormalizeDisplayText, decodeHtmlEntities } from './htmlEntities'
 import { checkRobotsAllowed } from './robotsTxt'
@@ -30,6 +31,10 @@ function emptyVenueField(): VenueFieldResult {
   return { value: null, source: null }
 }
 
+function emptyProductGinzaAvailability(): ProductGinzaAvailabilityResult {
+  return { available: null, label: null, source: null, confidence: null, rawMatch: null }
+}
+
 export interface ArticleFetchOutcome {
   ok: boolean
   httpStatus: number | null
@@ -41,6 +46,7 @@ export interface ArticleFetchOutcome {
   eventStartAt: DateFieldResult
   eventEndAt: DateFieldResult
   venue: VenueFieldResult
+  productGinzaAvailability: ProductGinzaAvailabilityResult
   imageUrl: ImageUrlResult
   errorMessage: string | null
   blockedByRobots: boolean
@@ -88,6 +94,7 @@ function failure(reason: string, blockedByRobots = false, httpStatus: number | n
     eventStartAt: emptyDateField(),
     eventEndAt: emptyDateField(),
     venue: emptyVenueField(),
+    productGinzaAvailability: emptyProductGinzaAvailability(),
     imageUrl: emptyImageUrlResult(),
     errorMessage: reason,
     blockedByRobots,
@@ -143,6 +150,7 @@ export async function fetchArticleMetadata(url: string, sourceId?: string | null
     const title = extractTitle(html)
     const excerpt = extractExcerpt(html)
     const dates = extractStructuredDates(html)
+    const productGinzaAvailability = extractProductGinzaAvailability(html)
     const imageUrl = extractRepresentativeImageUrl(html, url)
     const contentType = classifyContentType(url, title ?? '', dates.jsonLdType)
 
@@ -169,6 +177,7 @@ export async function fetchArticleMetadata(url: string, sourceId?: string | null
       eventStartAt: dates.eventStartAt,
       eventEndAt: dates.eventEndAt,
       venue: dates.venue,
+      productGinzaAvailability,
       imageUrl,
       errorMessage: null,
       blockedByRobots: false,

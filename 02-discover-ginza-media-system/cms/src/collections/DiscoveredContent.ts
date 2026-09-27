@@ -294,6 +294,21 @@ export const DiscoveredContent: CollectionConfig = {
       },
     },
     {
+      name: 'productGinzaAvailability',
+      label: '対象商品の銀座取扱い根拠（2026-09-27新設）',
+      type: 'json',
+      admin: {
+        readOnly: true,
+        description:
+          '本文中の「販売店舗」等の取扱店舗一覧ラベルに銀座が明記されているかを、' +
+          '根拠テキスト（rawMatch）付きで保持する。venue（会場）フィールドとは独立' +
+          '——venueは引き続きJSON-LDのみを対象とし本文からは推測しない方針を維持する。' +
+          'available:trueは店舗一覧に銀座が明記されていることの確認、nullは' +
+          '「確認できない」（銀座で買えないと確認したわけではない）。取得元：' +
+          'cms/src/lib/crawler/extractProductGinzaAvailability.ts',
+      },
+    },
+    {
       name: 'excerpt',
       label: 'Excerpt / Summary',
       type: 'textarea',

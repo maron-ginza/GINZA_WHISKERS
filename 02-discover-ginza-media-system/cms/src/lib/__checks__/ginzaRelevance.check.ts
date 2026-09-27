@@ -232,6 +232,43 @@ const cases: CheckCase[] = [
       assert(r.ginzaRelevant === true, `松屋銀座店の明記で銀座と判定されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
     },
   },
+  {
+    // 2026-09-27追加（マロン指示：DC#1526・#1534実データ対応）。
+    name: 'DC#1534実データ再現：タイトル・会場に「銀座」が現れないプレスリリースでも、productGinzaAvailable=trueなら銀座と判定する',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: '【プレスリリース】発売半年で累計販売数20万個を突破したひとくちチーズケーキから新フレーバーが登場',
+        sourceName: 'Mr. CHEESECAKE',
+        sourceIsSingleGinzaVenue: false,
+        productGinzaAvailable: true,
+      })
+      assert(r.ginzaRelevant === true, `productGinzaAvailable=trueなら銀座と判定するはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+    },
+  },
+  {
+    name: 'productGinzaAvailableがnull（未確認）のままでは、他に根拠が無い限り銀座と判定しない（推測しない）',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: '【プレスリリース】新商品のお知らせ',
+        sourceName: 'Mr. CHEESECAKE',
+        sourceIsSingleGinzaVenue: false,
+        productGinzaAvailable: null,
+      })
+      assert(r.ginzaRelevant === false, `未確認のままでは銀座と判定しないはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+    },
+  },
+  {
+    name: 'productGinzaAvailable=trueでも、記事が銀座外の特定支店を明記している場合はルール1（オフブランチ）が優先される',
+    fn: () => {
+      const r = assessGinzaRelevance({
+        title: 'たまプラーザテラス店リニューアルオープンのお知らせ',
+        sourceName: 'Mr. CHEESECAKE',
+        sourceIsSingleGinzaVenue: false,
+        productGinzaAvailable: true,
+      })
+      assert(r.ginzaRelevant === false, `オフブランチの明記がproductGinzaAvailableより優先されるはず（実際: ${r.ginzaRelevant} / ${r.basis}）`)
+    },
+  },
 ]
 
 export const suite = () => runSuite('ginzaRelevance', cases)

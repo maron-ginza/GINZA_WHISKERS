@@ -260,6 +260,10 @@ function renderBoardEntry(e: BoardEntry): string {
     )
     s += line(`        → A判定は維持（施設クールダウンはA/B/C判定に影響しない）。最終3本への採否はマロンが判断。`)
   }
+  if (e.preStartNotice) {
+    s += line(`        📅 ${e.preStartNotice.message}`)
+    s += line(`        → A判定は維持するが「予告・要確認」——本日時点で実際に選定可能（販売・開催中）ではない。開始日以降に再確認のうえ選定すること。`)
+  }
   return s
 }
 
@@ -292,6 +296,7 @@ export function renderMorningReport(report: MorningReport): string {
   s += line('  （過去に実際に選定済み）のA候補のみ。')
   s += line(`  （使用済みのため除外した件数: ${report.candidateBoard.usedExcludedCount}）`)
   s += line(`  （直近14日以内の同一施設投稿の注意表示あり・除外はしていない件数: ${report.candidateBoard.facilityRecentlyUsedNoticeCount}）`)
+  s += line(`  （販売・開催が本日時点で未開始〈予告・要確認〉の注意表示あり・除外はしていない件数: ${report.candidateBoard.preStartNoticeCount}）`)
   s += line()
   // 【2026-09-25追加・マロン指示】「選定可能」と「未分類・要確認」を合算せず別々に示す
   // ——未分類（category:null）は8カテゴリーへの機械分類に失敗しているだけで、公式確認・

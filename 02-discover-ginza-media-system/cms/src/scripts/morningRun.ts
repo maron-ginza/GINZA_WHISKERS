@@ -182,6 +182,7 @@ export function toDcLike(dc: Record<string, unknown>): DiscoveredContentLike {
     lastCheckedAt: (dc.lastCheckedAt as string | null) ?? null,
     detectedAt: (dc.detectedAt as string | null) ?? null,
     dateExtraction: (dc.dateExtraction as DiscoveredContentLike['dateExtraction']) ?? null,
+    productGinzaAvailability: (dc.productGinzaAvailability as DiscoveredContentLike['productGinzaAvailability']) ?? null,
     curationStatus: (dc.curationStatus as string | null) ?? null,
   }
 }

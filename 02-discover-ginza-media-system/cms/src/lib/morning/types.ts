@@ -200,6 +200,19 @@ export interface CandidateAssessment {
     /** 表示用の注意文 */
     message: string
   }
+  /**
+   * 【2026-09-27追加・マロン指示】販売・開催開始前の注意情報。A/B/C判定には
+   * 一切影響しない——facilityNoticeと同じ設計思想の表示専用データ。開始日が
+   * 確認済みで本日時点でまだ開始していない場合にのみ設定される（該当なしは
+   * undefined）。「予告・要確認」を「本日選定可能」と混同しないために使う。
+   */
+  preStartNotice?: {
+    notYetStarted: true
+    /** 開始日（ISO） */
+    startsAt: string
+    /** 表示用の注意文 */
+    message: string
+  }
   /** ArticleFacts の状態 */
   factsSource: 'none' | 'draft' | 'withdrawn' | 'ready'
   templateEligible: boolean

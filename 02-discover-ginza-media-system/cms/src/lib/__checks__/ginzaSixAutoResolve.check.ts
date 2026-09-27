@@ -140,7 +140,56 @@ function runFullPipeline(dc: DiscoveredContentLike, signals: OfficialPageSignals
   return { base, product, category, primaryCategory, mapped, gate }
 }
 
+// --- DC#1526 実データ相当（2026-09-27、マロン指示：終了日未確認を開始日で代用しない回帰）---
+// パティスリー GIN NO MORI「栗とはちみつのパウンドケーキ」。販売開始日（2026-08-29）は
+// 公式本文に明記があるが、終了日は「数量限定・完売次第終了」という曖昧な表現のみで
+// 具体的な日付が無く、構造化日付としては確認できない（base.fields.eventEndAt=null）。
+// DC#369/#370と異なり「別記事の疑い」も無い（base.conflicts=[]）——この条件が揃うと
+// mapSaleFactsToDraft.tsの旧コードは base.fields.eventStartAt をそのまま
+// eventDateISOへ採用してしまい、assessCandidate.tsのexpired判定が
+// 「終了日 2026-08-29 < 基準日」で開催終了済みと誤判定していた（実データで確認）。
+const DC1526_LIKE: DiscoveredContentLike = {
+  id: 1526,
+  title: '秋限定┃栗とはちみつのパウンドケーキ | パティスリー GIN NO MORI',
+  excerpt: '（実際の excerpt は本文で与える）',
+  articleUrl: 'https://ginnomori.info/patisserie/news/202608/1432',
+  sourceSiteName: 'パティスリー GIN NO MORI',
+  eventStartAt: '2026-08-29T00:00:00.000Z',
+  eventEndAt: null,
+  venue: null,
+  contentType: 'news',
+  uxType: null,
+  lastCheckedAt: '2026-09-27T04:57:14.954Z',
+  detectedAt: '2026-09-27T04:57:14.954Z',
+  dateExtraction: {
+    eventStartAt: { value: '2026-08-29T00:00:00.000Z', confidence: 'high', source: 'body_label' },
+  },
+}
+const DC1526_LIKE_BODY =
+  '栗とはちみつのパウンドケーキ 2026年8月29日(土)より発売。 数量限定・完売次第終了となります。 ' +
+  '価格：1,620円(税込) パティスリー GIN NO MORI フロア: 1F 店舗情報はこちら'
+const DC1526_LIKE_SIGNALS: OfficialPageSignals = {
+  requested: true,
+  ok: true,
+  httpStatus: 200,
+  fetchedAt: '2026-09-27T04:57:14.954Z',
+  bodyText: DC1526_LIKE_BODY,
+}
+
 const cases: CheckCase[] = [
+  {
+    name: 'DC#1526実データ回帰（2026-09-27・必須）: 終了日が未確認（数量限定・完売次第終了のみで具体的な日付なし）のとき、開始日をeventDateISOの代用にしない',
+    fn: () => {
+      const { base, mapped } = runFullPipeline(DC1526_LIKE, DC1526_LIKE_SIGNALS)
+      assert(base.fields.eventStartAt != null, `前提：開始日は確認できているはず（実際: ${base.fields.eventStartAt}）`)
+      assert(base.fields.eventEndAt == null, `前提：終了日は未確認のはず（実際: ${base.fields.eventEndAt}）`)
+      assert(base.conflicts.length === 0, `前提：別記事の疑い等の矛盾は無いはず（実際: ${JSON.stringify(base.conflicts)}）`)
+      assert(
+        mapped.facts.eventDateISO === undefined,
+        `終了日未確認のためeventDateISOは設定されないはず（開始日を代用しない。実際: ${mapped.facts.eventDateISO}）`,
+      )
+    },
+  },
   {
     name: 'DC#369: base.fields.eventStartAt/eventEndAt が null 化される（別記事の期間を採用しない・FIX 4）',
     fn: () => {

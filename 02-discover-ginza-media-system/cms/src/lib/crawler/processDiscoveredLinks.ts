@@ -6,6 +6,7 @@ import { classifyContentType } from './classifyContentType'
 import type { DiscoveryStatus } from './discoveredContentTypes'
 import type { ImageUrlSource } from './extractImageUrl'
 import type { DateFieldResult } from './extractStructuredDates'
+import type { ProductGinzaAvailabilityResult } from './extractProductGinzaAvailability'
 import type { DiscoveredLink } from './extractLinks'
 import { fetchArticleMetadata } from './fetchArticlePage'
 import { normalizeFloorTokens } from './normalizeVenueText'
@@ -166,6 +167,10 @@ async function processOneLink(
   let eventEndAt: string | null = existing?.eventEndAt ?? null
   let venue: string | null = existing?.venue ?? null
   let dateExtraction: DateExtractionMeta | null = (existing?.dateExtraction as unknown as DateExtractionMeta) ?? null
+  // 2026-09-27追加（マロン指示）：venueとは独立の新規フィールド——本文中の
+  // 「販売店舗」等の一覧に銀座の取扱いが明記されているかを保持する。
+  let productGinzaAvailability: ProductGinzaAvailabilityResult | null =
+    (existing?.productGinzaAvailability as unknown as ProductGinzaAvailabilityResult) ?? null
   let imageUrl: string | null = existing?.imageUrl ?? null
   let imageUrlSource: ImageUrlSource = (existing?.imageUrlSource as ImageUrlSource) ?? null
   let articleFetchStatus = existing?.articleFetchStatus ?? 'not_fetched'
@@ -195,6 +200,7 @@ async function processOneLink(
         eventStartAt: fetched.eventStartAt,
         eventEndAt: fetched.eventEndAt,
       }
+      productGinzaAvailability = fetched.productGinzaAvailability
       articleFetchStatus = 'fetched'
     } else {
       articleFetchStatus = 'fetch_error'
@@ -237,6 +243,7 @@ async function processOneLink(
     imageUrl: imageUrl ?? undefined,
     imageUrlSource: imageUrlSource ?? undefined,
     dateExtraction: dateExtraction ?? undefined,
+    productGinzaAvailability: productGinzaAvailability ?? undefined,
     excerpt: excerpt ?? undefined,
     detectedAt: now.toISOString(),
     discoveryStatus,

@@ -371,11 +371,29 @@ export function extractArticleFactsCandidate(input: ExtractInput): ArticleFactsC
               method: '構造化日付（JSON-LD / DC）から決定的に整形',
             }
           : { value: null, confirmationStatus: 'unconfirmed', method: '会期の機械日付なし' },
-    eventDateISO: {
-      value: eventStart,
-      confirmationStatus: eventStart ? (isoDatesConfirmed ? 'confirmed' : 'unconfirmed') : 'unconfirmed',
-      method: eventStart ? '構造化日付（JSON-LD / DC.eventStartAt）' : '機械日付なし',
-    },
+    // 2026-09-27修正（マロン指示：DC#1526実データ対応——終了日未確認を開始日で代用しない）。
+    // eventDateISOはmapSaleFactsToDraft.ts等の下流でassessCandidate.tsのexpired判定
+    // （過去/未来ゲート）へそのまま渡る「機械比較用の日付」であり、終了日として扱われる
+    // ——単に「開始日が確認できている」だけでeventStartをconfirmedのeventDateISOにすると、
+    // 終了日が未確認（例：「数量限定・完売次第終了」等、具体的な日付の記載が無い商品）でも
+    // 開始日が「終了日」として使われ、開始日が過去なら「開催終了済み」と誤判定していた
+    // （mapSaleFactsToDraft.tsで修正済みの同種バグの、より上流にあるこの関数における
+    // 再発。パティスリー GIN NO MORI「栗とはちみつのパウンドケーキ」で実データ確認）。
+    // eventEndが確認できている場合のみ確定させる（終了日優先。開始=終了なら単発イベント）。
+    // 開始日のみで終了日が未確認の場合はunconfirmedのまま（過去/未来を機械判定しない）。
+    eventDateISO: eventEnd
+      ? {
+          value: eventEnd,
+          confirmationStatus: isoDatesConfirmed ? 'confirmed' : 'unconfirmed',
+          method: '構造化日付（JSON-LD / DC.eventEndAt、終了日優先）',
+        }
+      : {
+          value: eventStart,
+          confirmationStatus: 'unconfirmed',
+          method: eventStart
+            ? '開始日のみ確認済み・終了日は未確認のため確定させない（構造化日付 JSON-LD / DC.eventStartAt）'
+            : '機械日付なし',
+        },
     eventTime: {
       value: bodyFacts.eventTime.value,
       confirmationStatus: bodyFacts.eventTime.confidence,

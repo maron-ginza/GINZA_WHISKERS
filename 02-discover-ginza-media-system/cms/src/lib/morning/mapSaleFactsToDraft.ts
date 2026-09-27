@@ -251,12 +251,23 @@ export function mapSaleFactsToDraft(input: SaleFactsMapInput): SaleFactsMapResul
   //   ときは、base.fields.eventStartAt をそのまま信用しない（システム自身が疑わしいと判定した値を
   //   confirmed 事実として書かない）。confirmed な eef.eventDateISO が無い限り、この場合は
   //   eventDateISO を確定させない（下の saleAvailability フォールバックか、人間確認に委ねる）。
+  //   2026-09-27修正（マロン指示：DC#1526実データ対応——終了日未確認を開始日で代用しない）。
+  //   従来はbase.fields.eventEndAtの有無を見ずbase.fields.eventStartAtをそのままeventDateISOへ
+  //   採用しており、終了日が未確認の商品（発売日のみ判明・「10月末頃」等の曖昧な終了時期で
+  //   構造化日付を取得できない）でも開始日を「終了日相当」としてassessCandidate.tsのexpired判定へ
+  //   渡してしまい、開始日が過去なら「開催終了済み」と誤判定していた（autoArticleFacts.tsで
+  //   修正済みの同種バグの、別モジュール〈sale mapper〉における再発。パティスリー GIN NO MORI
+  //   「栗とはちみつのパウンドケーキ」〈販売開始2026-08-29・終了日は公式記載で確認できず〉で
+  //   実データ確認）。base.fields.eventEndAtが確認できている場合のみ確定させる
+  //   （終了日優先。開始=終了なら単発、異なれば範囲の終了日）。開始日のみで終了日が未確認の場合は
+  //   eventDateISOを設定しない（過去/未来を機械判定しない。saleAvailability等の別フィールドで
+  //   「終了日未確認」であることを表現し、人間確認に委ねる）。
   if (eef?.eventDateISO.value && eef.eventDateISO.confirmationStatus === 'confirmed') {
     facts.eventDateISO = eef.eventDateISO.value
     addFact('eventDateISO', facts.eventDateISO, `extractedEventFacts.eventDateISO（${eef.eventDateISO.method}）`)
-  } else if (base.fields.eventStartAt && base.conflicts.length === 0) {
-    facts.eventDateISO = base.fields.eventStartAt
-    addFact('eventDateISO', facts.eventDateISO, '構造化日付（DiscoveredContent.eventStartAt / JSON-LD）')
+  } else if (base.fields.eventEndAt && base.conflicts.length === 0) {
+    facts.eventDateISO = base.fields.eventEndAt
+    addFact('eventDateISO', facts.eventDateISO, '構造化日付（DiscoveredContent.eventEndAt / JSON-LD、終了日優先）')
   }
 
   // --- eventTime（公式イベントページの「時間」欄。値を維持し provenance に明記） ---

@@ -413,6 +413,28 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-09-27追加（マロン指示：DC#1534実データ対応——販売開始が未来日の
+    // 候補を「予告・要確認」として区別する）。
+    name: '新設（2026-09-27）: factKind=product_newsで開始日が未来（本日時点で未開始）の候補は、verdictには影響せずpreStartNoticeが設定される（DC#1534実データ対応）',
+    fn: () => {
+      const notYetStarted = assessCandidate(
+        mk({ dc: baseDc({ eventStartAt: FUTURE_ISO, eventEndAt: null }), factKind: 'product_news' }),
+      )
+      assert(
+        notYetStarted.preStartNotice?.notYetStarted === true,
+        `未来開始・終了日未確認ならpreStartNoticeが設定されるはず（実際 ${JSON.stringify(notYetStarted.preStartNotice)}）`,
+      )
+      assert(notYetStarted.expired === false, `未来開始は開催終了済みではないはず（実際 ${notYetStarted.expired}）`)
+      // イベント（factKind='event'、既定）には適用しない——「今度こんな展覧会が
+      // ある」という未来の予告自体が通常の望ましい編集コンテンツのため。
+      const eventUpcoming = assessCandidate(mk())
+      assert(
+        eventUpcoming.preStartNotice === undefined,
+        `event（既定）ではpreStartNoticeを設定しないはず（実際 ${JSON.stringify(eventUpcoming.preStartNotice)}）`,
+      )
+    },
+  },
+  {
     name: 'B（必須回帰）: 終了済み・重複・銀座で利用不可の候補はAにならない（安全条件は緩めない）',
     fn: () => {
       const expiredC = assessCandidate(mk({ dc: baseDc({ eventStartAt: PAST_ISO, eventEndAt: PAST_ISO }) }))
@@ -584,6 +606,65 @@ const cases: CheckCase[] = [
         }),
       )
       assert(confirmedOnSale.verdict === 'A', `具体的な開催日が明記されていれば期待 A（実際 ${confirmedOnSale.verdict} reasons=${confirmedOnSale.reasons.join('|')}）`)
+    },
+  },
+  {
+    // 実例＝DC#1534「Mr. CHEESECAKE」（全国区の商品ブランド、venue未確認・
+    // resolveFacilityKeyでも解決不能。ただし公式ページ本文の取扱店舗一覧に
+    // 銀座三越の取扱いが明記されている）。2026-09-27追加・マロン指示：
+    // targetOrDiscoveryEligibility.tsのlocationConfirmed（venue／facility.key
+    // 由来とは別の、このモジュール独自の「場所確認」ゲート）が
+    // productGinzaAvailability信号を見ておらず、「公式情報で銀座の場所・
+    // 提供状況を確認できない」ブロッカーで誤ってBに留まっていた実バグの回帰。
+    name: 'A（必須回帰・2026-09-27追加）: DC#1534クラス——venue未確認・facility.key不明でも、本文の取扱店舗一覧に銀座取扱いが明記されていればlocationConfirmedブロッカーで止めない',
+    fn: () => {
+      const withoutSignal = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: 'Mr. CHEESECAKE 銀座エリア限定で取り扱い開始 2026.10.05より',
+            excerpt: '数量限定でのご提供となります。',
+            sourceSiteName: 'Mr. CHEESECAKE',
+            articleUrl: 'https://mr-cheesecake.com/blogs/news/20260925',
+            venue: null,
+            eventStartAt: null,
+            eventEndAt: null,
+            productGinzaAvailability: null,
+          }),
+        }),
+      )
+      assert(
+        withoutSignal.verdict !== 'A',
+        `修正前提の対照：productGinzaAvailability無しではlocationConfirmedを満たせず期待 B（実際 ${withoutSignal.verdict}）`,
+      )
+      assert(
+        withoutSignal.reasons.some((r) => r.includes('公式情報で銀座の場所・提供状況を確認できない')),
+        `対照ケースは場所確認ブロッカーが理由に含まれるはず（実際 ${withoutSignal.reasons.join('|')}）`,
+      )
+
+      const withSignal = assessCandidate(
+        mk({
+          factKind: 'product_news',
+          dc: baseDc({
+            title: 'Mr. CHEESECAKE 銀座エリア限定で取り扱い開始 2026.10.05より',
+            excerpt: '数量限定でのご提供となります。',
+            sourceSiteName: 'Mr. CHEESECAKE',
+            articleUrl: 'https://mr-cheesecake.com/blogs/news/20260925',
+            venue: null,
+            eventStartAt: null,
+            eventEndAt: null,
+            productGinzaAvailability: { available: true, label: '銀座三越', rawMatch: '銀座三越 B2食料品フロア' },
+          }),
+        }),
+      )
+      assert(
+        !withSignal.reasons.some((r) => r.includes('公式情報で銀座の場所・提供状況を確認できない')),
+        `本文の取扱店舗一覧に銀座取扱いが明記されていれば場所確認ブロッカーは出ないはず（実際 ${withSignal.reasons.join('|')}）`,
+      )
+      assert(
+        withSignal.verdict === 'A',
+        `場所確認・銀座関連性ともに満たされれば期待 A（実際 ${withSignal.verdict} reasons=${withSignal.reasons.join('|')}）`,
+      )
     },
   },
   {

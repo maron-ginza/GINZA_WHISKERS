@@ -1,28 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  GINZA WHISKERS / Project 02 — 朝刊自動化 LaunchAgent（テンプレート、2026-09-12）
+  GINZA WHISKERS / Project 02 — 朝刊自動化 LaunchAgent（テンプレート、2026-09-12。
+  2026-09-27、10月1日運用に向けた明朝実行準備セッションでコメントの実態を更新）
 
   これは版管理用テンプレート。__REPO__ を実際の絶対パスへ置換したものを
     ~/Library/LaunchAgents/com.ginzawhiskers.p2-morning-auto.plist
   へ配置し、scripts/launchd/load-morning-auto.sh でロードする。
 
-  現時点では **未登録・未有効化**（ファイル整備のみ。OS設定変更のためClaudeは
-  launchctlを実行しない——既存のload.sh/load-night.shと同じ方針）。
+  【2026-09-27時点で既に登録・有効化・稼働中】（Hour=6/Minute=0、直近runs 15回・
+  last exit code 0。以下の「未登録」の記述は初回作成時点のもので現状と一致しない
+  ——launchctl自体の登録/解除はClaudeが行わない方針は今も維持している）。
 
-  挙動:
-    - 毎朝 06:00 に scripts/morningAutoRun.sh を1回実行
-      （Docker/PostgreSQL起動確認 → crawl → sweets-detail-fetch →
-        am-run --fetch --register-facts --write-facts → morning-brief --json）
-    - 記事生成・承認・note転記・外部公開はこのジョブでは一切しない
-      （それは常駐の p2-candidate-review サーバーが、マロンの承認クリックをトリガーに行う）
+  挙動（2026-09-27時点の実態、morningAutoRun.sh本体を正とする）:
+    - 毎朝 06:00 に scripts/morningAutoRun.sh を1回実行し、以下の順で
+      サブコマンドを呼ぶ（新しいパイプラインロジックは追加せず、既存の
+      個別テスト済みサブコマンドを束ねるだけ）：
+        db起動確認 → crawl（SOURCE_LEDGER巡回・generic_html） →
+        sweets-detail-fetch（取得漏れ補完） →
+        matsuya-sweets-fetch（松屋銀座・storyblok_api） →
+        matsuya-gourmet-fetch（松屋銀座グルメ一覧） →
+        mitsukoshi-health-check（銀座三越・到達確認） →
+        mitsukoshi-food-events-fetch（銀座三越・食料品催事） →
+        am-run --fetch --register-facts --write-facts（A/B/C判定・
+          ArticleFacts自動導出はenrichmentStatus:draftのみ・ready化は人間が行う） →
+        morning-brief --json（Editorial Compassベースの補助的提案。
+          正式なA候補・Stage 4選定の対象は"./p2 am-candidates"のcandidateBoardが
+          唯一の正本） →
+        candidate-fallback-auto（候補不足時、既存ボード確認→SWEETS限定の
+          補完取得を1回だけ試行し、なお不足なら候補を作らずinsufficient_stopで終了）
+    - 記事生成・承認・note転記・外部公開はこのジョブでは一切しない。
+      正規の選定〜原稿生成経路はV1 Stage 4/5（マロンが候補ボードから
+      "./p2 morning-select"で3本選定→"./p2 morning-draft-selected"が
+      保存済みArticleFactsのみを使う無料の決定的テンプレートで原稿化。
+      外部fetch・AI呼び出しなし）。旧経路（candidateReviewServer.tsの
+      「承認」クリックで即時Claude API課金・記事生成）はDEPRECATED——
+      launchd常駐は解除・plist削除済みで自動起動しない。
     - 各フェーズは失敗時に間隔を空けて自動再試行する（既定3回・180秒間隔、
       DB起動そのものの失敗時は早期に打ち切る）
+    - 収集・DB保存・分類・候補表示の4区分ごとの成否と、A判定実数・SWEETS件数・
+      候補不足フォールバック最終判定を、人間可読テキスト
+      （.devlogs/morning/auto/<date>-status.txt）とJSONサマリ
+      （.devlogs/morning/auto/<date>-summary.json）の両方へ書き出す
+      （scripts/morning_auto_summary.py、2026-09-27新設）。
     - stdout/stderr は .devlogs/morning/auto/launchd.out / launchd.err へ追記
     - RunAtLoad=false（ログイン毎の即時実行はしない）
     - Mac がスリープ/オフで06:00を逃した場合、launchdが復帰後に1回だけ実行する
-      （確実な06:00実行を望む場合、マロンが `sudo pmset repeat wakeorpoweron` で
-      Macの自動起床を設定する必要がある——これはOS電源設定の変更のためClaudeは実行しない）
+      （マロンが既に `pmset repeat wakepoweron` を毎日05:50に設定済み
+      ——`pmset -g sched` で確認可能。06:00起動に対し10分の余裕を確保する
+      意図。この電源設定自体はOS設定変更のためClaudeが変更することはない）
 
   node解決：既存launchdジョブ（p2-trial-collect）と同じくnvm初期化を明示source。
 -->

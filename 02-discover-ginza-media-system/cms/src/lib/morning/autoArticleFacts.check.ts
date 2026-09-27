@@ -149,6 +149,32 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-09-27追加（マロン指示：DC#1526実データ再判定対応）。GIN NO MORI
+    // 「秋限定┃栗とはちみつのパウンドケーキ」（販売開始2026-08-29のみ確認済み・
+    // 終了日は「10月末頃」で公式記載として確認できず未確認のまま）で、開始日を
+    // 終了日の代用にしてreadyGateが「会期・有効期間が過去」と誤判定していた
+    // バグの回帰テスト。
+    name: '【回帰・不具合修正（2026-09-27）】DC#1526実データ再現：開始日のみ確認済み・終了日未確認（過去日）は、開始日を終了日の代用にして「過去」と誤判定しない——eligible:falseのまま「要確認」の理由を明示する',
+    fn: () => {
+      const r = deriveAutoArticleFacts({
+        title: '秋限定┃栗とはちみつのパウンドケーキ | パティスリー GIN NO MORI',
+        articleUrl: 'https://ginnomori.info/patisserie/news/202608/1432',
+        eventStartAt: '2026-08-29T00:00:00.000Z',
+        eventEndAt: null,
+        category: 'SWEETS',
+      })
+      assert(r.eligible === false, `終了日未確認のためeligible:falseのはず（実際 ${JSON.stringify(r)}）`)
+      assert(
+        !r.missing.some((m) => m.includes('会期・有効期間が過去')),
+        `「会期・有効期間が過去」と確定的に誤判定するmissing理由が含まれないはず（実際 missing=${JSON.stringify(r.missing)}）`,
+      )
+      assert(
+        r.missing.some((m) => m.includes('終了日は公式記載で確認できず') && m.includes('要確認')),
+        `終了日未確認・要確認の理由が明記されるはず（実際 missing=${JSON.stringify(r.missing)}）`,
+      )
+    },
+  },
+  {
     name: 'eligible:trueのpayloadは、自動導出経路（context.autoReadyFromSavedDcFacts）でapplyArticleFactsReadyGateを通過する（推測ロジックを追加せず既存gateで検証）',
     fn: () => {
       const r = deriveAutoArticleFacts(wellFormed)

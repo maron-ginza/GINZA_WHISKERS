@@ -25,6 +25,16 @@ export interface GinzaRelevanceInput {
    *  true のときは「場所明記なし」でも銀座扱いにする（従来動作の維持）。
    *  山野楽器 銀座本店 のような多店舗チェーン本店は false を渡すこと。 */
   sourceIsSingleGinzaVenue?: boolean
+  /**
+   * 2026-09-27追加（マロン指示）：DiscoveredContent.productGinzaAvailability
+   * （extractProductGinzaAvailability.ts）——本文中の「販売店舗」等の取扱店舗
+   * 一覧に、対象商品の銀座での取扱いが明記されていることの確認結果。
+   * available:trueのときのみ「対象商品と銀座の購入場所が対応している」強い
+   * 根拠として扱う（ページ内の無関係な「銀座」の文字だけでは通さない、という
+   * 要件はextractProductGinzaAvailability.ts側の抽出時点の安全策で担保済み
+   * ——本関数側では追加の検証はしない）。
+   */
+  productGinzaAvailable?: true | null
 }
 
 export interface GinzaRelevanceResult {
@@ -177,6 +187,15 @@ export function assessGinzaRelevance(input: GinzaRelevanceInput): GinzaRelevance
   // 2) 銀座の場所明記あり → 銀座
   if (ginzaInCore) {
     return { ginzaRelevant: true, basis: 'タイトル/会場/URL に銀座の場所を明記', offGinzaMatch: null }
+  }
+  // 2b) 2026-09-27追加（マロン指示）：本文中の取扱店舗一覧に対象商品の銀座
+  // 取扱いが明記されている場合も銀座——タイトル・会場に「銀座」の語自体が
+  // 現れない商品ページ（プレスリリース文中で店舗一覧のみに銀座が現れる等）を
+  // 拾えるようにする。ただしオフブランチ（ルール1）の判定より後に置く——
+  // 記事の主題が明示的に銀座外の支店である場合は、それを優先する既存の
+  // 安全側の挙動を変えない。
+  if (input.productGinzaAvailable === true) {
+    return { ginzaRelevant: true, basis: '本文中の取扱店舗一覧に対象商品の銀座取扱いを明記（productGinzaAvailability）', offGinzaMatch: null }
   }
   // 3) 銀座外の市区・住所の明記のみ → 銀座外
   if (offAddr) {

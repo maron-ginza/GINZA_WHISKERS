@@ -61,6 +61,13 @@ export interface DiscoveredContentLike {
     eventEndAt?: { value?: string | null; confidence?: string | null; source?: string | null } | null
   } | null
   /**
+   * 【2026-09-27追加】DiscoveredContent.productGinzaAvailability
+   * （extractProductGinzaAvailability.ts）。本文中の「販売店舗」等の一覧に
+   * 対象商品の銀座取扱いが明記されているかの確認結果。venueとは独立
+   * （venueは引き続きJSON-LDのみ・本文からは推測しない方針を維持）。
+   */
+  productGinzaAvailability?: { available?: true | null; label?: string | null; rawMatch?: string | null } | null
+  /**
    * 【2026-09-16追加】DiscoveredContent.curationStatus（'inbox'|'approved'|'rejected'等）。
    * 'approved' は既にマロンが判断済み＝「使用済み候補の自動除外」の判定に使う
    * （assessCandidate.ts）。未設定（旧呼び出し元）は判定対象外として扱う。

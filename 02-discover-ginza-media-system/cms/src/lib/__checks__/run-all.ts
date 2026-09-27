@@ -47,6 +47,7 @@ import { suite as noteDraftPackage } from './noteDraftPackage.check'
 import { suite as noteTransferChecks } from './noteTransferChecks.check'
 import { suite as paid100 } from './paid100.check'
 import { suite as extractStructuredDates } from '../crawler/extractStructuredDates.check'
+import { suite as extractProductGinzaAvailability } from '../crawler/extractProductGinzaAvailability.check'
 import { suite as eventEndBoundary } from './eventEndBoundary.check'
 import { suite as extractProductNewsFacts } from './extractProductNewsFacts.check'
 import { suite as ginzaSixAutoResolve } from './ginzaSixAutoResolve.check'
@@ -129,6 +130,7 @@ const results: SuiteResult[] = [
   noteTransferChecks(),
   paid100(),
   extractStructuredDates(),
+  extractProductGinzaAvailability(),
   eventEndBoundary(),
   extractProductNewsFacts(),
   ginzaSixAutoResolve(),

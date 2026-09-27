@@ -40,6 +40,12 @@ export interface BoardEntry {
    * 最終3本への採否はマロンが判断する（このボードは注意表示のみで自動除外しない）。
    */
   facilityNotice?: CandidateAssessment['facilityNotice']
+  /**
+   * 【2026-09-27追加・マロン指示】販売・開催開始前の注意情報
+   * （CandidateAssessment.preStartNotice をそのまま）。A/B/C判定には影響しない
+   * ——「予告・要確認」を「本日選定可能」と混同しないための表示専用データ。
+   */
+  preStartNotice?: CandidateAssessment['preStartNotice']
 }
 
 export interface CandidateBoard {
@@ -68,6 +74,12 @@ export interface CandidateBoard {
    * 透明性のため件数自体は維持）。
    */
   facilityRecentlyUsedNoticeCount: number
+  /**
+   * 【2026-09-27追加・マロン指示】「販売・開催が本日時点でまだ開始していない
+   * （予告・要確認）」の注意表示が付いている（＝除外はされていない）A候補の
+   * 件数。facilityRecentlyUsedNoticeCountと同じ設計——除外条件にはしない。
+   */
+  preStartNoticeCount: number
 }
 
 function toBoardEntry(a: CandidateAssessment): BoardEntry {
@@ -80,6 +92,7 @@ function toBoardEntry(a: CandidateAssessment): BoardEntry {
     sourceUrl: a.sourceUrl,
     reasons: a.reasons,
     facilityNotice: a.facilityNotice,
+    preStartNotice: a.preStartNotice,
   }
 }
 
@@ -98,6 +111,9 @@ export function buildCandidateBoard(
   // もう対象を絞らない——available は「使用済みでない」だけで絞った母集団。
   const available = aOnly.filter((a) => !usedDcIds.has(a.discoveredContentId))
   const facilityRecentlyUsedNoticeCount = available.filter((a) => a.facilityNotice?.recentlyUsed === true).length
+  // 2026-09-27追加・マロン指示：facilityRecentlyUsedNoticeCountと同じ設計
+  // （除外はしない・件数だけ透明性のため集計する）。
+  const preStartNoticeCount = available.filter((a) => a.preStartNotice?.notYetStarted === true).length
 
   // 施設への偏り調整は除外ではなく「選定時の優先順位」で行う（マロン指示）。
   // applyFacilityDiversityFilter は元々「1施設グループにつきmaxPerFacilityGroup件まで」
@@ -133,5 +149,6 @@ export function buildCandidateBoard(
     unclassified,
     usedExcludedCount: used.length,
     facilityRecentlyUsedNoticeCount,
+    preStartNoticeCount,
   }
 }

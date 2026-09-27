@@ -256,6 +256,15 @@ export interface TargetOrDiscoveryInput {
   recentBrandVenueDuplicate: boolean
   /** 情報の確認日時が古い（freshnessDays 超過）。呼び出し元が判定済み（既定 undefined=false 扱い） */
   stale?: boolean
+  /**
+   * 【2026-09-27追加・マロン指示：DC#1534実データ対応】本文中の取扱店舗一覧に
+   * 対象商品の銀座取扱いが公式ページ本文で明記されている場合（productGinzaAvailability
+   * ／extractProductGinzaAvailability.ts）。venueフィールドやresolveFacilityKeyでは
+   * 拾えない「商品ページのタイトル・会場に『銀座』の語自体が現れないが、本文の取扱店舗
+   * 一覧には銀座店が明記されている」ケースに対応する（assessGinzaRelevanceのルール2bと
+   * 同一の信号だが、ここは別のゲート＝locationConfirmedのため個別に受け取る）。
+   */
+  productGinzaAvailable?: true | null
   now?: Date
 }
 
@@ -322,7 +331,12 @@ export function evaluateTargetOrDiscoveryEligibility(input: TargetOrDiscoveryInp
     sourceUrl: input.articleUrl,
     title: input.title,
   })
-  const locationConfirmed = !!(input.venue && input.venue.trim()) || !!facility.key
+  // 2026-09-27追加（マロン指示：DC#1534実データ対応）。venue／resolveFacilityKeyの
+  // いずれでも解決できない商品ページでも、本文の取扱店舗一覧に銀座店の取扱いが
+  // 明記されていれば場所・提供状況を確認できたとみなす（推測ではなく、本文の構造化
+  // 抽出＝extractProductGinzaAvailability.tsが既に商品と銀座の対応を確認済みの信号）。
+  const locationConfirmed =
+    !!(input.venue && input.venue.trim()) || !!facility.key || input.productGinzaAvailable === true
   if (!locationConfirmed) blockers.push('公式情報で銀座の場所・提供状況を確認できない')
 
   // 18カテゴリーへの分類（タイトル/会場の明記語のみ）。

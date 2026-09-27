@@ -56,6 +56,7 @@ import {
 import { assessGinzaRelevance, isSingleGinzaVenueSource } from './ginzaRelevance'
 import { imagePreflight } from './imagePreflight'
 import { isPastEventEnd } from '../curation/eventEndBoundary'
+import { deriveEventStatus } from '../curation/eventStatus'
 import { toTokyoDateString } from '../util/businessDate'
 import { evaluateTargetOrDiscoveryEligibility, findExplicitPastDateInTitle } from './targetOrDiscoveryEligibility'
 import type { CandidateAssessment, FactKind } from './types'
@@ -281,6 +282,7 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     sourceName: dc.sourceSiteName,
     articleUrl: dc.articleUrl,
     sourceIsSingleGinzaVenue: isSingleGinzaVenueSource(dc.sourceSiteName, dc.articleUrl),
+    productGinzaAvailable: dc.productGinzaAvailability?.available === true ? true : null,
   })
   const ginzaRelevant = gr.ginzaRelevant
   const ginzaRelevanceBasis = gr.basis
@@ -445,6 +447,11 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
       stale,
       // 【2026-09-17改訂】facilityCooldownはA判定のブロッカーとして渡さない
       // （施設クールダウンはA/B/C判定から切り離した。下の facilityNotice を参照）。
+      // 【2026-09-27追加・マロン指示：DC#1534実データ対応】locationConfirmed
+      // （このモジュール独自の場所確認ゲート）にも、assessGinzaRelevanceのルール2bと
+      // 同一の信号を渡す——本文の取扱店舗一覧に商品の銀座取扱いが明記されている
+      // 商品ページは、venue／resolveFacilityKeyで解決できなくても場所確認済みとする。
+      productGinzaAvailable: dc.productGinzaAvailability?.available === true ? true : null,
       now,
     })
 
@@ -534,6 +541,29 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     }
   }
 
+  // --- 販売開始前の注意情報（2026-09-27追加・マロン指示） ---
+  // 「毎朝6時の情報収集・候補選定プロンプト」の運用基準：本日時点で実際に
+  // 販売が始まっているかどうかを、A/B/C判定とは別に明示する（facilityNoticeと
+  // 同じ設計思想——verdictには一切影響しない、表示専用の注意情報）。
+  // 【factKind='product_news'のみに限定する理由】イベント（factKind='event'）の
+  // 場合、「今度こんな展覧会がある」という未来の予告自体が「旬の銀座」編集の
+  // 通常かつ望ましいコンテンツであり、既存のTemporal Relevance（reference-only
+  // 設計）もこの前提で「upcomingは悪いことではない」と明記している。一方、
+  // 商品の販売開始（product_news）は「選定可能」＝「読者が今日行動できる」
+  // ことが前提であり、販売開始前を「本日選定可能」と混同してはならない
+  // （DC#1534、Mr. CHEESECAKE Milk Tea＝販売開始2026-10-01が実例）。この違いを
+  // 踏まえ、本注意情報はproduct_newsのみに限定する——eventには一切適用しない
+  // （既存のイベント予告コンテンツの挙動を変えない）。
+  let preStartNotice: CandidateAssessment['preStartNotice']
+  const evStatus = input.factKind === 'product_news' ? deriveEventStatus(dc.eventStartAt, dc.eventEndAt, now) : 'unknown'
+  if (evStatus === 'upcoming' && dc.eventStartAt) {
+    preStartNotice = {
+      notYetStarted: true,
+      startsAt: dc.eventStartAt,
+      message: `販売・開催は本日時点でまだ開始していません（開始日 ${toTokyoDateString(new Date(dc.eventStartAt))}）——予告・要確認として扱い、開始後に改めて確認する`,
+    }
+  }
+
   // --- 所要時間 ---
   const A_MIN = 25 // 20〜30 の中央
   let estimateMinutes = A_MIN
@@ -566,6 +596,7 @@ export function assessCandidate(input: AssessCandidateInput): CandidateAssessmen
     ginzaRelevanceBasis,
     hasTraceableSource,
     facilityNotice,
+    preStartNotice,
     factKind: input.factKind ?? 'event',
     // event 用 mapper の値は event 記事にのみ意味がある
     // factsSource は event/product_news なら常に mapper の実値（none/draft/withdrawn/ready）を
