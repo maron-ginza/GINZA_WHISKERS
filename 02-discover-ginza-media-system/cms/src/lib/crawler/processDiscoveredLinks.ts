@@ -141,9 +141,21 @@ async function processOneLink(
   else if (discoveryStatus === 'changed') stats.changed += 1
   else stats.unchanged += 1
 
-  // Stage 2の実行対象：新規または更新のみ、かつ予算内。unchangedは既存の
-  // 保存済みメタデータをそのまま使う（再取得しない＝コスト削減）。
-  const shouldAttemptStage2 = (discoveryStatus === 'first_seen' || discoveryStatus === 'changed') && budget.remaining > 0
+  // 2026-09-27追加（マロン指示：スイーツ候補0件の原因となった新規URLの未取得を
+  // 修正）。【発見した根本原因】Stage 2は「新規または更新」のみを対象にしており、
+  // 発見された回（first_seen）に予算（既定20件・全情報源で共有）を使い切って
+  // Stage 2に進めなかったリンクは、次回以降の巡回でdiscoveryStatusが
+  // 'unchanged'（アンカーテキストが変わっていないため）になり、二度と対象に
+  // ならず、published_at/eventStartAt/eventEndAt等が永久に空のまま取り残される
+  // ——実データで確認（2026-09-27朝：新規追加10ブランド由来の89件が全件この状態）。
+  // 【対応】discoveryStatusに関わらず、既存レコードが一度もStage 2を完了して
+  // いない（articleFetchStatusが'not_fetched'または'fetch_error'）場合は、
+  // 予算が残っていれば対象に含める——「新規／更新」の当初対象は無変更のまま、
+  // 取り残された未処理分を後日の巡回で回収できるようにする（既にfetched済みの
+  // リンクを再取得しない設計は維持——コスト増加は「未処理分の消化」のみ）。
+  const neverFetched = existing != null && existing.articleFetchStatus !== 'fetched'
+  const shouldAttemptStage2 =
+    (discoveryStatus === 'first_seen' || discoveryStatus === 'changed' || neverFetched) && budget.remaining > 0
 
   let title = existing?.title ?? link.anchorText
   let excerpt: string | null = existing?.excerpt ?? null
