@@ -132,7 +132,35 @@ export async function buildNoteDraftPackage(
     Array.isArray(article.pillars) && article.pillars[0] && typeof article.pillars[0] === 'object'
       ? String((article.pillars[0] as { name?: string }).name ?? '')
       : null
+
+  // 2026-09-28修正（マロン指示：DC#1484実データで発見——resolveCategoryIconが
+  // title/venue/pillarJaの再判定のみに依存し、ArticleFacts.primaryCategory
+  // （マロンが明示確定した18カテゴリー）を一切参照していなかったため、
+  // 記事タイトルの語（例：「POP UP」→SHOPPING、「舞台」が拾われず収蔵室
+  // フォールバック→ART）に引き戻されアイコンが確定済みの分類と食い違う実害が
+  // あった。editorialProvenanceが参照する元DiscoveredContentのArticleFacts.
+  // primaryCategoryが確定済みならそれを最優先で渡す（deriveProvisionalCategory
+  // 自体は既にprimaryCategoryを最優先で受け付ける設計だったが、呼び出し側が
+  // 一度も渡していなかった）。複数DC参照の記事は先頭の1件のみを見る
+  // （複数の主題を跨ぐ記事のアイコン統一は別途の編集判断）。
+  const dcSourceId = (Array.isArray(article.editorialProvenance) ? article.editorialProvenance : [])
+    .map((p: any) => (typeof p?.discoveredContentSource === 'object' ? p?.discoveredContentSource?.id : p?.discoveredContentSource))
+    .find((v: unknown) => v != null) as number | string | undefined
+
+  let confirmedPrimaryCategory: string | null = null
+  if (dcSourceId != null) {
+    const afMatch = await payload.find({
+      collection: 'article-facts',
+      where: { discoveredContent: { equals: dcSourceId } },
+      depth: 0,
+      overrideAccess: true,
+      limit: 1,
+    })
+    confirmedPrimaryCategory = ((afMatch.docs[0] as unknown as Record<string, unknown> | undefined)?.primaryCategory as string | undefined) ?? null
+  }
+
   const iconResolved = resolveCategoryIcon({
+    primaryCategory: confirmedPrimaryCategory,
     title: String(article.title ?? ''),
     venue: venueFacts,
     pillarJa,
