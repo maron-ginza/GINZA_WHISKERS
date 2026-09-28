@@ -97,7 +97,7 @@ const cases: CheckCase[] = [
       }
       assert(fileToGroups.size === 8, `使用ファイル数は8種のはず（実際 ${fileToGroups.size}）`)
       assert(CATEGORY_ICONS.SWEETS.iconFile === '01_sweets.png', `SWEETS専用アイコン: ${CATEGORY_ICONS.SWEETS.iconFile}`)
-      assert(CATEGORY_ICONS.SWEETS.labelJa === 'スウィーツ', `SWEETS labelJa: ${CATEGORY_ICONS.SWEETS.labelJa}`)
+      assert(CATEGORY_ICONS.SWEETS.labelJa === 'スイーツ', `SWEETS labelJa: ${CATEGORY_ICONS.SWEETS.labelJa}`)
     },
   },
   {
@@ -127,7 +127,7 @@ const cases: CheckCase[] = [
       const r1 = resolveCategoryIcon({ title: '秋のアフタヌーンティー' })
       assert(r1.status === 'resolved' && r1.category === 'SWEETS', `アフタヌーンティー: ${JSON.stringify(r1)}`)
       assert(r1.iconFile === '01_sweets.png', `SWEETS専用アイコン: ${r1.iconFile}`)
-      assert(r1.labelJa === 'スウィーツ', `labelJa: ${r1.labelJa}`)
+      assert(r1.labelJa === 'スイーツ', `labelJa: ${r1.labelJa}`)
 
       const r2 = resolveCategoryIcon({ title: '新作パウンドケーキが登場' })
       assert(r2.category === 'SWEETS', `pound cake: ${r2.category}`)

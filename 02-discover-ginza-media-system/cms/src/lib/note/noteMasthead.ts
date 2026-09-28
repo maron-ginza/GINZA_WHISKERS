@@ -89,7 +89,9 @@ function iconFor(category: CategoryCode, labelJa: string): CategoryIcon {
 export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   FOOD: iconFor('FOOD', 'グルメ'),
   CAFE: iconFor('CAFE', 'カフェ'),
-  SWEETS: iconFor('SWEETS', 'スウィーツ'),
+  // 2026-09-28修正（マロン指示）：8分類名確定（primaryCategory8.ts、2026-09-24）の
+  // 「スイーツ」と1文字異なる旧表記「スウィーツ」だったため統一（MUSIC/EXPERIENCEと同種の修正）。
+  SWEETS: iconFor('SWEETS', 'スイーツ'),
   SHOPPING: iconFor('SHOPPING', 'ショッピング'),
   ARCHITECTURE: iconFor('ARCHITECTURE', '名所・建築'),
   ART: iconFor('ART', 'アート・文化'),
@@ -104,7 +106,9 @@ export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   BEAUTY: iconFor('BEAUTY', 'ビューティー'),
   HOTEL: iconFor('HOTEL', 'ホテル'),
   WELLNESS: iconFor('WELLNESS', '癒し・リラクゼーション'),
-  EXPERIENCE: iconFor('EXPERIENCE', 'トラベル・体験'),
+  // 2026-09-28修正（マロン指示）：8分類名確定「学び・体験」（LEARNING_EXPERIENCE）に一致させる
+  // （旧18カテゴリー表記「トラベル・体験」のまま食い違っていた）。
+  EXPERIENCE: iconFor('EXPERIENCE', '学び・体験'),
   GIFT: iconFor('GIFT', '手土産・ギフト'),
   WORKSHOP: iconFor('WORKSHOP', '学び・ワークショップ'),
   PHOTO: iconFor('PHOTO', 'フォトスポット'),
