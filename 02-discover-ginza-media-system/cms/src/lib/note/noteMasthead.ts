@@ -95,7 +95,12 @@ export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   ART: iconFor('ART', 'アート・文化'),
   EVENT: iconFor('EVENT', 'イベント'),
   NIGHT: iconFor('NIGHT', 'バー・お酒'),
-  MUSIC: iconFor('MUSIC', '音楽・ライブ'),
+  // 2026-09-28修正（マロン指示）：このiconForのlabelJaはnote転記アイコンの表示名
+  // （./p2 night check 等でマロンが確認する画面表示専用）。8分類の呼称確定
+  // （primaryCategory8.ts、2026-09-24）以降の現行名「音楽・舞台」に一致させる。
+  // ArticleFacts.ts の18カテゴリー選択肢ラベル「音楽・ライブ / MUSIC」（分類そのものの
+  // 呼称）は別用途のため無変更——アイコン表示名だけを現行8分類名へ揃える。
+  MUSIC: iconFor('MUSIC', '音楽・舞台'),
   BEAUTY: iconFor('BEAUTY', 'ビューティー'),
   HOTEL: iconFor('HOTEL', 'ホテル'),
   WELLNESS: iconFor('WELLNESS', '癒し・リラクゼーション'),
