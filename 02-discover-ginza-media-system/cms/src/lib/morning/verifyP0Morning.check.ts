@@ -2211,6 +2211,46 @@ async function runRegisterTests(): Promise<{ pass: number; fail: number; failure
     assert((m.rows[0].sourceProvenanceFacts ?? []).every((f) => f.fact.startsWith('[auto:morning]')), '自動タグ付き')
     assert((m.rows[0].notes ?? '').includes('[auto:lastVerifiedAt='), 'verifiedAt を notes に記録')
   })
+  await check(
+    '【回帰・不具合修正（2026-09-28）】register: DC#1526実データ再現——終了日未確認（eventEndAt:null）のときeventDateISOへ開始日を代用しない（新規作成・既存更新の両方）',
+    async () => {
+      const startOnlyCand = trustedCand({ eventStartAt: '2026-08-29T00:00:00.000Z', eventEndAt: null })
+      const mCreate = makeStore()
+      const rCreate = await createOrUpdateArticleFactsFromCandidate(mCreate.store, startOnlyCand, gateB, {
+        dryRun: false,
+        now: NOW,
+      })
+      assert(rCreate.action === 'created', `期待 created / 実際 ${rCreate.action}`)
+      assert(
+        mCreate.rows[0].eventDateISO == null,
+        `終了日未確認のためeventDateISOはnullのはず（実際 ${JSON.stringify(mCreate.rows[0].eventDateISO)}）`,
+      )
+
+      // 既存行（前回のバグで開始日が書き込まれた想定）に対する更新時も、開始日で
+      // 再び埋め直さない・むしろ既存の空でない値は「空のときだけ埋める」規則により
+      // 変更対象にならないため既存の不正値はこの経路だけでは自動訂正しない
+      // （それは別途DB個別修正の対象）——ここでは「新規に不正値を書き込まない」ことのみ検証する。
+      const mUpdate = makeStore([
+        {
+          id: 1,
+          discoveredContent: 999,
+          enrichmentStatus: 'draft',
+          eventDateISO: null,
+          sourceProvenanceFacts: [],
+          notes: '[auto:morning] ...',
+        },
+      ])
+      const rUpdate = await createOrUpdateArticleFactsFromCandidate(mUpdate.store, startOnlyCand, gateB, {
+        dryRun: false,
+        now: NOW,
+      })
+      assert(rUpdate.action !== 'skipped', `更新自体は行われるはず（実際 ${rUpdate.action}）`)
+      assert(
+        mUpdate.rows[0].eventDateISO == null,
+        `更新後もeventDateISOはnullのまま（開始日を代用しない。実際 ${JSON.stringify(mUpdate.rows[0].eventDateISO)}）`,
+      )
+    },
+  )
   await check('register: 冪等（同一内容の再実行は unchanged・書き込み 0）', async () => {
     const m = makeStore()
     await createOrUpdateArticleFactsFromCandidate(m.store, trustedCand(), gateB, { dryRun: false, now: NOW })

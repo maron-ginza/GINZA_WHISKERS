@@ -390,7 +390,19 @@ export async function createOrUpdateArticleFactsFromCandidate(
   if (!candidate.provenance || Object.keys(candidate.provenance).length === 0)
     return base('skipped', { reason: '根拠を追跡できる事実が 0 件' })
 
-  const desiredEventDateIso = f.eventStartAt ?? null
+  // 2026-09-28修正（マロン指示：DC#1526実データで再発を確認——2026-09-27に
+  // extractArticleFactsCandidate.ts／mapSaleFactsToDraft.ts の2箇所で修正した
+  // 「終了日未確認を開始日で代用する」バグと同種のものが、このDB書き込み関数
+  // 自身にも独立して存在していた。desiredEventDateIsoはf.eventEndAtを経由せず
+  // f.eventStartAtを直接使っていたため、上記2箇所の修正後も
+  // 実際のArticleFacts作成/更新（./p2 am-run --write-facts）では終了日未確認の
+  // 候補にeventStartAtがそのままeventDateISOとして書き込まれ続けていた——
+  // 2026-09-27夜に手動でクリアしたDC#1526のarticle_facts行が2026-09-28朝6時の
+  // 自動実行で開始日（2026-08-29）へ戻っていたことを実データで確認して発見。
+  // 終了日（f.eventEndAt）が確認できている場合のみ確定させる（終了日優先。
+  // 開始=終了の構造化データなら単発イベントとして機能する）。開始日のみで
+  // 終了日が未確認の場合はnull（過去/未来を機械判定しない・要確認のまま）。
+  const desiredEventDateIso = f.eventEndAt ?? null
   const baseNotes = machineNotes(candidate, now)
   // sale mapper が「事実でない候補（areaLead / audienceNote / hashtags）」を補完する場合の注記
   const saleCandidateMarker = (fills: string[]): string =>
