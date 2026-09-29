@@ -140,6 +140,9 @@ const cases: CheckCase[] = [
         'shiseido-parlour-ginza', 'ginza-sembikiya', 'cafe-paulista-ginza', 'ginza-kikunoya',
         'ginza-kimuraya-sohonten', 'shiseido-the-store-ginza', 'boulmich-ginza',
         'kobikicho-yoshiya', 'matsuzaki-senbei-ginza',
+        // 2026-09-30追加：銀座あけぼの（1948年創業）・空也（ぎんざ空也、1949年〜銀座並木通り）。
+        // いずれも単独立地の老舗和菓子店であることをSOURCE_LEDGER登録notesで確認済み。
+        'ginza-akebono', 'ginza-kuya-sorairo',
       ])
       for (const s of SOURCE_LEDGER_SEED_DATA) {
         const single = isSingleGinzaVenueSource(s.name, s.url)

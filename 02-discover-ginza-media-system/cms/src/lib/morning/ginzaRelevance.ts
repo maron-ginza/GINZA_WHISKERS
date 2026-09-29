@@ -145,8 +145,21 @@ export function hasMeaningfulTitle(title?: string | null, venue?: string | null,
 // ではない——「情報源＝1施設として集計してよい」ことと「記事に銀座の明記が無くても
 // 銀座関連とみなしてよい」ことは別の問いであり、後者は個別に実在確認できたものだけを
 // 載せる（2026-09-12、ブールミッシュ追加時にこの2つを混同しかけたため明文化）。
+// 2026-09-30追加（マロン指示：実データで発見・修復）：SOURCE_LEDGER
+// venueKind='individual_shop'（単独施設）として既に登録済みの30店舗のうち、
+// 銀座あけぼの・空也（ぎんざ空也／空いろ）の2店舗がこの一覧に含まれておらず、
+// 実際に確認できたSWEETS候補（DC#1362・#1367）が「銀座関連性を確認できない」
+// でC判定になっていたことを発見した（両店とも店名自体に「銀座」を含む、
+// 単独立地の老舗和菓子店であることを確認済み）。
+// 【追加しなかった店舗（意図的）】とらや（TORAYA GINZA）・HIGASHIYA GINZA・
+// ピエール・エルメ・パリ・DALLOYAU・アンリ・シャルパンティエ・GODIVA・
+// ジャン＝ポール・エヴァン・フレデリック・カッセル・ルノートル（LENÔTRE）は
+// 全国複数店舗を持つブランドで、登録済みニュース欄が銀座店限定の発信とは
+// 確認できないため追加しない（「複数店舗ブランドの銀座本店明記なし＝
+// 銀座と推定しない」という既存方針どおり——ルール2〈タイトル/会場への
+// 銀座の明記〉が別途機能する）。
 const SINGLE_GINZA_VENUE_RE =
-  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp|ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp|木挽町よしや|kobikichoyoshiya|松﨑煎餅|松崎煎餅|matsuzaki-senbei/i
+  /GINZA\s?SIX|銀座\s?蔦屋書店|銀座三越|松屋銀座|(?:銀座)?和光|SEIKO\s?HOUSE\s?GINZA|Sony\s?Park|ginzasonypark|資生堂ギャラリー|gallery\.shiseido|POLA\s?MUSEUM\s?ANNEX|ポーラ\s?ミュージアム|歌舞伎座|相田みつを美術館|mitsuo\.co\.jp|教文館|kyobunkwan|月光荘|gekkoso|銀座もとじ|motoji\.co\.jp|資生堂パーラー|銀座千疋屋|ginza-sembikiya|CAFE\s?PAULISTA|paulista\.co\.jp|銀座菊廼舎|ginza-kikunoya|ginzakimuraya\.jp|SHISEIDO\s?THE\s?STORE|thestore\.shiseido\.co\.jp|ブールミッシュ|BOUL'?MICH|boulmich\.co\.jp|木挽町よしや|kobikichoyoshiya|松﨑煎餅|松崎煎餅|matsuzaki-senbei|銀座あけぼの|ginza-akebono|ぎんざ空也|銀座空也|空いろ|sorairo-kuya/i
 
 /** 情報源名（＋任意で公式URL）から「銀座の単独施設か」を判定する */
 export function isSingleGinzaVenueSource(sourceName?: string | null, sourceUrl?: string | null): boolean {
