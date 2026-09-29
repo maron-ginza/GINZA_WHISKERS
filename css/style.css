@@ -1852,25 +1852,35 @@ a.content-card:hover {
   }
 }
 
-/* 2026-09-29追加：母艦トップ「銀座を体験する」内、10/29 LIVE告知リンク。
-   既存の🎤カード（noteマガジンへの単一リンク）とは別の、独立した告知行。
-   装飾は色の変化のみで、既存の .card-cta 系と統一感のある控えめな見た目。 */
-.live-announce {
-  margin: 0 0 32px;
+/* 2026-09-30更新：母艦トップ🎤LIVEカードを単一リンクから複数リンク構成へ
+   変更（画像だけでなく見出し・案内文・複数のリンク先を明示するため）。
+   カード全体を<a>ではなく<div>にしたため、既存の a.content-card:hover
+   （カード全体のホバー時の背景・枠色の変化）はこのカードには適用されない
+   （他のカードは<a>のまま変更していないため影響しない）。代わりに
+   .card-cta-multi内の各リンクが個別に色変化する。
+   前回追加した .live-announce（独立した告知行）はこのカード自体が
+   LPへの導線を持つようになったため削除した。 */
+.content-card--live-multi {
+  cursor: default;
 }
 
-.live-announce a {
-  display: inline-block;
+.card-cta-multi {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.card-cta-multi a {
   font-family: var(--font-serif);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
+  font-style: italic;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
   color: var(--color-gold-light);
-  border-bottom: 1px solid var(--color-border);
-  padding-bottom: 4px;
-  transition: color 0.25s ease, border-color 0.25s ease;
+  transition: color 0.25s ease;
 }
 
-.live-announce a:hover {
+.card-cta-multi a:hover {
   color: var(--color-gold);
-  border-color: var(--color-gold);
 }

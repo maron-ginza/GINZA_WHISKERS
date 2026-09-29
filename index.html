@@ -255,26 +255,34 @@
     <div class="container">
       <p class="eyebrow" data-text-ja="C ／ 銀座を体験する" data-text-en="C / Experience Ginza">C ／ 銀座を体験する</p>
       <h2 data-text-ja="銀座を体験する" data-text-en="Experience Ginza">銀座を体験する</h2>
-      <!-- 2026-09-29追加：10/29「昭和マスカレード」LIVE LPへの告知リンク。
-           既存の🎤カード（noteマガジンへの単一リンク）は変更せず、その手前に
-           独立した告知行として追加している。 -->
-      <p class="live-announce">
-        <a href="live/2026-10-29-showa-masquerade/index.html"
-           data-text-ja="📣 10月29日開催「昭和マスカレード」LIVE｜詳細・お申込みはこちら"
-           data-text-en="📣 Oct 29 LIVE &ldquo;Showa Masquerade&rdquo; &mdash; details &amp; booking">📣 10月29日開催「昭和マスカレード」LIVE｜詳細・お申込みはこちら</a>
-      </p>
       <div class="content-grid content-grid--experience">
-        <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m0f03ad5fe973" target="_blank" rel="noopener noreferrer">
+        <!-- 2026-09-30更新：単一リンク（noteマガジン）のカードから、複数リンク
+             構成に変更。画像だけでなく見出し・案内文・複数のリンク先
+             （初参加ガイド／noteマガジン／10-29 LIVE LP）を明示するため、
+             カード全体を<a>ではなく<div>にし、.card-cta-multi内に3つの
+             独立したリンクを設置した（既存のnoteマガジンへの導線は
+             URL・文言とも変更せず維持し、その前後にガイド・LPのリンクを
+             追加）。前回追加した告知行（.live-announce）はこのカード自体が
+             LPへの導線を持つようになったため重複を避けて削除した。 -->
+        <div class="content-card content-card--visual cc-span-1 content-card--live-multi">
           <div class="entry-visual entry-visual--live" aria-hidden="true">
             <img src="images/cards/live.jpg" width="768" height="512" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
             <h3 data-text-ja="🎤 銀座昭和浪漫倶楽部LIVE" data-text-en="🎤 Ginza Showa Romance Club LIVE">🎤 銀座昭和浪漫倶楽部LIVE</h3>
-            <p data-text-ja="月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。"
-               data-text-en="A record of our activities, built around a monthly LIVE, bringing Ginza's culture to the stage.">月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。</p>
-            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
+            <p data-text-ja="月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。次回は10月29日「昭和マスカレード」。"
+               data-text-en="A record of our activities, built around a monthly LIVE, bringing Ginza's culture to the stage. Next up: &ldquo;Showa Masquerade&rdquo; on October 29.">月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。次回は10月29日「昭和マスカレード」。</p>
+            <div class="card-cta-multi">
+              <a href="https://note.com/ginza_whiskers/n/nec3e229d2818" target="_blank" rel="noopener noreferrer"
+                 data-text-ja="📚 初めての方へ｜LIVE初参加ガイド" data-text-en="First time? Read the LIVE guide">📚 初めての方へ｜LIVE初参加ガイド</a>
+              <a href="https://note.com/ginza_whiskers/m/m0f03ad5fe973" target="_blank" rel="noopener noreferrer"
+                 data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</a>
+              <a href="live/2026-10-29-showa-masquerade/index.html"
+                 data-text-ja="📣 10月29日「昭和マスカレード」LIVE｜詳細・お申込み"
+                 data-text-en="Oct 29 &ldquo;Showa Masquerade&rdquo; LIVE &mdash; details &amp; booking">📣 10月29日「昭和マスカレード」LIVE｜詳細・お申込み</a>
+            </div>
           </div>
-        </a>
+        </div>
         <!-- Club Charmant：銀座一丁目のプライベートサロン。母艦内 charmant.html へ内部遷移（Phase 1, 2026-08-28）。
              ビジュアルは仮カード画像（images/cards/charmant.jpg、2026-09-11差し替え。差し替え前は抽象SVG）。
              2026-09-24：専用下層ページを club-charmant/ へ新設・移行し、旧 charmant.html は廃止。
