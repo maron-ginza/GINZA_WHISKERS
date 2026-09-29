@@ -1886,61 +1886,80 @@ a.content-card:hover {
 }
 
 /* ==========================================================
-   「今月のトピックス」（2026-09-30 追加、index.html #topics）
-   既存 .section / .container.narrow / .eyebrow / .btn / :root を継承し、
-   トップの主役（#concept「今日は、どの銀座へ？」）より目立たせないよう、
-   上下の余白を絞り、見出しサイズも一段小さくした点だけが独自。
-   カード自体は既存の .content-card 系と同じ配色・枠（--color-bg-alt／
-   --color-border）を踏襲した新規クラス（.topics-*）。
+   ヒーロー内「今月のトピックス」帯（2026-09-30：下部セクション#topicsから
+   移設）。ヒーロー画像直下・EXPLORE（.hero-bar）の直前に置き、画像には
+   文字を重ねない。.hero-bar と同じ暗い背景・細い金の線（border-top）・
+   書体を使った控えめな帯で、主役はヒーロー画像のままにするため大きな
+   画像やボタン枠は使わない。帯全体を1つのリンクにし、「詳細・お申込み」
+   は下線付きテキストのみ（.btn のような箱型ボタンにしない）。
+   PCは横一列、720px以下（既存の.hero-textと同じブレークポイント）は
+   縦積みにする。data-hide-after は js/main.js の initExpiringSections()
+   が読み、公演終了後（2026-10-30以降）は自動的にこの帯を隠す。
    ========================================================== */
 
-.section--topics {
-  padding: 56px 0;
-}
-
-/* #topics を前置してID分の詳細度を上げている：.section h2（1class+1tag）
-   と同じ要素に当たるため、単純な .topics-h2（1class）だけでは詳細度で
-   負けて上書きできなかった（実機確認済み）。 */
-#topics .topics-h2 {
-  font-size: clamp(1.2rem, 2.2vw, 1.5rem);
-  margin-bottom: 0.7em;
-}
-
-.topics-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 20px;
-  margin-top: 24px;
-}
-
-.topics-card {
-  background: var(--color-bg-alt);
-  border: 1px solid var(--color-border);
-  padding: 24px 26px;
-  margin: 0;
-}
-
-.topics-date {
+.hero-topic {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px 18px;
+  width: 100%;
+  padding: 14px 24px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
   font-family: var(--font-serif);
+  transition: opacity 0.25s ease;
+}
+
+.hero-topic:hover {
+  opacity: 0.82;
+}
+
+.hero-topic-label {
   font-style: italic;
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--color-gold);
-  margin: 0 0 0.6em;
 }
 
-.topics-card h3 {
-  font-size: 1.05rem;
-  margin: 0 0 0.5em;
+.hero-topic-date {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--color-gold-light);
 }
 
-.topics-card p:not(.topics-date) {
-  color: var(--color-ink-muted);
-  font-size: 0.92rem;
-  margin: 0 0 1.2em;
+.hero-topic-title {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  color: var(--color-ink);
 }
 
-.topics-btn {
-  padding: 10px 24px;
+.hero-topic-intro {
   font-size: 0.8rem;
+  color: var(--color-ink-muted);
+}
+
+.hero-topic-cta {
+  font-style: italic;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--color-gold-light);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 2px;
+  transition: border-color 0.25s ease;
+}
+
+.hero-topic:hover .hero-topic-cta {
+  border-color: var(--color-gold);
+}
+
+@media (max-width: 720px) {
+  .hero-topic {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 5px;
+    padding: 16px 20px;
+  }
 }
