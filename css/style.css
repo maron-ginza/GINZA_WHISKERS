@@ -1884,3 +1884,63 @@ a.content-card:hover {
 .card-cta-multi a:hover {
   color: var(--color-gold);
 }
+
+/* ==========================================================
+   「今月のトピックス」（2026-09-30 追加、index.html #topics）
+   既存 .section / .container.narrow / .eyebrow / .btn / :root を継承し、
+   トップの主役（#concept「今日は、どの銀座へ？」）より目立たせないよう、
+   上下の余白を絞り、見出しサイズも一段小さくした点だけが独自。
+   カード自体は既存の .content-card 系と同じ配色・枠（--color-bg-alt／
+   --color-border）を踏襲した新規クラス（.topics-*）。
+   ========================================================== */
+
+.section--topics {
+  padding: 56px 0;
+}
+
+/* #topics を前置してID分の詳細度を上げている：.section h2（1class+1tag）
+   と同じ要素に当たるため、単純な .topics-h2（1class）だけでは詳細度で
+   負けて上書きできなかった（実機確認済み）。 */
+#topics .topics-h2 {
+  font-size: clamp(1.2rem, 2.2vw, 1.5rem);
+  margin-bottom: 0.7em;
+}
+
+.topics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.topics-card {
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  padding: 24px 26px;
+  margin: 0;
+}
+
+.topics-date {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--color-gold);
+  margin: 0 0 0.6em;
+}
+
+.topics-card h3 {
+  font-size: 1.05rem;
+  margin: 0 0 0.5em;
+}
+
+.topics-card p:not(.topics-date) {
+  color: var(--color-ink-muted);
+  font-size: 0.92rem;
+  margin: 0 0 1.2em;
+}
+
+.topics-btn {
+  padding: 10px 24px;
+  font-size: 0.8rem;
+}

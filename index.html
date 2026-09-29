@@ -305,6 +305,33 @@
     </div>
   </section>
 
+  <!-- 2026-09-30追加：「今月のトピックス」。トップの主役（#concept
+       「今日は、どの銀座へ？」）より目立たせないよう、上下の余白（padding）を
+       通常の.sectionより絞り、見出しサイズも一段小さくしている（書体・配色・
+       .eyebrow/.btn/.container.narrowなど既存の仕組みはそのまま流用）。
+       日時・料金など詳細はLP側にのみ置き、ここでは重複掲載しない。
+       月をまたいで差し替える際は、この<article>1件の中身（日付・タイトル・
+       紹介文・リンク先）を書き換えるか、掲載がない月は<article>自体を削除する
+       （複数月分を並べる想定はしていない。現状は2026年10月の1件のみ）。
+       data-hide-after を過ぎたら js/main.js の initExpiringSections() が
+       自動的にこの<section>を隠す（更新を忘れた場合の保険。手動での差し替え・
+       削除を優先し、両方に対応できる実装にしている）。 -->
+  <section id="topics" class="section section--topics" data-hide-after="2026-10-30T00:00:00+09:00">
+    <div class="container narrow">
+      <p class="eyebrow">TOPICS</p>
+      <h2 class="topics-h2" data-text-ja="今月のトピックス" data-text-en="This Month's Topics">今月のトピックス</h2>
+      <div class="topics-grid">
+        <article class="topics-card">
+          <p class="topics-date" data-text-ja="10月29日（木）" data-text-en="Thursday, October 29">10月29日（木）</p>
+          <h3 data-text-ja="昭和マスカレード" data-text-en="Showa Masquerade">昭和マスカレード</h3>
+          <p data-text-ja="音楽のある銀座の夜へ。" data-text-en="An evening in Ginza, with music.">音楽のある銀座の夜へ。</p>
+          <a class="btn topics-btn" href="live/2026-10-29-showa-masquerade/index.html"
+             data-text-ja="詳細・お申込み" data-text-en="Details &amp; booking">詳細・お申込み</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <section id="your-ginza" class="section hub-section">
     <div class="container">
       <p class="eyebrow" data-text-ja="D ／ 自分の銀座へ" data-text-en="D / Your Ginza">D ／ 自分の銀座へ</p>

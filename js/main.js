@@ -34,7 +34,23 @@ document.addEventListener("DOMContentLoaded", () => {
   initY400LangToggle();
   initClubCharmantLangToggle();
   initHomeLangToggle();
+  initExpiringSections();
 });
+
+// data-hide-after="<ISO日時>" を持つ要素を、その日時を過ぎたら hidden にする
+// （例：index.html の「今月のトピックス」#topics。公演終了後に古い告知が
+// 残らないようにする保険。手動での差し替え・削除を優先し、更新を忘れた場合
+// にのみ効く安全策として汎用実装にしている）。
+// タイムゾーンのずれを避けるため、data-hide-after には常にオフセット付き
+// のISO日時（例：2026-10-30T00:00:00+09:00）を指定する。
+function initExpiringSections() {
+  document.querySelectorAll("[data-hide-after]").forEach((el) => {
+    const cutoff = new Date(el.dataset.hideAfter);
+    if (!Number.isNaN(cutoff.getTime()) && Date.now() >= cutoff.getTime()) {
+      el.hidden = true;
+    }
+  });
+}
 
 // 「最新のジャーナル」：Project 02（Discover GINZA）が公開する疎結合フィード
 // (/ja/latest.json) を読み、published 最新3件を描画する。
