@@ -2661,7 +2661,28 @@ candidate_fallback_auto() {
   fi
   echo "$RAW1" >>"$LOG_DIR/candidate_fallback.log"
   local STAGE1
-  STAGE1="$(echo "$RAW1" | python3 -c "import sys,json; print(json.load(sys.stdin).get('plan',{}).get('stage',''))" 2>/dev/null)"
+  # 2026-09-30修正（マロン指示：実データで発見・修復）：RAW1にはPayloadの
+  # スキーマ同期スピナー（"Pulling schema from database..."等）がstdoutへ
+  # 混入することがあり（このプロジェクトの他コマンドでも既知の挙動）、
+  # 素朴な json.load(sys.stdin) だと非JSON行が先頭にあるだけでパース全体が
+  # 失敗しSTAGE1が空文字列になる——結果、needs_supplementary_fetchの判定が
+  # 出ていても「補完取得は不要」と誤認して本来必要な松屋銀座・銀座三越等への
+  # 補完取得をスキップしていた（2026-09-29・09-30の2日分で実データ確認）。
+  # 最終行から遡って最初にJSONとしてパースできた行を採用するよう頑健化する。
+  STAGE1="$(echo "$RAW1" | python3 -c "
+import sys, json
+lines = sys.stdin.read().splitlines()
+for line in reversed(lines):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    print(d.get('plan', {}).get('stage', ''))
+    break
+" 2>/dev/null)"
   echo "--- 1回目の判定: $STAGE1 ---"
 
   if [ "$STAGE1" != "needs_supplementary_fetch" ]; then
@@ -2700,7 +2721,21 @@ candidate_fallback_auto() {
     return 1
   fi
   local STAGE2
-  STAGE2="$(echo "$RAW2" | python3 -c "import sys,json; print(json.load(sys.stdin).get('plan',{}).get('stage',''))" 2>/dev/null)"
+  # 2026-09-30修正：STAGE1と同じ頑健化（RAW2にも同種のstdout混入がありうる）。
+  STAGE2="$(echo "$RAW2" | python3 -c "
+import sys, json
+lines = sys.stdin.read().splitlines()
+for line in reversed(lines):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    print(d.get('plan', {}).get('stage', ''))
+    break
+" 2>/dev/null)"
   echo "--- 最終判定結果: $STAGE2（補完取得の失敗コマンド数: $SUPP_FAILED） ---"
   echo "$RAW2"
   return 0
