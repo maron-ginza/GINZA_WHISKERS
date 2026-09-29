@@ -1702,3 +1702,175 @@ a.content-card:hover {
   background: var(--color-bg);
   border-style: dashed;
 }
+
+/* ==========================================================
+   live/2026-10-29-showa-masquerade/index.html 専用（2026-09-29 追加）
+   共有ZIP（GINZA_WHISKERS_LIVE_LP_20261029_share.zip）内のHTMLはデザイン・
+   本文の見本のため、実装はここから新規に既存 .hero / .hero.has-photo /
+   .section / .container / .container.narrow / .eyebrow / .lead / .btn /
+   :root / .y400-lang-toggle・.y400-lang-btn（サイト共通の言語切替ボタン
+   見た目）を継承し、本ページ専用の追加セレクタ（.live1029-*）のみで
+   構成する。既存ルールは一切変更していない。
+   ========================================================== */
+
+/* ヒーロー背景：images/cards/live.jpg（母艦トップの仮カード画像）を
+   .hero.has-photo と同じ合成方法（暗いグラデーション＋url()）で流用。
+   .hero.has-photo 自体は他ページ（将来のトップ用実素材）で使う想定の
+   ため変更せず、この写真専用に新しいクラスを用意した。 */
+.hero--live1029 {
+  background-image:
+    linear-gradient(90deg, rgba(11, 11, 12, 0.92) 0%, rgba(11, 11, 12, 0.82) 46%, rgba(11, 11, 12, 0.5) 100%),
+    linear-gradient(rgba(10, 10, 10, 0.35), rgba(10, 10, 10, 0.55)),
+    url("../images/cards/live.jpg");
+  background-size: cover;
+  background-position: center;
+}
+
+.live1029-h1-sub {
+  display: block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: clamp(0.85rem, 1.6vw, 1rem);
+  letter-spacing: 0.12em;
+  color: var(--color-gold-light);
+  margin-top: 0.5em;
+}
+
+/* 「The place」「October live」：画像＋本文の2カラム（モバイルは1カラム、
+   画像が上）。--reverse で画像とテキストの左右を入れ替える。 */
+.live1029-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+}
+
+@media (min-width: 720px) {
+  .live1029-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+  }
+
+  .live1029-grid--reverse .live1029-photo {
+    order: 2;
+  }
+
+  .live1029-grid--reverse .live1029-copy {
+    order: 1;
+  }
+}
+
+.live1029-photo {
+  margin: 0;
+}
+
+.live1029-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+}
+
+.live1029-photo figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+/* 開催案内（dt/dd）：告知画像（IMG_2970.jpeg相当）と1件ずつ照合済みの
+   公演情報。 */
+.live1029-facts {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  border-top: 1px solid var(--color-border);
+  margin: 32px 0 0;
+}
+
+.live1029-facts dt,
+.live1029-facts dd {
+  margin: 0;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.live1029-facts dt {
+  color: var(--color-gold);
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
+}
+
+.live1029-facts dd {
+  padding-left: 18px;
+  color: var(--color-ink-muted);
+}
+
+.live1029-callout {
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  padding: 28px 32px;
+  margin-top: 32px;
+}
+
+.live1029-callout p {
+  margin: 0 0 1em;
+}
+
+.live1029-note {
+  font-size: 0.85rem;
+  color: var(--color-ink-muted);
+  margin: 0.8em 0 0;
+}
+
+/* スマホ用の追従お申込みバー。デスクトップでは非表示（#detailsへの
+   ボタンは各セクションに既にあるため、狭い画面のみ補助的に表示）。
+   footerと重ならないよう、このブレークポイントでは footer 下部に
+   余白を確保する。 */
+.live1029-sticky {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .live1029-sticky {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: rgba(11, 11, 12, 0.95);
+    border-top: 1px solid var(--color-border);
+    padding: 12px 20px;
+  }
+
+  .live1029-sticky .btn {
+    display: block;
+    text-align: center;
+  }
+
+  body:has(.live1029-sticky) .site-footer {
+    padding-bottom: 84px;
+  }
+}
+
+/* 2026-09-29追加：母艦トップ「銀座を体験する」内、10/29 LIVE告知リンク。
+   既存の🎤カード（noteマガジンへの単一リンク）とは別の、独立した告知行。
+   装飾は色の変化のみで、既存の .card-cta 系と統一感のある控えめな見た目。 */
+.live-announce {
+  margin: 0 0 32px;
+}
+
+.live-announce a {
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: var(--color-gold-light);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 4px;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.live-announce a:hover {
+  color: var(--color-gold);
+  border-color: var(--color-gold);
+}
