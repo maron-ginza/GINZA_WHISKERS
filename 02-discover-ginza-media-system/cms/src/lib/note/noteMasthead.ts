@@ -112,7 +112,10 @@ export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   GIFT: iconFor('GIFT', '手土産・ギフト'),
   WORKSHOP: iconFor('WORKSHOP', '学び・ワークショップ'),
   PHOTO: iconFor('PHOTO', 'フォトスポット'),
-  FAMILY: iconFor('FAMILY', 'ファミリー'),
+  // 2026-09-30修正（マロン指示の標準化を適用）：EXPERIENCE同様、8分類名確定
+  // 「学び・体験」（LEARNING_EXPERIENCE）に一致させる（旧18カテゴリー表記
+  // 「ファミリー」のまま食い違っていた。Article #89で発見）。
+  FAMILY: iconFor('FAMILY', '学び・体験'),
   NIGHT_VIEW: iconFor('NIGHT_VIEW', '夜景・ナイトスポット'),
   RAINY_DAY: iconFor('RAINY_DAY', '雨の日おすすめ'),
 }
