@@ -36,19 +36,29 @@
     <a href="index.html" class="brand">
       <span class="brand-jp">GINZA WHISKERS</span>
     </a>
-    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <nav class="main-nav">
-      <ul>
-        <li><a href="index.html#know">今の銀座</a></li>
-        <li><a href="index.html#feel">銀座の時間</a></li>
-        <li><a href="index.html#experience">銀座を体験</a></li>
-        <li><a href="index.html#your-ginza">自分の銀座</a></li>
-        <li><a href="about.html" aria-current="page">About</a></li>
-        <li><a href="index.html#contact">Contact</a></li>
-      </ul>
-    </nav>
+    <!-- index.html と同じ #home-lang-toggle を再利用（js/main.js の
+         initHomeLangToggle が両ページを1つの関数でカバーする）。保存キーは
+         gw-lang（サイト共通）のため、index.html で選んだ言語がそのまま
+         引き継がれる。 -->
+    <div class="header-actions">
+      <div id="home-lang-toggle" class="y400-lang-toggle header-lang-toggle" role="group" aria-label="言語切替 / Language">
+        <button type="button" class="y400-lang-btn is-active" data-lang="ja" aria-pressed="true">日本語</button>
+        <button type="button" class="y400-lang-btn" data-lang="en" aria-pressed="false">ENGLISH</button>
+      </div>
+      <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="main-nav">
+        <ul>
+          <li><a href="index.html#know" data-text-ja="今の銀座" data-text-en="Ginza Now">今の銀座</a></li>
+          <li><a href="index.html#feel" data-text-ja="銀座の時間" data-text-en="Ginza Through Time">銀座の時間</a></li>
+          <li><a href="index.html#experience" data-text-ja="銀座を体験" data-text-en="Experience Ginza">銀座を体験</a></li>
+          <li><a href="index.html#your-ginza" data-text-ja="自分の銀座" data-text-en="Your Ginza">自分の銀座</a></li>
+          <li><a href="about.html" aria-current="page">About</a></li>
+          <li><a href="index.html#contact">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
   </div>
 </header>
 
@@ -57,14 +67,15 @@
   <section class="page-header">
     <div class="container">
       <p class="eyebrow">ABOUT</p>
-      <h1>倶楽部について</h1>
+      <h1 data-text-ja="倶楽部について" data-text-en="About Us">倶楽部について</h1>
     </div>
   </section>
 
   <section class="section about-body">
     <div class="container narrow">
-      <h2>設立の想い</h2>
-      <p>
+      <h2 data-text-ja="設立の想い" data-text-en="Our Founding Vision">設立の想い</h2>
+      <p data-text-ja="銀座昭和浪漫倶楽部は、銀座という街が昭和の時代に育んだ「浪漫」を次の世代へと手渡すために生まれました。ネオンと喧騒の裏側にある文化の厚み、人々の矜持、建築に刻まれた意匠——それらは放っておけば静かに失われていきます。私たちは取材と記録を通じて、それらの記憶を言葉とかたちに残し、国内外へ発信しています。"
+         data-text-en="Ginza Showa Romance Club was founded to hand down to the next generation the romance that the Showa era cultivated in the streets of Ginza. Beneath the neon and the noise lies a depth of culture, a quiet pride carried by its people, and the craftsmanship etched into its architecture — left untended, these would fade away in silence. Through reporting and documentation, we preserve these memories in words and form, and share them with audiences at home and abroad.">
         銀座昭和浪漫倶楽部は、銀座という街が昭和の時代に育んだ「浪漫」を
         次の世代へと手渡すために生まれました。ネオンと喧騒の裏側にある
         文化の厚み、人々の矜持、建築に刻まれた意匠——それらは放っておけば
@@ -72,15 +83,19 @@
         言葉とかたちに残し、国内外へ発信しています。
       </p>
 
-      <h2>活動内容</h2>
+      <h2 data-text-ja="活動内容" data-text-en="What We Do">活動内容</h2>
       <ul class="about-list">
-        <li>銀座の歴史・文化・アート・建築・人物・イベントに関する取材・執筆</li>
-        <li>note を中心とした記事連載、および本サイトでのアーカイブ発信</li>
-        <li>銀座の過去・現在・未来をつなぐイベント・企画の実施</li>
+        <li data-text-ja="銀座の歴史・文化・アート・建築・人物・イベントに関する取材・執筆"
+            data-text-en="Researching and writing about Ginza's history, culture, art, architecture, people, and events">銀座の歴史・文化・アート・建築・人物・イベントに関する取材・執筆</li>
+        <li data-text-ja="note を中心とした記事連載、および本サイトでのアーカイブ発信"
+            data-text-en="Serializing articles primarily on note, and archiving them on this site">note を中心とした記事連載、および本サイトでのアーカイブ発信</li>
+        <li data-text-ja="銀座の過去・現在・未来をつなぐイベント・企画の実施"
+            data-text-en="Producing events and projects that connect Ginza's past, present, and future">銀座の過去・現在・未来をつなぐイベント・企画の実施</li>
       </ul>
 
-      <h2>今後について</h2>
-      <p>
+      <h2 data-text-ja="今後について" data-text-en="Looking Ahead">今後について</h2>
+      <p data-text-ja="これまで note を中心に発信してきた活動を、この独自ドメインのサイトへと統合していきます。過去の記事のアーカイブ化、新規コンテンツの拡充を順次進めてまいります。"
+         data-text-en="We are bringing together what we've published mainly on note into this dedicated site — archiving past articles and steadily expanding new content.">
         これまで note を中心に発信してきた活動を、この独自ドメインのサイトへと
         統合していきます。過去の記事のアーカイブ化、新規コンテンツの拡充を
         順次進めてまいります。
@@ -93,7 +108,7 @@
 <footer class="site-footer">
   <div class="container footer-inner">
     <p class="footer-brand">GINZA WHISKERS</p>
-    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-links"><a href="privacy.html" data-text-ja="プライバシーポリシー" data-text-en="Privacy Policy">プライバシーポリシー</a></p>
     <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
   </div>
 </footer>

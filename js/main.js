@@ -33,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLatestJournal();
   initY400LangToggle();
   initClubCharmantLangToggle();
+  initHomeLangToggle();
 });
 
 // 「最新のジャーナル」：Project 02（Discover GINZA）が公開する疎結合フィード
@@ -174,13 +175,16 @@ function renderLatestCards(container, items) {
 // - 画像（.y400-media-img）は data-src-ja/en・data-alt-ja/en を1612・1882の
 //   2枚とも同時に切り替える。
 // - document.documentElement.lang を "ja"/"en" に同期する。
-// - 選択言語は localStorage（キー: y400-lang）に保存し、次回訪問時に復元する
-//   （保存値が無い、または "en" 以外の場合は既定どおり日本語のまま）。
+// - 選択言語は localStorage（キー: gw-lang、サイト共通）に保存し、次回訪問時に
+//   復元する（保存値が無い、または "en" 以外の場合は既定どおり日本語のまま）。
+//   2026-09-24：キーを y400-lang → gw-lang（サイト共通）に変更。index.html／
+//   about.html／club-charmant/index.html と保存先を統一し、ページ間を移動
+//   しても選択した言語が引き継がれるようにした（翻訳ロジック自体は無変更）。
 function initY400LangToggle() {
   const toggle = document.getElementById("y400-lang-toggle");
   if (!toggle) return;
 
-  const STORAGE_KEY = "y400-lang";
+  const STORAGE_KEY = "gw-lang";
   const buttons = toggle.querySelectorAll(".y400-lang-btn");
 
   function applyLang(lang) {
@@ -242,12 +246,13 @@ function initY400LangToggle() {
 // initY400LangToggle と同じ設計（data-text-ja/en の一括切替、html lang 同期、
 // localStorage 永続化）だが、対象IDが異なる別ページのため独立した関数にしている
 // （#cc-lang-toggle が無いページ、すなわち他の全ページでは即 return し、
-// 既存機能・他ページへの影響はない）。
+// 既存機能・他ページへの影響はない）。保存キーは gw-lang（サイト共通、
+// 2026-09-24統一）。
 function initClubCharmantLangToggle() {
   const toggle = document.getElementById("cc-lang-toggle");
   if (!toggle) return;
 
-  const STORAGE_KEY = "cc-lang";
+  const STORAGE_KEY = "gw-lang";
   const buttons = toggle.querySelectorAll(".y400-lang-btn");
 
   function applyLang(lang) {
@@ -289,6 +294,67 @@ function initClubCharmantLangToggle() {
   if (footerLangBtn) {
     footerLangBtn.addEventListener("click", () => applyLang("ja"));
   }
+
+  let stored = null;
+  try {
+    stored = localStorage.getItem(STORAGE_KEY);
+  } catch (e) {
+    /* 読み取り不可時は既定の日本語表示のまま */
+  }
+  if (stored === "en") applyLang("en");
+}
+
+// index.html（母艦トップページ）・about.html 共通のヘッダー 日本語／ENGLISH
+// 切り替え。両ページとも同じ id="home-lang-toggle" を使うため、この1つの
+// 関数・1つのトグルUIで両ページをカバーする（ページごとに関数を増やさない）。
+// initY400LangToggle/initClubCharmantLangToggle と同じ設計（data-text-ja/en
+// の一括切替、html lang 同期、localStorage 永続化）で、#home-lang-toggle が
+// 無いページでは即 return するため他ページ・既存機能への影響はない。
+// 保存キーは gw-lang（サイト共通、2026-09-24統一）：club-charmant/
+// 400years.htmlの言語トグルとも保存先を共有し、ページ間を移動しても選択した
+// 言語が引き継がれる。
+// - data-html-ja / data-html-en を持つ要素は innerHTML を切替（#concept の
+//   本文にある .nb（行送り制御用span）を日本語側で保持するため。値はHTML
+//   実体参照でエスケープ済みの信頼できる静的文言のみ）。initY400LangToggle
+//   と同じ既存パターンをそのまま再利用している。
+function initHomeLangToggle() {
+  const toggle = document.getElementById("home-lang-toggle");
+  if (!toggle) return;
+
+  const STORAGE_KEY = "gw-lang";
+  const buttons = toggle.querySelectorAll(".y400-lang-btn");
+
+  function applyLang(lang) {
+    document.documentElement.lang = lang;
+
+    document.querySelectorAll("[data-text-ja]").forEach((el) => {
+      const text = lang === "en" ? el.dataset.textEn : el.dataset.textJa;
+      if (text !== undefined) el.textContent = text;
+    });
+
+    document.querySelectorAll("[data-html-ja]").forEach((el) => {
+      const html = lang === "en" ? el.dataset.htmlEn : el.dataset.htmlJa;
+      if (html !== undefined) el.innerHTML = html;
+    });
+
+    buttons.forEach((b) => {
+      const isActive = b.dataset.lang === lang;
+      b.classList.toggle("is-active", isActive);
+      b.setAttribute("aria-pressed", String(isActive));
+    });
+
+    try {
+      localStorage.setItem(STORAGE_KEY, lang);
+    } catch (e) {
+      /* プライベートブラウズ等で保存できない場合は無視（表示自体には影響しない） */
+    }
+  }
+
+  toggle.addEventListener("click", (event) => {
+    const btn = event.target.closest(".y400-lang-btn");
+    if (!btn || !toggle.contains(btn)) return;
+    applyLang(btn.dataset.lang === "en" ? "en" : "ja");
+  });
 
   let stored = null;
   try {

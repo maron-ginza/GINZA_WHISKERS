@@ -79,6 +79,15 @@ h1, h2, h3 {
   max-width: 640px;
 }
 
+/* .nb（white-space:nowrap）：指定の語（歴史／文化／音楽／アート／体験／
+   文化メディア／体験プラットフォーム）が行末で分断されないようにする
+   ための行送り制御のみの印。文言・語順は変えない。2026-09-24、旧
+   .hero-lead 専用スコープから #concept の .lead 本文へ移設したのに
+   合わせ、汎用ルールとして再定義した（挙動は変えていない）。 */
+.nb {
+  white-space: nowrap;
+}
+
 /* ---------- Header ---------- */
 
 .site-header {
@@ -95,6 +104,28 @@ h1, h2, h3 {
   align-items: center;
   justify-content: space-between;
   height: 84px;
+}
+
+/* 2026-09-24追加：ヘッダー右側（日英切替・ハンバーガー・ナビ）をまとめる
+   ラッパー。.header-inner の子要素を常に2つ（.brand／.header-actions）に
+   保つことで、モバイルでナビがオーバーレイ化してもレイアウトが崩れない。 */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 日本語／ENGLISH切替（2026-09-24追加）。400years.html・
+   club-charmant/index.html と同じ .y400-lang-toggle / .y400-lang-btn
+   （下記「GINZA 400 YEARS」セクション内で定義）をヘッダー用に再利用し、
+   このモディファイアでヘッダーの高さ（84px）に収まるよう小さくする。 */
+.header-lang-toggle {
+  margin: 0;
+}
+
+.header-lang-toggle .y400-lang-btn {
+  padding: 6px 11px;
+  font-size: 0.68rem;
 }
 
 .brand {
@@ -120,7 +151,7 @@ h1, h2, h3 {
 
 .main-nav ul {
   display: flex;
-  gap: 28px;
+  gap: 20px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -128,7 +159,7 @@ h1, h2, h3 {
 
 .main-nav a {
   font-size: 0.85rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.03em;
   color: var(--color-ink-muted);
   white-space: nowrap;
   transition: color 0.25s ease;
@@ -153,6 +184,89 @@ h1, h2, h3 {
   width: 24px;
   height: 1px;
   background: var(--color-gold);
+}
+
+/* ヘッダー・ナビの折りたたみ（2026-09-27：常時横並び表示を優先し、
+   実測に基づいて1000pxへ再調整）。
+   英語表示ではナビ6項目（Ginza Now／Ginza Through Time／Experience Ginza／
+   Your Ginza／About／Contact）が日本語より大幅に長くなる。ブランド名・
+   言語切替ボタン・ナビ6項目が実際に1行で収まるのに必要な最小幅を
+   （英語表示・デスクトップサイズで）実測したところ約959px
+   （brand 171px + gap16px + 言語切替141px + gap16px + nav 567px +
+   コンテナ左右余白64px）だったため、そこに約40pxの余白を残した1000pxを
+   閾値にした。ナビの項目間隔・字間・言語切替ボタンの余白をやや詰めて
+   （main-nav ul の gap 28→20px、main-nav a の letter-spacing
+   0.08em→0.03em、header-actions の gap 20→16px、言語切替ボタンの
+   padding 6px 14px→6px 11px）実測値そのものも縮めてあるため、通常の
+   Macブラウザ幅では横並び表示のまま収まりやすくなっている。
+   1000px以下では三本線メニューへ折りたたみ、文字の重なり・横スクロールを
+   避ける。ヒーロー画像内の見出し・副題の表示切替（720px、下記
+   「ヒーロー」セクション参照）とは無関係で、そちらの閾値は変更していない。
+   ブランド名（GINZA WHISKERS）・言語切替ボタンは、このブレークポイント内
+   では常に折り返さず横一列で収まる大きさにする。
+   ※このブロックは .header-actions／.header-lang-toggle／.nav-toggle／
+   .main-nav の各基本ルールより後方に置く必要がある（同じ詳細度のプロパティ
+   は記述順で決まるため、基本ルールより前に置くと上書きされない）。 */
+@media (max-width: 1000px) {
+  .header-actions {
+    gap: 10px;
+  }
+
+  .header-lang-toggle .y400-lang-btn {
+    padding: 5px 10px;
+    font-size: 0.62rem;
+  }
+
+  .nav-toggle {
+    display: flex;
+  }
+
+  /* 2026-09-27修正：.site-header に backdrop-filter があるため、CSSの
+     仕様上 .site-header が position:fixed の子要素（.main-nav）の
+     containing block になってしまい、height を「上下からの距離
+     （inset: 84px 0 0 0）」で決めると .site-header 自身の高さ（84px）
+     基準で計算されて高さ0に潰れていた（実測で確認済み：この状態では
+     メニューの不透明な背景が実質的に存在せず、項目の文字だけがヒーロー
+     画像・見出しの上にそのまま重なって表示されていた）。
+     height を viewport 単位（vh）で明示することで、containing block が
+     何であっても常にビューポート基準の正しい高さになるようにした。
+     幅（left/right）は .site-header 自体がビューポート幅と同じため
+     影響がなく、そのままにしている。 */
+  .main-nav {
+    position: fixed;
+    top: 84px;
+    left: 0;
+    right: 0;
+    height: calc(100vh - 84px);
+    z-index: 10;
+    background: var(--color-bg);
+    transform: translateY(-8px);
+    opacity: 0;
+    pointer-events: none;
+    overflow-y: auto;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+
+  .main-nav.is-open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .main-nav ul {
+    flex-direction: column;
+    gap: 0;
+    padding: 24px 32px;
+  }
+
+  .main-nav li {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .main-nav a {
+    display: block;
+    padding: 18px 0;
+  }
 }
 
 /* ---------- Hero ---------- */
@@ -409,42 +523,10 @@ h1, h2, h3 {
   }
 }
 
+/* ナビの折りたたみ本体（display:flex/main-nav overlay等）は上記
+   「ヘッダー・ナビの折りたたみ」ブロック（1000px）へ移設済み。ここには
+   ヘッダー・ナビと無関係なルールのみを残している。 */
 @media (max-width: 720px) {
-  .nav-toggle {
-    display: flex;
-  }
-
-  .main-nav {
-    position: fixed;
-    inset: 84px 0 0 0;
-    background: var(--color-bg);
-    transform: translateY(-8px);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.25s ease, transform 0.25s ease;
-  }
-
-  .main-nav.is-open {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-
-  .main-nav ul {
-    flex-direction: column;
-    gap: 0;
-    padding: 24px 32px;
-  }
-
-  .main-nav li {
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .main-nav a {
-    display: block;
-    padding: 18px 0;
-  }
-
   .pillar-grid {
     grid-template-columns: 1fr;
   }
@@ -1059,171 +1141,152 @@ a.content-card:hover {
 }
 
 /* ==========================================================
-   ヒーローの仮背景画像（2026-09-11 追加）
-   index.html の <section class="hero hero--image"> 専用。画像は
-   <img> としてHTMLに置き、その上に既存の .hero-inner（見出し・説明文・
-   CTA）を重ねる。見出し／説明文／CTAのマークアップと文言は無変更。
-   charmant.html の .hero.cc-hero は .hero--image を持たないため影響しない。
-   高さは 16:9（56.25vw）を基準にしつつ、縦長端末でも文章が収まるよう
-   min-height で下限を設ける（min-height のため文章が長い場合は
-   セクション側が伸び、文字が画像からはみ出して切れることはない）。
+   ヒーロー（2026-09-11: 背景画像として追加 → 2026-09-24: 表示文言簡素化
+   → 2026-09-24: 写真に文字を重ねない構成 → 2026-09-24: 新素材
+   images/hero-ginza-whiskers.png（2048×768、文字なし）に差し替え、
+   見出し・副題を写真左上の暗い空へ重ねる構成へ変更）
+   index.html の <section class="hero hero--framed"> 専用。
+   .hero-frame の中に .hero-text（見出し・副題）・.hero-visual（写真）・
+   .hero-bar（黒帯＋EXPLORE）を縦に並べる。
+   - .hero-visual は画像自体の比率（2048:768）と一致する aspect-ratio を
+     持つため、object-fit:cover でも実質的に切り取りは発生しない
+     （フィルム・時計塔・過去から未来へ続く光の構図をそのまま縮小表示）。
+   - .hero-text はデスクトップ（721px以上）では position:absolute で
+     .hero-frame 基準の左上（写真の暗い空の範囲）に重ね、720px以下では
+     position:static + order:-1 で通常フローに戻し、写真の上（墨色の
+     背景部分）へ移動する。DOM上は1か所のみのため重複表示はない。
+   - .hero-bar は .hero-visual と同じ幅・高さ約50pxの帯で、中央に
+     EXPLOREを置く。押すと次のセクション（#concept）へ移動する
+     （html { scroll-behavior: smooth } を利用、JS不要）。
+   charmant.html の .hero.cc-hero・400years.html の .hero.y400-hero は
+   .hero--framed を持たないため影響しない。
    ========================================================== */
 
-.hero.hero--image {
+.hero.hero--framed {
+  flex-direction: column;
+  min-height: auto;
+}
+
+.hero--framed .hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 1040px;
+  padding-top: clamp(40px, 6vh, 64px);
+  padding-bottom: clamp(24px, 4vh, 40px);
+}
+
+.hero-frame {
   position: relative;
-  overflow: hidden;
-  min-height: max(520px, min(56.25vw, 86vh));
-  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
-.hero--image .hero-media {
+/* 見出し・副題（2026-09-24）：デスクトップでは写真左上の暗い空に重ねる。
+   最も暗く視覚的な主役がない領域のため、max-widthを絞って時計塔・フィルム
+   側へかからないようにしている。 */
+.hero-text {
   position: absolute;
-  inset: 0;
-  z-index: 0;
+  z-index: 1;
+  top: 9%;
+  left: 6%;
+  max-width: 46%;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
 }
 
-.hero--image .hero-media img {
+.hero-title {
+  font-family: "Cormorant Garamond", var(--font-serif), serif;
+  font-weight: 400;
+  font-size: clamp(1.5rem, 3.2vw, 2.4rem);
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  color: var(--color-ink);
+  /* 2026-09-24：副題との行間を少し詰める（0.5em→0.22em）。文字サイズ・
+     左揃えの位置は変更していない。英語副題（Weaving Ginza through time.）
+     はJA副題より長いため、詰めすぎて窮屈にならない幅で調整している。 */
+  margin: 0 0 0.22em;
+}
+
+.hero-tagline {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  /* 2026-09-24：Macで目安24px前後になるよう固定値に変更（元は
+     clamp(0.74rem, 1.3vw, 0.86rem)＝実測約13.76px、約25%増の指示）。
+     位置（左揃え）・太さ（font-weight:400）はここでは変更していない。 */
+  font-size: 1.5rem;
+  letter-spacing: 0.08em;
+  color: var(--color-ink-muted);
+  margin: 0;
+}
+
+.hero-visual {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2048 / 768;
+  overflow: hidden;
+}
+
+.hero-visual img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  /* PC幅ではコンテナ比率が画像の16:9とほぼ一致するため切り取りは生じない
-     （左＝夜空とフィルム、右＝時計塔と未来の光がそのまま出る） */
   object-position: 50% 50%;
 }
 
-/* 文字の背後だけを黒→透明で落とす。2026-09-13：左端〜55%はしっかり
-   濃く保ち（本文が収まる範囲）、55%以降は緩やかに透明へつないで
-   フィルムの光の流れ・時計塔・街の光を暗くしすぎないようにする。
-   縦方向は上下だけを軽く締めて、中央のフィルムと光の流れは覆わない。 */
-.hero--image .hero-media::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg,
-      rgba(11, 11, 12, 0.95) 0%,
-      rgba(11, 11, 12, 0.92) 22%,
-      rgba(11, 11, 12, 0.86) 40%,
-      rgba(11, 11, 12, 0.80) 55%,
-      rgba(11, 11, 12, 0.36) 72%,
-      rgba(11, 11, 12, 0.06) 88%,
-      rgba(11, 11, 12, 0) 100%),
-    linear-gradient(180deg,
-      rgba(11, 11, 12, 0.5) 0%,
-      rgba(11, 11, 12, 0) 26%,
-      rgba(11, 11, 12, 0) 72%,
-      rgba(11, 11, 12, 0.55) 100%);
+/* 画像直下の黒帯（2026-09-24追加）：幅は .hero-visual と同一（同じ
+   .hero-frame 内で width:100%）、高さは約50px固定。中央にEXPLOREを
+   控えめに配置する。 */
+.hero-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 50px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-family: var(--font-serif);
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  color: var(--color-ink-muted);
+  transition: color 0.25s ease;
 }
 
-/* 本文領域（2026-09-13、同日に説明文の折返し調整で幅を再拡張）：
-   デスクトップでは左端の余白を既存 .container の32pxのみとして
-   少し左へ寄せる（.container 側の中央寄せ用 margin:0 auto を打ち消す）。
-   幅は下の .hero-lead 自身の上限（min(47vw, 640px)）＋左右パディング64px
-   ちょうどを確保し、説明文が親要素側で窮屈に折り返されないようにする
-   （見出し・ボタンは元々この幅で収まるため見た目は変わらない）。
-   860px以下では文字量に対して幅が足りなくなり見出しが3行以上へ
-   崩れるため、元の .container と同じ挙動（1120px・中央寄せ）へ戻す。 */
-.hero--image .hero-inner {
-  position: relative;
-  z-index: 1;
-  margin-left: 0;
-  margin-right: auto;
-  max-width: calc(min(47vw, 640px) + 64px);
-  padding-left: 32px;
+.hero-bar:hover {
+  color: var(--color-gold-light);
 }
 
-@media (max-width: 860px) {
-  .hero--image .hero-inner {
-    margin-left: auto;
-    margin-right: auto;
-    max-width: 1120px;
-    padding-left: 32px;
-  }
+.hero-scroll-arrow {
+  font-size: 0.85rem;
 }
 
-/* 説明文（.hero-lead）の折返し調整（2026-09-13）：見出し・ボタン・
-   グラデーション・画像は変更せず、説明文の右端のみ画面幅47%程度まで
-   広げ、不自然な位置での改行を減らす。line-break/word-break/
-   overflow-wrapは既定値を明示し直しただけ（挙動は変えていない）。
-   .nb（white-space:nowrap）は「文化」「メディア」「プラットフォーム」の
-   4箇所（index.html側でspan付与済み）が行末で分断されないようにする
-   ための印で、文言・語順は一切変更していない。charmant.html 側の
-   .hero-lead は .hero--image を持たないため影響しない。 */
-.hero--image .hero-lead {
-  max-width: min(47vw, 640px);
-  font-size: 0.96rem;
-  line-break: strict;
-  word-break: normal;
-  overflow-wrap: normal;
-}
-
-.hero-lead .nb {
-  white-space: nowrap;
-}
-
-@media (max-width: 860px) {
-  .hero--image .hero-lead {
-    /* 860px以下は .hero-inner が通常の .container 幅（実質画面幅いっぱい）に
-       戻るため、47vw上限は不要——他ページの .hero-lead と同じ560pxに戻す。 */
-    max-width: 560px;
-  }
-}
-
-/* タブレット（860px以下）：コンテナが画像より縦長になり左右が切れ始めるため、
-   基準を右寄りへ移して時計塔を残す。本文は .container の通常幅（実質
-   画面幅いっぱい・最大560pxで折り返し）に戻るため、2026-09-13に
-   濃い区間を74%付近（本文が実際に届きうる右端）まで伸ばし、そこから
-   時計塔側へ滑らかにフェードさせて文字と光の重なりを避ける。 */
-@media (max-width: 860px) {
-  .hero--image .hero-media img {
-    object-position: 74% 50%;
-  }
-
-  .hero--image .hero-media::after {
-    background:
-      linear-gradient(90deg,
-        rgba(11, 11, 12, 0.95) 0%,
-        rgba(11, 11, 12, 0.90) 30%,
-        rgba(11, 11, 12, 0.84) 50%,
-        rgba(11, 11, 12, 0.78) 74%,
-        rgba(11, 11, 12, 0.30) 88%,
-        rgba(11, 11, 12, 0) 100%),
-      linear-gradient(180deg,
-        rgba(11, 11, 12, 0.55) 0%,
-        rgba(11, 11, 12, 0) 30%,
-        rgba(11, 11, 12, 0) 64%,
-        rgba(11, 11, 12, 0.6) 100%);
-  }
-}
-
-/* スマートフォン（720px以下）：画面が縦長で表示は画像の縦スライスになる。
-   中央〜右側を基準にしてフィルムの流れと時計塔を残す。横方向グラデーション
-   では右端の文字が読めなくなるため、縦方向のスクリムへ切り替える。
-   2026-09-13：この幅では本文が画面のほぼ全幅を占め、時計塔の建物や
-   窓明かりと同じ帯に文字が乗るため、縦方向スクリムの中央帯（本文が
-   実際に載る範囲）の不透明度を底上げし、明るい窓と重なっても文字が
-   読める濃さを確保した（上下の締めは維持、フィルム・光は完全には
-   潰さない）。 */
+/* スマートフォン（720px以下）：見出し・副題が写真の暗い空の中では
+   小さくなりすぎるため、.hero-frame の通常フローに戻し（position:static）、
+   order:-1 で写真より上（墨色の背景部分）へ移動する。写真自体は
+   aspect-ratio により常に無切り取りのため、このブレークポイントでも
+   追加の調整は不要。 */
 @media (max-width: 720px) {
-  .hero.hero--image {
-    min-height: max(500px, min(56.25vw, 78vh));
+  .hero-text {
+    position: static;
+    order: -1;
+    max-width: 100%;
+    text-align: center;
+    text-shadow: none;
+    margin: 0 0 20px;
   }
 
-  .hero--image .hero-media img {
-    /* 95%まで右へ寄せると、縦スライスの中でも右端の時計塔が欠けず、
-       左側にフィルムの流れも残る（390px幅で原寸 x=890〜1624 が可視） */
-    object-position: 95% 50%;
+  .hero-title {
+    white-space: normal;
+    font-size: clamp(1.7rem, 7vw, 2.2rem);
   }
 
-  .hero--image .hero-media::after {
-    background:
-      linear-gradient(180deg,
-        rgba(11, 11, 12, 0.76) 0%,
-        rgba(11, 11, 12, 0.66) 30%,
-        rgba(11, 11, 12, 0.64) 50%,
-        rgba(11, 11, 12, 0.66) 70%,
-        rgba(11, 11, 12, 0.82) 100%);
+  .hero-tagline {
+    /* 2026-09-24：スマートフォンで目安18〜20pxになるよう固定値に変更
+       （元は clamp(0.8rem, 3vw, 0.9rem)＝実測約12.8〜14.4px）。 */
+    font-size: 1.2rem;
   }
 }
 
@@ -1486,12 +1549,15 @@ a.content-card:hover {
   object-fit: cover;
 }
 
-/* 2026-09-24 追加：顔1（入口）の実写真は縦長（476×1165）のため、既定の
-   4:3枠のままだと看板・階段が大きく削れてしまう。この顔専用に、元画像の
-   比率へ近づけた縦長枠を用意し、看板・階段・煉瓦がひと目で分かる構図を
-   保つ。 */
+/* 2026-09-27更新：顔1（入口）の写真を charmant-entrance-brick-stairs
+   （1041×1573、IMG_2934）へ差し替えたのに合わせ、枠の比率も元画像の
+   実比率に一致させた（旧 charmant-entrance-front は476×1165のため
+   3:7で近似していたが、新しい写真の比率とは異なるため値を更新）。
+   枠と画像の比率が一致するため object-fit:cover でも実質的に切り取りは
+   発生せず、「Charmant」の文字（awning上部）・赤い階段・レンガ壁を
+   含む構図全体がスマホ・Mac幅を問わず常にそのまま表示される。 */
 .cc-face-media--portrait {
-  aspect-ratio: 3 / 7;
+  aspect-ratio: 1041 / 1573;
 }
 
 /* 実写真が未提供の顔（建物・文化サロン）向けの中立なプレースホルダー。
@@ -1552,8 +1618,24 @@ a.content-card:hover {
   margin: 0;
 }
 
+/* 2026-09-29追加：02（音楽・LIVE）用。1つのCTAに2つの独立したnoteリンクを
+   並べる場合の縦積みレイアウト。align-items:flex-start で各リンクの幅を
+   文字幅のまま保ち（.cc-note-linkの下線がリンクごとの文字幅に収まる）、
+   意図せず全幅ボタン化しないようにしている。01・03（1リンクのみ）の
+   .cc-face-cta には影響しない。 */
+.cc-face-cta--multi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 /* 準備中の note リンク（架空URLを作らないための非活性表示）。
-   index.html の is-pending カードや y400-cta-pending と同系の扱い。 */
+   index.html の is-pending カードや y400-cta-pending と同系の扱い。
+   2026-09-27：01（建物）のリンクが公開済みnote記事に設定され<a>化された
+   ため、is-pending が無い（＝実際にリンクとして機能する）場合のみ
+   cursor:pointer とホバー色を付ける追加ルールを下に用意した。02・03は
+   引き続き is-pending のため cursor:default のまま変わらない。 */
 .cc-note-link {
   display: inline-block;
   font-family: var(--font-serif);
@@ -1564,6 +1646,16 @@ a.content-card:hover {
   border-bottom: 1px solid var(--color-border);
   padding-bottom: 2px;
   cursor: default;
+}
+
+.cc-note-link:not(.is-pending) {
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.cc-note-link:not(.is-pending):hover {
+  color: var(--color-gold-light);
+  border-color: var(--color-gold);
 }
 
 .cc-pending-note {

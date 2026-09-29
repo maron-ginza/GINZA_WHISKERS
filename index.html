@@ -36,54 +36,87 @@
     <a href="index.html" class="brand">
       <span class="brand-jp">GINZA WHISKERS</span>
     </a>
-    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
-      <span></span><span></span><span></span>
-    </button>
-    <nav class="main-nav">
-      <ul>
-        <li><a href="index.html#know">今の銀座</a></li>
-        <li><a href="index.html#feel">銀座の時間</a></li>
-        <li><a href="index.html#experience">銀座を体験</a></li>
-        <li><a href="index.html#your-ginza">自分の銀座</a></li>
-        <li><a href="about.html">About</a></li>
-        <li><a href="index.html#contact">Contact</a></li>
-      </ul>
-    </nav>
+    <!-- 2026-09-24追加：母艦トップページ専用の日本語／ENGLISH切替。
+         id="home-lang-toggle" が無い他ページでは js/main.js 側の
+         initHomeLangToggle() が即 return するため、他ページ・既存機能への
+         影響はない。400years.html・club-charmant/index.html と同じ
+         .y400-lang-toggle / .y400-lang-btn を再利用し、ヘッダー用に
+         .header-lang-toggle でサイズのみ調整している。 -->
+    <div class="header-actions">
+      <div id="home-lang-toggle" class="y400-lang-toggle header-lang-toggle" role="group" aria-label="言語切替 / Language">
+        <button type="button" class="y400-lang-btn is-active" data-lang="ja" aria-pressed="true">日本語</button>
+        <button type="button" class="y400-lang-btn" data-lang="en" aria-pressed="false">ENGLISH</button>
+      </div>
+      <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="main-nav">
+        <ul>
+          <li><a href="index.html#know" data-text-ja="今の銀座" data-text-en="Ginza Now">今の銀座</a></li>
+          <li><a href="index.html#feel" data-text-ja="銀座の時間" data-text-en="Ginza Through Time">銀座の時間</a></li>
+          <li><a href="index.html#experience" data-text-ja="銀座を体験" data-text-en="Experience Ginza">銀座を体験</a></li>
+          <li><a href="index.html#your-ginza" data-text-ja="自分の銀座" data-text-en="Your Ginza">自分の銀座</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="index.html#contact">Contact</a></li>
+        </ul>
+      </nav>
+    </div>
   </div>
 </header>
 
 <main>
 
-  <!-- ヒーロー：仮背景画像（images/hero-time-weaving.jpg、16:9）を2026-09-11に配置。
-       画像は装飾のため alt="" ／ aria-hidden とし、見出し・説明文・CTAは変更していない。
-       デスクトップは左に文章・右に時計塔／未来の光、スマホは中央〜右寄りに
-       object-position を寄せてフィルムと時計塔を残す（css/style.css の
-       「ヒーローの仮背景画像」ブロック参照）。最終素材が決まり次第この1枚を差し替える。 -->
-  <section class="hero hero--image">
-    <div class="hero-media" aria-hidden="true">
-      <img src="images/hero-time-weaving.jpg" width="1672" height="941" alt="" fetchpriority="high">
-    </div>
+  <!-- ヒーロー（images/hero-ginza-whiskers.png、2048×768、文字なし素材、
+       2026-09-24差し替え）。
+       濃い墨色の背景の中央に、比率を保ったまま横長の写真枠（.hero-visual）
+       を余白付きで配置。枠の比率は画像自体の比率（2048:768）と一致させて
+       いるため object-fit:cover でも実質的に切り取りは発生せず、フィルム・
+       時計塔・過去から未来へ続く光の構図をそのまま縮小表示する。
+       見出し（GINZA WHISKERS）・副題（銀座の時を、つむぐ。）は .hero-text
+       として1か所のみDOMに存在し、デスクトップでは画像左上の暗い空へ
+       absolute配置で重ね、720px以下では position:static + order:-1 で
+       画像の上（墨色の背景部分）へ通常フローとして移動する（テキストの
+       重複表示はない）。画像直下には画像と同じ幅の黒帯（.hero-bar、
+       高さ約50px）を敷き、その中央にEXPLOREを配置。押すと次のセクション
+       （#concept）へ移動する。html { scroll-behavior: smooth } が既に
+       有効なため、JSは不要。装飾的な写真のため img は alt=""。
+       副題の英語切替は data-text-ja/en をヘッダーの日本語／ENGLISH
+       トグル（js/main.js の initHomeLangToggle）で切り替える。 -->
+  <section class="hero hero--framed">
     <div class="hero-inner container">
-      <p class="eyebrow">GINZA WHISKERS</p>
-      <h1>銀座の記憶を、<br>未来へ手渡す。</h1>
-      <!-- .nb（white-space:nowrap）は表示文言・語順を変えず、指定の語（歴史／文化／
-           音楽／アート／体験／文化メディア／体験プラットフォーム）が行末で分断
-           されないようにするための行送り制御のみの印。文章そのものは無変更。
-           2026-09-13：「アート」が「アー／ト」に分断される実機確認を受け、
-           7語すべてを網羅する形に修正（文全体は通常どおり折り返し可能）。 -->
-      <p class="hero-lead">
-        GINZA WHISKERS は、銀座の昔・今・未来を、<span class="nb">歴史</span>・<span class="nb">文化</span>・<span class="nb">音楽</span>・<span class="nb">アート</span>・街・<span class="nb">体験</span>を通じて編集する<span class="nb">文化メディア</span>／<span class="nb">体験プラットフォーム</span>です。
-      </p>
-      <a href="#concept" class="btn">コンセプトを読む</a>
+      <div class="hero-frame">
+        <div class="hero-text">
+          <h1 class="hero-title">GINZA WHISKERS</h1>
+          <p class="hero-tagline" data-text-ja="銀座の時を、つむぐ。" data-text-en="Weaving Ginza through time.">銀座の時を、つむぐ。</p>
+        </div>
+        <div class="hero-visual">
+          <img src="images/hero-ginza-whiskers.png" width="2048" height="768" alt="" fetchpriority="high">
+        </div>
+        <a href="#concept" class="hero-bar" aria-label="次のセクション「今日は、どの銀座へ？」へスクロール">
+          <span class="hero-scroll-label">EXPLORE</span>
+          <span class="hero-scroll-arrow" aria-hidden="true">↓</span>
+        </a>
+      </div>
     </div>
   </section>
 
+  <!-- 2026-09-24：見出しを「過去・現在・未来の銀座へ」から「今日は、どの銀座へ？」へ変更
+       （ヒーロー簡素化に伴う指示）。本文は削除せず、旧ヒーローの説明文（.nbによる
+       行送り制御込み、文言・語順は無変更）を1段目として残したうえで、元からの
+       CONCEPT本文を2段目としてそのまま維持している。 -->
   <section id="concept" class="section concept">
     <div class="container">
       <p class="eyebrow">CONCEPT</p>
-      <h2>過去・現在・未来の銀座へ</h2>
-      <p class="lead">
-        GINZA WHISKERS は、昭和という時代が銀座に刻んだ浪漫の記憶を掘り起こし、
+      <h2 data-text-ja="今日は、どの銀座へ？" data-text-en="Which Ginza, Today?">今日は、どの銀座へ？</h2>
+      <p class="lead"
+         data-html-ja="GINZA WHISKERS は、銀座の昔・今・未来を、&lt;span class=&quot;nb&quot;&gt;歴史&lt;/span&gt;・&lt;span class=&quot;nb&quot;&gt;文化&lt;/span&gt;・&lt;span class=&quot;nb&quot;&gt;音楽&lt;/span&gt;・&lt;span class=&quot;nb&quot;&gt;アート&lt;/span&gt;・街・&lt;span class=&quot;nb&quot;&gt;体験&lt;/span&gt;を通じて編集する&lt;span class=&quot;nb&quot;&gt;文化メディア&lt;/span&gt;／&lt;span class=&quot;nb&quot;&gt;体験プラットフォーム&lt;/span&gt;です。"
+         data-html-en="GINZA WHISKERS is a cultural media and experience platform that weaves together Ginza&rsquo;s past, present, and future through history, culture, music, art, the streets, and experience itself.">
+        GINZA WHISKERS は、銀座の昔・今・未来を、<span class="nb">歴史</span>・<span class="nb">文化</span>・<span class="nb">音楽</span>・<span class="nb">アート</span>・街・<span class="nb">体験</span>を通じて編集する<span class="nb">文化メディア</span>／<span class="nb">体験プラットフォーム</span>です。
+      </p>
+      <p class="lead"
+         data-text-ja="昭和という時代が銀座に刻んだ浪漫の記憶を掘り起こし、現在の銀座を見つめ、そしてこれからの銀座のあり方を提言するプロジェクトです。街に息づく歴史・文化・アート・建築・人物・イベントを取材し、一つの物語として編み直すことで、銀座の価値を国内外へ届けます。"
+         data-text-en="This project unearths the romance the Showa era etched into Ginza, looks closely at Ginza today, and proposes what Ginza can become. By reporting on the history, culture, art, architecture, people, and events that live within the city and weaving them into a single story, we carry Ginza's value to audiences at home and abroad.">
+        昭和という時代が銀座に刻んだ浪漫の記憶を掘り起こし、
         現在の銀座を見つめ、そしてこれからの銀座のあり方を提言するプロジェクトです。
         街に息づく歴史・文化・アート・建築・人物・イベントを取材し、
         一つの物語として編み直すことで、銀座の価値を国内外へ届けます。
@@ -94,7 +127,7 @@
   <section id="latest" class="section latest">
     <div class="container">
       <p class="eyebrow">LATEST FROM GINZA</p>
-      <h2>最新のジャーナル</h2>
+      <h2 data-text-ja="最新のジャーナル" data-text-en="Latest Journal">最新のジャーナル</h2>
       <!-- Project 02（Discover GINZA）が公開する疎結合フィード /ja/latest.json を
            js/main.js が読み、published 最新3件を描画する。母艦は Payload API / DB を
            直接参照しない。取得成功かつ1件以上のときだけ hidden を外し .latest-fallback を隠す。
@@ -104,7 +137,9 @@
            https://discover.ginzawhiskers.com/ja/latest.json を設定して公開する
            （本番URL・DNSは別途。CLAUDE.md 第10章 2026-08-28 参照）。 -->
       <div id="latest-list" class="latest-list" data-endpoint="" hidden></div>
-      <p class="latest-fallback">
+      <p class="latest-fallback"
+         data-html-ja="最新の記事は note にて連載しています。 &lt;a href=&quot;https://note.com/ginza_whiskers&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;noteで読む&lt;/a&gt;"
+         data-html-en="The latest articles are serialized on note. &lt;a href=&quot;https://note.com/ginza_whiskers&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot;&gt;Read on note&lt;/a&gt;">
         最新の記事は note にて連載しています。
         <a href="https://note.com/ginza_whiskers" target="_blank" rel="noopener">noteで読む</a>
       </p>
@@ -113,8 +148,8 @@
 
   <section id="know" class="section hub-section">
     <div class="container">
-      <p class="eyebrow">A ／ 今の銀座を知る</p>
-      <h2>今の銀座を知る</h2>
+      <p class="eyebrow" data-text-ja="A ／ 今の銀座を知る" data-text-en="A / Know Ginza Now">A ／ 今の銀座を知る</p>
+      <h2 data-text-ja="今の銀座を知る" data-text-en="Know Ginza Now">今の銀座を知る</h2>
       <div class="content-grid">
         <!-- GINZA TIME EDIT（Project 02 の公開入口）：母艦における主要入口。既存6本柱はこのコンテンツ配下のテーマとして扱う。
              暫定の公開リンク先は note マガジン「旬の銀座」。Project 02 の独自サイト
@@ -129,19 +164,20 @@
           </div>
           <div class="content-card-body">
             <h3>GINZA TIME EDIT</h3>
-            <p>
+            <p data-text-ja="AI編集部が銀座の「旬」を集めて編集し、日々発信する情報メディア。旬の銀座、興味関心テーマ、そして6つの視点から銀座を読み解きます。"
+               data-text-en="An AI editorial desk that gathers and curates what's freshest in Ginza, publishing daily. It reads Ginza through what's in season, themes of interest, and six defining perspectives.">
               AI編集部が銀座の「旬」を集めて編集し、日々発信する情報メディア。
               旬の銀座、興味関心テーマ、そして6つの視点から銀座を読み解きます。
             </p>
             <ul class="pillar-themes">
-              <li>歴史</li>
-              <li>文化</li>
-              <li>アート</li>
-              <li>建築</li>
-              <li>人物</li>
-              <li>イベント</li>
+              <li data-text-ja="歴史" data-text-en="History">歴史</li>
+              <li data-text-ja="文化" data-text-en="Culture">文化</li>
+              <li data-text-ja="アート" data-text-en="Art">アート</li>
+              <li data-text-ja="建築" data-text-en="Architecture">建築</li>
+              <li data-text-ja="人物" data-text-en="People">人物</li>
+              <li data-text-ja="イベント" data-text-en="Events">イベント</li>
             </ul>
-            <span class="card-cta">旬の銀座を読む</span>
+            <span class="card-cta" data-text-ja="旬の銀座を読む" data-text-en="Read what's in season">旬の銀座を読む</span>
           </div>
         </a>
       </div>
@@ -150,8 +186,8 @@
 
   <section id="feel" class="section hub-section">
     <div class="container">
-      <p class="eyebrow">B ／ 銀座の時間を感じる</p>
-      <h2>銀座の時間を感じる</h2>
+      <p class="eyebrow" data-text-ja="B ／ 銀座の時間を感じる" data-text-en="B / Feel Ginza Through Time">B ／ 銀座の時間を感じる</p>
+      <h2 data-text-ja="銀座の時間を感じる" data-text-en="Feel Ginza Through Time">銀座の時間を感じる</h2>
       <div class="content-grid content-grid--feel">
         <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--soundtrack" aria-hidden="true">
@@ -159,8 +195,9 @@
           </div>
           <div class="content-card-body">
             <h3>🌈 Tokyo Nostalgic Soundtrack</h3>
-            <p>天気と気分から、その週の銀座に重ねる一曲を選ぶ週次シリーズ。</p>
-            <span class="card-cta">noteで読む</span>
+            <p data-text-ja="天気と気分から、その週の銀座に重ねる一曲を選ぶ週次シリーズ。"
+               data-text-en="A weekly series that pairs a single song with that week's Ginza, chosen by the weather and the mood.">天気と気分から、その週の銀座に重ねる一曲を選ぶ週次シリーズ。</p>
+            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
         <!-- 銀座昭和浪漫日記：2026-09-13、noteマガジン「猫も歩けば銀座にあたる」を
@@ -171,9 +208,9 @@
             <img src="images/cards/diary.jpg" width="1448" height="1086" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
-            <h3>📔 銀座昭和浪漫日記</h3>
-            <p>銀座に流れる日々の記憶を書き留める日記。</p>
-            <span class="card-cta">noteで読む</span>
+            <h3 data-text-ja="📔 銀座昭和浪漫日記" data-text-en="📔 Ginza Showa Romance Diary">📔 銀座昭和浪漫日記</h3>
+            <p data-text-ja="銀座に流れる日々の記憶を書き留める日記。" data-text-en="A diary recording the everyday memories that flow through Ginza.">銀座に流れる日々の記憶を書き留める日記。</p>
+            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
         <!-- entry-visual--single：cc-span-full（1枚表示）専用の表示規則を2026-09-14に適用。
@@ -185,8 +222,9 @@
           </div>
           <div class="content-card-body">
             <h3>🌏 GINZA CROSS CULTURE MAP</h3>
-            <p>世界から見た銀座の魅力を、各国の視点で読み解くシリーズ。</p>
-            <span class="card-cta">noteで読む</span>
+            <p data-text-ja="世界から見た銀座の魅力を、各国の視点で読み解くシリーズ。"
+               data-text-en="A series exploring Ginza's appeal through perspectives from around the world.">世界から見た銀座の魅力を、各国の視点で読み解くシリーズ。</p>
+            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
         <!-- GINZA 400 YEARS：entry-visual--single は cc-span-full（1枚表示）専用の
@@ -204,8 +242,9 @@
           <div class="content-card-body">
             <h3>GINZA 400 YEARS</h3>
             <p class="content-card-credit">Created by GINZA DIGITAL ART LAB</p>
-            <p>銀座の400年を、歴史・復元・デジタルアートでたどる構想。</p>
-            <span class="card-cta">GINZA 400 YEARSを読む</span>
+            <p data-text-ja="銀座の400年を、歴史・復元・デジタルアートでたどる構想。"
+               data-text-en="A concept tracing 400 years of Ginza through history, restoration, and digital art.">銀座の400年を、歴史・復元・デジタルアートでたどる構想。</p>
+            <span class="card-cta" data-text-ja="GINZA 400 YEARSを読む" data-text-en="Read GINZA 400 YEARS">GINZA 400 YEARSを読む</span>
           </div>
         </a>
       </div>
@@ -214,29 +253,36 @@
 
   <section id="experience" class="section hub-section">
     <div class="container">
-      <p class="eyebrow">C ／ 銀座を体験する</p>
-      <h2>銀座を体験する</h2>
+      <p class="eyebrow" data-text-ja="C ／ 銀座を体験する" data-text-en="C / Experience Ginza">C ／ 銀座を体験する</p>
+      <h2 data-text-ja="銀座を体験する" data-text-en="Experience Ginza">銀座を体験する</h2>
       <div class="content-grid content-grid--experience">
         <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m0f03ad5fe973" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--live" aria-hidden="true">
             <img src="images/cards/live.jpg" width="768" height="512" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
-            <h3>🎤 銀座昭和浪漫倶楽部LIVE</h3>
-            <p>月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。</p>
-            <span class="card-cta">noteで読む</span>
+            <h3 data-text-ja="🎤 銀座昭和浪漫倶楽部LIVE" data-text-en="🎤 Ginza Showa Romance Club LIVE">🎤 銀座昭和浪漫倶楽部LIVE</h3>
+            <p data-text-ja="月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。"
+               data-text-en="A record of our activities, built around a monthly LIVE, bringing Ginza's culture to the stage.">月次LIVEを軸に、銀座の文化を舞台で伝える活動の記録。</p>
+            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
         <!-- Club Charmant：銀座一丁目のプライベートサロン。母艦内 charmant.html へ内部遷移（Phase 1, 2026-08-28）。
-             ビジュアルは仮カード画像（images/cards/charmant.jpg、2026-09-11差し替え。差し替え前は抽象SVG）。 -->
-        <a class="content-card content-card--visual cc-span-1" href="charmant.html">
+             ビジュアルは仮カード画像（images/cards/charmant.jpg、2026-09-11差し替え。差し替え前は抽象SVG）。
+             2026-09-24：専用下層ページを club-charmant/ へ新設・移行し、旧 charmant.html は廃止。
+             2026-09-24追記：href を「club-charmant/」（ディレクトリ）から
+             「club-charmant/index.html」（実ファイル）へ修正。file://（サーバーを
+             介さないローカル閲覧）ではディレクトリ表記だとブラウザがFinderに
+             委ねてしまい、Webページとして開けない不具合があったため。 -->
+        <a class="content-card content-card--visual cc-span-1" href="club-charmant/index.html">
           <div class="entry-visual entry-visual--charmant" aria-hidden="true">
             <img src="images/cards/charmant.jpg" width="512" height="384" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
             <h3>Club Charmant</h3>
-            <p>銀座昭和浪漫を体現する、大人の社交とサロンの場。</p>
-            <span class="card-cta">詳しく見る</span>
+            <p data-text-ja="銀座昭和浪漫を体現する、大人の社交とサロンの場。"
+               data-text-en="A salon for adult sociability that embodies Ginza's Showa-era romance.">銀座昭和浪漫を体現する、大人の社交とサロンの場。</p>
+            <span class="card-cta" data-text-ja="詳しく見る" data-text-en="Learn more">詳しく見る</span>
           </div>
         </a>
       </div>
@@ -245,17 +291,18 @@
 
   <section id="your-ginza" class="section hub-section">
     <div class="container">
-      <p class="eyebrow">D ／ 自分の銀座へ</p>
-      <h2>自分の銀座へ</h2>
+      <p class="eyebrow" data-text-ja="D ／ 自分の銀座へ" data-text-en="D / Your Ginza">D ／ 自分の銀座へ</p>
+      <h2 data-text-ja="自分の銀座へ" data-text-en="Your Ginza">自分の銀座へ</h2>
       <div class="content-grid content-grid--your-ginza">
         <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m89442b4f8ae2" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--hitosaji" aria-hidden="true">
             <img src="images/cards/hitosaji.jpg" width="768" height="384" alt="" loading="lazy">
           </div>
           <div class="content-card-body">
-            <h3>🌸 銀座、ひと匙の贅沢</h3>
-            <p>五感を澄ませて歩く、私だけの銀座時間を綴るエッセイ。</p>
-            <span class="card-cta">noteで読む</span>
+            <h3 data-text-ja="🌸 銀座、ひと匙の贅沢" data-text-en="🌸 Ginza, a Spoonful of Luxury">🌸 銀座、ひと匙の贅沢</h3>
+            <p data-text-ja="五感を澄ませて歩く、私だけの銀座時間を綴るエッセイ。"
+               data-text-en="An essay of Ginza time walked with senses sharpened, written for no one but myself.">五感を澄ませて歩く、私だけの銀座時間を綴るエッセイ。</p>
+            <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
         <!-- GINZA WHISKERS Concierge：各サービス公開時に個別リンクへ差し替え、
@@ -272,8 +319,9 @@
           </div>
           <div class="content-card-body">
             <h3>GINZA WHISKERS Concierge</h3>
-            <p>言葉を知り、文化に触れ、自分だけの銀座を体験する。</p>
-            <span class="card-cta">準備中</span>
+            <p data-text-ja="言葉を知り、文化に触れ、自分だけの銀座を体験する。"
+               data-text-en="Learn the words, touch the culture, and experience a Ginza that's entirely your own.">言葉を知り、文化に触れ、自分だけの銀座を体験する。</p>
+            <span class="card-cta" data-text-ja="準備中" data-text-en="Coming soon">準備中</span>
           </div>
         </a>
       </div>
@@ -283,7 +331,7 @@
   <section id="channels" class="section channels">
     <div class="container">
       <p class="eyebrow">CHANNELS</p>
-      <h2>外部チャンネル</h2>
+      <h2 data-text-ja="外部チャンネル" data-text-en="Channels">外部チャンネル</h2>
       <ul class="channel-list">
         <li><a href="https://note.com/ginza_whiskers" target="_blank" rel="noopener">note</a></li>
         <!-- SNS（X / Instagram / TikTok / YouTube / LINE）：確定URLが未確認のため非表示。
@@ -295,8 +343,9 @@
   <section id="contact" class="section contact">
     <div class="container">
       <p class="eyebrow">CONTACT</p>
-      <h2>お問い合わせ</h2>
-      <p class="lead">取材・掲載・お仕事のご相談は、以下よりお気軽にご連絡ください。</p>
+      <h2 data-text-ja="お問い合わせ" data-text-en="Contact">お問い合わせ</h2>
+      <p class="lead" data-text-ja="取材・掲載・お仕事のご相談は、以下よりお気軽にご連絡ください。"
+         data-text-en="For press, features, or business inquiries, please feel free to reach out below.">取材・掲載・お仕事のご相談は、以下よりお気軽にご連絡ください。</p>
       <a id="contact-email" class="btn"></a>
       <noscript><a href="mailto:ginzashowaromanticclub@gmail.com" class="btn">ginzashowaromanticclub@gmail.com</a></noscript>
     </div>
@@ -307,7 +356,7 @@
 <footer class="site-footer">
   <div class="container footer-inner">
     <p class="footer-brand">GINZA WHISKERS</p>
-    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-links"><a href="privacy.html" data-text-ja="プライバシーポリシー" data-text-en="Privacy Policy">プライバシーポリシー</a></p>
     <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
   </div>
 </footer>
