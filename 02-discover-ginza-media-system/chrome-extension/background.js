@@ -115,7 +115,7 @@ function logToServer(event, detail) {
 // コードが実際に読み込まれたか」を確認できる。chrome.runtime.id（拡張の
 // インストールID。別フォルダから読み込むと変わる）・manifest.version・
 // 拡張がインストールされたモード（unpacked等）も併記する。
-const BUILD_REVISION = 'br23-2026-09-18-no-cross-article-tab-reuse'
+const BUILD_REVISION = 'br24-2026-09-30-keep-tab-active-during-transfer'
 logToServer('service_worker_evaluated', {
   ts: Date.now(),
   buildRevision: BUILD_REVISION,
@@ -391,6 +391,75 @@ async function fetchAndVerifyCategoryIconInBackground(categoryIcon) {
 }
 
 /**
+ * 2026-09-30（マロン指示：「同じ処理の再試行ではなく、ログと実装から原因を
+ * 確認し、修正してください」）：#87/#88/#89のカテゴリー画像設定（completion
+ * モード）が繰り返し失敗した根本原因の調査。
+ *
+ * 【診断】診断ログ（.devlogs/night/note-transfer-diagnostic.jsonl）を実測した
+ * ところ、completionモードの実行は`item_received`（実行開始直後の最初の
+ * ログ）以降、90〜140秒間ログが一切届かないまま`injected_run_heartbeat_stall`
+ * または`injected_run_already_in_progress`に到達するパターンが繰り返し
+ * 発生していた（#87・#88は約140秒間ログ0件のままinFlightタイムアウト、
+ * #89は約92秒間ログ0件のまま画像処理区間の内部90秒タイムアウトで停止）。
+ * `injected-transfer.js`のimage_section関連コードは、コメント上は3秒
+ * 間隔でheartbeatログを送る設計になっており、この現象はコードの論理的な
+ * ハングではなく「タイマー（setTimeout/setInterval）が予定どおり発火して
+ * いない」ことを示している。
+ *
+ * これは対象タブ（editor.note.com）が非アクティブ（バックグラウンド）タブの
+ * ままである限りChromeが行う既知の仕様——「Intensive Wake Up Throttling」
+ * 等により、ページが可視状態でないタブのsetTimeout/setInterval発火は大幅に
+ * 間引かれる（Chrome公式ドキュメントでも明記されている既知動作）。加えて、
+ * バックグラウンドタブが静かなままだとcontent script側のheartbeatメッセージ
+ * （chrome.runtime.sendMessage）自体が届かなくなり、拡張のService Worker
+ * （MV3）もイベントを受け取れないままアイドル判定されて一時停止しうる——
+ * この二重の抑制が、`lastHeartbeatByTab`ベースのstall検知用setInterval
+ * （下記）自体の発火も遅延させ、実測で見られた「長い沈黙の後、ずれた
+ * タイミングで2件の結果が届く」という現象（前回試行の遅延した結果と、
+ * 新規試行のisRunningガード衝突が重なって見える）を説明する。
+ *
+ * これまでは`findOrOpenNoteEditorTab`が`active:false`でタブを開いており
+ * （マロンの作業を妨げないための意図的な設計）、転記完了時にのみ
+ * `chrome.tabs.update(tabId,{active:true})`していた（前面表示は「完了した
+ * 瞬間」に限定）——このため転記処理そのものは常にバックグラウンドタブの
+ * まま実行されていたことになる。
+ *
+ * 【対応】転記処理の実行中だけ対象タブをアクティブ化し（同一ウィンドウ内の
+ * 他タブを閉じたり移動したりはしない）、実行前にそのウィンドウで直前まで
+ * アクティブだったタブを記録しておき、今回の実行が完全成功
+ * （hashtagsDone && iconDone、既存の前面表示条件と同一）で終わらなかった
+ * 場合は元のタブへアクティブ状態を戻す（マロンが他の作業をしていた場合の
+ * 妨げを最小化する）。「投稿する」等の最終公開ボタン操作は一切行わない
+ * という既存の安全境界はこの変更で一切変えていない——タブをアクティブ化
+ * するだけで、公開に関わるクリック等は追加していない。
+ */
+async function activateTabForThrottlingSafety(tab) {
+  let previousActiveTabId = null
+  try {
+    const existing = await chrome.tabs.query({ windowId: tab.windowId, active: true })
+    const prevActive = existing && existing[0]
+    previousActiveTabId = prevActive && prevActive.id !== tab.id ? prevActive.id : null
+    await chrome.tabs.update(tab.id, { active: true })
+    logToServer('tab_activated_for_transfer', { tabId: tab.id, windowId: tab.windowId, previousActiveTabId })
+  } catch (e) {
+    // タブのアクティブ化に失敗しても転記処理自体は続行する（保険的な
+    // タイマー抑制対策であり、必須の前提条件ではない）。
+    logToServer('tab_activate_for_transfer_failed', { tabId: tab.id, error: String(e?.message ?? e) })
+  }
+  return previousActiveTabId
+}
+
+async function restorePreviousActiveTab(previousActiveTabId, keepCurrentActive) {
+  if (keepCurrentActive || previousActiveTabId == null) return
+  try {
+    await chrome.tabs.update(previousActiveTabId, { active: true })
+    logToServer('previous_active_tab_restored', { tabId: previousActiveTabId })
+  } catch (e) {
+    // 元タブが既に閉じられている等は致命的ではないため無視する。
+  }
+}
+
+/**
  * 固定content scriptファイル（injected-transfer.js）をchrome.scripting.
  * executeScript({files:[...]})で注入し、データはchrome.tabs.sendMessageで
  * 渡す（2026-09-14続き27、マロン指示）。
@@ -404,8 +473,15 @@ async function fetchAndVerifyCategoryIconInBackground(categoryIcon) {
  *
  * 成功・失敗いずれもここでサーバーへ報告し、inFlightもここでクリアする。
  */
-async function runTransferViaExecuteScript(tabId, item) {
+async function runTransferViaExecuteScript(tab, item) {
+  const tabId = tab.id
   logToServer('execute_script_attempt', { tabId, articleId: item.articleId })
+  // 2026-09-30（根本原因対応・上記コメント参照）：対象タブが非アクティブ
+  // （バックグラウンド）のままだとChromeのタイマー抑制でcontent script側の
+  // heartbeatが途絶え、SW側のstall検知と噛み合わなくなる。転記処理の実行中
+  // だけタブをアクティブ化し、完全成功でなければ元のタブへ戻す。
+  const previousActiveTabId = await activateTabForThrottlingSafety(tab)
+  let keepCurrentActive = false
   try {
     // 2026-09-14続き31（マロン指示）：画像はページコンテキストでfetchせず、
     // SW側（この関数、拡張の特権コンテキスト）で事前に取得・検証し、
@@ -505,6 +581,11 @@ async function runTransferViaExecuteScript(tabId, item) {
       // 見に来る必要がある「本当に完了した」瞬間だけに限定し、まだ途中の
       // 自動再試行のたびに画面を奪わない）。
       if (result.hashtagsDone === true && result.iconDone === true) {
+        // 2026-09-30：転記処理の開始時点で既にactivateTabForThrottlingSafety
+        // によりアクティブ化済みのため、ここでの再アクティブ化は冪等な
+        // 確認の意味のみ。完全成功時は元タブへ戻さず前面表示のまま維持する
+        // （既存の「完了した瞬間だけ画面を渡す」という意図を維持）。
+        keepCurrentActive = true
         try {
           await chrome.tabs.update(tabId, { active: true })
           logToServer('tab_focused_on_completion', { tabId })
@@ -518,6 +599,8 @@ async function runTransferViaExecuteScript(tabId, item) {
   } catch (e) {
     logToServer('execute_script_error', { tabId, error: String(e?.message ?? e), stack: String(e?.stack ?? '').slice(0, 500) })
     await reportResult(item.articleId, 'failure', { error: `stage=execute_script_error: ${String(e?.message ?? e)}`, mode: item.mode, runToken: item.runToken })
+  } finally {
+    await restorePreviousActiveTab(previousActiveTabId, keepCurrentActive)
   }
 }
 
@@ -565,7 +648,7 @@ async function checkPending() {
     // 経路を主経路とする（マロン指示）。DOM読み込み完了を待ってから注入する。
     const loaded = await waitForTabComplete(tab.id, 20000)
     logToServer('tab_load_wait_done', { tabId: tab.id, loaded })
-    await runTransferViaExecuteScript(tab.id, item)
+    await runTransferViaExecuteScript(tab, item)
   } catch (e) {
     console.error('[note-transfer] pending check failed', e)
     logToServer('check_pending_error', { error: String(e?.message ?? e) })
