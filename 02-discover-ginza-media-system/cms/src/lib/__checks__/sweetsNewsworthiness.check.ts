@@ -38,6 +38,19 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-10-01実障害：DC#1663「秋冬限定でお届けする、セップの旨みを閉じ込めた
+    // 特別な一缶」が「季節限定」「◯季限定」のいずれにも一致せずevergreen扱い
+    // になっていた（松屋銀座GINZAスイート、本日新規の実データで発覚）。
+    name: '春夏秋冬を組み合わせた複合季節限定表記（秋冬限定等）も新規性語として timely',
+    fn: () => {
+      for (const excerpt of ['秋冬限定でお届けする、セップの旨みを閉じ込めた特別な一缶。', '春夏限定パフェ', '冬限定ホットケーキ']) {
+        const r = evaluateSweetsNewsworthiness({ title: '商品名', excerpt }, { now: NOW })
+        assert.equal(r.category, 'timely', `excerpt="${excerpt}" → ${r.category}`)
+        assert.ok(r.matchedNovelty.length > 0, `excerpt="${excerpt}" にnoveltyが無い`)
+      }
+    },
+  },
+  {
     name: 'タイトル先頭の日付表記（YYYY.MM.DD）から公開日を抽出し30日以内ならtimely・優先窓内',
     fn: () => {
       const r = evaluateSweetsNewsworthiness({ title: '2026.09.10 【手土産の定番】銀座ピエス・モンテの上質なマドレーヌ' }, { now: NOW })

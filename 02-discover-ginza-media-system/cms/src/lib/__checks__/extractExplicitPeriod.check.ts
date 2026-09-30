@@ -1,6 +1,6 @@
 // 明記された会期の決定的抽出（extractExplicitPeriod）の回帰テスト。推測はしない。
 import { runSuite, reportAndExit, type CheckCase } from './_harness'
-import { extractExplicitPeriod } from '../pipeline/extractExplicitPeriod'
+import { extractExplicitPeriod, periodFromUrlSlug } from '../pipeline/extractExplicitPeriod'
 
 function assert(c: unknown, m: string): void {
   if (!c) throw new Error(m)
@@ -98,6 +98,57 @@ const cases: CheckCase[] = [
     fn: () => {
       const p = extractExplicitPeriod('２０２６年９月１日(火)〜９月１５日(月)', { now: NOW })
       assert(p && d(p.startIso) === '2026-09-01' && d(p.endIso) === '2026-09-15', JSON.stringify(p))
+    },
+  },
+  {
+    // 2026-10-01（実障害）：松屋銀座「今週のGINZAスイート」週替わりページの
+    // スラッグ末尾8桁（sweet20260930 等）は「sitemap掲載日」であって商品の
+    // 販売終了日ではない。これを単日イベントの開始=終了日と誤認すると、掲載
+    // 翌日には常に「終了済み」と誤判定される（DC#1663／#1664、10/1朝の実データで
+    // 発覚）。このドメイン・パスに限り、URLスラッグからの期間推測を行わない
+    // （終了日不明のまま＝推測で終了日を作らない）。
+    name: '【実障害再発防止】松屋銀座スイーツ週替わりページのURLスラッグ日付は期間として採らない（sweet接頭辞）',
+    fn: () =>
+      assert(
+        periodFromUrlSlug('https://www.matsuyaginza.com/jp/ginza/events/food/sweets/sweet20260930') === null,
+        '松屋銀座スイーツ週替わりページのスラッグ日付を単日イベントとして誤って採用している',
+      ),
+  },
+  {
+    name: '【実障害再発防止】松屋銀座スイーツ週替わりページ（ginza接頭辞・素の8桁）もURLスラッグから期間を採らない',
+    fn: () => {
+      assert(
+        periodFromUrlSlug('https://www.matsuyaginza.com/jp/ginza/events/food/sweets/ginza20260916') === null,
+        'ginza接頭辞のスラッグ日付を誤って採用している',
+      )
+      assert(
+        periodFromUrlSlug('https://www.matsuyaginza.com/jp/ginza/events/food/sweets/20260923') === null,
+        '素の8桁スラッグ日付を誤って採用している',
+      )
+    },
+  },
+  {
+    name: '【実障害再発防止・URLフラグメント併記】商品別フラグメント付きURLでも松屋銀座スイーツ週替わりページは期間を採らない',
+    fn: () =>
+      assert(
+        periodFromUrlSlug(
+          'https://www.matsuyaginza.com/jp/ginza/events/food/sweets/sweet20260930#vendor=又一庵&product=手焼ききんつば',
+        ) === null,
+        'フラグメント付きURLでスラッグ日付を誤って採用している',
+      ),
+  },
+  {
+    name: '【既存挙動維持】松屋銀座以外のドメインのYYYYMMDDスラッグは従来どおり単日イベントとして採る',
+    fn: () => {
+      const p = periodFromUrlSlug('https://example.com/news/detail_20260901.html')
+      assert(p && d(p.startIso) === '2026-09-01' && d(p.endIso) === '2026-09-01', JSON.stringify(p))
+    },
+  },
+  {
+    name: '【既存挙動維持】松屋銀座ドメインでも events/food/sweets/ 以外のパスはURLスラッグ日付を従来どおり採る',
+    fn: () => {
+      const p = periodFromUrlSlug('https://www.matsuyaginza.com/jp/ginza/events/art/20260901.html')
+      assert(p && d(p.startIso) === '2026-09-01' && d(p.endIso) === '2026-09-01', JSON.stringify(p))
     },
   },
 ]

@@ -130,11 +130,28 @@ export function extractExplicitPeriod(text: string, opts: { now?: Date } = {}): 
  */
 export function periodFromUrlSlug(url: string): ExplicitPeriod | null {
   let seg = ''
+  let hostname = ''
+  let pathname = ''
   try {
     const p = new URL(url.trim())
+    hostname = p.hostname
+    pathname = p.pathname
     const segs = p.pathname.replace(/\/+$/, '').split('/').filter(Boolean)
     seg = decodeURIComponent(segs[segs.length - 1] ?? '')
   } catch {
+    return null
+  }
+  // 2026-10-01（マロン指示の朝運用で実データにより発覚・修正）：松屋銀座「今週の
+  // GINZAスイート」週替わりページ（例: sweet20260930／ginza20260916／20260923）の
+  // スラッグ末尾8桁は、掲載・更新された週を示す「sitemap掲載日」であって、
+  // 個別商品の販売終了日ではない（extractMatsuyaSweetsWeekly.ts／
+  // parseMatsuyaSitemap.ts も同じ前提で「開催期間: 公式記載なし」として扱って
+  // いる）。以下の汎用YYYYMMDD抽出がこの掲載日を単日イベントの開始=終了日と
+  // 誤認すると、掲載翌日には常に「終了済み」と誤判定される実バグを起こす
+  // （DC#1663／#1664、10/1朝の実データで発覚）。このドメイン・パスパターンに
+  // 限定して、URLスラッグからの期間推測自体を行わない（終了日不明のまま
+  // ＝「公式記載なし」を維持し、推測で終了日を作らないという既存方針に従う）。
+  if (/(?:^|\.)matsuyaginza\.com$/.test(hostname) && /\/events\/food\/sweets\//.test(pathname)) {
     return null
   }
   // YYYYMMDD（前後が数字でない＝連番IDの一部でない）
