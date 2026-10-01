@@ -42,6 +42,15 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-10-02実障害：歌舞伎座「花篭Bar」オリジナルカクテルSAKURAがEVENT収蔵室
+    // フォールバックへ落ちていた（実データで発覚）。「カクテル」を追加して再発防止。
+    name: 'NIGHT（実障害再発防止）：カクテル・オリジナルドリンクを含むタイトルはNIGHT',
+    fn: () => {
+      const cocktail = deriveProvisionalCategory({ title: '歌舞伎座、今だけ味わえる桜色のカクテル「SAKURA」', venue: null })
+      assert(cocktail.category === 'NIGHT', `cocktail: ${cocktail.category}`)
+    },
+  },
+  {
     name: 'FOOD：単なる飲食店情報・食事メニューはFOODのまま（SWEETSに寄せない）',
     fn: () => {
       const restaurant = deriveProvisionalCategory({ title: '銀座グルメ フレンチビストロ新規オープン', venue: null })
