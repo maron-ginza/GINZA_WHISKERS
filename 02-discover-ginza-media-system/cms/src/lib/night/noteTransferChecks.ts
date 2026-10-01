@@ -22,9 +22,11 @@ export const HERO_IMAGE_CAPTION =
 /**
  * 記事本文に挿絵注釈が無い場合の既定（汎用文へ巻き戻さない）。
  * 2026-09-11 統一：商品記事にも対応するため「商品・」を追加。
+ * 2026-10-01 マロン指示：簡潔な表現へ統一。この注釈は「生成挿絵（hero）」専用——
+ * カテゴリーアイコン（固定アセット・AI生成ではない）には付けない
+ * （buildNoteDraftPackage.ts の images[category_icon] は caption を持たない設計に変更）。
  */
-export const DEFAULT_ILLUSTRATION_CAPTION =
-  '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。'
+export const DEFAULT_ILLUSTRATION_CAPTION = '※AI生成イメージ／実際の商品・展示作品・会場とは異なります。'
 
 /** テキストがハッシュタグだけの行か（本文から除去する対象） */
 export function isHashtagOnlyText(t: string | null | undefined): boolean {
@@ -54,7 +56,8 @@ export function extractHashtags(text: string | null | undefined): string[] {
 /**
  * 記事本文（見出し・段落テキストの配列）から「挿絵注釈」を取り出す。
  * ・「挿絵注釈」見出しの直後の段落、または
- * ・「※画像は記事内容をもとに生成したイメージ…」で始まる行
+ * ・「※AI生成イメージ…」（2026-10-01新表記）／「※画像は記事内容をもとに生成したイメージ…」
+ *   （旧表記、既存記事本文との後方互換のため引き続き検出する）で始まる行
  * を記事固有 caption として優先。無ければ null。
  */
 export function extractIllustrationCaption(units: string[]): string | null {
@@ -64,7 +67,7 @@ export function extractIllustrationCaption(units: string[]): string | null {
       const next = (units[i + 1] ?? '').trim()
       if (next) return next
     }
-    if (/^※\s*画像は記事内容をもとに生成した/.test(u)) return u
+    if (/^※\s*(AI生成イメージ|画像は記事内容をもとに生成した)/.test(u)) return u
   }
   return null
 }

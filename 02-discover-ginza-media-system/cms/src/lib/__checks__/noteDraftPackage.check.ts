@@ -2,9 +2,14 @@
 // 2026-09-10 共通不具合 根本修正の回帰テスト。
 //
 //   修正1：ハッシュタグ重複 — body 本文にハッシュタグ行を入れない。同じタグが2回以上出ない。
-//   修正2：挿絵注釈 — category_icon / hero の caption は記事本文の正式な挿絵注釈。
+//   修正2：挿絵注釈 — hero（生成挿絵）の caption は記事本文の正式な挿絵注釈。
 //          記事固有があれば優先。無ければ DEFAULT_ILLUSTRATION_CAPTION（汎用文へ巻き戻さない）。
+//          2026-10-01改訂：category_icon（固定の18カテゴリーアイコン資産）は対象外——
+//          AI生成ではないため挿絵注釈を付けない（マロン指示）。
 //   修正3：出典 URL — confirmed の公式出典だけを links.sourceUrls に入れる。
+
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { runSuite, reportAndExit, type CheckCase } from './_harness'
 import {
@@ -89,17 +94,35 @@ const cases: CheckCase[] = [
     },
   },
   {
-    name: '修正2: DEFAULT_ILLUSTRATION_CAPTION は「商品・展示作品・会場」の統一文（2026-09-11・汎用文へ巻き戻さない）',
+    name: '修正2: DEFAULT_ILLUSTRATION_CAPTION は簡潔な統一文（2026-10-01・マロン指示で改訂。生成挿絵＝hero専用）',
     fn: () => {
       assert(
-        DEFAULT_ILLUSTRATION_CAPTION ===
-          '※画像は記事内容をもとに生成したイメージです。実際の商品・展示作品・会場とは異なります。',
+        DEFAULT_ILLUSTRATION_CAPTION === '※AI生成イメージ／実際の商品・展示作品・会場とは異なります。',
         `既定文: ${DEFAULT_ILLUSTRATION_CAPTION}`,
       )
       assert((DEFAULT_ILLUSTRATION_CAPTION as string) !== (HERO_IMAGE_CAPTION as string), '旧・汎用文と別物であること')
       assert(!DEFAULT_ILLUSTRATION_CAPTION.includes('商品・店舗'), '旧・汎用文（商品・店舗）へ巻き戻していない')
       assert(DEFAULT_ILLUSTRATION_CAPTION.includes('商品・展示作品・会場'), '商品記事も含む統一表現')
       assert(HERO_IMAGE_CAPTION.includes('商品・店舗'), '旧・汎用文は「商品・店舗」を含む（後方互換の確認）')
+    },
+  },
+  {
+    // 2026-10-01マロン指示：「カテゴリーアイコンは生成挿絵と区別して扱ってください」。
+    // category_iconスロット（固定の18カテゴリーアイコン資産）はcaptionを持たず、
+    // hero（生成挿絵）だけがillustrationCaptionを持つことを、実装のpush構造から
+    // 静的に確認する（buildNoteDraftPackageはPayload依存のため、ここではDBなしで
+    // 検証できるソース構造チェックとする——他の回帰テストと同じ手法）。
+    name: '修正2（2026-10-01追加）: images[category_icon] の push はcaptionを含まず、images[hero] の push だけがillustrationCaptionを持つ',
+    fn: () => {
+      const src = readFileSync(resolve(process.cwd(), 'src/lib/night/buildNoteDraftPackage.ts'), 'utf8')
+      const categoryIconStart = src.indexOf("role: 'category_icon',")
+      const heroStart = src.indexOf("role: 'hero',")
+      assert(categoryIconStart >= 0, 'category_iconのpushが見つからない')
+      assert(heroStart > categoryIconStart, 'heroのpushが見つからない（category_iconより後にある前提）')
+      const categoryIconBlock = src.slice(categoryIconStart, heroStart)
+      const heroBlock = src.slice(heroStart, heroStart + 600)
+      assert(!/caption:\s*illustrationCaption/.test(categoryIconBlock), 'category_iconのpushにcaptionが付与されている（区別されていない）')
+      assert(/caption:\s*illustrationCaption/.test(heroBlock), 'heroのpushにcaptionが付与されていない')
     },
   },
   {

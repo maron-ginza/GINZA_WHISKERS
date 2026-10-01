@@ -295,6 +295,11 @@ async function main() {
             sizeBytes: resolvedIcon?.sizeBytes ?? null,
           })
           const heroNote = (draft.images ?? []).find((im: any) => im.role === 'hero')
+          // 2026-10-01マロン指示：カテゴリーアイコン（固定アセット）は生成挿絵（hero）と
+          // 区別する——「AI生成イメージ」等の注釈はheroにのみ付け、category_iconには
+          // 付けない。draft.images[category_icon] 自体のcaptionを見る（無ければnull。
+          // 旧実装はnoteMeta.illustrationCaption＝hero用の値を誤って流用していた）。
+          const categoryIconNote = (draft.images ?? []).find((im: any) => im.role === 'category_icon')
           res.writeHead(200, { 'content-type': 'application/json' })
           res.end(
             JSON.stringify({
@@ -321,7 +326,7 @@ async function main() {
                       mimeType: resolvedIcon.mimeType,
                       sha256: resolvedIcon.sha256,
                       sizeBytes: resolvedIcon.sizeBytes,
-                      caption: draft.noteMeta?.illustrationCaption ?? null,
+                      caption: categoryIconNote?.caption ?? null,
                       labelJa: draft.noteMeta?.categoryIcon?.labelJa ?? null,
                     }
                   : null,

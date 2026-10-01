@@ -215,10 +215,14 @@ export async function buildNoteDraftPackage(
   const rawNoteHashtags = noteHashtags.length > 0 ? noteHashtags : bodyHashtags
   const finalNoteHashtags = padNoteHashtagsTo4(rawNoteHashtags)
 
-  // 挿絵注釈（記事固有 → 無ければ既定。汎用文へは巻き戻さない）
+  // 挿絵注釈（記事固有 → 無ければ既定。汎用文へは巻き戻さない）。
+  // 2026-10-01マロン指示：この注釈は「生成挿絵（hero）」専用——カテゴリーアイコン
+  // （固定の18カテゴリーアイコン資産。記事ごとにAI生成しているわけではない）には
+  // 付けない。両者を同一caption値で扱っていた旧実装を区別した。
   const illustrationCaption = extractIllustrationCaption(rawUnits) ?? DEFAULT_ILLUSTRATION_CAPTION
 
-  // images[0]：マストヘッド先頭のカテゴリーアイコン（必須・1点）
+  // images[0]：マストヘッド先頭のカテゴリーアイコン（必須・1点）。captionは持たない
+  // （固定アセットのため「AI生成イメージ」等の注釈は付けない）。
   images.push({
     marker: `[IMAGE: カテゴリーアイコン ${iconResolved.iconSlug ?? '（未確定）'}]`,
     role: 'category_icon',
@@ -229,7 +233,6 @@ export async function buildNoteDraftPackage(
           `media/discover-ginza-category-icons/${iconResolved.iconFile}）。${iconResolved.reason}`
         : `カテゴリー未確定：${iconResolved.reason}`,
     status: 'not_prepared',
-    caption: illustrationCaption,
   })
   images.push({
     marker: '[IMAGE: アイキャッチ]',
