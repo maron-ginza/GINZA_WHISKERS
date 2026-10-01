@@ -29,6 +29,19 @@ const cases: CheckCase[] = [
     },
   },
   {
+    // 2026-10-02実障害：とらや「兎饅」がEVENT収蔵室フォールバックへ落ち、
+    // noteマストヘッドのカテゴリーアイコンが誤って「季節の催し」になっていた
+    // （実データで発覚）。「饅」を追加して再発防止する。
+    name: 'SWEETS（実障害再発防止）：饅頭・◯饅を含むタイトルはSWEETS',
+    fn: () => {
+      const usagiman = deriveProvisionalCategory({ title: 'とらや、10月15日限定「兎饅」発売予告', venue: null })
+      assert(usagiman.category === 'SWEETS', `usagiman: ${usagiman.category}`)
+
+      const manju = deriveProvisionalCategory({ title: '季節限定 栗饅頭の販売', venue: null })
+      assert(manju.category === 'SWEETS', `manju: ${manju.category}`)
+    },
+  },
+  {
     name: 'FOOD：単なる飲食店情報・食事メニューはFOODのまま（SWEETSに寄せない）',
     fn: () => {
       const restaurant = deriveProvisionalCategory({ title: '銀座グルメ フレンチビストロ新規オープン', venue: null })
