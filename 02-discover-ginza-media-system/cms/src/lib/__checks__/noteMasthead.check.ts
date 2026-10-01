@@ -98,6 +98,10 @@ const cases: CheckCase[] = [
       assert(fileToGroups.size === 8, `使用ファイル数は8種のはず（実際 ${fileToGroups.size}）`)
       assert(CATEGORY_ICONS.SWEETS.iconFile === '01_sweets.png', `SWEETS専用アイコン: ${CATEGORY_ICONS.SWEETS.iconFile}`)
       assert(CATEGORY_ICONS.SWEETS.labelJa === 'スイーツ', `SWEETS labelJa: ${CATEGORY_ICONS.SWEETS.labelJa}`)
+      // 2026-10-02修正（Article #94「AUTUMN GINZA 2026」で発見）：EVENTは現行8分類名
+      // 「季節の催し」（primaryCategory8.ts）に一致させる（旧18カテゴリー表記のまま
+      // 食い違っていた、SWEETS/MUSIC/FAMILYと同種の修正）。
+      assert(CATEGORY_ICONS.EVENT.labelJa === '季節の催し', `EVENT labelJa: ${CATEGORY_ICONS.EVENT.labelJa}`)
     },
   },
   {

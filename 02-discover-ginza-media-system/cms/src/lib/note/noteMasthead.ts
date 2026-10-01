@@ -95,7 +95,11 @@ export const CATEGORY_ICONS: Record<CategoryCode, CategoryIcon> = {
   SHOPPING: iconFor('SHOPPING', 'ショッピング'),
   ARCHITECTURE: iconFor('ARCHITECTURE', '名所・建築'),
   ART: iconFor('ART', 'アート・文化'),
-  EVENT: iconFor('EVENT', 'イベント'),
+  // 2026-10-02修正（マロン指示の標準化を適用、実データで発見）：MUSIC/SWEETS/FAMILY
+  // と同種の修正。primaryCategory8.ts でEVENTは'SEASONAL'（表示名「季節の催し」）へ
+  // 束ねられるが、このアイコン表示名が旧18カテゴリー表記「イベント」のままだった
+  // （Article #94「AUTUMN GINZA 2026」で食い違いを発見）。
+  EVENT: iconFor('EVENT', '季節の催し'),
   NIGHT: iconFor('NIGHT', 'バー・お酒'),
   // 2026-09-28修正（マロン指示）：このiconForのlabelJaはnote転記アイコンの表示名
   // （./p2 night check 等でマロンが確認する画面表示専用）。8分類の呼称確定
