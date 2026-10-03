@@ -833,6 +833,49 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   参照すること。**情報は削除しておらず、両ファイルに原文をそのまま保持**
   している（分割前の全文バックアップは `CLAUDE.md.backup-20260821.md`）。
 
+- 2026-10-03: ⚖️ **朝の候補選定（`./p2 morning-brief`）にカテゴリー偏り抑制ルールを
+  実装（マロン指示。Project 02 commit あり・push未／DB更新はArticle #96のみ〈note
+  公開を独立確認済みのため`reviewStatus`を`published`へ同期〉／AI呼び出し0回・
+  追加費用0円）**——①1日3本のうちスイーツ1本は必須のまま維持、②残り2本の
+  選定順序を「終了間近等の優先度が高い候補を最優先→直近7日間の**検証済み**公開
+  本数が少ないカテゴリーを優先→同率ならscoreTotal降順」へ変更（新規
+  `categoryPublishHistory.ts`＋`morningBriefSelect.ts`の`categoryPublishCounts7d`／
+  `urgencyWindowDays`オプション、未指定時は旧挙動と同一＝後方互換）。**「検証済み
+  公開」の定義（マロン指示の最重要前提）**＝`reviewStatus='published'` かつ
+  `Articles.publishHistory`に`channel='note'`・`publishedAt`が`createdAt`以降の
+  記録が存在する場合のみ（CMSの`reviewStatus=approved`やnote転記サーバーの
+  `status=success`だけでは判定しない）。**実データ監査で発見した既存の不整合2件**
+  （今回は実データの書き換えはしていない。カウント対象から除外する設計のみ）：
+  Article #2（`reviewStatus=published`だが`publishHistory`0件＝検証不能）、
+  Article #62（`publishHistory.publishedAt`が`createdAt`より前という物理的に
+  不可能な記録、`reviewStatus`も`draft`のまま）。primaryCategory8未設定の既存
+  記事（#63・#69等）は既存の`deriveProvisionalCategory`（タイトル・会場の明記語
+  のみ・推測なし）で後方互換的に分類し、どちらでも解決できなければ「未分類」
+  として特定カテゴリーへ加算しない——店名等からの推測は行わない（例：#63「山野
+  楽器」はタイトルに音楽関連の明記語が無いため現時点では未分類のまま）。朝刊
+  レポートへ「直近7日間のカテゴリー別公開本数」「推奨3本の選定理由（公開本数・
+  終了間近の根拠を明記）」「カテゴリー配分が偏った場合の理由（該当候補が無い
+  カテゴリーを明示）」を追加。`./p2 morning-brief`を実データで実行し、既存A候補
+  （ART 6・MUSIC 1・SHOPPING 1）から、終了間近（残り4日）のART 1件＋直近7日間の
+  公開本数が最少（0件）のSHOPPING 1件が選ばれ、MUSIC・グルメ等5カテゴリーは
+  「該当候補が無いため他カテゴリーで補う」と正しく記録されることを確認した。
+  本作業の過程で、#93・#94・#95（SAKURA・AUTUMN GINZA・とらや兎饅）はマロンの
+  note.com公開を独立確認済みのためCMSへ同期、#96（松屋銀座GINZAスイート）は
+  同様に独立確認済みのため同期、#97・#98（影山萌子展・Yamano Flute Festival）は
+  直接URLが404・creator page新着一覧にも出現せず**公開を確認できなかったため
+  未同期のまま**（マロンへ別途確認依頼）。新規テスト11件、`run-all.ts`
+  **1029 passed 0 failed**、`tsc --noEmit`0エラー。記事の新規生成・note転記・
+  公開はこの変更作業では実行していない。**未解決事項**：①本ファイルの意思決定
+  ログは実際には前回更新（2026-09-18）以降、約2週間分（SOURCE_LEDGER・松屋銀座
+  抽出修正・候補パイプライン改修・Article #90〜98生成等）が未反映のまま残って
+  いることを本作業中に発見した——今回はこの偏り抑制ルールのみ追記し、過去分の
+  遡及的な記録復元は行っていない（復元が必要であれば別途対応）。②primaryCategory8
+  未設定の既存記事の後方互換分類は店名からの推測を行わないため、#63型のように
+  実質的には分類可能な記事が「未分類」のまま残る——集計の母数としては軽微
+  （総公開本数11件中2件）だが、記事生成時にprimaryCategory8を必須入力化する等の
+  恒久対応は未実施。③週あたりの目安配分（各カテゴリー2本/週）は目安値であり、
+  実運用での検証（過剰補正・候補枯渇等）は未実施。
+
 - 2026-09-18: 🌉 **V1 Stage 5（note-drafts.json）→ 既存Chrome拡張の転記経路への
   最小限の自動ブリッジを新設（Project 02 commit・push あり／DB更新は
   Article #72・#73・#74 の新規作成のみ〈すべて`reviewStatus=draft`〉・
@@ -2220,7 +2263,7 @@ MusicUsageLedger本番登録）は未実施。詳細は`DECISION_LOG_02.md`
   行わない）。次回セッションはまずこれを実行してから本項目の続きに
   進んでよい。
 
-- **最終更新日**：2026-09-18
+- **最終更新日**：2026-10-03
 
 ## 13. 運用コスト方針（2026-08-09確定）
 
