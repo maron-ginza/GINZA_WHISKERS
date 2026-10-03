@@ -33,6 +33,8 @@ import { loadAlreadyDraftedDcIds } from '../lib/curation/alreadyDrafted'
 import { checkRecurringEventYearClaim } from '../lib/curation/recurringEventYearGuard'
 import { evaluateSweetsEligibility } from '../lib/curation/sweetsEligibility'
 import { evaluateSweetsNewsworthiness } from '../lib/curation/sweetsNewsworthiness'
+import { computeCategoryPublishCounts, type ArticleForCategoryHistory } from '../lib/pipeline/categoryPublishHistory'
+import { PRIMARY_CATEGORY_8, primaryCategory8Label } from '../lib/pipeline/primaryCategory8'
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -302,6 +304,7 @@ async function main() {
         publishedReason: pub.match ? pub.reason : null,
         finalEligible: c.finalEligible,
         officialMissing: c.officialMissing ?? null,
+        daysUntilEnd: (c.daysUntilEnd as number | null | undefined) ?? null,
         facts: f
         ? {
             enrichmentStatus: (f.enrichmentStatus as string) ?? null,
@@ -328,8 +331,42 @@ async function main() {
     // 選ばず、確定済みボードのみを選定可能プールとする。
     .filter((x) => confirmed.allDcIds.has(x.dcId))
 
+  // 4b. 直近7日間のカテゴリー別「検証済み公開」本数（2026-10-03追加、マロン指示：
+  //     候補選定のカテゴリー偏り抑制）。CMSのreviewStatus=approvedやnote転記完了
+  //     だけでは判定しない——reviewStatus='published' かつ Articles.publishHistory に
+  //     channel='note'（createdAt以降のpublishedAt）の記録がある記事のみを数える
+  //     （categoryPublishHistory.ts参照。実データでArticle #2・#62という2件の既存
+  //     不整合〈publishHistory無しのpublished／publishedAt<createdAtの矛盾〉を発見し、
+  //     いずれもカウントから除外する設計にした）。
+  const publishedDocs = await payload.find({
+    collection: 'articles',
+    where: { reviewStatus: { equals: 'published' } },
+    locale: 'ja',
+    limit: 500,
+    depth: 0,
+    overrideAccess: true,
+  })
+  const articlesForHistory: ArticleForCategoryHistory[] = (publishedDocs.docs as unknown as Record<string, unknown>[]).map((d) => {
+    const prov = Array.isArray(d.editorialProvenance) ? (d.editorialProvenance as Record<string, unknown>[]) : []
+    const venue = prov
+      .filter((p) => (p.factType ?? '') === 'venue')
+      .map((p) => String(p.fact ?? ''))
+      .join(' ')
+    return {
+      id: Number(d.id),
+      reviewStatus: (d.reviewStatus as string) ?? null,
+      createdAt: (d.createdAt as string) ?? null,
+      primaryCategory8: (d.primaryCategory8 as string) ?? null,
+      title: (d.title as string) ?? null,
+      venue: venue || null,
+      publishHistory: Array.isArray(d.publishHistory) ? (d.publishHistory as { channel?: string; publishedAt?: string }[]) : [],
+    }
+  })
+  const categoryHistory = computeCategoryPublishCounts(articlesForHistory, { now, windowDays: 7 })
+
   const brief = buildMorningBrief(briefInputs, {
     recentFacilities: assessed.history.recentFacilitySequence,
+    categoryPublishCounts7d: categoryHistory.counts,
   })
 
   // 5. 承認用の1操作（admin URL）— pick 済み DC のうち inbox のものだけ
@@ -359,6 +396,18 @@ async function main() {
   }
   L(`承諾前(inbox)＋承諾済み(approved) 評価 ${assessed.assessed} 件（A ${assessed.abcCounts.A} / B ${assessed.abcCounts.B} / C ${assessed.abcCounts.C}） → gate通過 ${sel.gatePassed} → 推奨+予備 ${pool.length}`)
   L(`過去7日間の採用（approved ${assessed.history.approvedCount}件）／直近施設: ${assessed.history.recentFacilitySequence.slice(0, 5).join(' → ') || '（履歴なし）'}`)
+  L('────────────────────────────────────────────')
+  L('■ 直近7日間のカテゴリー別 公開本数（検証済みのみ。目安：各カテゴリー週2本）')
+  L(`   集計対象期間: ${categoryHistory.windowStartIso.slice(0, 10)} 〜 ${categoryHistory.windowEndIso.slice(0, 10)}`)
+  for (const g of PRIMARY_CATEGORY_8) {
+    const n = categoryHistory.counts[g]
+    const mark = g === 'SWEETS' ? '' : n < 2 ? '（不足）' : n > 2 ? '（過多）' : ''
+    L(`     ${primaryCategory8Label(g)}: ${n}件${mark}`)
+  }
+  if (categoryHistory.unclassifiedCount > 0) L(`     未分類（primaryCategory8未設定・タイトルからも分類不能）: ${categoryHistory.unclassifiedCount}件`)
+  if (categoryHistory.unverifiedPublishedCount > 0) {
+    L(`   ⚠ reviewStatus=published だが note公開記録(publishHistory)を検証できない記事: ${categoryHistory.unverifiedPublishedCount}件（集計対象外。CMS上のreviewStatusだけでは「公開済み」と判定しない方針のため）`)
+  }
   L('────────────────────────────────────────────')
 
   for (const b of brief.buckets) {
@@ -423,6 +472,10 @@ async function main() {
   L('────────────────────────────────────────────')
   L(`■ 本日の確定: ${brief.filledCount}／${brief.buckets.length} 領域`)
   for (const w of brief.warnings) L(`   ⚠ ${w}`)
+  if (brief.categoryBalanceNotes.length) {
+    L('   ■ カテゴリー配分の偏りについて')
+    for (const n of brief.categoryBalanceNotes) L(`     ・${n}`)
+  }
   L('')
   L('■ マロンの操作は次の1回だけ（承認／保留／却下）')
   if (approveUrl) {
@@ -460,6 +513,15 @@ async function main() {
         abcCounts: assessed.abcCounts,
         gatePassed: sel.gatePassed,
         history7d: assessed.history,
+        categoryPublishHistory7d: {
+          windowStartIso: categoryHistory.windowStartIso,
+          windowEndIso: categoryHistory.windowEndIso,
+          counts: categoryHistory.counts,
+          unclassifiedCount: categoryHistory.unclassifiedCount,
+          unverifiedPublishedCount: categoryHistory.unverifiedPublishedCount,
+          totalVerifiedInWindow: categoryHistory.totalVerifiedInWindow,
+        },
+        categoryBalanceNotes: brief.categoryBalanceNotes,
         filledCount: brief.filledCount,
         pickedDcIds: brief.pickedDcIds,
         approveUrl,
@@ -502,6 +564,8 @@ async function main() {
       JSON.stringify({
         date: DATE,
         confirmedBoard: { found: confirmed.found, allDcCount: confirmed.allDcIds.size, sweetsDcCount: confirmed.sweetsDcIds.size },
+        categoryPublishHistory7d: categoryHistory,
+        categoryBalanceNotes: brief.categoryBalanceNotes,
         filledCount: brief.filledCount,
         pickedDcIds: brief.pickedDcIds,
         approveUrl,

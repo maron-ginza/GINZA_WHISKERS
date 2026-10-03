@@ -222,6 +222,70 @@ const cases: CheckCase[] = [
       assert(r.filledCount === 3, `filled: ${r.filledCount}（3件とも公式確認可能なため全枠充足）`)
     },
   },
+  {
+    // 2026-10-03改訂（マロン指示）：categoryPublishCounts7d を渡すと、scoreTotalが
+    // 低くても直近7日間の公開本数が少ないカテゴリーが優先される。
+    name: 'カテゴリー偏り抑制：categoryPublishCounts7d指定時は公開本数が少ないカテゴリーを優先（scoreTotalより優先）',
+    fn: () => {
+      const list: BriefCandidateInput[] = [
+        cand({ dcId: 20, categoryKey: 'SWEETS', facilityKey: 'fs', facilityLabel: '菓子店', scoreTotal: 0.5 }),
+        cand({ dcId: 21, categoryKey: 'ART', facilityKey: 'fa', facilityLabel: 'ギャラリー', scoreTotal: 0.95 }),
+        cand({ dcId: 22, categoryKey: 'MUSIC', facilityKey: 'fm', facilityLabel: '楽器店', scoreTotal: 0.4 }),
+      ]
+      // ART は直近7日間で既に4件公開済み（過多）、MUSIC_STAGEは0件（不足）。
+      const r = buildMorningBrief(list, { categoryPublishCounts7d: { ART_CULTURE: 4, MUSIC_STAGE: 0 } })
+      const other1 = r.buckets.find((b) => b.bucketKey === 'OTHER_1')!
+      assert(
+        other1.pick?.dcId === 22,
+        `scoreTotalはART(#21,0.95)が高いが、公開本数が少ないMUSIC(#22,MUSIC_STAGE:0件)を優先すべき（実際: #${other1.pick?.dcId}）`,
+      )
+      assert(/公開本数：0件/.test(other1.pick?.facts12.選定理由 ?? ''), `選定理由に公開本数を明示: ${other1.pick?.facts12.選定理由}`)
+    },
+  },
+  {
+    name: 'カテゴリー偏り抑制：会期終了間近（daysUntilEnd）は公開本数の偏りより優先する',
+    fn: () => {
+      const list: BriefCandidateInput[] = [
+        cand({ dcId: 30, categoryKey: 'SWEETS', facilityKey: 'fs', facilityLabel: '菓子店', scoreTotal: 0.5 }),
+        // MUSICは公開0件で本来優先されるはずだが、ARTの方が終了間近（残り2日）。
+        cand({ dcId: 31, categoryKey: 'ART', facilityKey: 'fa', facilityLabel: 'ギャラリー', scoreTotal: 0.3, daysUntilEnd: 2 }),
+        cand({ dcId: 32, categoryKey: 'MUSIC', facilityKey: 'fm', facilityLabel: '楽器店', scoreTotal: 0.9, daysUntilEnd: 30 }),
+      ]
+      const r = buildMorningBrief(list, { categoryPublishCounts7d: { ART_CULTURE: 4, MUSIC_STAGE: 0 } })
+      const other1 = r.buckets.find((b) => b.bucketKey === 'OTHER_1')!
+      assert(
+        other1.pick?.dcId === 31,
+        `会期終了間近のART(#31、残り2日)を、公開本数が少ないMUSIC(#32)より優先すべき（実際: #${other1.pick?.dcId}）`,
+      )
+      assert(/会期終了間近/.test(other1.pick?.facts12.選定理由 ?? ''), `選定理由に終了間近の明示: ${other1.pick?.facts12.選定理由}`)
+    },
+  },
+  {
+    name: 'カテゴリー偏り抑制：未指定時は従来どおりscoreTotal降順のみ（後方互換）',
+    fn: () => {
+      const list: BriefCandidateInput[] = [
+        cand({ dcId: 40, categoryKey: 'SWEETS', facilityKey: 'fs', facilityLabel: '菓子店', scoreTotal: 0.5 }),
+        cand({ dcId: 41, categoryKey: 'ART', facilityKey: 'fa', facilityLabel: 'ギャラリー', scoreTotal: 0.95 }),
+        cand({ dcId: 42, categoryKey: 'MUSIC', facilityKey: 'fm', facilityLabel: '楽器店', scoreTotal: 0.4 }),
+      ]
+      const r = buildMorningBrief(list)
+      const other1 = r.buckets.find((b) => b.bucketKey === 'OTHER_1')!
+      assert(other1.pick?.dcId === 41, `categoryPublishCounts7d未指定時はscoreTotal最上位のART(#41)を選ぶ（実際: #${other1.pick?.dcId}）`)
+    },
+  },
+  {
+    name: 'カテゴリー偏り抑制：不足カテゴリーに該当候補が無い場合はcategoryBalanceNotesへ記録する（推測で埋めない）',
+    fn: () => {
+      const list: BriefCandidateInput[] = [
+        cand({ dcId: 50, categoryKey: 'SWEETS', facilityKey: 'fs', facilityLabel: '菓子店', scoreTotal: 0.5 }),
+        cand({ dcId: 51, categoryKey: 'ART', facilityKey: 'fa', facilityLabel: 'ギャラリー', scoreTotal: 0.8 }),
+      ]
+      // MUSIC_STAGE・SHOPPING等は不足（0件）だが候補プールに存在しない→補う理由を記録する。
+      const r = buildMorningBrief(list, { categoryPublishCounts7d: { MUSIC_STAGE: 0, SHOPPING: 0 } })
+      assert(r.categoryBalanceNotes.some((n) => /音楽・舞台/.test(n) && /候補が無い/.test(n)), `MUSIC_STAGE不足の記録: ${JSON.stringify(r.categoryBalanceNotes)}`)
+      assert(r.categoryBalanceNotes.some((n) => /ショッピング/.test(n)), `SHOPPING不足の記録: ${JSON.stringify(r.categoryBalanceNotes)}`)
+    },
+  },
 ]
 
 export const suite = () => runSuite('morningBriefSelect', cases)

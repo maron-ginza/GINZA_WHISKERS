@@ -22,6 +22,7 @@ import { suite as crossCultureDerivative } from './crossCultureDerivative.check'
 import { suite as targetFitScore } from './targetFitScore.check'
 import { suite as dailySelectionSupport } from './dailySelectionSupport.check'
 import { suite as morningBriefSelect } from './morningBriefSelect.check'
+import { suite as categoryPublishHistory } from './categoryPublishHistory.check'
 import { suite as reviewTodayData } from './reviewTodayData.check'
 import { suite as businessDate } from './businessDate.check'
 import { suite as publishedThemes } from './publishedThemes.check'
@@ -105,6 +106,7 @@ const results: SuiteResult[] = [
   targetFitScore(),
   dailySelectionSupport(),
   morningBriefSelect(),
+  categoryPublishHistory(),
   reviewTodayData(),
   businessDate(),
   publishedThemes(),

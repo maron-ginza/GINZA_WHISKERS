@@ -20,16 +20,18 @@
 // 〈./p2 themes recommend の候補選定サポート表示等〉で引き続き使われているため
 // 変更しない——本ファイルの選定ロジックだけがこの新ルールへ切り替わる）。
 //
-// 選定条件（マロン指示・2026-09-11、2026-09-24一部改訂）：
-//   ・コアターゲット＝20代後半〜30代女性。Editorial Compass かわいい20／上質30／
-//     自分を整える25／新しい発見15／少し背伸び10。
-//   ・18カテゴリー全体の過去掲載数を参照して偏りを補正（scoreTotal に反映済みの前提）。
-//   ・GINZA SIX・銀座三越・松屋銀座など特定施設への連続集中を自動回避。
-//   ・同一イベント・同一商品・同一URL・既に Article 化済みの候補は除外。
-//   ・その他2本は、可能な限り異なる8分類グループから選ぶ（同一グループへの
-//     集中を弱く回避。代替が無ければ同一グループでも埋める——空欄より優先）。
+// 【2026-10-03改訂・マロン指示】②③（スイーツ以外）の選定が単純なscoreTotal降順
+// だったため、ARTなど候補が多いカテゴリーへ実際の公開本数が偏る問題が発生した
+// （2026-10-01〜10-02の3日間でART_CULTURE/MUSIC_STAGEが重複等）。これを受けて
+// 選定順序を「①終了間近・期間限定等の優先度が高い候補を最優先 ②直近7日間の
+// 検証済み公開本数が少ないカテゴリーを優先 ③同率ならscoreTotal降順」の3段階へ
+// 変更する（`categoryPublishCounts7d`・`urgencyWindowDays` オプション、いずれも
+// 任意・未指定時は従来どおりscoreTotal降順のみ＝後方互換）。カテゴリーの判定
+// ロジック自体・既存の除外条件（alreadyPublished／finalEligible／alreadyDrafted／
+// duplicate／施設重複）は一切変更しない——均等化のために候補の品質基準を
+// 下げない、というマロン指示を反映。
 
-import { mapToPrimaryCategory8, primaryCategory8Label, type PrimaryCategory8 } from './primaryCategory8'
+import { mapToPrimaryCategory8, primaryCategory8Label, PRIMARY_CATEGORY_8, type PrimaryCategory8 } from './primaryCategory8'
 
 /** 本日選ぶ枠数（スイーツ1＋その他2＝計3）。マロン指示「1日3本」に対応。 */
 const DAILY_BUCKET_COUNT = 3
@@ -77,6 +79,8 @@ export interface BriefCandidateInput {
   finalEligible?: boolean
   /** 公式情報で未確認の項目（表示用） */
   officialMissing?: string[] | null
+  /** 会期終了までの残日数（assessInboxPool側で算出済み。無ければ null＝優先度判定の対象外） */
+  daysUntilEnd?: number | null
 }
 
 export interface BriefFactsInput {
@@ -129,6 +133,8 @@ export interface BuildBriefResult {
   /** 施設が重複した等の警告 */
   warnings: string[]
   filledCount: number
+  /** カテゴリー配分が目安（週2本/分類）から偏った場合の理由（推測せず事実のみ記録） */
+  categoryBalanceNotes: string[]
 }
 
 function clean(s: string | null | undefined): string {
@@ -177,8 +183,14 @@ function resolveConditions(c: BriefCandidateInput): string {
   return bits.length ? bits.join(' ／ ') : FACT_NOT_STATED
 }
 
-/** 選定理由：カテゴリー・旬・target_fit・偏り補正の観点から機械生成（推測なし・数値と事実のみ）。 */
-export function buildSelectionReason(c: BriefCandidateInput, bucketLabel: string): string {
+/** 選定理由：カテゴリー・旬・target_fit・偏り補正の観点から機械生成（推測なし・数値と事実のみ）。
+ * balanceInfo（任意）：②③枠でカテゴリー偏り抑制ルールを適用した場合の根拠（直近7日間の
+ * 公開本数・終了間近による優先かどうか）を追記する。 */
+export function buildSelectionReason(
+  c: BriefCandidateInput,
+  bucketLabel: string,
+  balanceInfo?: { categoryPublishCount7d?: number; isUrgent?: boolean } | null,
+): string {
   const bits: string[] = [`本日の${DAILY_BUCKET_COUNT}領域「${bucketLabel}」枠として選定`]
   if (c.categoryKey && c.categoryKey !== '未確定') bits.push(`18カテゴリー＝${c.categoryKey}（${c.categoryBasis === 'primaryCategory' ? 'ArticleFacts確定' : '明記'}）`)
   if (typeof c.targetFit === 'number') bits.push(`コアターゲット適合 ${c.targetFit}／100`)
@@ -186,6 +198,10 @@ export function buildSelectionReason(c: BriefCandidateInput, bucketLabel: string
   bits.push(`最終score ${c.scoreTotal.toFixed(3)}（施設・カテゴリーの偏り補正込み）`)
   bits.push(`情報源＝${c.sourceName}（特定施設への連続集中は自動回避の対象。他の推奨と施設が重複しないことを確認）`)
   if (c.readiness !== 'ready') bits.push(`ArticleFacts は ${c.readiness}（未確定項目は「公式記載なし」。承認後にマロンが公式で確定）`)
+  if (balanceInfo?.isUrgent) bits.push(`会期終了間近（残り${c.daysUntilEnd}日）のため、カテゴリー配分より優先`)
+  if (typeof balanceInfo?.categoryPublishCount7d === 'number') {
+    bits.push(`直近7日間の「${bucketLabel}」公開本数：${balanceInfo.categoryPublishCount7d}件（目安2件／週）`)
+  }
   return bits.join(' ／ ')
 }
 
@@ -307,11 +323,24 @@ function pickFromPool(
  */
 export function buildMorningBrief(
   candidates: BriefCandidateInput[],
-  opts: { recentFacilities?: string[] } = {},
+  opts: {
+    recentFacilities?: string[]
+    /** 直近7日間の検証済み公開本数（8分類別）。未指定＝全0扱い（既存挙動と同一）。 */
+    categoryPublishCounts7d?: Partial<Record<PrimaryCategory8, number>>
+    /** 会期終了までの残日数がこの値以下なら、カテゴリー配分より優先する（ルール5）。既定5日。 */
+    urgencyWindowDays?: number
+    /** 週あたりの目安配分（既定2本／分類、ルール4）。偏り理由の判定にのみ使用。 */
+    weeklyTargetPerCategory?: number
+  } = {},
 ): BuildBriefResult {
   const recent = new Set((opts.recentFacilities ?? []).slice(0, 2).filter(Boolean))
   const usedFacilities = new Set<string>()
   let concentratedUsed = 0
+  const urgencyWindowDays = opts.urgencyWindowDays ?? 5
+  const weeklyTarget = opts.weeklyTargetPerCategory ?? 2
+  const countOf = (g: PrimaryCategory8 | null): number => (g ? opts.categoryPublishCounts7d?.[g] ?? 0 : 0)
+  const isUrgent = (c: BriefCandidateInput): boolean =>
+    typeof c.daysUntilEnd === 'number' && c.daysUntilEnd >= 0 && c.daysUntilEnd <= urgencyWindowDays
 
   const withGroup = candidates.map((c) => ({ c, group: mapToPrimaryCategory8(c.categoryKey) }))
 
@@ -338,6 +367,7 @@ export function buildMorningBrief(
   // ②③その他8分類（スイーツ以外の7分類。同一グループへの集中を弱く回避しつつ2本）
   const otherBuckets: BriefBucketResult[] = []
   const pickedOtherGroups = new Set<PrimaryCategory8>()
+  const categoryBalanceNotes: string[] = []
   // OTHER_1／OTHER_2 のプールは（スイーツ以外の7分類という）同じ母集団から重複して
   // 引くため、施設・グループの一致だけに頼ると「施設が空欄の候補」が2枠へ二重に
   // 選ばれてしまう恐れがある——既に選定済みのDC番号は明示的に除外する。
@@ -348,15 +378,41 @@ export function buildMorningBrief(
     const bucketLabelDefault = `その他${slot === 1 ? '①' : '②'}（スイーツ以外の8分類のいずれか）`
     const bucket: BriefBucketResult = { bucketKey, bucketLabel: bucketLabelDefault, pick: null, reasonIfEmpty: null, considered: [] }
 
+    // 2026-10-03改訂（マロン指示）：ソート順を「①終了間近を最優先 ②直近7日間の
+    // 公開本数が少ないカテゴリーを優先 ③同率ならscoreTotal降順」へ変更。
+    // categoryPublishCounts7d 未指定時は全カテゴリー0扱い＝旧挙動（scoreTotal降順のみ）と同一。
     const basePool = withGroup
       .filter((x): x is { c: BriefCandidateInput; group: PrimaryCategory8 } => x.group !== null && x.group !== 'SWEETS')
       .filter((x) => !pickedSoFar.has(x.c.dcId))
-      .sort((a, b) => b.c.scoreTotal - a.c.scoreTotal)
+      .sort((a, b) => {
+        const au = isUrgent(a.c)
+        const bu = isUrgent(b.c)
+        if (au !== bu) return au ? -1 : 1
+        const ac = countOf(a.group)
+        const bc = countOf(b.group)
+        if (ac !== bc) return ac - bc
+        return b.c.scoreTotal - a.c.scoreTotal
+      })
 
     if (basePool.length === 0) {
       bucket.reasonIfEmpty = '該当なし：スイーツ以外の8分類に分類できる公式確認可能な候補が本日の承諾前プールに無い（推測でカテゴリーを付けない）。追加収集が必要。'
       otherBuckets.push(bucket)
       continue
+    }
+
+    // 不足カテゴリー（直近7日間の公開本数が目安〈週2本〉未満）のうち、本日の候補プールに
+    // 1件も存在しないものを記録する（ルール7：「条件を満たす候補がない場合は、他カテゴリー
+    // で補い、不足カテゴリーと偏った理由を提示する」）。slot=1の時だけ1回評価すれば十分。
+    if (slot === 1) {
+      const presentGroups = new Set(basePool.map((x) => x.group))
+      for (const g of PRIMARY_CATEGORY_8) {
+        if (g === 'SWEETS') continue
+        if (countOf(g) < weeklyTarget && !presentGroups.has(g)) {
+          categoryBalanceNotes.push(
+            `「${primaryCategory8Label(g)}」は直近7日間の公開本数が${countOf(g)}件（目安${weeklyTarget}件）で不足していますが、本日の候補プールに該当候補が無いため他カテゴリーで補います。`,
+          )
+        }
+      }
     }
 
     // 1回目：まだ選んでいない8分類グループのみに絞る（多様性を優先）。
@@ -383,9 +439,22 @@ export function buildMorningBrief(
       const fk = outcome.picked.facilityKey ?? outcome.picked.facilityLabel
       if (fk && fk !== '(会場不明)') usedFacilities.add(fk)
       if (outcome.isConcentrated) concentratedUsed += 1
+      const pickedUrgent = isUrgent(outcome.picked)
+      const pickedCount7d = countOf(group)
       const facts12 = assembleBriefFacts(outcome.picked)
-      facts12.選定理由 = buildSelectionReason(outcome.picked, label)
+      facts12.選定理由 = buildSelectionReason(outcome.picked, label, {
+        categoryPublishCount7d: pickedCount7d,
+        isUrgent: pickedUrgent,
+      })
       bucket.pick = { ...outcome.picked, facts12 }
+      if (!pickedUrgent && group && pickedCount7d >= weeklyTarget) {
+        const lessUsed = PRIMARY_CATEGORY_8.filter((g) => g !== 'SWEETS' && g !== group && countOf(g) < pickedCount7d)
+        if (lessUsed.length > 0) {
+          categoryBalanceNotes.push(
+            `「${label}」（直近7日間${pickedCount7d}件）を選定しましたが、より公開本数が少ないカテゴリー（${lessUsed.map((g) => `${primaryCategory8Label(g)}:${countOf(g)}件`).join('・')}）に該当候補が無いか、重複・施設集中等で除外されたためです。`,
+          )
+        }
+      }
     } else {
       bucket.reasonIfEmpty = `該当なし：スイーツ以外の8分類の候補は ${basePool.length} 件あったが、すべて重複・施設集中・既記事化で除外（推測補完しない）。`
     }
@@ -399,5 +468,5 @@ export function buildMorningBrief(
   if (pickedDcIds.length < DAILY_BUCKET_COUNT)
     warnings.push(`本日確定できたのは ${pickedDcIds.length}／${DAILY_BUCKET_COUNT} 領域。残りは「該当なし」として報告（推測で埋めない）。`)
 
-  return { buckets, pickedDcIds, warnings, filledCount: pickedDcIds.length }
+  return { buckets, pickedDcIds, warnings, filledCount: pickedDcIds.length, categoryBalanceNotes }
 }
