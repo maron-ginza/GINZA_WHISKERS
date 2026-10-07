@@ -173,7 +173,7 @@
              （/ja/latest.json フィードの疎通確認後）へ切り替える際は、href を data-href の値へ差し替える
              （CLAUDE.md 第10章 2026-08-28 参照）。ビジュアルは仮カード画像
              （images/cards/time-edit.jpg、2026-09-11差し替え。差し替え前は抽象SVG）。 -->
-        <a class="content-card content-card--lead content-card--visual content-card--hero"
+        <a id="time-edit" class="content-card content-card--lead content-card--visual content-card--hero"
            href="https://note.com/ginza_whiskers/m/m03614564526b" target="_blank" rel="noopener noreferrer"
            data-href="https://discover.ginzawhiskers.com/ja/">
           <div class="entry-visual entry-visual--time-edit" aria-hidden="true">
@@ -206,7 +206,7 @@
       <p class="eyebrow" data-text-ja="B ／ 銀座の時間を感じる" data-text-en="B / Feel Ginza Through Time">B ／ 銀座の時間を感じる</p>
       <h2 data-text-ja="銀座の時間を感じる" data-text-en="Feel Ginza Through Time">銀座の時間を感じる</h2>
       <div class="content-grid content-grid--feel">
-        <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener noreferrer">
+        <a id="soundtrack" class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--soundtrack" aria-hidden="true">
             <img src="images/cards/soundtrack.jpg" width="768" height="512" alt="" loading="lazy">
           </div>
@@ -220,7 +220,7 @@
         <!-- 銀座昭和浪漫日記：2026-09-13、noteマガジン「猫も歩けば銀座にあたる」を
              正式リンクとして公開状態にした（is-pending / aria-disabled 解除）。
              ビジュアルは仮カード画像（images/cards/diary.jpg、2026-09-11配置。差し替え前は抽象SVG）。 -->
-        <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m55a5bd7cbae6" target="_blank" rel="noopener noreferrer">
+        <a id="diary" class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m55a5bd7cbae6" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--diary" aria-hidden="true">
             <img src="images/cards/diary.jpg" width="1448" height="1086" alt="" loading="lazy">
           </div>
@@ -233,7 +233,7 @@
         <!-- entry-visual--single：cc-span-full（1枚表示）専用の表示規則を2026-09-14に適用。
              GINZA 400 YEARS／GINZA DIGITAL ART LABと同じ画角切れ不具合の対象だったため
              同一パターンで修正（画像・文章・リンクは無変更）。 -->
-        <a class="content-card content-card--visual cc-span-full" href="https://note.com/ginza_whiskers/m/m2393751d146e" target="_blank" rel="noopener noreferrer">
+        <a id="cross-culture" class="content-card content-card--visual cc-span-full" href="https://note.com/ginza_whiskers/m/m2393751d146e" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--cross-culture entry-visual--single" aria-hidden="true">
             <img src="images/cards/cross-culture.jpg" width="768" height="512" alt="" loading="lazy">
           </div>
@@ -251,7 +251,7 @@
              2026-09-21、note公開連携の開始に伴い母艦カードの遷移先を noteマガジンへ
              変更した（他ページ・他リンクは無変更。他カードと同じ note 遷移方法に統一：
              target="_blank" rel="noopener noreferrer"）。既存の画像・説明文は無変更。 -->
-        <a class="content-card content-card--visual cc-span-full"
+        <a id="400-years" class="content-card content-card--visual cc-span-full"
            href="https://note.com/ginza_whiskers/m/m1f21e5d7f3d1" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--400years entry-visual--single" aria-hidden="true">
             <img src="images/cards/400years.jpg" width="768" height="384" alt="" loading="lazy">
@@ -281,7 +281,7 @@
              URL・文言とも変更せず維持し、その前後にガイド・LPのリンクを
              追加）。前回追加した告知行（.live-announce）はこのカード自体が
              LPへの導線を持つようになったため重複を避けて削除した。 -->
-        <div class="content-card content-card--visual cc-span-1 content-card--live-multi">
+        <div id="live" class="content-card content-card--visual cc-span-1 content-card--live-multi">
           <div class="entry-visual entry-visual--live" aria-hidden="true">
             <img src="images/cards/live.jpg" width="768" height="512" alt="" loading="lazy">
           </div>
@@ -307,7 +307,7 @@
              「club-charmant/index.html」（実ファイル）へ修正。file://（サーバーを
              介さないローカル閲覧）ではディレクトリ表記だとブラウザがFinderに
              委ねてしまい、Webページとして開けない不具合があったため。 -->
-        <a class="content-card content-card--visual cc-span-1" href="club-charmant/index.html">
+        <a id="club-charmant" class="content-card content-card--visual cc-span-1" href="club-charmant/index.html">
           <div class="entry-visual entry-visual--charmant" aria-hidden="true">
             <img src="images/cards/charmant.jpg" width="512" height="384" alt="" loading="lazy">
           </div>
@@ -327,7 +327,7 @@
       <p class="eyebrow" data-text-ja="D ／ 自分の銀座へ" data-text-en="D / Your Ginza">D ／ 自分の銀座へ</p>
       <h2 data-text-ja="自分の銀座へ" data-text-en="Your Ginza">自分の銀座へ</h2>
       <div class="content-grid content-grid--your-ginza">
-        <a class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m89442b4f8ae2" target="_blank" rel="noopener noreferrer">
+        <a id="hitosaji" class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m89442b4f8ae2" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--hitosaji" aria-hidden="true">
             <img src="images/cards/hitosaji.jpg" width="768" height="384" alt="" loading="lazy">
           </div>
@@ -346,7 +346,7 @@
                ・Phrase Concierge
                ・Culture Concierge
                ・Experience Concierge -->
-        <a class="content-card content-card--visual is-pending cc-span-1 content-card--invitation" aria-disabled="true">
+        <a id="concierge" class="content-card content-card--visual is-pending cc-span-1 content-card--invitation" aria-disabled="true">
           <div class="entry-visual entry-visual--concierge" aria-hidden="true">
             <img src="images/cards/concierge.jpg" width="512" height="384" alt="" loading="lazy">
           </div>

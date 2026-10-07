@@ -561,6 +561,10 @@ h1, h2, h3 {
   padding: 32px 28px;
   color: inherit;
   transition: background 0.25s ease, border-color 0.25s ease;
+  /* 2026-10-07追加：Xなどの個別投稿から #id 付きURLで直接ジャンプした際に、
+     固定ヘッダー（.site-header、高さ84px）でカード上部が隠れないように
+     するためのスクロール位置の余白。見た目・レイアウトには影響しない。 */
+  scroll-margin-top: 104px;
 }
 
 a.content-card:hover {
