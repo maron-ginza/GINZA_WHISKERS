@@ -955,12 +955,14 @@ a.content-card:hover {
   margin: 0 0 1.4em;
 }
 
-/* カード内の制作部門クレジット表記（2026-09-20 追加）。
-   例：GINZA 400 YEARS カード内「Created by GINZA DIGITAL ART LAB」。
+/* カード内の制作部門クレジット表記（2026-09-20 追加）、および
+   カード内のキャッチコピー表記（2026-10-22追加。例：GINZA FRIDAY
+   NIGHT RADIOカード内「昭和の深夜ラジオを、読む。」）。
    見出し直下・本文の説明文より上に置く階層ラベルのため、
    .content-card-body > p の既定スタイルより小さく・ゴールドの
    イタリックにして本文と区別する（.cc-sublabel と同系の扱い）。 */
-.content-card-credit {
+.content-card-credit,
+.content-card-tagline {
   font-family: var(--font-serif);
   font-style: italic;
   font-size: 0.78rem;
@@ -1097,21 +1099,26 @@ a.content-card:hover {
       左右ペアの外枠を1:1（50%：50%）で揃える。
    2) 銀座、ひと匙の贅沢／GINZA Concierge（#your-ginza）：
       左右ペアの外枠を1:1（50%：50%）で揃える。
-   3) Tokyo Nostalgic Soundtrack／銀座昭和浪漫日記（#feel）：
-      左右ペアの外枠を1:1（50%：50%）で揃える。
+   3) Tokyo Nostalgic Soundtrack／GINZA FRIDAY NIGHT RADIO（#feel）：
+      左右ペアの外枠を1:1（50%：50%）で揃える（2026-10-22：横並びペアを
+      銀座昭和浪漫日記からRADIOへ変更。日記は全幅化したが、画像の
+      切れ防止（object-fit: contain）は従来どおり必要なためこのグループに
+      留めている）。
    各画像の元の縦横比は LIVE=3:2、Charmant=4:3、ひと匙=2:1、
    Concierge=4:3、Soundtrack=3:2、日記=4:3 とまちまちのため、共通の
    コンテナ比率（4:3）に統一し、object-fit: contain で画像全体を
    切らずに収める。はみ出す余白はサイトの黒系背景（--color-bg）で
    埋める。グリッド列数・span は各セクションで2列化・cc-span-1化済み
-   （HTML側で変更済み）。 */
+   （HTML側で変更済み）。RADIOは元画像が3:2（TNSと同じ）のため、
+   他カードと同様object-fit: containで切れずに収まる。 */
 
 .entry-visual.entry-visual--live,
 .entry-visual.entry-visual--charmant,
 .entry-visual.entry-visual--hitosaji,
 .entry-visual.entry-visual--concierge,
 .entry-visual.entry-visual--diary,
-.entry-visual.entry-visual--soundtrack {
+.entry-visual.entry-visual--soundtrack,
+.entry-visual.entry-visual--radio {
   aspect-ratio: 4 / 3;
 }
 
@@ -1120,7 +1127,8 @@ a.content-card:hover {
 .entry-visual.entry-visual--hitosaji img,
 .entry-visual.entry-visual--concierge img,
 .entry-visual.entry-visual--diary img,
-.entry-visual.entry-visual--soundtrack img {
+.entry-visual.entry-visual--soundtrack img,
+.entry-visual.entry-visual--radio img {
   object-fit: contain;
   background: var(--color-bg);
 }

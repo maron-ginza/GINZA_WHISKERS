@@ -217,10 +217,34 @@
             <span class="card-cta" data-text-ja="noteで読む" data-text-en="Read on note">noteで読む</span>
           </div>
         </a>
+        <!-- GINZA FRIDAY NIGHT RADIO：2026-10-22追加。TNS（Tokyo Nostalgic Soundtrack）と
+             横並びの新規ペアとして追加したため、既存の「銀座昭和浪漫日記」をこのペアから
+             外し全幅（cc-span-full）へ変更した（下記diaryカードのコメント参照）。
+             noteマガジンの正式URLが未確定のため、is-pending / aria-disabled で
+             「準備中」表示とし、仮URLや「#」は設定していない。URL確定後にhrefを追加し、
+             is-pending / aria-disabled を解除する（既存カードと同じ運用パターン）。
+             ビジュアルは制作済みの正式画像に差し替え済み（images/cards/radio.jpg、
+             2026-10-22配置。元画像1536×1024をトリミングなしで768×512へ縮小。
+             差し替え前は抽象インラインSVGだった）。 -->
+        <a id="radio" class="content-card content-card--visual is-pending cc-span-1" aria-disabled="true">
+          <div class="entry-visual entry-visual--radio" aria-hidden="true">
+            <img src="images/cards/radio.jpg" width="768" height="512" alt="" loading="lazy">
+          </div>
+          <div class="content-card-body">
+            <h3>GINZA FRIDAY NIGHT RADIO</h3>
+            <p class="content-card-tagline" data-text-ja="昭和の深夜ラジオを、読む。"
+               data-text-en="Read the Showa-era late-night radio.">昭和の深夜ラジオを、読む。</p>
+            <p data-text-ja="銀座の小話、懐かしい音楽を楽しむ金曜夜の読み物。毎週金曜日23時更新。"
+               data-text-en="A Friday-night read of Ginza anecdotes and nostalgic music. Updated every Friday at 23:00.">銀座の小話、懐かしい音楽を楽しむ金曜夜の読み物。毎週金曜日23時更新。</p>
+            <span class="card-cta" data-text-ja="準備中" data-text-en="Coming soon">準備中</span>
+          </div>
+        </a>
         <!-- 銀座昭和浪漫日記：2026-09-13、noteマガジン「猫も歩けば銀座にあたる」を
              正式リンクとして公開状態にした（is-pending / aria-disabled 解除）。
-             ビジュアルは仮カード画像（images/cards/diary.jpg、2026-09-11配置。差し替え前は抽象SVG）。 -->
-        <a id="diary" class="content-card content-card--visual cc-span-1" href="https://note.com/ginza_whiskers/m/m55a5bd7cbae6" target="_blank" rel="noopener noreferrer">
+             ビジュアルは仮カード画像（images/cards/diary.jpg、2026-09-11配置。差し替え前は抽象SVG）。
+             2026-10-22：TNSの横並びペアをGINZA FRIDAY NIGHT RADIOへ譲り、本カードは
+             cc-span-1（半幅）からcc-span-full（全幅）へ変更した（本文・リンク先は無変更）。 -->
+        <a id="diary" class="content-card content-card--visual cc-span-full" href="https://note.com/ginza_whiskers/m/m55a5bd7cbae6" target="_blank" rel="noopener noreferrer">
           <div class="entry-visual entry-visual--diary" aria-hidden="true">
             <img src="images/cards/diary.jpg" width="1448" height="1086" alt="" loading="lazy">
           </div>
