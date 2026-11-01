@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ginzawhiskers.com/sitemap.xml
+Sitemap: https://maron-ginza.github.io/GINZA_WHISKERS/sitemap.xml
