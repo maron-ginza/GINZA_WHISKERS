@@ -1314,7 +1314,11 @@ a.content-card:hover {
    ========================================================== */
 
 .y400-hero {
-  /* サブページのため、トップの .hero（86vh）より低く抑える */
+  /* サブページのため、トップの .hero（86vh）より低く抑える。
+     2026-11-02 ファーストビュー修正：画像バンド＋テキストバンドの縦積み
+     構成のため、基底 .hero の display:flex/align-items:center は
+     .y400-hero--cover 側で display:block に上書きして無効化している
+     （min-heightはそのまま下限として維持）。 */
   min-height: 46vh;
 }
 
@@ -1325,6 +1329,135 @@ a.content-card:hover {
   letter-spacing: 0.1em;
   color: var(--color-gold);
   margin: 0 0 1.4em;
+}
+
+/* 2026-11-02 LPデザイン改修：ヒーロー用サブコピー（タグラインの下の1文）。
+   .hero-lead（max-width:560px）とは別に、ヒーロー全体の横幅に合わせて
+   少し広めの行幅を許容する。 */
+.y400-hero-sub {
+  color: var(--color-ink-muted);
+  max-width: 640px;
+  margin: 0 auto 2em;
+}
+
+/* 2026-11-02 ファーストビュー修正指示：画像バンド（.y400-hero-visual）＋
+   独立した濃紺タイトルバンド（.y400-hero-textband）の2段構成に変更。
+   基底 .hero の display:flex/align-items:center（横並び中央寄せ用）は
+   この構成に合わないため display:block で上書きする。
+   :root の --color-bg（#0b0b0c、サイト全体の基調）は変更せず、この
+   セクション配下にだけ濃紺を指定することでほかのページ・セクションには
+   影響しない。 */
+.y400-hero--cover {
+  display: block;
+  min-height: 0;
+}
+
+/* ヘッダー直下、横幅いっぱいの錦絵画像バンド。.hero-inner.container の
+   外側（section直下）に置くことで、containerのside paddingの影響を
+   受けずに素直に親要素（section、ひいてはbody）いっぱいの幅になる。
+   100vwを使ったフルブリード手法は環境によっては横スクロールの原因に
+   なり得るため使っていない。object-fit等によるクロップはせず
+   width:100%; height:auto; で原寸比率のまま表示するため、不自然な
+   トリミングは発生しない（.y400-media-img と同じ考え方）。 */
+.y400-hero-visual {
+  margin: 0;
+  line-height: 0;
+}
+
+.y400-hero-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 画像の下に独立して配置する濃紺のタイトルエリア。 */
+.y400-hero-textband {
+  background: linear-gradient(180deg, #0d1b33 0%, #0a1526 100%);
+  text-align: center;
+}
+
+.y400-hero-textband .hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.y400-hero-textband h1 {
+  color: #ffffff;
+  /* 2026-11-02 最終調整：PC・スマートフォンどちらでも不自然な位置で
+     改行されないよう、.y400-title と同じ text-wrap:balance を適用。 */
+  text-wrap: balance;
+}
+
+.y400-hero-textband .hero-tagline {
+  color: #ffffff;
+  text-wrap: balance;
+}
+
+.y400-hero-textband .y400-lang-toggle {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 2026-11-02 LPデザイン改修：EPISODES見出しセクション。直後に続く
+   .y400-artwork（各話セクション）との間にすき間・二重の罫線ができない
+   よう border-bottom と下側paddingを詰める。 */
+.y400-episodes-head {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* 2026-11-02 デザイン修正依頼：INTRODUCTIONとDIGITAL EDITIONの余白調整。
+   既存 .section の基準（上下110px）はEPISODESのような主役級セクション向けの
+   広さのため、ファーストビュー直後の導入文（INTRODUCTION）と、まだ準備中の
+   補足セクション（DIGITAL EDITION）はやや控えめな余白にして、EPISODES群との
+   メリハリをつける。フォント・罫線・色などデザインそのものは変更しない。 */
+#introduction.section {
+  padding-top: 70px;
+  padding-bottom: 70px;
+}
+
+/* 2026-11-02 最終調整：INTRODUCTION本文を4段落構成に変更したため、
+   段落間に読みやすい余白を設ける（最後の段落は余白なし）。 */
+.y400-intro-body .lead {
+  margin: 0 0 1.1em;
+}
+
+.y400-intro-body .lead:last-child {
+  margin-bottom: 0;
+}
+
+/* 2026-11-02 最終調整：EPISODESの公開状況表示。
+   .y400-episode-count は件数部分だけを独立させ、今後の更新（EPISODE 05
+   以降の追加時に3→4等へ変更）を見つけやすくしている。 */
+.y400-episode-status {
+  font-family: var(--font-serif);
+  color: var(--color-gold-light);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  margin: 0.6em 0 1.4em;
+}
+
+.y400-episode-count {
+  color: var(--color-gold);
+  font-weight: 500;
+}
+
+.y400-episode-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: var(--color-ink-muted);
+}
+
+#edition.section {
+  padding-top: 64px;
+  padding-bottom: 56px;
 }
 
 .y400-artwork:last-of-type {
@@ -1359,9 +1492,27 @@ a.content-card:hover {
   margin: 0 0 0.3em;
 }
 
-.y400-title {
-  font-size: clamp(1.4rem, 3vw, 1.9rem);
+/* 2026-11-02 スマートフォン表示最終微調整で発見：.y400-title（クラス1つ、
+   詳細度0,1,0）は、先に定義されている .section h2（クラス+要素型、
+   詳細度0,1,1）より詳細度が低く、font-size・margin-bottomが意図せず
+   .section h2 側の値（clamp(1.5rem,3vw,2rem)・0.7em）で上書きされていた
+   （ソース順ではなく詳細度で決まるため）。.y400-artwork-body .y400-title
+   （詳細度0,2,0）へ変更し、確実にこちらの指定が効くようにした。 */
+.y400-artwork-body .y400-title {
+  /* 390px幅で2行になった際の読みやすさのため、下限を1.4rem→1.3remへ
+     わずかに縮小（上限1.9remは維持、PC表示への影響は軽微）。 */
+  font-size: clamp(1.3rem, 3vw, 1.9rem);
+  /* 本文（line-height:1.9、bodyから継承）のままだと見出しとしては
+     間延びするため、1.4に調整。 */
+  line-height: 1.4;
   margin: 0 0 0.4em;
+  /* 2026-11-02 最終デザイン調整：EPISODE 01のタイトルが不自然な位置で
+     改行されていたための対応。text-wrap:balance は各行の文字数が揃う
+     ように改行位置をブラウザが自動調整する（対応ブラウザのみ。非対応
+     ブラウザでは従来通りの折り返しになるだけで、表示が崩れることはない）。
+     EPISODE 03は「憧れ」の分断自体を .nb（400years.html参照）で別途
+     防いでいるため、text-wrap:balance と併用しても安全。 */
+  text-wrap: balance;
 }
 
 .y400-place {
@@ -1468,11 +1619,34 @@ a.content-card:hover {
   margin-right: auto;
 }
 
+/* GINZA WHISKERS LP実装指示（2026-11-02）対応：ページ末尾の母艦TOPへの
+   回遊導線。.y400-edition と同じく中央寄せ・最終セクションのため
+   border-bottom なし。.lead はデフォルトで text-align 指定がないため
+   ここでのみ中央寄せする（他ページの .lead には影響しない）。 */
+.y400-return {
+  text-align: center;
+  border-bottom: none;
+  /* 2026-11-02 スマートフォン表示最終微調整：DIGITAL EDITIONとの間の
+     縦余白が広すぎたため、基底 .section の上下110pxから上側のみ縮小
+     （下側は最終セクションとしての落ち着きを保つため110pxのまま）。
+     #editionのpadding-bottom（56px）と合わせて174px→112pxに縮小。 */
+  padding-top: 56px;
+}
+
+.y400-return .lead {
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* デスクトップ：画像と本文を2カラムに。作品02は画像を右側にして
-   リズムをつける（y400-artwork-grid--reverse）。 */
+   リズムをつける（y400-artwork-grid--reverse）。
+   2026-11-02 最終デザイン調整：EP01・03・04で画像と本文のバランスを
+   統一するため、1.1fr 0.9fr（画像優先）から等分の1fr 1frへ変更
+   （本文側がやや狭く、タイトルの改行が不自然になりやすかった一因でも
+   あったため）。左右交互（--reverse）のレイアウト自体は変更していない。 */
 @media (min-width: 860px) {
   .y400-artwork-grid {
-    grid-template-columns: 1.1fr 0.9fr;
+    grid-template-columns: 1fr 1fr;
     align-items: center;
     gap: 48px;
   }
