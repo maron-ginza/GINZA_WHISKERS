@@ -2150,3 +2150,266 @@ a.content-card:hover {
     padding: 16px 20px;
   }
 }
+
+/* ==========================================================
+   Tokyo Nostalgic Soundtrack 専用LP（tns.html）
+   2026-11-02 新規追加。既存 .hero / .section / .container /
+   .container.narrow / .btn / .lead / .eyebrow / :root を継承し、
+   tns.html 専用の追加セレクタ（.tns-*）のみで構成する。既存ルールは
+   一切変更していない（400years.html の .y400-* と同じ設計方針）。
+   ========================================================== */
+
+/* 2026-11-02 レイアウト修正：全画面高の濃紺カバー（画像バンド＋独立した
+   テキストバンドの縦積み）から、画像とテキストを横並びにする2カラム
+   グリッドへ変更。PCで画像だけが画面を占有せず、見出し・本文が同じ
+   ファーストビュー内で読めるようにするため（400years.html の
+   .y400-artwork-grid と同じ発想を、画像なしも許容するヒーローに応用）。
+   モバイル（860px未満）は1カラムで画像→テキストの順に縦積みする。 */
+.tns-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+}
+
+@media (min-width: 860px) {
+  .tns-hero-grid {
+    grid-template-columns: 0.85fr 1fr;
+    gap: 56px;
+  }
+}
+
+.tns-hero-visual {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.tns-hero-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.tns-hero-body {
+  text-align: center;
+}
+
+@media (min-width: 860px) {
+  .tns-hero-body {
+    text-align: left;
+  }
+}
+
+.tns-h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  color: var(--color-ink);
+  font-size: clamp(1.8rem, 4.2vw, 2.6rem);
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  margin: 0.3em 0 0.6em;
+  text-wrap: balance;
+}
+
+.tns-h2 {
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  line-height: 1.5;
+  margin: 0 0 0.6em;
+  text-wrap: balance;
+}
+
+/* 本文はすべて .lead（既存、色 var(--color-ink-muted)、background
+   #0b0b0c に対し実測コントラスト比約10:1）をそのまま使い、PC用の
+   改行をスマートフォンへ強制しないよう<br>を使わず自然な折り返しに
+   する（段落が複数ある場合のみ.lead要素を複数に分ける）。 */
+.tns-lead {
+  margin: 0 auto 1.2em;
+}
+
+.tns-scene {
+  text-align: center;
+}
+
+.tns-scene .tns-h2 {
+  color: var(--color-ink);
+}
+
+/* 2026-11-02 レイアウト修正：Scene04用。縦長画像を単独で大きく見せる
+   配置から、画像とテキストを横並び2カラムにする .tns-scene-grid へ
+   変更（Scene01の .tns-hero-grid と同じ発想・ブレークポイント）。
+   --reverse 修飾子でScene01とは左右を反転し（画像を右側に）、全体の
+   視線のリズムを作る（400years.htmlの .y400-artwork-grid--reverse と
+   同じ考え方）。モバイルは1カラムで画像→テキストの順に縦積み
+   （DOM順そのまま＝常にfigureが先）。 */
+.tns-scene-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+  text-align: center;
+}
+
+@media (min-width: 860px) {
+  .tns-scene-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+    text-align: left;
+  }
+
+  .tns-scene-grid--reverse .tns-scene-visual {
+    order: 2;
+  }
+
+  .tns-scene-grid--reverse .tns-scene-body {
+    order: 1;
+  }
+}
+
+.tns-scene-visual {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.tns-scene-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 2026-11-02 レイアウト調整（全7枚、3段コラージュ）：
+   Scene 03用ギャラリー。各段（.tns-gallery-row）を個別のCSS Gridとし、
+   768px以上では段ごとに列幅と目標行高さ420pxから逆算した固定
+   aspect-ratioを各画像に設定、object-fit:coverで「段内の上下を揃える」。
+   画像ファイル自体は追加トリミングせず（「切り詰める前に枠の比率を
+   調整する」方針）、object-positionのみ画像ごとに調整して顔・猫・
+   手元の動作を保持する。
+   B01（建築）は、狭い列幅（上段の1fr、比0.694）だと女性の顔が
+   object-positionの調整だけでは実機で見切れたため、中段へ移動した——
+   「切り詰める前に枠の比率を調整する」の対応として、列幅そのものを
+   変更している。中段移動後も右端で見切れる報告があったため
+   （2026-11-02 再修正）、元画像（_reference/ref-B01-stone-building-
+   lamp.jpg）から顔・髪・肩・上半身を最優先にトリミングし直し
+   （石壁・植栽・猫を減らす）、掲載用ファイルの比率も0.987に変更。
+   この新比率に合わせ.tns-gallery-item--b01-mid imgのaspect-ratioも
+   1.11→0.99へ調整し、再クロップした掲載用画像にほぼ追加トリミングが
+   かからないようにした（代わりに中段の行高さはb05と完全には揃わない）。
+   768px未満（スマートフォン）はaspect-ratio/object-fit:coverを適用せず、
+   各.tns-gallery-rowを1列にして掲載用ファイルそのものの比率のまま
+   height:autoで表示する（画像ごとに高さが異なってよい、という指示通り）。
+   段・画像間の余白は28pxで統一（.tns-gallery-gridのgapと各.tns-gallery-row
+   のgapを揃えている）。 */
+.tns-gallery-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin: 56px auto 0;
+}
+
+.tns-gallery-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 28px;
+}
+
+.tns-gallery-item {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  background: var(--color-bg-alt);
+}
+
+.tns-gallery-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (min-width: 768px) {
+  .tns-gallery-grid {
+    max-width: 960px;
+  }
+
+  .tns-gallery-row--top {
+    grid-template-columns: 1.1fr 1fr 1fr;
+  }
+
+  .tns-gallery-row--mid,
+  .tns-gallery-row--bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* 中段はB01再クロップ（2026-11-02）でb01-mid imgのaspect-ratioを
+     1.11→0.99に変更した結果、b05（1.11のまま）より行の高さが高く
+     なり、丈の短いb05側の.tns-gallery-item（overflow:hidden・
+     background:var(--color-bg-alt)の暗色）が行の高さまで引き伸ばされ、
+     imgが埋めきれない下部に暗色の帯が出ていた（黒帯バグ、ユーザー報告
+     2026-11-02）。align-items:startはストレッチ自体は止めるが、
+     グリッド行トラックの余った高さにページ背景（--color-bg、同じく
+     暗色）が透けるだけで帯は実質解消しないため、根本対応として
+     b05側のaspect-ratioもb01-mid側に合わせて0.99へ変更し、行内の
+     両アイテムの高さを一致させた（b01側の構図・クロップは変更なし）。
+     align-items:startは丸め誤差対策として維持。下段（b06・b03）は
+     比率が同一なので対象外。 */
+  .tns-gallery-row--mid {
+    align-items: start;
+  }
+
+  /* 列幅(960px基準、gap28px控除後)と目標行高さ420pxから逆算した
+     aspect-ratio。上段：B04=320.8/420、A05・A08=291.6/420。
+     中段・下段：各466/420（b05・b01-midは黒帯対策で0.99に統一、
+     上記コメント参照）。 */
+  .tns-gallery-item--b04 img { aspect-ratio: 0.764; object-fit: cover; object-position: 50% 50%; }
+  .tns-gallery-item--a05 img { aspect-ratio: 0.694; object-fit: cover; object-position: 50% 50%; }
+  .tns-gallery-item--a08 img { aspect-ratio: 0.694; object-fit: cover; object-position: 50% 50%; }
+  .tns-gallery-item--b05 img { aspect-ratio: 0.99;  object-fit: cover; object-position: 50% 50%; }
+  .tns-gallery-item--b01-mid img { aspect-ratio: 0.99; object-fit: cover; object-position: 50% 50%; }
+  .tns-gallery-item--b06 img { aspect-ratio: 1.11;  object-fit: cover; object-position: 58% 50%; }
+  .tns-gallery-item--b03 img { aspect-ratio: 1.11;  object-fit: cover; object-position: 50% 50%; }
+}
+
+.tns-scene--cta {
+  border-bottom: none;
+}
+
+.tns-cta {
+  margin: 1.6em 0 0.8em;
+}
+
+.tns-cta-sub a {
+  color: var(--color-ink-muted);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 2px;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.tns-cta-sub a:hover {
+  color: var(--color-gold-light);
+  border-color: var(--color-gold);
+}
+
+/* 控えめなスクロール演出（tns.html末尾のインラインscriptでJS制御）。
+   prefers-reduced-motion:reduceの場合はJS側でis-visibleを即時付与し
+   アニメーションさせない。JS無効時は<head>のnoscriptブロック
+   （tns.html参照）がopacity:1へ上書きするため本文は見える。 */
+.tns-reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.tns-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tns-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

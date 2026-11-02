@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tokyo Nostalgic Soundtrack | GINZA WHISKERS</title>
+<meta name="description" content="天気と気分、七つのGINZA CODEを手がかりに、昭和歌謡と洋楽から毎週7曲を選ぶ週間昭和歌謡予報「Tokyo Nostalgic Soundtrack」。銀座と音楽の短い物語を、スクロールしながら。">
+<link rel="canonical" href="https://maron-ginza.github.io/GINZA_WHISKERS/tns.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<!-- 独自ドメイン未確定のため、ginzawhiskers.comを想定した仮実装（CLAUDE.md第9章・第10章参照） -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GINZA WHISKERS">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://maron-ginza.github.io/GINZA_WHISKERS/tns.html">
+<meta property="og:title" content="Tokyo Nostalgic Soundtrack | GINZA WHISKERS">
+<meta property="og:description" content="天気と気分、七つのGINZA CODEを手がかりに、昭和歌謡と洋楽から毎週7曲を選ぶ週間昭和歌謡予報「Tokyo Nostalgic Soundtrack」。銀座と音楽の短い物語を、スクロールしながら。">
+<meta property="og:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/og-card.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tokyo Nostalgic Soundtrack | GINZA WHISKERS">
+<meta name="twitter:description" content="天気と気分、七つのGINZA CODEを手がかりに、昭和歌謡と洋楽から毎週7曲を選ぶ週間昭和歌謡予報「Tokyo Nostalgic Soundtrack」。銀座と音楽の短い物語を、スクロールしながら。">
+<meta name="twitter:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/og-card.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<!-- JS無効時のフォールバック：.tns-revealのopacity:0が解除されず本文が
+     見えなくなることを防ぐ（JS有効時は下部scriptが.is-visibleを付与して
+     上書きする）。 -->
+<noscript><style>.tns-reveal{opacity:1!important;transform:none!important;}</style></noscript>
+</head>
+<body>
+
+<!-- Tokyo Nostalgic Soundtrack（TNS）専用LP。2026-11-02 デザイン改修指示対応、
+     同日本番公開。新規ページ（Project 01配下、母艦共通ヘッダー・フッターを使用）。
+     母艦TOP（index.html）の #soundtrack カードは、本公開に合わせて遷移先を
+     noteマガジン直リンクからこのLPへ変更済み（index.html側のコメント参照）。
+     OGP画像は暫定で汎用 og-card.jpg のまま（TNS専用のOGP画像は今回未作成、
+     既知の課題として報告済み）。日本語/英語切替は今回の指示に含まれていない
+     ため実装していない（index.html/400years.html等とは異なり単一言語ページ）。 -->
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="index.html" class="brand">
+      <span class="brand-jp">GINZA WHISKERS</span>
+    </a>
+    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="main-nav">
+      <ul>
+        <li><a href="index.html#know">今の銀座</a></li>
+        <li><a href="index.html#feel">銀座の時間</a></li>
+        <li><a href="index.html#experience">銀座を体験</a></li>
+        <li><a href="index.html#your-ginza">自分の銀座</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="index.html#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- Scene 01｜出会い：ファーストビュー。
+       演出指示：「銀座の情景と上品な女性を描いた、印象的なメインビジュアル」
+       2026-11-02 レイアウト修正：
+       ①前回の切り出し（y:320〜1150、全幅）は、上端タイトル文字を避けた
+       結果、髪の生え際〜目元の余白がほぼゼロになっていた（目元が画像の
+       上端ギリギリに来る）という不具合をグリッド座標で確認。文字は
+       左側のみ（x:0〜330付近）に収まっていたため、x:370〜1086,
+       y:0〜1150 へ切り出し直し、頭上の余白を十分に確保したうえで、
+       上端タイトル・下端キャプションの文字・什器の黒板（「Have a nice
+       week.」の文字）をすべて除いた（前回「文字の焼き込みなし」と報告した
+       のは誤りで、実際には左下の黒板什器の文字が写り込んでいた。今回の
+       切り出しでこの黒板自体が画角から外れたため解消）。トレードオフとして
+       左側の花と猫の全身は画角外になった（猫の尻尾のみわずかに写る）。
+       ②固定ヘッダー（.site-header、position:sticky）はページ最上部
+       （scrollY=0）では通常のドキュメントフローに収まり画像と重ならない
+       ことをコードで確認済み（スクロール時のみ上に固定される仕様）——
+       実際の不具合は①の切り出しのみが原因だった。
+       ③PCで画像だけが画面を占有しないよう、画像とテキストを横並び2カラム
+       （.tns-hero-grid、860px以上）に変更。スマートフォンでは画像→
+       テキストの順で縦積み。
+       ④本文は意味のまとまりごとに.nb（white-space:nowrap、既存ユーティリ
+       ティクラス）で区切り、「今日」等の語が行末で分断されないようにした
+       （区切り自体はブラウザが画面幅に応じて自然に選択する）。 -->
+  <section class="section tns-hero">
+    <div class="container">
+      <div class="tns-hero-grid tns-reveal">
+        <figure class="tns-hero-visual">
+          <img src="images/tns/scene01-flowershop.jpg" alt="花屋の店先で花を選ぶ、上品な装いの女性。秋の銀座の通り。" width="716" height="1150" loading="eager" fetchpriority="high">
+        </figure>
+        <div class="tns-hero-body">
+          <p class="eyebrow">TOKYO NOSTALGIC SOUNDTRACK</p>
+          <h1 class="tns-h1"><span class="nb">今日の銀座に、</span><span class="nb">似合う一曲。</span></h1>
+          <p class="lead tns-lead"><span class="nb">朝の光、</span><span class="nb">午後の雲、</span><span class="nb">雨上がりの街角。</span><span class="nb">同じ銀座でも、</span><span class="nb">空模様と気分が違えば、</span><span class="nb">聴きたくなる音楽も</span><span class="nb">変わります。</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scene 02｜共感：雨の日と夕暮れ、気分の対比を短い文章で。
+       演出指示：邦楽・洋楽の説明表や機能一覧にはしない→一覧・表組みは使わず
+       短い散文のみで構成。
+       2026-11-02：参照画像5枚のうち、透明傘＋ベージュコートの情景
+       （Downloads/S__22175769.jpg、マロン指定の第一候補）を採用。元画像
+       1122×1402から、右側の「GINZA 1 CHOME」銘板（x:940〜）と下端の
+       キャプション文字（y:1230〜）をトリミングのみで除去し、顔・傘・猫
+       （小さなコート姿）はすべて残した（x:0〜930, y:0〜1220、構図は
+       崩れていないため画像編集待ちにはしていない）。元画像は
+       images/tns/_reference/ref-umbrella-rainy-night.jpg として保存し、
+       新規に書き出した掲載用ファイル（images/tns/scene02-umbrella.jpg）とは
+       別管理にしている。画像内の「CODE 1」表記・英題は、TNS Editorial
+       Code（TNSSettings）の正式設定としては一切登録していない
+       （このページのHTML・altテキストにもコード番号は記載しない）。
+       Scene01とは左右を反転し画像を右側に配置。残り4枚はScene03候補の
+       まま配置未確定（別途判断）。 -->
+  <section class="section tns-scene tns-reveal">
+    <div class="container">
+      <div class="tns-scene-grid tns-scene-grid--reverse">
+        <figure class="tns-scene-visual">
+          <img src="images/tns/scene02-umbrella.jpg" alt="透明な傘をさし、夜の銀座の通りで見上げる女性。コートを着た猫が傍らにいる。" width="930" height="1220" loading="lazy">
+        </figure>
+        <div class="tns-scene-body">
+          <h2 class="tns-h2"><span class="nb">雨の日には、</span><span class="nb">雨の日の銀座がある。</span></h2>
+          <p class="lead tns-lead"><span class="nb">少しセンチメンタルな</span><span class="nb">雨の日には、</span><span class="nb">懐かしい日本のメロディー。</span></p>
+          <p class="lead tns-lead"><span class="nb">背筋を伸ばして</span><span class="nb">歩きたい夕暮れには、</span><span class="nb">洗練された洋楽。</span></p>
+          <p class="lead tns-lead"><span class="nb">その日の気持ちに寄り添う一曲が、</span><span class="nb">いつもの街を、</span><span class="nb">少し違って見せてくれます。</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scene 03｜発見：銀座の表情の違いを感じるギャラリー。全7枚で完成。
+       2026-11-02 マロン指示により以下2点を対応：
+       ①中段右（7枚目）の空き枠を解消。A10（レコード）は修正版が届いて
+       おらず、かつ元のA10.jpgは実際にはショーウインドー（陶器）の情景
+       だったため不使用。レコード現場の画像はB02.jpgに実在したが、
+       棚一面・手元のレコードジャケットに実在しそうなアーティスト名・
+       曲名（MARIYA TAKEUCHIという実在歌手名含む）が複数写り込んでおり、
+       トリミングでは全除去できないためA10と同じ理由で不使用。
+       代わりにDownloads未使用候補を確認し、現在の6枚（街歩き／建築／
+       読書／日記／会話／バー）と情景が重複せず、文字・ブランド名が
+       写り込んでいない「ショッピング」の情景（A08.jpg、下端キャプション
+       のみで他の文字なし）を7枚目として採用した。
+       ②上段中央だったB01（建築）で女性が右端ぎりぎりで見切れる問題を
+       解消。狭い列幅（1fr、目標比0.694）のままobject-positionの調整
+       （78% 50%）だけでは実機で見切れが残ったため、表示位置の変更に加えて
+       「横長の枠へ移動」する対応を実施：B01を中段（比0.694ではなく
+       1.11、より横長で元の比率0.987に近い）へ移し、空いた上段の枠には
+       読書(A05)と新規のショッピング(A08)を配置。3段とも「3列／2列／2列」
+       の構成は維持し、配置順のみ調整した（マロン許可済み）。
+       新しい段構成：
+       上段＝街歩き(B04,広め) / 読書(A05) / ショッピング(A08)　……3列
+       中段＝日記(B05) / 建築(B01)　……2列（どちらも比率1.11、空き枠なし）
+       下段＝会話(B06) / バー(B03)　……2列
+       各段内の上下揃え方針（768px以上でaspect-ratio＋object-fit:cover、
+       768px未満は適用せず各ファイルの実比率で表示）は前回から変更なし。
+       B01は中段への移動により目標比率が0.987に近い1.11になったため、
+       object-positionをcenterに戻しても顔・猫とも無傷であることを
+       object-fit:cover相当のクロップを書き出して目視確認済み。 -->
+  <section class="section tns-scene tns-scene--codes tns-reveal">
+    <div class="container narrow">
+      <h2 class="tns-h2"><span class="nb">街には、</span><span class="nb">七つの表情がある。</span></h2>
+      <p class="lead tns-lead"><span class="nb">空模様も、</span><span class="nb">心の色も、</span><span class="nb">毎日少しずつ違う。</span><span class="nb">銀座の情景を、</span><span class="nb">七つのコードに重ねて。</span><span class="nb">今日のあなたに</span><span class="nb">似合う一曲を、</span><span class="nb">見つけてみませんか。</span></p>
+    </div>
+    <div class="container tns-gallery-grid">
+      <div class="tns-gallery-row tns-gallery-row--top">
+        <figure class="tns-gallery-item tns-gallery-item--b04">
+          <img src="images/tns/scene03-gallery-01-b04.jpg" alt="ベージュの装いで銀座の街を歩く女性。猫が傍らにいる。" width="1024" height="1370" loading="lazy">
+        </figure>
+        <figure class="tns-gallery-item tns-gallery-item--a05">
+          <img src="images/tns/scene03-gallery-03-a05.jpg" alt="カフェで本を読む女性。傍らに猫がいる。" width="1024" height="1180" loading="lazy">
+        </figure>
+        <figure class="tns-gallery-item tns-gallery-item--a08">
+          <img src="images/tns/scene03-gallery-07-a08.jpg" alt="買い物袋を手に銀座の通りを歩く女性。傍らに猫がいる。" width="1086" height="1230" loading="lazy">
+        </figure>
+      </div>
+      <div class="tns-gallery-row tns-gallery-row--mid">
+        <figure class="tns-gallery-item tns-gallery-item--b05">
+          <img src="images/tns/scene03-gallery-04-b05.jpg" alt="窓辺で日記を書く女性。猫がノートをのぞき込んでいる。" width="1122" height="770" loading="lazy">
+        </figure>
+        <figure class="tns-gallery-item tns-gallery-item--b01-mid">
+          <img src="images/tns/scene03-gallery-02-b01.jpg" alt="赤いストールを巻き、街灯のある石造りの建物を見上げる女性。" width="750" height="760" loading="lazy">
+        </figure>
+      </div>
+      <div class="tns-gallery-row tns-gallery-row--bottom">
+        <figure class="tns-gallery-item tns-gallery-item--b06">
+          <img src="images/tns/scene03-gallery-05-b06.jpg" alt="テーブルを挟んで語らう二人の女性。傍らに猫がいる。" width="1122" height="730" loading="lazy">
+        </figure>
+        <figure class="tns-gallery-item tns-gallery-item--b03">
+          <img src="images/tns/scene03-gallery-06-b03.jpg" alt="バーでグラスを手にする女性。傍らに猫がいる。" width="1122" height="1180" loading="lazy">
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scene 04｜体験への期待：街歩き・カフェ・夜の余韻。
+       演出指示：番号付きの手順リストにはしない→<ol>等は使わず短い散文のみ。
+       2026-11-02：参照画像4枚のうち、カフェの情景（CODE 2「Lightness of
+       Autumn in Ginza」、街並みまで入った引きの構図＝Downloads/
+       S__22175759.jpg）を採用。「カフェでひと息つく」の本文に直接合致する
+       ため選定。近接クロップ版（S__22175758.jpg）は同一シーンのため不使用
+       （Scene間・画像間の重複を避ける方針）。元画像1086×1448の下端
+       キャプションテキストのみを切り落とし（y:0〜1150、1086×1150）、
+       顔・カップ・街並みを優先してそのまま収めている。
+       2026-11-02 レイアウト修正：PCでは画像とテキストを横並び2カラム
+       （.tns-scene-grid--reverse、Scene01とは左右反転＝画像を右側に）、
+       スマートフォンでは画像→テキストの順で縦積み（Scene01と統一）。 -->
+  <section class="section tns-scene tns-reveal">
+    <div class="container">
+      <div class="tns-scene-grid tns-scene-grid--reverse">
+        <figure class="tns-scene-visual">
+          <img src="images/tns/scene04-cafe.jpg" alt="黄金色の並木を背に、カフェでお茶をする女性。街並みも見える構図。" width="1086" height="1150" loading="lazy">
+        </figure>
+        <div class="tns-scene-body">
+          <h2 class="tns-h2"><span class="nb">音楽を連れて、</span><span class="nb">銀座へ。</span></h2>
+          <p class="lead tns-lead"><span class="nb">お気に入りの一曲を</span><span class="nb">聴きながら歩く。</span><span class="nb">カフェでひと息つく。</span><span class="nb">夜の灯りを眺めながら、</span><span class="nb">今日の余韻に浸る。</span></p>
+          <p class="lead tns-lead"><span class="nb">音楽が、</span><span class="nb">銀座で過ごす時間の</span><span class="nb">小さな贅沢になります。</span></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scene 05｜物語の続きへ：noteへの誘導。
+       リンク先は既存のTNS専用noteマガジン（m/mf8bc7b0907d9）のみを使用。
+       母艦TOPの #time-edit カードが使っている GINZA TIME EDIT マガジン
+       （m03614564526b）は誤って流用しないこと（マロン指示により明記）。 -->
+  <section class="section tns-scene tns-scene--cta tns-reveal">
+    <div class="container narrow">
+      <h2 class="tns-h2"><span class="nb">あなたの一週間に、</span><span class="nb">銀座の音楽を。</span></h2>
+      <p class="lead tns-lead"><span class="nb">Tokyo Nostalgic Soundtrackは、</span><span class="nb">天気と気分、</span><span class="nb">七つのGINZA CODEを</span><span class="nb">手がかりに、</span><span class="nb">昭和歌謡と洋楽から</span><span class="nb">毎週7曲を選ぶ</span><span class="nb">「週間昭和歌謡予報」です。</span></p>
+      <p class="lead tns-lead"><span class="nb">今週の銀座に</span><span class="nb">似合う一曲を、</span><span class="nb">noteで見つけてみませんか。</span></p>
+      <p class="tns-cta">
+        <a class="btn" href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener noreferrer">今週の一曲を見つける</a>
+      </p>
+      <p class="tns-cta-sub">
+        <a href="https://note.com/ginza_whiskers/m/mf8bc7b0907d9" target="_blank" rel="noopener noreferrer">noteで最新号を読む</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <p class="footer-brand">GINZA WHISKERS</p>
+    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+<!-- 2026-11-02：このページ専用の控えめなスクロール演出（.tns-reveal要素の
+     フェード＋わずかな上昇）。js/main.js（共通スクリプト）は変更せず、
+     このページだけで完結するIIFEとして実装。prefers-reduced-motionが
+     reduceの場合はIntersectionObserver自体を使わず即座に表示する。 -->
+<script>
+(function () {
+  var items = document.querySelectorAll('.tns-reveal');
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion || !('IntersectionObserver' in window)) {
+    items.forEach(function (el) { el.classList.add('is-visible'); });
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  items.forEach(function (el) { observer.observe(el); });
+})();
+</script>
+</body>
+</html>
