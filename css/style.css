@@ -2557,3 +2557,55 @@ a.content-card:hover {
     letter-spacing: 0.02em;
   }
 }
+
+/* ==========================================================
+   shun-no-ginza.html（旬の銀座）専用。2026-11-03 再設計（概要・固定挿絵・
+   noteボタンのみのシンプルな紹介LPへ変更。フィード取得・カテゴリー
+   絞り込み用のCSSは削除済み）。
+   2026-11-03 文言・挿絵差し替えに合わせ、.hitosaji-concept-visual／
+   .hitosaji-concept-frameと同じ「figure（キャプション含む）＋内側frame
+   （no-crop表示）」の2階層構造へ揃えた（AI生成画像注記のfigcaptionを
+   画像の枠線の外に表示するため）。
+   ========================================================== */
+.shun-visual {
+  margin: 0;
+}
+
+.shun-visual-frame {
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.shun-visual-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shun-visual figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.shun-cta {
+  margin: 1.6em 0 0.8em;
+}
+
+/* 2026-11-03 追加：スマホ幅での見出し改行制御。.hitosaji-h1-line2と同じ
+   パターン（<br>にdisplay:noneを使う方式はChromeで改行だけが残る挙動を
+   確認したため不採用）で、「次の銀ブラに、」「私だけの時間を。」を別々の
+   <span>にし、480px以下でのみ2つ目のspanをdisplay:blockにして強制改行
+   させる（PC幅は両spanともinlineのまま＝1行表示を維持）。375px幅でも
+   各行が折り返さず収まることを確認済み（.container narrowの左右
+   padding 32pxを差し引いた実測で、既定のh1サイズのまま収まるため、
+   hitosaji-hero-headingのような480px以下でのfont-size縮小は不要）。 */
+.shun-h1-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .shun-h1-line2 {
+    display: block;
+  }
+}

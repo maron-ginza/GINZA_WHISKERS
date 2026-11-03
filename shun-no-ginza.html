@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旬の銀座 | GINZA WHISKERS</title>
+<meta name="description" content="季節のひと皿、アート、お店——GINZA WHISKERSのAI編集部が8つのカテゴリーから銀座の「旬」を選んでお届けするシリーズ「旬の銀座」。noteマガジンで公開中です。">
+<link rel="canonical" href="https://maron-ginza.github.io/GINZA_WHISKERS/shun-no-ginza.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GINZA WHISKERS">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://maron-ginza.github.io/GINZA_WHISKERS/shun-no-ginza.html">
+<meta property="og:title" content="旬の銀座 | GINZA WHISKERS">
+<meta property="og:description" content="季節のひと皿、アート、お店——GINZA WHISKERSのAI編集部が8つのカテゴリーから銀座の「旬」を選んでお届けするシリーズ「旬の銀座」。noteマガジンで公開中です。">
+<meta property="og:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/shun/hero-concept-knitting.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="旬の銀座 | GINZA WHISKERS">
+<meta name="twitter:description" content="季節のひと皿、アート、お店——GINZA WHISKERSのAI編集部が8つのカテゴリーから銀座の「旬」を選んでお届けするシリーズ「旬の銀座」。noteマガジンで公開中です。">
+<meta name="twitter:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/shun/hero-concept-knitting.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- 旬の銀座 専用LP。2026-11-03 新規制作（初稿・ローカルのみ・本番非公開）。
+     Project 01配下、母艦共通ヘッダー・フッターを使用。
+
+     2026-11-03、役割を再設計（マロン指示）：当初はProject 02の公開フィードを
+     クライアントサイドで読み最新記事を自動一覧表示する「フィード駆動型」LPを
+     試作したが、本番フィード（/ja/latest.json）が現時点で本番未到達
+     （Cloudflare Pages側のデプロイ・Railwayバックエンド双方の問題を確認済み、
+     マロンへの報告を参照）という調査結果を踏まえ、役割を
+     「母艦サイト → 紹介LP → noteマガジン」という単純な導線に変更した。
+     最新記事一覧・カテゴリー絞り込み・自動更新はこのLPに持たせず、すべて
+     noteマガジン側に委ねる。これに伴い、フィード取得JS
+     （initShunNoGinza等、js/main.js）・専用CSS（.shun-category-filter等、
+     css/style.css）は削除し、両ファイルともフィード駆動型を試作する前の
+     状態（コミット済みの既存内容）へ完全に戻したことを確認済み
+     （git diffで差分なしを確認）。既存の index.html #latest-list /
+     initLatestJournal()（「最新のジャーナル」）には一切影響していない。
+     Project 02側で追加した公開フィードの拡張（notePublishedUrl・
+     publishedAt解決優先順位の修正、commit 8df525b・本番反映済み）は、
+     既存の「最新のジャーナル」機能にとって有用な改善のため、本LPでは
+     使わなくなった後も据え置いている（共有資産の一括削除はしない）。
+
+     2026-11-03 文言・挿絵差し替え（マロン指示）：3セクション構成（概要・
+     固定挿絵・noteボタン）は維持したまま、各セクションの文言を確定稿へ
+     更新し、固定挿絵を母艦TOPカード画像の仮流用（images/cards/time-edit.jpg）
+     から、8カテゴリーを編み込んだ専用コンセプト画像
+     （images/shun/hero-concept-knitting.jpg、LP専用の新規ファイルとして
+     保存、母艦TOPカード画像は上書きしていない）へ差し替えた。AI生成画像
+     である旨の注記figcaptionは、hitosaji.htmlの
+     .hitosaji-concept-visual／.hitosaji-concept-frameと同じ「figure＋
+     内側frame」構造パターンを踏襲して追加した（css/style.css該当箇所
+     参照）。
+
+     2026-11-03 スマホ見出し改行制御：hitosaji.htmlの.hitosaji-h1-line2と
+     同じパターン（<br>にdisplay:noneを使う方式はChromeで改行だけが残る
+     挙動を確認したため不採用）で、h1を.shun-h1-line1／.shun-h1-line2の
+     2つのspanに分割し、480px以下でのみ2つ目をdisplay:blockにして
+     「次の銀ブラに、」「私だけの時間を。」の2行に強制改行（PC幅は両spanとも
+     inlineのまま＝1行表示を維持）。375／390／430pxで各行とも折り返しなし・
+     横はみ出しなしを実機DOM計測で確認済み。
+
+     2026-11-03 本番公開：確定した文言・挿絵に合わせ、meta description・
+     og:description・twitter:description と og:image・twitter:image
+     （images/shun/hero-concept-knitting.jpgへ更新）を本文と整合させた。
+     canonical・og:urlは新規制作時点から本番URL
+     （https://maron-ginza.github.io/GINZA_WHISKERS/shun-no-ginza.html）を
+     設定済みのため変更なし。母艦TOP「GINZA TIME EDIT」カード
+     （index.html #time-edit）の遷移先をnoteマガジン直リンクから本LPへ
+     変更（tns.html・cross-culture.html・hitosaji.htmlと同じ内部遷移方式）。
+     sitemap.xmlにも追加。
+
+     本LPの構成（3セクションのみ、フェッチ処理なし）：
+       1. 短い概要・魅力の紹介
+       2. 固定テーマ挿絵（images/shun/hero-concept-knitting.jpg、
+          8カテゴリーを編み込んだLP専用コンセプト画像。AI生成画像注記あり）
+       3. noteマガジンへのボタン（URLは2026-08-28〜09-09の母艦再編時に
+          確認済みのものと同一：https://note.com/ginza_whiskers/m/m03614564526b） -->
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="index.html" class="brand">
+      <span class="brand-jp">GINZA WHISKERS</span>
+    </a>
+    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="main-nav">
+      <ul>
+        <li><a href="index.html#know">今の銀座</a></li>
+        <li><a href="index.html#feel">銀座の時間</a></li>
+        <li><a href="index.html#experience">銀座を体験</a></li>
+        <li><a href="index.html#your-ginza">自分の銀座</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="index.html#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1. 短い概要・魅力の紹介 -->
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">GINZA TIME EDIT｜旬の銀座</p>
+      <h1 class="shun-hero-heading"><span class="shun-h1-line1">次の銀ブラに、</span><span class="shun-h1-line2">私だけの時間を。</span></h1>
+      <p class="lead">季節を味わうひと皿、新しい感性に触れるアート、ふと立ち寄りたくなるお店。</p>
+      <p class="lead">GINZA WHISKERSのAI編集部が、8つのカテゴリーから銀座の「旬」を選び、その背景にある文化や物語とともにお届けします。</p>
+      <p class="lead">受け継がれるものと、新しく生まれるもの。街に流れる時間を読み解き、ひとつひとつの発見を編み上げる。それが、GINZA TIME EDITの「時を紡ぐ」編集です。</p>
+      <p class="lead">気になる話題を、自分の好みでつないでいく。いつもの銀座から、私だけの銀ブラ時間を見つけてみませんか。</p>
+    </div>
+  </section>
+
+  <!-- 2. 固定テーマ挿絵：画像全体を切らずに見せる（hitosaji.htmlの
+       .hitosaji-concept-visual／.hitosaji-concept-frameと同じ
+       「figure＋内側frame（no-crop）＋AI生成画像注記figcaption」
+       パターンを踏襲）。 -->
+  <section class="section hub-section">
+    <div class="container">
+      <figure class="shun-visual">
+        <div class="shun-visual-frame">
+          <img src="images/shun/hero-concept-knitting.jpg" width="1672" height="941" alt="銀座の街並みを背景に、8つのカテゴリーを表す模様を編み込み、自分だけの銀ブラ時間を紡ぐイメージ" loading="lazy">
+        </div>
+        <figcaption>※画像はAI生成によるコンセプトイメージです。実際の店舗・商品・展示を紹介するものではありません。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 3. noteマガジンへのボタン -->
+  <section class="section hub-section">
+    <div class="container narrow">
+      <h2>あなたの次の寄り道を、noteで。</h2>
+      <p class="lead">スイーツ、グルメ、ショッピング、アート・文化、音楽・舞台、ビューティー・ウェルネス、学び・体験、季節の催し。</p>
+      <p class="lead">8つのカテゴリーに広がる銀座の話題から、今の気分に合う発見を。最新記事からこれまでの物語まで、noteマガジンでお楽しみください。</p>
+      <p class="shun-cta">
+        <a class="btn" href="https://note.com/ginza_whiskers/m/m03614564526b" target="_blank" rel="noopener noreferrer">「旬の銀座」をnoteで読む</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <p class="footer-brand">GINZA WHISKERS</p>
+    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>
