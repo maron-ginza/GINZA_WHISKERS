@@ -2473,3 +2473,87 @@ a.content-card:hover {
   width: 100%;
   height: auto;
 }
+
+/* ==========================================================
+   hitosaji.html（銀座、ひと匙の贅沢）専用。2026-11-03 新規追加。
+   記事一覧カードの画像枠は、母艦TOP（index.html）の#hitosajiカードと
+   同じ既存クラス .entry-visual--hitosaji（4:3コンテナ＋object-fit:
+   contain、1095行目付近）をそのまま再利用しており、新規CSSは追加して
+   いない。ここで追加するのは、世界観を伝える写真（固定高さ・cover
+   トリミングなしで画像全体を見せる .hitosaji-concept-visual。
+   cross-culture.html の .ccm-concept-visual と同じパターンを流用）と、
+   件数表示・CTA余白の小さな付随スタイルのみ。 */
+.hitosaji-concept-visual {
+  margin: 0;
+}
+
+.hitosaji-concept-frame {
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.hitosaji-concept-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 2026-11-03 追加：AI生成画像である旨の注記。index.htmlの
+   .live1029-photo figcaption（告知写真下の小さな注記、画像の枠線の外に
+   余白を空けて配置するパターン）と同じ構造・スタイルを踏襲した。 */
+.hitosaji-concept-visual figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.y-hitosaji-count {
+  margin: 0.6em 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-muted);
+}
+
+.hitosaji-cta {
+  margin: 1.6em 0 0.8em;
+}
+
+/* 2026-11-03 追加：PC幅で最初の画面内に「2. 世界観を伝える写真」の
+   上部が自然に見えるよう、冒頭セクション（1. プロジェクト概要）の
+   上下余白のみを既定の.section（110px 0）より縮めた。文字の読みやすさ・
+   余白の品格は保ちつつ、画像はトリミングしない（セクション間の余白の
+   調整のみ）。スマホ（720px以下）は既存の.sectionのブレークポイント値
+   （72px 0）をそのまま維持し、変更していない。 */
+.hitosaji-intro.section {
+  padding: 64px 0 48px;
+}
+
+@media (max-width: 720px) {
+  .hitosaji-intro.section {
+    padding: 72px 0;
+  }
+}
+
+/* 2026-11-03 追加：スマホ幅での見出し改行制御。「五感を澄ませて歩く、」
+   「私だけの時間。」を別々の<span>にし、480px以下でのみ2つ目のspanを
+   display:blockにして強制改行させる（PC幅は両spanともinlineのまま＝
+   元の1行表示を維持）。<br>にdisplay:noneを使う方式はChromeで改行だけが
+   残る挙動を確認したため不採用。あわせて、1行目（10文字）が375px幅の
+   コンテナ内に収まるよう、同じブレークポイントでのみ文字サイズ・字間を
+   縮小する（PC幅は無変更）。 */
+.hitosaji-h1-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .hitosaji-h1-line2 {
+    display: block;
+  }
+
+  .hitosaji-hero-heading {
+    font-size: 26px;
+    letter-spacing: 0.02em;
+  }
+}
