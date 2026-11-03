@@ -44,10 +44,19 @@ export interface ArticleSummary {
   accessionNumber: string | null
   representedYear: number | null
   historicalPeriod: string | null
-  // ISO日時。publishHistory の channel='site' エントリを優先し、無ければ
-  // Payload組み込みの updatedAt を使う（pickPublishedAt 参照）。
+  // ISO日時。publishHistory の channel='note'（実際の公開日時） →
+  // channel='site' → Payload組み込みの updatedAt の順で解決する
+  // （pickPublishedAt 参照。2026-11-03改訂：site channelは実運用で
+  // 一度も使われたことがなく〈DB実測0/55件〉常にupdatedAtへフォールバック
+  // していたため、実際に運用されているnote channelを最優先にした）。
   // 一覧の新着順ソートや母艦フィード（latest.json）の publishedAt に用いる。
   publishedAt: string
+  // 2026-11-03追加。publishHistoryのchannel='note'エントリのreference
+  // （note.com記事URL、noteは公式APIが無いため手動投稿後にCMS管理画面へ
+  // 手動登録される。未登録の記事はnull——「公開済みだがnote URL未登録」を
+  // 「公開されていない」と混同しない）。母艦フィード（latest.json）が
+  // noteへの遷移リンクとして使う。
+  notePublishedUrl: string | null
   pillars: Array<{ id: string; name: string }>
   images: ArticleImage[]
   // false の場合、title/body/seo等は実際の翻訳ではなくプレースホルダー
@@ -81,8 +90,10 @@ interface ArticleRaw {
   historicalPeriod: string | null
   // Payload組み込みタイムスタンプ（常時ISO文字列）
   updatedAt: string
-  // 「サイトへの公開」記録。任意・手動運用のため未設定があり得る（ARCHITECTURE_DRAFT.md 2.4節）
-  publishHistory?: Array<{ channel: string; publishedAt: string | null }> | null
+  // 配信記録。任意・手動運用のため未設定があり得る（ARCHITECTURE_DRAFT.md 2.4節）。
+  // referenceは配信先URL・投稿ID（noteは手動投稿のため空欄許容、
+  // Articles.ts publishHistory.reference のadmin説明参照）
+  publishHistory?: Array<{ channel: string; publishedAt: string | null; reference: string | null }> | null
   // Phase 8でTags.nameをlocalized化。`locale=all`のためロケールごとの生値で返る
   pillars: Array<{ id: string; name: Localized<string> }>
   images: ArticleImageRaw[]
@@ -97,12 +108,35 @@ interface ArticleRaw {
   translationStatus: { ja: TranslationState; en: TranslationState }
 }
 
-// publishedAt の解決：publishHistory に channel='site' の実publish記録が
-// あればその時刻を、無ければ Payload の updatedAt を使う。母艦フィードや
-// 新着順ソートのための「実質の公開日時」。
+// publishedAt の解決：publishHistory の channel='note'（実際に運用されている
+// 配信チャンネル） → channel='site' → Payload の updatedAt の順。
+// 2026-11-03改訂：site channelは実運用で一度も使われたことがなく
+// （DB実測0/55件）常にupdatedAtへフォールバックしていたため、noteを最優先にした
+// （noteの実publishedAtはCMS管理画面で公開確認時に手動入力される。未登録の記事は
+// 従来どおりsite→updatedAtへフォールバックする＝既存挙動を壊さない）。
 function pickPublishedAt(raw: ArticleRaw): string {
+  const note = raw.publishHistory?.find((h) => h.channel === 'note' && h.publishedAt)
+  if (note?.publishedAt) return note.publishedAt
   const site = raw.publishHistory?.find((h) => h.channel === 'site' && h.publishedAt)
   return site?.publishedAt ?? raw.updatedAt
+}
+
+// note.com記事URLの形以外は受け付けない。実データ確認で、referenceに
+// URLではなく内部メモ文字列（例:「公開URL未取得。マロンより公開済みと
+// 報告を受けたが未確認」）が入っているケースが見つかったため
+// （2026-11-03、note転記は手動運用でreferenceの入力タイミング・内容が
+// 一定しないことに起因）。このメモが公開フィードへそのまま漏れないよう、
+// 形式検証を通った値だけをnote公開URLとして扱う。
+const NOTE_URL_RE = /^https:\/\/note\.com\//i
+
+// 2026-11-03追加：publishHistoryのchannel='note'エントリのreference
+// （note.com記事URL）。noteは公式投稿APIが無いため手動投稿・手動登録で、
+// 未登録・URL未確定（内部メモのみ）の記事はnull（推測で補わない）。
+function pickNotePublishedUrl(raw: ArticleRaw): string | null {
+  const note = raw.publishHistory?.find(
+    (h) => h.channel === 'note' && typeof h.reference === 'string' && NOTE_URL_RE.test(h.reference),
+  )
+  return note?.reference ?? null
 }
 
 interface PayloadListResponse<T> {
@@ -140,6 +174,7 @@ function resolveSummary(raw: ArticleRaw, locale: Locale): ArticleSummary {
     representedYear: raw.representedYear,
     historicalPeriod: raw.historicalPeriod,
     publishedAt: pickPublishedAt(raw),
+    notePublishedUrl: pickNotePublishedUrl(raw),
     // タグ名は記事本文の翻訳ワークフローとは独立した固定語彙のため、
     // 英語名未入力時はサイレントに日本語名へフォールバックする（Phase 8承認事項）
     pillars: raw.pillars.map((pillar) => ({

@@ -4,26 +4,36 @@ import { lexicalToPlainText } from '../../lib/lexical'
 import { fetchPublishedArticleDetails, getHeroImageUrl, type ArticleDetail } from '../../lib/payload'
 import { categoryLabelJa, categoryIconUrl } from '../../lib/categoryIcons'
 
-// Project 01母艦（ginzawhiskers.com）の「最新のジャーナル」へ渡す疎結合フィード。
+// Project 01母艦（ginzawhiskers.com）の「最新のジャーナル」「旬の銀座」LPへ渡す
+// 疎結合フィード（2026-11-03、旬の銀座LP向けに notePublishedUrl を追加・共用）。
 //
-// - 公開契約（DTO）は title / url / excerpt / publishedAt / pillar / image に限定する。
-//   本文（Lexical）・内部ID・reviewStatus 等の内部表現は一切出さない。
+// - 公開契約（DTO）は title / url / notePublishedUrl / excerpt / publishedAt /
+//   pillar / image / category / categoryIconUrl に限定する。本文（Lexical）・
+//   内部ID・reviewStatus 等の内部表現は一切出さない。
 // - published のみ：fetchPublishedArticleDetails は
 //   `where[reviewStatus][equals]=published` を必ず付けて取得する。さらに Payload の
 //   Articles.access.read が匿名アクセスを published に制限しているため、
 //   draft / review / approved は二重に除外される（このファイルに追加のフィルタは不要）。
-// - 新しい順・最大10件。
+// - 新しい順・最大20件（2026-11-03、10→20。note公開URL未登録の記事が混じって
+//   いても、それを必要とする消費側〈旬の銀座LP〉がクライアント側でフィルタ後に
+//   目標10件へ近づけられるよう、取得母数に余裕を持たせた。「最新のジャーナル」
+//   〈母艦TOP、先頭3件のみ使用〉はnotePublishedUrlを要求しないため挙動は
+//   変わらない。このフィード自体はnotePublishedUrlの有無で絞り込まない
+//   ——「公開済みの最新記事」という既存の意味を変えないため）。
 // - output: 'static' のためビルド時に /ja/latest.json として書き出される。
 //   Payload未起動・取得失敗時はビルドを止めず空フィード（items: []）を返す。
 
 export const prerender = true
 
-const FEED_MAX_ITEMS = 10
+const FEED_MAX_ITEMS = 20
 const EXCERPT_MAX_LENGTH = 120
 
 interface LatestFeedItem {
   title: string
   url: string
+  // 2026-11-03追加。note.com記事URL（手動投稿・手動登録のため未登録はnull）。
+  // 「旬の銀座」LPは、これがnullの記事をリンクしない設計（表示ルール）。
+  notePublishedUrl: string | null
   excerpt: string
   publishedAt: string
   pillar: string | null
@@ -59,6 +69,7 @@ function toFeedItem(base: string, article: ArticleDetail): LatestFeedItem {
   return {
     title: article.title,
     url: `${base}/ja/articles/${article.slug}`,
+    notePublishedUrl: article.notePublishedUrl,
     excerpt,
     publishedAt: article.publishedAt,
     // 母艦のカードは1つだけ表示するため先頭の収蔵室（pillar）のみ渡す
