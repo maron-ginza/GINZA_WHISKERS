@@ -2413,3 +2413,63 @@ a.content-card:hover {
     transition: none;
   }
 }
+
+/* ==========================================================
+   cross-culture.html（GINZA CROSS CULTURE MAP）専用。2026-11-03 新規追加。
+   既存 .section / .container / .container.narrow / .eyebrow / .lead / .btn /
+   .content-grid / .content-card / .content-card--visual / .content-card--lead /
+   .content-card-body / .content-card-tagline / .card-cta / .entry-visual /
+   .card-cta-multi（index.htmlの🎤LIVEカードと共通）／:root を継承し、
+   画像の縦横比調整（.entry-visual--ccm）・CTA余白（.ccm-cta）・複数リンク
+   カードのカーソル（.content-card--ccm-multi、.content-card--live-multiと
+   同じ意図）のみを追加する。既存ルールは一切変更していない。
+   .entry-visual--ccm：掲載した代表画像（note記事のog:image）は7枚とも
+   1280×670（比率約1.91）で統一されているため、コンテナの比率をそのまま
+   一致させた。ただしUAE篇（#04）のようにイラスト内に文字が焼き込まれた
+   画像が今後も含まれ得るため、object-fit は cover ではなく既存の
+   --live 等と同じ contain＋背景色方式とし、将来ソース比率が変わっても
+   文字や構図が切れないようにしている。
+   ========================================================== */
+.entry-visual.entry-visual--ccm {
+  aspect-ratio: 1.91;
+}
+
+.entry-visual.entry-visual--ccm img {
+  object-fit: contain;
+  background: var(--color-bg);
+}
+
+.y-ccm-article-count {
+  margin: 0.6em 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-muted);
+}
+
+.ccm-cta {
+  margin: 1.6em 0 0.8em;
+}
+
+.content-card--ccm-multi {
+  cursor: default;
+}
+
+/* 2026-11-03 追加：「2. 今回のコンセプト挿絵」用。採用されたコンセプト
+   イラスト（1672×941px、比率約1.78）を、固定高さやobject-fit: cover
+   によるトリミングなしで、幅いっぱい・元の縦横比のまま表示する。
+   tns.html の .tns-scene-visual（枠線＋overflow:hidden、img は
+   width:100%/height:auto）と同じ「画像全体を切らずに見せる」パターンを
+   そのまま流用した。 */
+.ccm-concept-visual {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.ccm-concept-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
