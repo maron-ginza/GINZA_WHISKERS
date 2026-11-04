@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GINZA FRIDAY NIGHT RADIO | GINZA WHISKERS</title>
+<meta name="description" content="銀座の小話と懐かしい音楽を楽しむ「読む深夜ラジオ」GINZA FRIDAY NIGHT RADIO。銀座育ちのパーソナリティ、ポピーが週末の話題や思い出の一曲を届ける読み物シリーズ。毎週金曜23時更新、noteで公開中。">
+<link rel="canonical" href="https://maron-ginza.github.io/GINZA_WHISKERS/ginza-friday-night-radio.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GINZA WHISKERS">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://maron-ginza.github.io/GINZA_WHISKERS/ginza-friday-night-radio.html">
+<meta property="og:title" content="GINZA FRIDAY NIGHT RADIO | GINZA WHISKERS">
+<meta property="og:description" content="銀座の小話と懐かしい音楽を楽しむ「読む深夜ラジオ」GINZA FRIDAY NIGHT RADIO。銀座育ちのパーソナリティ、ポピーが週末の話題や思い出の一曲を届ける読み物シリーズ。毎週金曜23時更新、noteで公開中。">
+<meta property="og:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/radio/hero-concept-radio.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="GINZA FRIDAY NIGHT RADIO | GINZA WHISKERS">
+<meta name="twitter:description" content="銀座の小話と懐かしい音楽を楽しむ「読む深夜ラジオ」GINZA FRIDAY NIGHT RADIO。銀座育ちのパーソナリティ、ポピーが週末の話題や思い出の一曲を届ける読み物シリーズ。毎週金曜23時更新、noteで公開中。">
+<meta name="twitter:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/radio/hero-concept-radio.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- GINZA FRIDAY NIGHT RADIO 紹介LP。2026-11-04 新規制作（初稿・ローカルのみ・
+     本番非公開）。Project 01配下、母艦共通ヘッダー・フッターを使用。
+     shun-no-ginza.html・showa-romance-diary.html・showa-romance-live.html
+     （公開済み、母艦→紹介LP→noteマガジンという確定デザイン）とデザインを統一。
+
+     2026-11-04 挿絵について（マロン指示、初稿）：正式画像は後日用意される
+     ため、初稿では配置箇所の確保のみを行っていた。マロンの明示的な指示に
+     より、母艦TOPの「GINZA FRIDAY NIGHT RADIO」カード画像
+     （images/cards/radio.jpg）を完成画像として流用せず、実装上の説明文も
+     ページ内に表示しない方針とした（shun-no-ginza.html・
+     showa-romance-diary.html・showa-romance-live.html初稿が母艦カード画像を
+     仮流用した手順とは異なる）。そのため初稿では、画像なしの中立な
+     プレースホルダー枠（.radio-visual-frame--placeholder、既存の
+     club-charmant/index.htmlで定義されている.cc-face-media--placeholderと
+     同じ考え方）のみを配置していた。
+
+     2026-11-04 挿絵差し替え（マロン指示）：採用された専用挿絵（深夜の
+     ラジオブースで便りを読むポピーと、自室でラジオに耳を傾ける女性を
+     重ねたコラージュ）を images/radio/hero-concept-radio.jpg として
+     LP専用に保存し、プレースホルダーから差し替えた。母艦TOPカード画像
+     （images/cards/radio.jpg）は上書きしていない。src・alt・width/height、
+     meta og:image／twitter:imageも更新済み。AI生成画像である旨の注記
+     figcaptionは、shun-no-ginza.html・showa-romance-diary.html・
+     showa-romance-live.htmlと同じ「figure＋内側frame」構造パターンを
+     踏襲して追加した（css/style.css該当箇所参照）。
+
+     2026-11-04 見出しのスマホ改行制御：shun-no-ginza.html・
+     showa-romance-diary.html・showa-romance-live.htmlと同じパターンで、
+     h1を.radio-h1-line1／.radio-h1-line2の2つのspanに分割し、480px以下
+     でのみ2つ目をdisplay:blockにして「昭和の深夜ラジオを、」「読む。」の
+     2行に強制改行（PC幅は両spanともinlineのまま＝幅が足りれば1行表示）。
+     「昭和の深夜ラジオを、」（10文字）はshowa-romance-diary.htmlの
+     「今日の寄り道になる。」（同じく10文字）で既定のh1サイズ（32px）では
+     375px幅に収まらなかった実績があるため、同じ対処（480px以下でのみ
+     font-size:26pxへ縮小）を予防的に適用した。ブラウザ拡張
+     （claude-in-chrome）が本セッション中接続できず、実機DOM計測による
+     375／390／430pxでの確認ができていない点に注意（マロンへの報告参照）。
+
+     表現上の注意：「読む」「読み物」「記事」という言葉のみを用い、
+     「聴く」「配信」「放送」など音声配信・実放送と誤認させる表現は
+     使っていない。
+
+     本LPの構成（3セクションのみ、フェッチ処理なし）：
+       1. 紹介文
+       2. 専用挿絵（配置箇所のみ確保、画像なし）
+       3. noteへの案内（URLは母艦TOP #radio カードと同一：
+          https://note.com/ginza_whiskers/m/mdd085803b4b1） -->
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="index.html" class="brand">
+      <span class="brand-jp">GINZA WHISKERS</span>
+    </a>
+    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="main-nav">
+      <ul>
+        <li><a href="index.html#know">今の銀座</a></li>
+        <li><a href="index.html#feel">銀座の時間</a></li>
+        <li><a href="index.html#experience">銀座を体験</a></li>
+        <li><a href="index.html#your-ginza">自分の銀座</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="index.html#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1. 紹介 -->
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">GINZA FRIDAY NIGHT RADIO</p>
+      <h1 class="radio-hero-heading"><span class="radio-h1-line1">昭和の深夜ラジオを、</span><span class="radio-h1-line2">読む。</span></h1>
+      <p class="lead">一週間を終えた金曜の夜。少しだけ夜更かしをして、銀座の話に耳を傾けるように、言葉をたどる時間を。</p>
+      <p class="lead">GINZA FRIDAY NIGHT RADIOは、銀座の小話と懐かしい音楽を楽しむ「読む深夜ラジオ」です。銀座育ちのパーソナリティ、ポピーが、街の今と昔、週末の話題、思い出の一曲をお届けします。</p>
+      <p class="lead">勉強や仕事の合間に、眠る前のひとときに。ひとりで過ごす夜にも、ラジオの向こうには、語りかけてくれる誰かがいる。昭和の深夜ラジオにあったその親密さを、ポピーの言葉と、読者から届くコメントで紡ぎます。</p>
+      <p class="lead">毎週金曜日23時。眠る前のひとときに、銀座からのおしゃべりをどうぞ。</p>
+    </div>
+  </section>
+
+  <!-- 2. 専用挿絵：画像全体を切らずに見せる（shun-no-ginza.html・
+       showa-romance-diary.html・showa-romance-live.htmlの.shun-visual等と
+       同じ「figure＋内側frame（no-crop）＋AI生成画像注記figcaption」
+       パターンを踏襲）。 -->
+  <section class="section hub-section">
+    <div class="container">
+      <figure class="radio-visual">
+        <div class="radio-visual-frame">
+          <img src="images/radio/hero-concept-radio.jpg" width="1672" height="941" alt="深夜のラジオブースで便りを読むポピーと、自室でラジオに耳を傾ける女性を重ねたコラージュ" loading="lazy">
+        </div>
+        <figcaption>※画像はAI生成によるコンセプトイメージです。「読む深夜ラジオ」の世界観を表現したもので、実際の放送風景ではありません。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 3. noteへの案内 -->
+  <section class="section hub-section">
+    <div class="container narrow">
+      <h2 class="radio-note-heading"><span class="radio-h2-line1">金曜の夜、</span><span class="radio-h2-line2">おしゃべりの続きを。</span></h2>
+      <p class="lead">銀座の話から、あなたの思い出の一曲まで。これまでの回を、noteマガジンでお楽しみください。思い浮かんだことは、記事のコメント欄へ。あなたの言葉も、お待ちしています。</p>
+      <p class="radio-cta">
+        <a class="btn" href="https://note.com/ginza_whiskers/m/mdd085803b4b1" target="_blank" rel="noopener noreferrer">読む深夜ラジオをnoteで読む</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <p class="footer-brand">GINZA WHISKERS</p>
+    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

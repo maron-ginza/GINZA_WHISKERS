@@ -2755,3 +2755,76 @@ a.content-card:hover {
     display: block;
   }
 }
+
+/* ==========================================================
+   ginza-friday-night-radio.html（GINZA FRIDAY NIGHT RADIO）専用。
+   2026-11-04 新規制作。shun-no-ginza.html・showa-romance-diary.html・
+   showa-romance-live.htmlと同じ構造・命名パターンをそのまま踏襲（新規
+   ロジックなし）。初稿では正式画像が未着のため.radio-visual-frame--
+   placeholder（club-charmant/index.htmlの.cc-face-media--placeholderと
+   同じ考え方の中立プレースホルダー）を使用していたが、2026-11-04の
+   挿絵差し替えで<img>に置き換わったため、未使用になったこのクラスは
+   削除した。.radio-h1-line2はスマホ幅での見出し2行強制改行用。
+   ========================================================== */
+.radio-visual {
+  margin: 0;
+}
+
+.radio-visual-frame {
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.radio-visual-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.radio-visual figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.radio-cta {
+  margin: 1.6em 0 0.8em;
+}
+
+.radio-h1-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .radio-h1-line2 {
+    display: block;
+  }
+
+  /* 「昭和の深夜ラジオを、」（10文字）はshowa-romance-diary.htmlの
+     「今日の寄り道になる。」（同じく10文字）で既定のh1サイズ（32px）
+     では375px幅のコンテナに収まらなかった実績があるため、同じ対処
+     （480px以下でのみfont-size縮小）を予防的に適用した。ブラウザ拡張が
+     本セッション中接続できず、実機DOM計測での最終確認は別途必要
+     （マロンへの報告参照）。 */
+  .radio-hero-heading {
+    font-size: 26px;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* 2026-11-04 追加：note案内セクションの見出し（h2）用、showa-romance-
+   diary.htmlの.diary-h2-line2と同じスマホ改行制御パターン。h2は
+   .section h2（clamp(1.5rem,3vw,2rem)）により375〜430px幅では既に24px
+   相当まで縮小されるため、h1のような追加のfont-size縮小は不要
+   （「おしゃべりの続きを。」10文字は、32pxで収まらなかった
+   showa-romance-diary.htmlのh1の10文字相当分を24px換算で見積もると
+   約250pxとなり、375px幅のコンテナ内寸311pxに収まる計算のため）。 */
+.radio-h2-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .radio-h2-line2 {
+    display: block;
+  }
+}
