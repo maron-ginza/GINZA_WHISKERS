@@ -2609,3 +2609,69 @@ a.content-card:hover {
     display: block;
   }
 }
+
+/* ==========================================================
+   showa-romance-diary.html（銀座昭和浪漫日記）専用。2026-11-04
+   新規制作。shun-no-ginza.htmlの.shun-visual／.shun-visual-frame・
+   .shun-h1-line2と同じ構造・命名パターンをそのまま踏襲（新規ロジック
+   なし）。.diary-visual-frameは画像全体を切らずに見せるno-crop表示、
+   .diary-h1-line2はスマホ幅での見出し2行強制改行用。
+   ========================================================== */
+.diary-visual {
+  margin: 0;
+}
+
+.diary-visual-frame {
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.diary-visual-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.diary-visual figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.diary-cta {
+  margin: 1.6em 0 0.8em;
+  text-align: center;
+}
+
+.diary-h1-line2 {
+  display: inline;
+}
+
+/* 2026-11-04 追加：note案内セクションの見出し（h2）用、.diary-h1-line2と
+   同じスマホ改行制御パターン。h2は.section h2（clamp(1.5rem,3vw,2rem)）
+   により375〜430px幅では既に24px相当まで縮小されるため、h1のような
+   追加のfont-size縮小は不要（実測で余裕を確認済み）。 */
+.diary-h2-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .diary-h2-line2 {
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .diary-h1-line2 {
+    display: block;
+  }
+
+  /* 「今日の寄り道になる。」（10文字）がshun-no-ginza.htmlの見出し各行
+     （7〜8文字）より長く、既定のh1サイズ（32px）では375px幅のコンテナに
+     収まらなかった（実測332.8px＞収容幅311px）ため、hitosaji-hero-heading
+     と同じ対処（480px以下でのみfont-size縮小）を適用した。 */
+  .diary-hero-heading {
+    font-size: 26px;
+    letter-spacing: 0.02em;
+  }
+}

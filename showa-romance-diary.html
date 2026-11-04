@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>銀座昭和浪漫日記 | GINZA WHISKERS</title>
+<meta name="description" content="銀座に流れる日々の記憶を書き留める読み物「銀座昭和浪漫日記」。暮らしのひとこまや街にまつわる物語をたどりながら、受け継がれる銀座の表情を見つめます。noteマガジンで公開中です。">
+<link rel="canonical" href="https://maron-ginza.github.io/GINZA_WHISKERS/showa-romance-diary.html">
+
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="GINZA WHISKERS">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://maron-ginza.github.io/GINZA_WHISKERS/showa-romance-diary.html">
+<meta property="og:title" content="銀座昭和浪漫日記 | GINZA WHISKERS">
+<meta property="og:description" content="銀座に流れる日々の記憶を書き留める読み物「銀座昭和浪漫日記」。暮らしのひとこまや街にまつわる物語をたどりながら、受け継がれる銀座の表情を見つめます。noteマガジンで公開中です。">
+<meta property="og:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/diary/hero-concept-diary.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="銀座昭和浪漫日記 | GINZA WHISKERS">
+<meta name="twitter:description" content="銀座に流れる日々の記憶を書き留める読み物「銀座昭和浪漫日記」。暮らしのひとこまや街にまつわる物語をたどりながら、受け継がれる銀座の表情を見つめます。noteマガジンで公開中です。">
+<meta name="twitter:image" content="https://maron-ginza.github.io/GINZA_WHISKERS/images/diary/hero-concept-diary.jpg">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- 銀座昭和浪漫日記 専用LP。2026-11-04 新規制作（初稿・ローカルのみ・本番非公開）。
+     Project 01配下、母艦共通ヘッダー・フッターを使用。shun-no-ginza.html
+     （公開済み、母艦→紹介LP→noteマガジンという最新の確定デザイン）を基準に、
+     同じ3セクション構成（紹介文・挿絵・noteマガジンへの案内）の静的ページとして
+     制作した。記事一覧・フィード取得・自動更新は持たせない。
+
+     2026-11-04 画像について（マロン指示）：正式な挿絵は後日用意されるため、
+     初稿では配置箇所の確保のみを行い、母艦TOPの「📔 銀座昭和浪漫日記」カード
+     画像（images/cards/diary.jpg）を仮画像として流用していた（shun-no-ginza.html
+     初稿で images/cards/time-edit.jpg を仮流用したのと同じ手順）。母艦TOPカード
+     画像自体は上書きしていない。
+
+     2026-11-04 挿絵差し替え（マロン指示）：採用された専用挿絵
+     （開いた日記帳から銀座の街並みが立ち上がるコンセプト画像）を
+     images/diary/hero-concept-diary.jpg としてLP専用に保存し、仮画像から
+     差し替えた。src・alt・width/height、meta og:image／twitter:imageも
+     更新済み。AI生成画像である旨の注記figcaptionは、shun-no-ginza.htmlの
+     .shun-visual／.shun-visual-frameと同じ「figure＋内側frame」構造パターンを
+     踏襲して追加した（css/style.css該当箇所参照）。
+
+     2026-11-04 スマホ見出し改行制御：shun-no-ginza.htmlの.shun-h1-line2・
+     hitosaji.htmlの.hitosaji-h1-line2と同じパターン（<br>にdisplay:noneを
+     使う方式はChromeで改行だけが残る挙動を確認したため不採用）で、h1を
+     .diary-h1-line1／.diary-h1-line2の2つのspanに分割し、480px以下でのみ
+     2つ目をdisplay:blockにして「あの日の銀座が、」「今日の寄り道になる。」の
+     2行に強制改行（PC幅は両spanともinlineのまま＝1行表示を維持。32pxのまま
+     単一行で収まることを確認済み）。「今日の寄り道になる。」（10文字）は
+     shun-no-ginza.htmlの各行（7〜8文字）より長く、既定のh1サイズ（32px）
+     では375px幅のコンテナに収まらなかった（実測332.8px＞収容幅311px）ため、
+     hitosaji-hero-headingと同じ対処（480px以下でのみfont-size:26pxへ縮小、
+     css/style.css該当箇所参照）を適用し、375／390／430pxいずれも各行の
+     折り返しなし・横はみ出しなし（375px幅で約46pxの余裕）を実機DOM計測で
+     確認済み。
+
+     本LPの構成（3セクションのみ、フェッチ処理なし）：
+       1. 短い紹介文（4段落）
+       2. 挿絵（画像配置のみ確保、正式画像は後日差し替え）
+       3. noteマガジンへのボタン（URLは母艦TOP #diary カードと同一：
+          https://note.com/ginza_whiskers/m/m55a5bd7cbae6） -->
+
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="index.html" class="brand">
+      <span class="brand-jp">GINZA WHISKERS</span>
+    </a>
+    <button class="nav-toggle" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="main-nav">
+      <ul>
+        <li><a href="index.html#know">今の銀座</a></li>
+        <li><a href="index.html#feel">銀座の時間</a></li>
+        <li><a href="index.html#experience">銀座を体験</a></li>
+        <li><a href="index.html#your-ginza">自分の銀座</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="index.html#contact">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- 1. 短い紹介文 -->
+  <section class="section">
+    <div class="container narrow">
+      <p class="eyebrow">銀座昭和浪漫日記｜Ginza Showa Romance Diary</p>
+      <h1 class="diary-hero-heading"><span class="diary-h1-line1">あの日の銀座が、</span><span class="diary-h1-line2">今日の寄り道になる。</span></h1>
+      <p class="lead">デパ地下に胸を躍らせた放課後。路地に灯る看板、街角で交わした何気ない言葉。銀座の記憶には、時代の風景と、人のぬくもりが息づいています。</p>
+      <p class="lead">「銀座昭和浪漫日記」は、銀座に流れる日々の記憶を書き留める読み物です。暮らしのひとこまや街にまつわる物語をたどりながら、受け継がれる銀座の表情を見つめます。</p>
+      <p class="lead">知っている道に、知らなかった物語を。次の銀ブラが少し楽しみになる一篇を、日記のページから見つけてみませんか。</p>
+    </div>
+  </section>
+
+  <!-- 2. 挿絵：画像全体を切らずに見せる（shun-no-ginza.htmlの.shun-visual／
+       .shun-visual-frameと同じ「figure＋内側frame（no-crop）＋AI生成画像
+       注記figcaption」パターンを踏襲）。 -->
+  <section class="section hub-section">
+    <div class="container">
+      <figure class="diary-visual">
+        <div class="diary-visual-frame">
+          <img src="images/diary/hero-concept-diary.jpg" width="1672" height="941" alt="開いた日記帳から銀座の街並みが立ち上がり、女性が歩く、街の記憶と今日の銀ブラをつなぐイメージ" loading="lazy">
+        </div>
+        <figcaption>※画像はAI生成によるコンセプトイメージです。実在の街並みや歴史資料を再現したものではありません。</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 3. noteマガジンへのボタン -->
+  <section class="section hub-section">
+    <div class="container narrow">
+      <h2 class="diary-note-heading"><span class="diary-h2-line1">銀座の記憶を、</span><span class="diary-h2-line2">ひとページずつ。</span></h2>
+      <p class="lead">懐かしい風景との再会も、初めて知る銀座との出会いも。これまでの日記を、noteマガジンでお楽しみください。</p>
+      <p class="diary-cta">
+        <a class="btn" href="https://note.com/ginza_whiskers/m/m55a5bd7cbae6" target="_blank" rel="noopener noreferrer">日記をnoteで読む</a>
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <p class="footer-brand">GINZA WHISKERS</p>
+    <p class="footer-links"><a href="privacy.html">プライバシーポリシー</a></p>
+    <p class="footer-copy">&copy; <span id="year"></span> GINZA WHISKERS. All Rights Reserved.</p>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>
