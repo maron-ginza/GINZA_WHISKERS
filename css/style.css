@@ -2675,3 +2675,83 @@ a.content-card:hover {
     letter-spacing: 0.02em;
   }
 }
+
+/* ==========================================================
+   showa-romance-live.html（銀座昭和浪漫倶楽部LIVE）専用。2026-11-04
+   新規制作。shun-no-ginza.html・showa-romance-diary.htmlと同じ構造・
+   命名パターンをそのまま踏襲（新規ロジックなし）。.live-visual-frameは
+   画像全体を切らずに見せるno-crop表示、.live-h1-line2はスマホ幅での
+   見出し2行強制改行用。.live-waysは初参加者向けの「歌う／聴く／語らう」
+   3項目リスト、.live-cta-standing／.live-cta-monthlyはnote案内の
+   常設リンクと月次更新リンクを視覚的に区別するためのブロック。
+   ========================================================== */
+.live-visual {
+  margin: 0;
+}
+
+.live-visual-frame {
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.live-visual-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.live-visual figcaption {
+  color: var(--color-ink-muted);
+  font-size: 0.78rem;
+  margin-top: 10px;
+}
+
+.live-ways {
+  list-style: none;
+  padding: 0;
+  margin: 1.5em 0;
+}
+
+.live-ways li {
+  margin-bottom: 1.1em;
+}
+
+.live-ways li:last-child {
+  margin-bottom: 0;
+}
+
+.live-ways-label {
+  display: block;
+  font-family: var(--font-serif);
+  color: var(--color-gold-light);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25em;
+}
+
+.live-ways-desc {
+  display: block;
+  color: var(--color-ink-muted);
+}
+
+.live-cta-standing {
+  margin: 1.6em 0 0.8em;
+}
+
+.live-cta-standing .btn {
+  margin: 0 0.6em 0.6em 0;
+}
+
+.live-cta-monthly {
+  margin: 0 0 0.8em;
+}
+
+.live-h1-line2 {
+  display: inline;
+}
+
+@media (max-width: 480px) {
+  .live-h1-line2 {
+    display: block;
+  }
+}
