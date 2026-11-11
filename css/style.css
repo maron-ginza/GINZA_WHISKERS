@@ -955,6 +955,13 @@ a.content-card:hover {
   margin: 0 0 1.4em;
 }
 
+/* 短い結びの語句だけが次行に孤立しないよう、日本語表示時のみ
+   分かち書きさせない（英語表示では折り返しを妨げない）。
+   concierge.html と同じ考え方の汎用ユーティリティ。 */
+html[lang="ja"] .cg-nowrap-tail {
+  white-space: nowrap;
+}
+
 /* カード内の制作部門クレジット表記（2026-09-20 追加）、および
    カード内のキャッチコピー表記（2026-10-22追加。例：GINZA FRIDAY
    NIGHT RADIOカード内「昭和の深夜ラジオを、読む。」）。
