@@ -353,6 +353,11 @@ function initHomeLangToggle() {
       if (html !== undefined) el.innerHTML = html;
     });
 
+    document.querySelectorAll("[data-alt-ja]").forEach((el) => {
+      const alt = lang === "en" ? el.dataset.altEn : el.dataset.altJa;
+      if (alt !== undefined) el.setAttribute("alt", alt);
+    });
+
     buttons.forEach((b) => {
       const isActive = b.dataset.lang === lang;
       b.classList.toggle("is-active", isActive);
